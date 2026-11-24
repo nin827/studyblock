@@ -1,0 +1,14 @@
+{
+  "id": "arithmetic",
+  "title": "Arithmetic",
+  "description": "Mental math drills: addition, subtraction, multiplication and division at three difficulty levels.",
+  "icon": "calculator",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "addition", "title": "Addition", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "subtraction", "title": "Subtraction", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "multiplication", "title": "Multiplication", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "division", "title": "Division", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

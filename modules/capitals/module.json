@@ -1,0 +1,13 @@
+{
+  "id": "capitals",
+  "title": "World Capitals",
+  "description": "Name the capital cities of countries in Europe, Asia and the Americas.",
+  "icon": "globe",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "europe", "title": "Europe", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "asia", "title": "Asia", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "americas", "title": "Americas", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

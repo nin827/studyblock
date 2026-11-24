@@ -1,0 +1,39 @@
+subtopic,difficulty,prompt,answer,choices,explanation
+europe,easy,What is the capital of France?,Paris,,Paris has been the capital of France for most of its history.
+europe,easy,What is the capital of Germany?,Berlin,Berlin|Munich|Frankfurt|Hamburg,Berlin became the capital of reunified Germany in 1990.
+europe,easy,What is the capital of Italy?,Rome,,"Rome, the ""Eternal City"", is the capital of Italy."
+europe,easy,What is the capital of Spain?,Madrid,Madrid|Barcelona|Seville|Valencia,Madrid sits near the geographic centre of Spain.
+europe,medium,What is the capital of Switzerland?,Bern,Bern|Zurich|Geneva|Basel,"Bern is the federal city, even though Zurich and Geneva are larger."
+europe,medium,What is the capital of the Netherlands?,Amsterdam,,"Amsterdam is the constitutional capital, although the government sits in The Hague."
+europe,medium,What is the capital of Portugal?,Lisbon,,Lisbon lies at the mouth of the Tagus river.
+europe,medium,What is the capital of Poland?,Warsaw,Warsaw|Kraków|Gdańsk|Wrocław,Warsaw replaced Kraków as the capital around 1596.
+europe,hard,What is the capital of Slovenia?,Ljubljana,,Ljubljana is the capital and largest city of Slovenia.
+europe,hard,What is the capital of Moldova?,Chișinău,Chișinău|Tiraspol|Bălți|Cahul,Chișinău is the capital and largest city of Moldova.
+europe,hard,What is the capital of Montenegro?,Podgorica,Podgorica|Cetinje|Budva|Nikšić,"Podgorica is the capital, while Cetinje is the old royal capital."
+europe,hard,What is the capital of Liechtenstein?,Vaduz,,Vaduz is the capital of Liechtenstein.
+asia,easy,What is the capital of Japan?,Tokyo,,Tokyo has been the capital of Japan since 1868.
+asia,easy,What is the capital of China?,Beijing,Beijing|Shanghai|Hong Kong|Guangzhou,"Beijing is the capital, while Shanghai is the largest city."
+asia,easy,What is the capital of India?,New Delhi,New Delhi|Mumbai|Kolkata|Bangalore,"The capital moved from Calcutta (now Kolkata) to Delhi in 1911, and New Delhi was inaugurated in 1931."
+asia,easy,What is the capital of South Korea?,Seoul,,Seoul is the capital and largest city of South Korea.
+asia,medium,What is the capital of Turkey?,Ankara,Ankara|Istanbul|Izmir|Antalya,"Ankara became the capital in 1923, replacing Istanbul."
+asia,medium,What is the capital of Vietnam?,Hanoi,,Hanoi is in the north of Vietnam. Ho Chi Minh City is the largest city.
+asia,medium,What is the capital of the Philippines?,Manila,,Manila is the capital and lies on Luzon island.
+asia,medium,What is the capital of Thailand?,Bangkok,Bangkok|Chiang Mai|Phuket|Pattaya,Bangkok is the capital and by far the largest city of Thailand.
+asia,hard,What is the capital of Myanmar?,Naypyidaw,Naypyidaw|Yangon|Mandalay|Bago,"Naypyidaw replaced Yangon as the capital in 2005-2006."
+asia,hard,What is the capital of Bhutan?,Thimphu,,Thimphu is the capital and largest city of Bhutan.
+asia,hard,What is the legislative capital of Sri Lanka?,Sri Jayawardenepura Kotte,Sri Jayawardenepura Kotte|Colombo|Kandy|Galle,"Colombo is the commercial capital, but parliament sits in Sri Jayawardenepura Kotte."
+asia,hard,What is the capital of Kyrgyzstan?,Bishkek,,Bishkek is the capital of Kyrgyzstan.
+asia,hard,What is the capital of Laos?,Vientiane,,Vientiane lies on the Mekong river.
+americas,easy,What is the capital of the United States?,"Washington, D.C.","Washington, D.C.|New York City|Los Angeles|Chicago","Washington, D.C. has been the capital since 1800."
+americas,easy,What is the capital of Canada?,Ottawa,Ottawa|Toronto|Montreal|Vancouver,"Ottawa is the capital, while Toronto is the largest city."
+americas,easy,What is the capital of Mexico?,Mexico City,,Mexico City is the capital and largest city of Mexico.
+americas,easy,What is the capital of Brazil?,Brasília,Brasília|Rio de Janeiro|São Paulo|Salvador,"Brasília, a planned city, replaced Rio de Janeiro as the capital in 1960."
+americas,medium,What is the capital of Argentina?,Buenos Aires,,Buenos Aires lies on the Río de la Plata.
+americas,medium,What is the capital of Peru?,Lima,,Lima was founded in 1535 by Francisco Pizarro.
+americas,medium,What is the capital of Colombia?,Bogotá,Bogotá|Medellín|Cali|Cartagena,Bogotá sits high in the Andes at about 2600 metres.
+americas,medium,What is the capital of Chile?,Santiago,Santiago|Valparaíso|Concepción|Antofagasta,"Santiago is the capital, although the National Congress meets in Valparaíso."
+americas,hard,What is the capital of Paraguay?,Asunción,Asunción|Ciudad del Este|Encarnación|Luque,Asunción is one of the oldest cities in South America.
+americas,hard,What is the capital of Belize?,Belmopan,Belmopan|Belize City|San Ignacio|Orange Walk Town,"Belmopan replaced Belize City as the capital in 1970, after Hurricane Hattie."
+americas,hard,What is the capital of Honduras?,Tegucigalpa,,Tegucigalpa is the capital and largest city of Honduras.
+americas,hard,What is the capital of Suriname?,Paramaribo,,Paramaribo lies on the Suriname river.
+americas,hard,What is the capital of Ecuador?,Quito,Quito|Guayaquil|Cuenca|Manta,"Quito is the capital, while Guayaquil is the largest city."
