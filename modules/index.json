@@ -4,29 +4,50 @@
       "id": "math",
       "title": "Math",
       "icon": "sigma",
-      "description": "Arithmetic, algebra and beyond.",
-      "modules": ["arithmetic", "algebra"]
+      "description": "Arithmetic, algebra, fractions, geometry and statistics.",
+      "modules": ["arithmetic", "algebra", "fractions", "geometry", "statistics"]
     },
     {
       "id": "science",
       "title": "Science",
       "icon": "flask-conical",
-      "description": "Physics, chemistry and the natural world.",
-      "modules": ["kinematics", "elements"]
+      "description": "Physics, chemistry, biology and units.",
+      "modules": ["kinematics", "electricity", "unit-conversion", "elements", "biology"]
+    },
+    {
+      "id": "computing",
+      "title": "Computing",
+      "icon": "cpu",
+      "description": "Number bases, logic and how computers work.",
+      "modules": ["number-bases", "boolean-logic", "computing-terms"]
     },
     {
       "id": "geography",
       "title": "Geography",
       "icon": "globe",
-      "description": "Countries, capitals and places.",
-      "modules": ["capitals"]
+      "description": "Countries, capitals, continents and the physical world.",
+      "modules": ["capitals", "continents", "physical-geography"]
+    },
+    {
+      "id": "history",
+      "title": "History",
+      "icon": "landmark",
+      "description": "Key events, dates and inventions.",
+      "modules": ["world-history", "inventions"]
     },
     {
       "id": "business",
       "title": "Business",
       "icon": "briefcase",
-      "description": "Percentages, interest, margins and real-world cases.",
-      "modules": ["business-math", "business-case"]
+      "description": "Percentages, interest, margins, accounting and real-world cases.",
+      "modules": ["business-math", "business-case", "accounting-terms"]
+    },
+    {
+      "id": "language",
+      "title": "Language",
+      "icon": "languages",
+      "description": "English vocabulary, word roots and grammar.",
+      "modules": ["vocabulary", "word-roots", "grammar"]
     }
   ]
 }

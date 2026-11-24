@@ -1,0 +1,15 @@
+{
+  "id": "vocabulary",
+  "title": "Vocabulary",
+  "description": "Word meanings, synonyms and antonyms, commonly confused words and words in context.",
+  "icon": "book-a",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "calculator": false,
+  "subtopics": [
+    { "id": "meanings", "title": "Meanings", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "synonyms-antonyms", "title": "Synonyms and antonyms", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "commonly-confused", "title": "Commonly confused words", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "context", "title": "Words in context", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

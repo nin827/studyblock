@@ -1,0 +1,14 @@
+{
+  "id": "physical-geography",
+  "title": "Physical Geography",
+  "description": "Rivers, mountains, deserts, lakes and the climate zones of the world.",
+  "icon": "mountain",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "rivers", "title": "Rivers", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "mountains", "title": "Mountains", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "deserts-lakes", "title": "Deserts and lakes", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "climate-biomes", "title": "Climate and biomes", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

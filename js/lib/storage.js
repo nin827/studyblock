@@ -116,6 +116,53 @@ export function cleanWork(work) {
   return out.length ? out : null;
 }
 
+// Multi-part questions store `answer` / `userAnswer` as { [partId]: value } and
+// `parts: [{ id, label, correct }]`. All optional on import; validated and capped here. Data only.
+export const PARTS_MAX = 4;
+const PART_ID_RE = /^[a-z0-9-]+$/;
+const PART_VALUE_MAX = 200;
+const PART_LABEL_MAX = 60;
+
+// { [partId]: string|number } with at most PARTS_MAX keys, or null when nothing valid is left.
+// Keys must match the id rule (which also rules out "__proto__" and friends).
+export function cleanPartMap(v) {
+  if (!isObj(v)) return null;
+  const out = {};
+  let n = 0;
+  for (const k of Object.keys(v)) {
+    if (n >= PARTS_MAX) break;
+    if (!PART_ID_RE.test(k) || k.length > 40) continue;
+    const x = v[k];
+    if (isNum(x)) out[k] = x;
+    else if (isStr(x)) out[k] = x.slice(0, PART_VALUE_MAX);
+    else continue;
+    n++;
+  }
+  return n ? out : null;
+}
+
+// [{ id, label, correct }] with at most PARTS_MAX entries and unique ids, or null.
+export function cleanParts(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  const ids = new Set();
+  for (const p of list) {
+    if (out.length >= PARTS_MAX) break;
+    if (!isObj(p) || !isStr(p.id) || !PART_ID_RE.test(p.id) || p.id.length > 40 || ids.has(p.id)) continue;
+    if (typeof p.correct !== 'boolean') continue;
+    ids.add(p.id);
+    out.push({ id: p.id, label: isStr(p.label) ? p.label.slice(0, PART_LABEL_MAX) : p.id, correct: p.correct });
+  }
+  return out.length ? out : null;
+}
+
+// A stored answer: number, string, or a multi-part object; anything else becomes a string.
+function cleanAnswer(v) {
+  if (isNum(v) || isStr(v)) return v;
+  if (isObj(v)) return cleanPartMap(v) ?? '';
+  return v === null || v === undefined ? '' : String(v);
+}
+
 // ---- attempts ----
 
 export function saveAttempt(attempt) {
@@ -531,9 +578,11 @@ function importObject(incoming, mode) {
     questions: a.questions.map(q => ({
       seed: isNum(q.seed) ? q.seed : null,
       prompt: q.prompt,
-      answer: isNum(q.answer) || isStr(q.answer) ? q.answer : String(q.answer ?? ''),
-      userAnswer: isStr(q.userAnswer) ? q.userAnswer : String(q.userAnswer ?? ''),
+      answer: cleanAnswer(q.answer),
+      userAnswer: isStr(q.userAnswer) ? q.userAnswer : isObj(q.userAnswer) ? (cleanPartMap(q.userAnswer) ?? '') : String(q.userAnswer ?? ''),
       correct: q.correct,
+      // Optional per-part results of a multi-part question.
+      ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),
       // Optional per-question attribution (mixed quizzes); older data has none.
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),

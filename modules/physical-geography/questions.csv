@@ -1,0 +1,49 @@
+subtopic,difficulty,prompt,answer,choices,explanation
+rivers,easy,What is the longest river in Africa?,Nile,Nile|Congo|Niger|Zambezi,The Nile flows north through northeastern Africa and empties into the Mediterranean Sea.
+rivers,easy,What is the longest river in South America?,Amazon,Amazon|Paraná|Orinoco|Magdalena,The Amazon carries more water than any other river on Earth.
+rivers,easy,Which river flows through London? (Leave out the word 'River'.),Thames,,The Thames flows east through London to the North Sea.
+rivers,easy,Which river flows through Paris?,Seine,Seine|Rhine|Loire|Thames,The Seine flows through Paris on its way to the English Channel.
+rivers,medium,What is the longest river in Asia?,Yangtze,Yangtze|Yellow River|Mekong|Ganges,The Yangtze flows across China from the Tibetan Plateau to the East China Sea at Shanghai.
+rivers,medium,What is the longest river in Europe?,Volga,Volga|Danube|Rhine|Dnieper,The Volga flows entirely within Russia.
+rivers,medium,Which river flows through Cairo? (Name only.),Nile,,Cairo lies on the Nile just south of where the river spreads into its delta.
+rivers,medium,Which river flows through Baghdad? (Name only.),Tigris,,The Tigris and the Euphrates are the two great rivers of Mesopotamia.
+rivers,hard,"Which river flows through Vienna, Bratislava, Budapest and Belgrade? (Name only.)",Danube,,The Danube flows through more countries than any other river in the world.
+rivers,hard,Into which body of water does the Volga flow?,Caspian Sea,Caspian Sea|Black Sea|Baltic Sea|White Sea,The Caspian Sea has no outlet to the ocean.
+rivers,hard,Which river forms much of the border between the United States and Mexico?,Rio Grande,Rio Grande|Colorado River|Mississippi River|Columbia River,The Rio Grande forms the border between Texas and Mexico.
+rivers,hard,In which city do the Blue Nile and the White Nile meet?,Khartoum,Khartoum|Cairo|Addis Ababa|Kampala,"Khartoum, the capital of Sudan, grew up at the confluence of the two rivers."
+mountains,easy,What is the highest mountain on Earth above sea level? (Leave out the word 'Mount'.),Everest,,Everest rises more than 8800 metres above sea level on the border of Nepal and China.
+mountains,easy,What is the highest mountain in Africa?,Kilimanjaro,Kilimanjaro|Mount Kenya|Mount Stanley|Mount Cameroon,Kilimanjaro is a dormant volcano in Tanzania.
+mountains,easy,Which mountain range contains Mount Everest?,Himalayas,Himalayas|Andes|Alps|Rocky Mountains,The Himalayas separate the Indian subcontinent from the Tibetan Plateau.
+mountains,easy,Which mountain range runs along the western side of South America? (One word.),Andes,,The Andes are the longest continental mountain range in the world.
+mountains,medium,What is the highest mountain in South America?,Aconcagua,Aconcagua|Chimborazo|Huascarán|Cotopaxi,Aconcagua lies in the Andes in Argentina near the border with Chile.
+mountains,medium,What is the highest mountain in the Alps?,Mont Blanc,Mont Blanc|Matterhorn|Eiger|Jungfrau,Mont Blanc rises above the towns of Chamonix in France and Courmayeur in Italy.
+mountains,medium,Which mountain range forms the border between France and Spain?,Pyrenees,Pyrenees|Alps|Apennines|Carpathians,The tiny country of Andorra sits high in the Pyrenees.
+mountains,medium,Mount Everest lies on the border between Nepal and which other country?,China,China|India|Bhutan|Pakistan,The Nepalese side of Everest is approached from the south and the Chinese side from the north.
+mountains,hard,What is the second-highest mountain on Earth? (Name only.),K2,,"K2 lies in the Karakoram range, northwest of the Himalayas."
+mountains,hard,What is the highest mountain in Antarctica?,Mount Vinson,Mount Vinson|Mount Erebus|Mount Kirkpatrick|Mount Sidley,Mount Vinson lies in the Ellsworth Mountains and was first climbed in 1966.
+mountains,hard,Which north–south mountain range in Russia is traditionally taken as part of the boundary between Europe and Asia?,Ural Mountains,Ural Mountains|Altai Mountains|Carpathian Mountains|Sayan Mountains,The Urals run roughly north to south from the Arctic Ocean toward Kazakhstan.
+mountains,hard,"Which mountain range stretches across Morocco, Algeria and Tunisia?",Atlas Mountains,Atlas Mountains|Zagros Mountains|Drakensberg|Ethiopian Highlands,The Atlas Mountains separate the Mediterranean and Atlantic coasts from the Sahara.
+deserts-lakes,easy,What is the largest hot desert in the world?,Sahara,Sahara|Gobi|Kalahari|Arabian Desert,"Antarctica is a larger desert overall, but the Sahara is the largest hot one."
+deserts-lakes,easy,On which continent is the Sahara Desert?,Africa,,The Sahara covers much of North Africa from the Atlantic to the Red Sea.
+deserts-lakes,easy,A desert is defined mainly by a very low amount of what?,Precipitation,Precipitation|Temperature|Altitude|Wind,"Deserts can be hot or cold, but all receive very little rain or snow."
+deserts-lakes,easy,In which country is Lake Baikal?,Russia,,Lake Baikal lies in southern Siberia.
+deserts-lakes,medium,What is the deepest lake in the world?,Lake Baikal,Lake Baikal|Lake Tanganyika|Lake Superior|Lake Victoria,Lake Baikal is also the largest freshwater lake by volume.
+deserts-lakes,medium,What is the largest lake in Africa by area?,Lake Victoria,Lake Victoria|Lake Tanganyika|Lake Malawi|Lake Chad,Lake Victoria is a major source of the White Nile.
+deserts-lakes,medium,The Gobi Desert lies in China and which other country?,Mongolia,,The Gobi is a cold desert with harsh winters.
+deserts-lakes,medium,"The Atacama Desert, one of the driest places on Earth, lies mainly in which country?",Chile,,Some weather stations in the Atacama have recorded almost no rain for years at a time.
+deserts-lakes,hard,The Kalahari Desert covers much of which country?,Botswana,Botswana|Kenya|Egypt|Morocco,The Kalahari also extends into Namibia and South Africa.
+deserts-lakes,hard,The shore of which body of water is the lowest land on Earth?,Dead Sea,Dead Sea|Lake Baikal|Lake Titicaca|Lake Eyre,The Dead Sea is so salty that people float easily in it.
+deserts-lakes,hard,Lake Titicaca lies on the border between Peru and which country?,Bolivia,,Lake Titicaca sits high in the Andes at about 3800 metres above sea level.
+deserts-lakes,hard,"Lake Victoria is shared by Uganda, Kenya and which other country?",Tanzania,,Tanzania holds the largest share of Lake Victoria.
+climate-biomes,easy,Which imaginary line divides Earth into the Northern and Southern Hemispheres?,Equator,,The Equator lies at 0 degrees latitude.
+climate-biomes,easy,"What is the latitude of the Equator, in degrees? (Number only.)",0,,Latitude is measured from 0 degrees at the Equator to 90 degrees at each pole.
+climate-biomes,easy,Which biome is hot and wet all year and has the greatest variety of species?,Tropical rainforest,Tropical rainforest|Tundra|Savanna|Desert,The Amazon is the largest tropical rainforest on Earth.
+climate-biomes,easy,Which biome is a tropical grassland with scattered trees and a long dry season?,Savanna,Savanna|Taiga|Tundra|Rainforest,Savannas cover large areas of Africa and are home to grazing animals such as zebras.
+climate-biomes,medium,What is the name of the cold treeless biome with permanently frozen subsoil? (One word.),Tundra,,The frozen subsoil of the tundra is called permafrost.
+climate-biomes,medium,"What is the latitude of the North Pole, in degrees? (Number only.)",90,,Both poles lie at 90 degrees of latitude: 90 degrees north and 90 degrees south.
+climate-biomes,medium,Which line of latitude marks the northern edge of the tropics?,Tropic of Cancer,Tropic of Cancer|Tropic of Capricorn|Arctic Circle|Antarctic Circle,The Tropic of Capricorn marks the southern edge of the tropics.
+climate-biomes,medium,Which biome is the vast coniferous forest of the far north?,Taiga,Taiga|Tundra|Chaparral|Savanna,The taiga is also called the boreal forest and stretches across Canada and Russia.
+climate-biomes,hard,What name is given to the seasonal wind shift that brings heavy summer rain to South Asia? (One word.),Monsoon,,The word monsoon comes from an Arabic word meaning season.
+climate-biomes,hard,"Which climate has hot, dry summers and mild, wet winters?",Mediterranean,Mediterranean|Monsoon|Tundra|Equatorial,"This climate is also found in California, central Chile, South Africa's Cape and parts of southern Australia."
+climate-biomes,hard,"Around the December solstice, the noon Sun is directly overhead along which line?",Tropic of Capricorn,Tropic of Capricorn|Tropic of Cancer|Equator|Antarctic Circle,"Around the June solstice, the noon Sun is directly overhead along the Tropic of Cancer instead."
+climate-biomes,hard,What is it called when the Sun stays above the horizon for a full 24 hours in polar summer?,Midnight sun,Midnight sun|Polar night|Equinox|Aurora,Every place north of the Arctic Circle has at least one day of midnight sun each year.

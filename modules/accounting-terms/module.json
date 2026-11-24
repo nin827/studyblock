@@ -1,0 +1,14 @@
+{
+  "id": "accounting-terms",
+  "title": "Accounting Terms",
+  "description": "Financial statements, assets and liabilities, the accounting equation and key terms.",
+  "icon": "book-open-check",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "statements", "title": "Financial statements", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "assets-liabilities", "title": "Assets and liabilities", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "equation", "title": "The accounting equation", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "terms", "title": "Key terms", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

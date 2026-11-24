@@ -131,6 +131,7 @@ export async function runQuiz(root, ctx, opts) {
   }
 
   function focusAnswer() {
+    if (phase === 'answer' && isMulti(questions[idx]) && focusPart(lastPart)) return;
     const target = root.querySelector('#answer:not(:disabled)') || root.querySelector('#next') || root.querySelector('.choice:not(:disabled)');
     target?.focus();
   }
@@ -157,9 +158,13 @@ export async function runQuiz(root, ctx, opts) {
       storageKey: CALC_KEY,
       owner: location.hash,
       onUse: value => {
-        const input = root.querySelector('#answer');
+        const q = questions[idx];
+        const input = isMulti(q)
+          ? (lastPart ? partEl(lastPart)?.querySelector('.part-input') : null)
+          : root.querySelector('#answer');
         if (!input || input.disabled || phase !== 'answer') return;
         input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true })); // keeps Check's enabled state in sync
         setSheet(false);
         input.focus();
       },
@@ -183,7 +188,8 @@ export async function runQuiz(root, ctx, opts) {
     shell.classList.toggle('has-calc', on);
     calc.setVisible(on);
     if (!on) setSheet(false);
-    const typed = q.answerType !== 'choice';
+    // Multi-part: Use follows the part that last had focus (disabled on a choice group).
+    const typed = isMulti(q) ? partOf(q)(lastPart)?.answerType !== 'choice' : q.answerType !== 'choice';
     calc.setUseEnabled(on && typed && phase === 'answer',
       !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
         : phase !== 'answer' ? 'Use fills the answer on the next question.' : '');
@@ -252,7 +258,123 @@ export async function runQuiz(root, ctx, opts) {
       </div>`;
   }
 
+  // ---- multi-part questions (answerType "multi") ----
+  // One stacked field per part: a text/number input, or a choice button group that only selects.
+  // Part ids match ^[a-z0-9-]+$ (checked by the engine), so they are safe inside ids/attributes.
+  const isMulti = q => q?.answerType === 'multi';
+  let lastPart = null; // part id that last had focus (the calculator's Use fills it)
+
+  function partHtml(p, i, n) {
+    const last = i === n - 1;
+    const head = `<p class="part-head"><span class="part-num" aria-hidden="true">${i + 1}</span><span class="part-label">${esc(p.label)}</span></p>`;
+    if (p.answerType === 'choice') {
+      return `<div class="part" data-part="${esc(p.id)}">
+        ${head}
+        <p class="part-ask" id="part-${esc(p.id)}-ask">${renderInline(p.ask || p.label)}</p>
+        <div class="choices part-choices" role="group" aria-labelledby="part-${esc(p.id)}-ask" data-part="${esc(p.id)}">${(p.choices || []).map((c, j) =>
+          `<button type="button" class="btn choice part-choice" data-part="${esc(p.id)}" data-i="${j}" aria-pressed="false"><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>
+      </div>`;
+    }
+    const num = p.answerType === 'number';
+    return `<div class="part" data-part="${esc(p.id)}">
+      ${head}
+      <label class="part-ask" for="part-${esc(p.id)}">${renderInline(p.ask || p.label)}</label>
+      <input id="part-${esc(p.id)}" class="answer-input part-input" data-part="${esc(p.id)}" type="text" ${num ? 'inputmode="decimal"' : ''}
+        enterkeyhint="${last ? 'go' : 'next'}" autocapitalize="off" autocorrect="off" spellcheck="false"
+        placeholder="${num ? 'Type a number' : 'Type your answer'}">
+    </div>`;
+  }
+
+  const partOf = q => id => (q.parts || []).find(p => p.id === id) || null;
+  const partEl = id => root.querySelector(`.part[data-part="${CSS.escape(id)}"]`);
+
+  // { [partId]: string } from the current fields ('' when empty / not chosen).
+  function readParts(q) {
+    const out = {};
+    for (const p of q.parts || []) {
+      const el = partEl(p.id);
+      if (p.answerType === 'choice') {
+        const b = el?.querySelector('.part-choice[aria-pressed="true"]');
+        out[p.id] = b ? String(p.choices[+b.dataset.i]) : '';
+      } else {
+        out[p.id] = el?.querySelector('.part-input')?.value ?? '';
+      }
+    }
+    return out;
+  }
+  const isFilled = v => String(v ?? '').trim() !== '';
+  const allFilled = q => Object.values(readParts(q)).every(isFilled);
+
+  // `reveal`: also scroll the part to the middle, so the phone's sticky action bar can't hide it.
+  function focusPart(id, reveal = false) {
+    const el = id && partEl(id);
+    if (!el) return false;
+    const target = el.querySelector('.part-input:not(:disabled)')
+      || el.querySelector('.part-choice[aria-pressed="true"]:not(:disabled)')
+      || el.querySelector('.part-choice:not(:disabled)');
+    if (!target) return false;
+    target.focus({ preventScroll: reveal });
+    if (reveal) el.scrollIntoView({ block: 'center' });
+    return true;
+  }
+
+  function updateCheck(q) {
+    const btn = root.querySelector('#check');
+    if (btn) btn.disabled = phase !== 'answer' || !allFilled(q);
+  }
+
+  // Remember which part was used last, and enable/disable the calculator's Use to match.
+  function setLastPart(id) {
+    if (!id || id === lastPart) return;
+    lastPart = id;
+    applyCalc(questions[idx]);
+  }
+
+  // Enter in a multi-part question: go to the next empty part (after this one, wrapping);
+  // once every part has a value, submit.
+  function enterMulti(q, fromId) {
+    const vals = readParts(q);
+    const ids = (q.parts || []).map(p => p.id);
+    const start = Math.max(0, ids.indexOf(fromId));
+    for (let k = 1; k <= ids.length; k++) {
+      const id = ids[(start + k) % ids.length];
+      if (!isFilled(vals[id])) { focusPart(id, true); return; }
+    }
+    if (!isFilled(vals[fromId])) { focusPart(fromId, true); return; }
+    submit(vals);
+  }
+
+  function bindMulti(q) {
+    const form = root.querySelector('#answer-form');
+    if (!form) return;
+    lastPart = q.parts?.[0]?.id ?? null;
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (allFilled(q)) submit(readParts(q));
+      else enterMulti(q, lastPart);
+    });
+    form.addEventListener('input', () => updateCheck(q));
+    const track = e => { const id = e.target.closest?.('[data-part]')?.dataset.part; if (id) setLastPart(id); };
+    form.addEventListener('focusin', track);
+    form.addEventListener('pointerdown', track); // Safari doesn't focus buttons on click
+    form.querySelectorAll('.part-choice').forEach(b => b.addEventListener('click', () => {
+      if (phase !== 'answer') return;
+      const group = b.closest('.part-choices');
+      group.querySelectorAll('.part-choice').forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+      setLastPart(b.dataset.part);
+      updateCheck(q);
+    }));
+    updateCheck(q);
+    focusPart(lastPart);
+  }
+
   function inputHtml(q) {
+    if (isMulti(q)) {
+      const n = (q.parts || []).length;
+      return `<form class="answer-form multi-form" id="answer-form" autocomplete="off" novalidate>
+        ${(q.parts || []).map((p, i) => partHtml(p, i, n)).join('')}
+      </form>`;
+    }
     if (q.answerType === 'choice') {
       return `<div class="choices">${(q.choices || []).map((c, i) =>
         `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
@@ -268,6 +390,10 @@ export async function runQuiz(root, ctx, opts) {
   }
 
   function actionBar(q) {
+    if (isMulti(q)) {
+      return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> for the next part</span></p>
+        ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
+    }
     if (q.answerType === 'choice') {
       const n = Math.min((q.choices || []).length, 9);
       return `<p class="action-hint"><span class="action-hint-tap">Tap an answer</span>
@@ -290,8 +416,10 @@ export async function runQuiz(root, ctx, opts) {
         <div id="feedback"></div>
         <div class="action-bar" id="action-bar">${actionBar(q)}</div>
       </section>`;
+    if (isMulti(q)) lastPart = q.parts?.[0]?.id ?? null;
     applyCalc(q);
     icons();
+    if (isMulti(q)) { bindMulti(q); return; }
     const form = root.querySelector('.answer-form');
     if (form) {
       form.addEventListener('submit', e => { e.preventDefault(); submit(root.querySelector('#answer').value); });
@@ -304,19 +432,50 @@ export async function runQuiz(root, ctx, opts) {
   function submit(value, choiceIndex) {
     if (phase !== 'answer') return;
     const q = questions[idx];
-    if (q.answerType !== 'choice' && !String(value ?? '').trim()) {
+    const multi = isMulti(q);
+    if (multi) {
+      if (!value || typeof value !== 'object' || !Object.values(value).every(isFilled)) { enterMulti(q, lastPart); return; }
+    } else if (q.answerType !== 'choice' && !String(value ?? '').trim()) {
       root.querySelector('#answer')?.focus();
       return;
     }
     phase = 'feedback';
-    const correct = checkAnswer(q, value);
+    const res = checkAnswer(q, value);
+    const correct = multi ? !!res.correct : res;
+    const partResults = multi ? res.parts : null;
     // Snapshot of the calculator sheet at check time ("Your working"), when it was shown.
     const work = calcAllowed(q) && calc ? cleanWork(calc.snapshot()) : null;
-    results.push({ q, userAnswer: String(value ?? ''), correct, ...(work ? { work } : {}) });
+    const userAnswer = multi
+      ? Object.fromEntries((q.parts || []).map(p => [p.id, String(value[p.id] ?? '')]))
+      : String(value ?? '');
+    results.push({ q, userAnswer, correct, ...(partResults ? { parts: partResults } : {}), ...(work ? { work } : {}) });
     applyCalc(q);
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice').forEach(el => { el.disabled = true; });
-    if (q.answerType === 'choice') {
+    if (multi) {
+      for (const pr of partResults) {
+        const p = partOf(q)(pr.id);
+        const el = partEl(pr.id);
+        if (!p || !el) continue;
+        el.classList.add(pr.correct ? 'is-correct' : 'is-wrong');
+        if (p.answerType === 'choice') {
+          el.querySelector('.part-choices')?.classList.add('is-answered');
+          el.querySelectorAll('.part-choice').forEach(b => {
+            const c = p.choices[+b.dataset.i];
+            const mark = b.querySelector('.choice-mark');
+            if (String(c) === String(p.answer)) {
+              b.classList.add('is-correct');
+              if (mark) mark.innerHTML = `${icon('circle-check')}<span class="sr-only">Correct answer</span>`;
+            } else if (b.getAttribute('aria-pressed') === 'true') {
+              b.classList.add('is-wrong');
+              if (mark) mark.innerHTML = `${icon('circle-x')}<span class="sr-only">Your answer, incorrect</span>`;
+            }
+          });
+        } else {
+          el.querySelector('.part-input')?.classList.add(pr.correct ? 'is-correct' : 'is-wrong');
+        }
+      }
+    } else if (q.answerType === 'choice') {
       root.querySelector('.choices')?.classList.add('is-answered');
       root.querySelectorAll('.choice').forEach(b => {
         const c = q.choices[+b.dataset.i];
@@ -341,10 +500,15 @@ export async function runQuiz(root, ctx, opts) {
     root.querySelector('#seg-progress')?.setAttribute('aria-valuetext', progressText());
 
     const last = idx === questions.length - 1;
+    const nRight = multi ? partResults.filter(p => p.correct).length : 0;
+    const title = correct
+      ? `${icon('circle-check')} Correct`
+      : `${icon('circle-x')} Incorrect${multi ? ` <span class="feedback-sub">${nRight} of ${partResults.length} parts right</span>` : ''}`;
     root.querySelector('#feedback').innerHTML = `
       <div class="feedback ${correct ? 'good' : 'bad'}">
-        <p class="feedback-title">${correct ? `${icon('circle-check')} Correct` : `${icon('circle-x')} Incorrect`}</p>
-        ${correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`}
+        <p class="feedback-title">${title}</p>
+        ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
+          : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
     root.querySelector('#action-bar').innerHTML =
@@ -401,7 +565,15 @@ export async function runQuiz(root, ctx, opts) {
     // Keys typed in the calculator never answer or advance the quiz.
     if (e.target && e.target.closest && e.target.closest('.calc-panel')) return;
     if (e.key === 'Enter' && !e.repeat && !e.isComposing) {
-      if (phase === 'answer' && questions[idx]?.answerType !== 'choice') {
+      if (phase === 'answer' && isMulti(questions[idx])) {
+        const t = e.target;
+        const btn = t?.closest?.('button');
+        // Other buttons (e.g. Calculator) keep their native Enter; Check and the part fields don't.
+        if (btn && !btn.classList.contains('part-choice') && btn.id !== 'check') return;
+        e.preventDefault();
+        if (btn && btn.classList.contains('part-choice') && !btn.disabled) btn.click(); // Enter picks this choice
+        enterMulti(questions[idx], t?.closest?.('[data-part]')?.dataset.part || lastPart);
+      } else if (phase === 'answer' && questions[idx]?.answerType !== 'choice') {
         e.preventDefault();
         submit(root.querySelector('#answer')?.value);
       } else if (phase === 'feedback') {
@@ -425,6 +597,8 @@ export async function runQuiz(root, ctx, opts) {
 export function storedQuestion(r, withOrigin) {
   return {
     seed: r.q.seed, prompt: r.q.prompt, answer: r.q.answer, userAnswer: r.userAnswer, correct: r.correct,
+    // Multi-part: answer/userAnswer are { [partId]: value } objects, plus per-part results.
+    ...(Array.isArray(r.parts) ? { parts: r.parts.map(p => ({ id: p.id, label: p.label, correct: !!p.correct })) } : {}),
     ...(r.q.explanation ? { explanation: r.q.explanation } : {}),
     ...(withOrigin ? { module: r.q.module, subtopic: r.q.subtopic, difficulty: r.q.difficulty } : {}),
     ...(r.work && r.work.length ? { work: r.work.slice(0, 30) } : {}),
@@ -461,16 +635,45 @@ export function moduleBreakdown(qs, titleFor) {
   </section>`;
 }
 
+const isPlainObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+const ownVal = (o, k) => (isPlainObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
+
+// Part-by-part results: ✓/✗ with icon + label, the user's value, and the correct value when wrong.
+// `parts` = [{ id, label, correct }] (labels/values may come from imported data: escaped).
+// `defs` (optional) = full part definitions; only their labels are used as a fallback.
+export function partListHtml(defs, parts, userAnswer, answer, cls = '') {
+  const list = Array.isArray(parts) && parts.length ? parts
+    : (Array.isArray(defs) ? defs.map(d => ({ id: d.id, label: d.label, correct: null })) : []);
+  return `<ul class="part-results ${cls}">${list.map(p => {
+    const ok = p.correct === true;
+    const known = typeof p.correct === 'boolean';
+    const mine = ownVal(userAnswer, p.id);
+    const right = ownVal(answer, p.id);
+    const mark = known
+      ? `${icon(ok ? 'circle-check' : 'circle-x')}<span class="sr-only">${ok ? 'Correct' : 'Incorrect'}</span>`
+      : '';
+    return `<li class="part-result ${known ? (ok ? 'good' : 'bad') : ''}">
+      <span class="part-result-mark">${mark}</span>
+      <span class="part-result-body"><span class="part-result-label">${esc(p.label || p.id)}</span>
+        <span class="part-result-values">${mine === undefined ? '' : `Your answer: <strong>${esc(String(mine) === '' ? '(blank)' : String(mine))}</strong>`}${!ok && right !== undefined ? `${mine === undefined ? '' : ' · '}Correct: <strong>${renderInline(String(right))}</strong>` : ''}</span></span>
+    </li>`;
+  }).join('')}</ul>`;
+}
+
 export function reviewItem(r, showTag = false) {
   const q = r.q ?? r;
   const answer = q.answer;
+  const multi = isPlainObj(answer) || isPlainObj(r.userAnswer);
+  const answers = multi
+    ? partListHtml(q.parts, r.parts ?? q.parts, r.userAnswer, answer, 'review-parts')
+    : `<p class="review-answers">Your answer: <strong>${esc(r.userAnswer === '' ? '(blank)' : String(r.userAnswer ?? ''))}</strong>
+        ${r.correct ? '' : ` · Correct: <strong>${renderInline(String(answer ?? ''))}</strong>`}</p>`;
   return `<li class="review-item ${r.correct ? 'good' : 'bad'}">
     <div class="review-mark">${icon(r.correct ? 'circle-check' : 'circle-x')}<span class="sr-only">${r.correct ? 'Correct' : 'Incorrect'}</span></div>
     <div class="review-body">
       ${showTag ? questionTag(q) : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
-      <p class="review-answers">Your answer: <strong>${esc(r.userAnswer === '' ? '(blank)' : r.userAnswer)}</strong>
-        ${r.correct ? '' : ` · Correct: <strong>${renderInline(String(answer ?? ''))}</strong>`}</p>
+      ${answers}
       ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
       ${workHtml(r.work ?? q.work)}
     </div>

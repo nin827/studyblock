@@ -111,6 +111,101 @@ function checkDifficulty(difficulty) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Multi-part questions (answerType "multi"): one scenario, a calculation part or two, and usually a
+// Recommendation that follows a rule stated in the prompt, so there is exactly one right answer.
+// params.parts lists how verify() rechecks each part: { id, kind, fmt } for numbers (same checks as
+// single questions) or { id, rec } for a recommendation, which verify() recomputes from the values.
+
+const YES = "Yes";
+const NO = "No";
+const INVEST = "Invest";
+const PASS = "Don't invest";
+const HEALTHY = "Healthy";
+const UNHEALTHY = "Not healthy";
+const HEALTHY_MIN = 3; // LTV:CAC rule used in unit-economics recommendations
+const REC_CHOICES = { demand: [YES, NO], invest: [INVEST, PASS], health: [HEALTHY, UNHEALTHY] };
+
+function numPart(id, label, ask, exact, fmt) {
+  const rounded = fmt === "2dp";
+  return { id, label, ask, answerType: "number", answer: rounded ? round2(exact) : exact, tolerance: rounded ? 0.005 : 0 };
+}
+
+function recPart(ask, answer, choices) {
+  return { id: "rec", label: "Recommendation", ask, answerType: "choice", answer, choices: choices.slice() };
+}
+
+function multiQuestion(prompt, parts, specs, explanation, params) {
+  return { prompt, answerType: "multi", parts, explanation, params: { ...params, multi: true, parts: specs } };
+}
+
+// A whole number `delta` away from n (never equal), on the side picked by `above`.
+function awayFrom(n, rng, minGap) {
+  const delta = Math.max(minGap, Math.round((n * rng.int(8, 30)) / 100));
+  const above = rng.next() < 0.5 || n - delta < 1;
+  return above ? n + delta : n - delta;
+}
+
+// Break-even as two parts: units + revenue, or units/revenue + "is expected demand enough?".
+function breakEvenMulti({ s, kind, scen, ask, exact, fmt, unit, lines, intro, values, beUnits, rng }) {
+  const roundUp = ` Round up to whole ${s.units}.`;
+  const v = { ...values };
+  const L = lines.slice();
+  let prompt = scen;
+  let parts, specs, tail = "";
+
+  if (kind === "revenue") {
+    parts = [
+      numPart("units", "Break-even units", `How many ${s.units} must it sell each month to break even?${roundUp}`, beUnits, "int"),
+      numPart("revenue", "Break-even revenue", `What monthly revenue is that, in dollars? Multiply the rounded-up quantity by the price.${DP2}`, exact, "2dp"),
+    ];
+    specs = [{ id: "units", kind: "units", fmt: "int" }, { id: "revenue", kind: "revenue", fmt: "2dp" }];
+  } else if (kind === "units" && v.C !== undefined && rng.next() < 0.5) {
+    // Easy: units, then the revenue at that quantity (whole dollars).
+    const rev = exact * v.P;
+    L.push(step("_revenue", "_units * _price", final(rev, "int", "money")));
+    parts = [
+      numPart("units", "Break-even units", ask, exact, "int"),
+      numPart("revenue", "Break-even revenue", "What monthly revenue is that, in dollars? Multiply the break-even quantity by the price.", rev, "int"),
+    ];
+    specs = [{ id: "units", kind: "units", fmt: "int" }, { id: "revenue", kind: "revenue", fmt: "int" }];
+  } else if (kind === "revenue-ratio") {
+    const S = 100 * awayFrom(Math.round(exact / 100), rng, 1); // expected sales, whole hundreds, ≥ $50 away
+    const enough = S >= exact;
+    v.S = S;
+    prompt += ` The owner expects sales of ${cash(S)} a month. Sales are enough if they are at least the break-even revenue.`;
+    L.push(given("_expected", mv(S)));
+    tail = `\n\n\`_expected\` (${cash(S)}) is ${enough ? "at least" : "below"} \`_be_revenue\` (${cash(exact)}), so the answer is **${enough ? YES : NO}**.`;
+    parts = [
+      numPart("revenue", "Break-even revenue", ask, exact, "int"),
+      recPart(`Are the expected sales of ${cash(S)} enough to break even?`, enough ? YES : NO, REC_CHOICES.demand),
+    ];
+    specs = [{ id: "revenue", kind, fmt: "int" }, { id: "rec", rec: "demand-revenue" }];
+  } else {
+    // units / target-units / price-change: the quantity, then whether expected demand reaches it.
+    const target = kind === "target-units";
+    const D = awayFrom(exact, rng, 3);
+    const enough = D >= exact;
+    v.D = D;
+    const goal = target ? "the quantity needed for the target profit" : "the break-even quantity";
+    prompt +=
+      ` The owner expects to sell ${D} ${s.units} a month${kind === "price-change" ? " at the new price" : ""}. ` +
+      `Demand is enough if it is at least ${goal}.`;
+    L.push(given("_demand", D));
+    tail = `\n\n\`_demand\` (${D}) is ${enough ? "at least" : "below"} \`_units\` (${exact}), so the answer is **${enough ? YES : NO}**.`;
+    parts = [
+      numPart("units", target ? "Target units" : "Break-even units", ask, exact, "int"),
+      recPart(
+        `Is the expected demand of ${D} ${s.units} enough to ${target ? "reach the profit target" : "break even"}?`,
+        enough ? YES : NO,
+        REC_CHOICES.demand
+      ),
+    ];
+    specs = [{ id: "units", kind, fmt: "int" }, { id: "rec", rec: "demand-units" }];
+  }
+  return multiQuestion(prompt, parts, specs, explain(intro, L) + tail, { kind, values: v, fmt });
+}
+
 // A multiple of `step` (cents) inside [lo, hi] dollars.
 function priceC(rng, range, stepC) {
   const lo = Math.ceil((range[0] * 100) / stepC);
@@ -199,7 +294,9 @@ function genBreakEven(difficulty, rng) {
   );
   const roundUp = ` Round up to whole ${s.units}.`;
   const vol = () => rng.int(s.vol[0], s.vol[1]);
-  let prompt, exact, fmt, unit, lines, intro, candidates, values;
+  // Decided up front so a seed always gives the same question.
+  const wantMulti = rng.next() < 0.6;
+  let scen, ask, exact, fmt, unit, lines, intro, candidates, values, beUnits;
 
   if (difficulty === "easy" && kind === "units") {
     const P = rng.int(s.price[0], s.price[1]);
@@ -211,9 +308,10 @@ function genBreakEven(difficulty, rng) {
     fmt = "int";
     unit = s.units;
     values = { P, C, F };
-    prompt =
+    scen =
       `${s.biz} sells ${s.sells} for ${cash(P)} per ${s.unit}. Each ${s.unit} costs ${cash(C)} in variable costs, ` +
-      `and fixed costs are ${cash(F)} per month. How many ${s.units} must it sell each month to break even?${roundUp}`;
+      `and fixed costs are ${cash(F)} per month.`;
+    ask = `How many ${s.units} must it sell each month to break even?${roundUp}`;
     intro = "Each unit sold covers its own cost and leaves the contribution margin toward fixed costs. Break-even units = fixed costs ÷ margin, rounded up.";
     lines = [
       given("_price", mv(P)),
@@ -230,9 +328,10 @@ function genBreakEven(difficulty, rng) {
     fmt = "int";
     unit = "money";
     values = { F, r };
-    prompt =
+    scen =
       `${s.biz} has a contribution margin ratio of ${r}%: each $1 of sales leaves $${(r / 100).toFixed(2)} after variable costs. ` +
-      `Its fixed costs are ${cash(F)} per month. What monthly revenue, in dollars, does it need to break even?`;
+      `Its fixed costs are ${cash(F)} per month.`;
+    ask = "What monthly revenue, in dollars, does it need to break even?";
     intro = "Break-even revenue = fixed costs ÷ contribution margin ratio (as a decimal).";
     lines = [
       given("_fixed", mv(F)),
@@ -261,13 +360,14 @@ function genBreakEven(difficulty, rng) {
     fmt = "int";
     unit = s.units;
     values = { P: Pc / 100, costs: [a / 100, b / 100], F, T };
-    prompt =
+    scen =
       `${s.biz} sells ${s.sells} for ${cash(Pc / 100)} per ${s.unit}. Variable costs per ${s.unit} are ${cash(a / 100)} for ${pa[0]} ` +
       `and ${cash(b / 100)} for ${pb[0]}. Fixed costs are ${cash(F)} per month.` +
+      (target ? ` The owner wants a profit of ${cash(T)} per month after fixed costs.` : "");
+    ask =
       (target
-        ? ` The owner wants a profit of ${cash(T)} per month after fixed costs. How many ${s.units} must it sell each month to reach that profit?`
-        : ` How many ${s.units} must it sell each month to break even?`) +
-      roundUp;
+        ? `How many ${s.units} must it sell each month to reach that profit?`
+        : `How many ${s.units} must it sell each month to break even?`) + roundUp;
     intro = target
       ? "To earn a target profit, the margin has to cover fixed costs plus the target. Units = (fixed + target) ÷ margin, rounded up so the target is reached."
       : "Add the variable costs, find the margin per unit, then divide fixed costs by it. Round up: one unit short is still a loss.";
@@ -294,10 +394,13 @@ function genBreakEven(difficulty, rng) {
     fmt = "2dp";
     unit = "money";
     values = { P: Pc / 100, C: Cc / 100, F };
-    prompt =
+    scen =
       `${s.biz} sells ${s.sells} for ${cash(Pc / 100)} per ${s.unit}. Each ${s.unit} costs ${cash(Cc / 100)} in variable costs, ` +
-      `and fixed costs are ${cash(F)} per month. What monthly revenue does it need to break even, in dollars? ` +
+      `and fixed costs are ${cash(F)} per month.`;
+    ask =
+      `What monthly revenue does it need to break even, in dollars? ` +
       `First round the break-even quantity up to whole ${s.units}, then multiply by the price.${DP2}`;
+    beUnits = N;
     intro = "Find the break-even quantity (rounded up to whole units), then turn it into revenue.";
     lines = [
       given("_price", mv(Pc / 100)),
@@ -327,10 +430,11 @@ function genBreakEven(difficulty, rng) {
     fmt = "int";
     unit = s.units;
     values = { P: Pc / 100, u, C: Cc / 100, F };
-    prompt =
+    scen =
       `${s.biz} sells ${s.sells} for ${cash(Pc / 100)} per ${s.unit}. Each ${s.unit} costs ${cash(Cc / 100)} in variable costs, ` +
       `and fixed costs are ${cash(F)} per month. The owner plans to ${up ? "raise" : "cut"} the price by ${Math.abs(u)}%, ` +
-      `with costs unchanged. What will the new monthly break-even quantity be?${roundUp}`;
+      `with costs unchanged.`;
+    ask = `What will the new monthly break-even quantity be?${roundUp}`;
     intro = `Apply the price ${up ? "rise" : "cut"} first, then find the new margin and break-even quantity.`;
     lines = [
       given("_price", mv(Pc / 100)),
@@ -354,9 +458,10 @@ function genBreakEven(difficulty, rng) {
     fmt = "2dp";
     unit = "money";
     values = { P: Pc / 100, C: Cc / 100, F, T };
-    prompt =
+    scen =
       `${s.biz} sells ${s.sells} for ${cash(Pc / 100)} per ${s.unit}, and each ${s.unit} costs ${cash(Cc / 100)} in variable costs. ` +
-      `Fixed costs are ${cash(F)} per month, and the owner wants a monthly profit of ${cash(T)}. ` +
+      `Fixed costs are ${cash(F)} per month, and the owner wants a monthly profit of ${cash(T)}.`;
+    ask =
       `What monthly revenue, in dollars, reaches that profit? Use revenue = (fixed costs + target profit) ÷ contribution margin ratio, without rounding to whole ${s.units}.${DP2}`;
     intro = "The contribution margin ratio is the share of each sales dollar left after variable costs. Divide what must be covered by that share.";
     lines = [
@@ -371,7 +476,10 @@ function genBreakEven(difficulty, rng) {
     candidates = [(F * Pc) / mC, ((F + T) * Pc) / Cc, ((F + T) * mC) / Pc]; // forgot the target, used the cost ratio, multiplied
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { kind, values, fmt } };
+  if (wantMulti && kind !== "target-revenue") {
+    return breakEvenMulti({ s, kind, scen, ask, exact, fmt, unit, lines, intro, values, beUnits, rng });
+  }
+  const base = { prompt: `${scen} ${ask}`, explanation: explain(intro, lines), params: { kind, values, fmt } };
   return finish(base, exact, fmt, candidates, rng);
 }
 
@@ -380,10 +488,14 @@ function genBreakEven(difficulty, rng) {
 
 function genUnitEconomics(difficulty, rng) {
   checkDifficulty(difficulty);
-  const kind = rng.pick(
-    difficulty === "hard" ? ["churn-ltv", "churn-ratio", "max-cac"] : ["cm-ratio", "ltv", "ltv-cac"]
-  );
-  let prompt, exact, fmt, unit, lines, intro, candidates, values;
+  // About half are multi-part (LTV + LTV:CAC + Recommendation, or LTV + max CAC).
+  const wantMulti = rng.next() < 0.5;
+  const kind = wantMulti
+    ? (difficulty === "hard" ? rng.pick(["churn-ratio", "churn-ratio", "max-cac"]) : "ltv-cac")
+    : rng.pick(difficulty === "hard" ? ["churn-ltv", "churn-ratio", "max-cac"] : ["cm-ratio", "ltv", "ltv-cac"]);
+  // Keep multi-part ratios clearly away from the healthy threshold, so rounding never flips it.
+  const clearOfRule = (ratio) => !wantMulti || Math.abs(ratio - HEALTHY_MIN) >= 0.05;
+  let prompt, scen, ask, exact, fmt, unit, lines, intro, candidates, values, ltvExact, ltvFmt;
 
   if (kind === "cm-ratio") {
     const s = rng.pick(SHOPS);
@@ -477,15 +589,19 @@ function genUnitEconomics(difficulty, rng) {
       exact = r;
       fmt = "int";
       values = { Y, y, CAC };
-      prompt =
+      ltvExact = ltv;
+      ltvFmt = "int";
+      scen =
         `${biz} earns ${cash(Y)} of gross profit per customer each year, and customers stay ${years(y)} on average. ` +
-        `Winning a new customer costs ${cash(CAC)} in marketing (the CAC). What is the LTV:CAC ratio?${RATIO_NOTE}`;
+        `Winning a new customer costs ${cash(CAC)} in marketing (the CAC).`;
+      ask = `What is the LTV:CAC ratio?${RATIO_NOTE}`;
+      prompt = `${scen} ${ask}`;
       intro = "LTV:CAC compares what a customer is worth with what it cost to win them. Find LTV, then divide by CAC.";
       lines = [
         given("_yearly_profit", mv(Y)),
         given("_years", y),
         given("_cac", mv(CAC)),
-        step("_ltv", "_yearly_profit * _years", mv(ltv)),
+        step("_ltv", "_yearly_profit * _years", wantMulti ? final(ltv, "int", "money") : mv(ltv)),
         step("_ratio", "_ltv / _cac", final(exact, fmt, "")),
       ];
       candidates = [Y / CAC, CAC / ltv, ltv - CAC]; // one year, upside down, difference
@@ -493,14 +609,22 @@ function genUnitEconomics(difficulty, rng) {
       const Xc = rng.int(500, 4000);
       const k = rng.int(2, 12);
       const y = rng.int(2, 5);
-      const CAC = Math.max(20, Math.round((Xc * k * y) / rng.int(80, 600))); // keeps the ratio roughly 0.8-6
+      let CAC;
+      for (let i = 0; i < 50; i++) {
+        CAC = Math.max(20, Math.round((Xc * k * y) / rng.int(80, 600))); // keeps the ratio roughly 0.8-6
+        if (clearOfRule((Xc * k * y) / (100 * CAC))) break;
+      }
       const X = Xc / 100;
       exact = (Xc * k * y) / (100 * CAC);
       fmt = "2dp";
       values = { X, k, y, CAC };
-      prompt =
+      ltvExact = (Xc * k * y) / 100;
+      ltvFmt = "2dp";
+      scen =
         `${biz} makes ${cash(X)} of gross profit per order. A typical customer orders ${k} times a year and stays ${years(y)}, ` +
-        `and acquiring a customer costs ${cash(CAC)}. What is the LTV:CAC ratio?${RATIO_NOTE}${DP2}`;
+        `and acquiring a customer costs ${cash(CAC)}.`;
+      ask = `What is the LTV:CAC ratio?${RATIO_NOTE}${DP2}`;
+      prompt = `${scen} ${ask}`;
       intro = "Build LTV from profit per order, then compare it with the acquisition cost.";
       lines = [
         given("_order_profit", mv(X)),
@@ -508,7 +632,7 @@ function genUnitEconomics(difficulty, rng) {
         given("_years", y),
         given("_cac", mv(CAC)),
         step("_yearly_profit", "_order_profit * _orders", mv(X * k)),
-        step("_ltv", "_yearly_profit * _years", mv(X * k * y)),
+        step("_ltv", "_yearly_profit * _years", wantMulti ? final(ltvExact, "2dp", "money") : mv(X * k * y)),
         step("_ratio", "_ltv / _cac", final(exact, fmt, "")),
       ];
       candidates = [(Xc * k) / (100 * CAC), (100 * CAC) / (Xc * k * y), (Xc * y) / (100 * CAC)]; // one year, upside down, forgot orders
@@ -541,24 +665,68 @@ function genUnitEconomics(difficulty, rng) {
       lines.push(step("_ltv", "_monthly_profit * _lifetime", final(exact, fmt, unit)));
       candidates = [(fee * 100) / c, (fee * g * c) / 10000, ltv * 12]; // forgot the margin, multiplied by churn, ×12
     } else if (kind === "churn-ratio") {
-      const CAC = Math.max(50, Math.round((ltv * 10) / rng.int(8, 60))); // keeps the ratio roughly 0.8-6
+      let CAC;
+      for (let i = 0; i < 50; i++) {
+        CAC = Math.max(50, Math.round((ltv * 10) / rng.int(8, 60))); // keeps the ratio roughly 0.8-6
+        if (clearOfRule(ltv / CAC)) break;
+      }
       values.CAC = CAC;
       exact = ltv / CAC;
       unit = "";
-      prompt += ` It spends ${cash(CAC)} to acquire each customer. What is the LTV:CAC ratio?${RATIO_NOTE}${DP2}`;
+      scen = `${prompt} It spends ${cash(CAC)} to acquire each customer.`;
+      ask = `What is the LTV:CAC ratio?${RATIO_NOTE}${DP2}`;
+      prompt = `${scen} ${ask}`;
       lines.splice(3, 0, given("_cac", mv(CAC)));
-      lines.push(step("_ltv", "_monthly_profit * _lifetime", num(ltv)), step("_ratio", "_ltv / _cac", final(exact, fmt, unit)));
+      lines.push(
+        step("_ltv", "_monthly_profit * _lifetime", wantMulti ? final(ltv, "2dp", "money") : num(ltv)),
+        step("_ratio", "_ltv / _cac", final(exact, fmt, unit))
+      );
       candidates = [(fee * 100) / c / CAC, CAC / ltv, (fee * g) / 100 / CAC]; // forgot the margin, upside down, one month only
     } else {
       const t = rng.pick([3, 4, 5]);
       values.t = t;
       exact = ltv / t;
       unit = "money";
-      prompt += ` Its investors want an LTV:CAC ratio of at least ${t}:1. What is the most it can spend to acquire one customer, in dollars?${DP2}`;
+      scen = `${prompt} Its investors want an LTV:CAC ratio of at least ${t}:1.`;
+      ask = `What is the most it can spend to acquire one customer, in dollars?${DP2}`;
+      prompt = `${scen} ${ask}`;
       lines.splice(3, 0, given("_target", t));
-      lines.push(step("_ltv", "_monthly_profit * _lifetime", num(ltv)), step("_max_cac", "_ltv / _target", final(exact, fmt, unit)));
+      lines.push(
+        step("_ltv", "_monthly_profit * _lifetime", wantMulti ? final(ltv, "2dp", "money") : num(ltv)),
+        step("_max_cac", "_ltv / _target", final(exact, fmt, unit))
+      );
       candidates = [ltv * t, (fee * 100) / c / t, ltv]; // multiplied, forgot the margin, LTV itself
     }
+  }
+
+  if (wantMulti) {
+    const churn = kind !== "ltv-cac";
+    if (churn) {
+      ltvExact = (values.fee * values.g) / values.c;
+      ltvFmt = "2dp";
+    }
+    const parts = [
+      numPart("ltv", "LTV", `What is the customer lifetime value (LTV) in gross profit, in dollars?${ltvFmt === "2dp" ? DP2 : ""}`, ltvExact, ltvFmt),
+    ];
+    const specs = [{ id: "ltv", kind: churn ? "churn-ltv" : "ltv-total", fmt: ltvFmt }];
+    let mPrompt = scen;
+    let tail = "";
+    const L = lines.slice();
+    if (kind === "max-cac") {
+      parts.push(numPart("max-cac", "Max CAC", ask, exact, fmt));
+      specs.push({ id: "max-cac", kind, fmt });
+    } else {
+      const healthy = exact >= HEALTHY_MIN - 1e-9;
+      parts.push(numPart("ratio", "LTV:CAC", ask, exact, fmt));
+      parts.push(recPart("Are its unit economics healthy?", healthy ? HEALTHY : UNHEALTHY, REC_CHOICES.health));
+      specs.push({ id: "ratio", kind, fmt }, { id: "rec", rec: "health" });
+      mPrompt += ` It treats its unit economics as healthy if LTV:CAC is at least ${HEALTHY_MIN}:1.`;
+      L.push(given("_healthy_min", HEALTHY_MIN));
+      tail =
+        `\n\n\`_ratio\` (${fmtAns(exact, fmt === "2dp")}) is ${healthy ? "at least" : "below"} \`_healthy_min\` (${HEALTHY_MIN}), ` +
+        `so the answer is **${healthy ? HEALTHY : UNHEALTHY}**.`;
+    }
+    return multiQuestion(mPrompt, parts, specs, explain(intro, L) + tail, { kind, values, fmt });
   }
 
   const base = { prompt, explanation: explain(intro, lines), params: { kind, values, fmt } };
@@ -572,7 +740,9 @@ function genInvestment(difficulty, rng) {
   checkDifficulty(difficulty);
   const p = rng.pick(PROJECTS);
   const kind = rng.pick(difficulty === "easy" ? ["roi", "payback"] : ["roi", "payback", "npv"]);
-  let prompt, exact, fmt, unit, lines, intro, candidates, values;
+  // About half are multi-part: the figure plus an invest / don't-invest Recommendation by a stated rule.
+  const wantMulti = rng.next() < 0.5;
+  let scen, ask, exact, fmt, unit, lines, intro, candidates, values;
 
   if (kind === "roi" && difficulty === "easy") {
     const cost = 1000 * rng.int(2, 20);
@@ -582,9 +752,9 @@ function genInvestment(difficulty, rng) {
     fmt = "int";
     unit = "pct";
     values = { costs: [cost], yearly: ret, years: 1, resale: 0 };
-    prompt =
-      `${p.biz} spends ${cash(cost)} on ${p.asset}. Over the next few years the investment brings in ${cash(ret)} of extra profit in total. ` +
-      `What is the return on investment (ROI)? Use ROI = (extra profit - cost) ÷ cost × 100.${PCT_NOTE}`;
+    scen =
+      `${p.biz} spends ${cash(cost)} on ${p.asset}. Over the next few years the investment is expected to bring in ${cash(ret)} of extra profit in total.`;
+    ask = `What is the return on investment (ROI)? Use ROI = (extra profit - cost) ÷ cost × 100.${PCT_NOTE}`;
     intro = "ROI measures the net gain as a percent of what was spent.";
     lines = [
       given("_cost", mv(cost)),
@@ -613,10 +783,11 @@ function genInvestment(difficulty, rng) {
     fmt = "2dp";
     unit = "pct";
     values = { costs: [price, install], yearly, years: y, resale };
-    prompt =
+    scen =
       `${p.biz} buys ${p.asset} for ${cash(price)}, plus ${cash(install)} to install it. It expects ${cash(yearly)} of extra profit a year for ${years(y)}` +
       (resale > 0 ? `, and then to sell it for ${cash(resale)}` : "") +
-      `. What is the ROI over that period? Use ROI = (total return - total cost) ÷ total cost × 100.${PCT_NOTE}${DP2}`;
+      ".";
+    ask = `What is the ROI over that period? Use ROI = (total return - total cost) ÷ total cost × 100.${PCT_NOTE}${DP2}`;
     intro = "Add up everything spent and everything earned back, then compare the net gain with the total cost.";
     lines = [given("_price", mv(price)), given("_install", mv(install)), given("_yearly", mv(yearly)), given("_years", y)];
     if (resale > 0) lines.push(given("_resale", mv(resale)));
@@ -640,9 +811,8 @@ function genInvestment(difficulty, rng) {
       exact = Y;
       fmt = "int";
       values = { cost, inflow: extra, monthly: false, upkeep };
-      prompt =
-        `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(extra)} of profit a year but costs ${cash(upkeep)} a year to maintain. ` +
-        `How many years will it take to earn back the cost? Assume the yearly amounts stay the same.`;
+      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(extra)} of profit a year but costs ${cash(upkeep)} a year to maintain.`;
+      ask = "How many years will it take to earn back the cost? Assume the yearly amounts stay the same.";
       intro = "Payback period = cost ÷ net cash coming in each year.";
       lines = [
         given("_cost", mv(cost)),
@@ -672,9 +842,8 @@ function genInvestment(difficulty, rng) {
       exact = cost / net;
       fmt = "2dp";
       values = { cost, inflow: M, monthly: true, upkeep: U };
-      prompt =
-        `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(M)} of profit a month and costs ${cash(U)} a year to maintain. ` +
-        `How many years will it take to earn back the cost? Assume the profit comes in evenly through the year.${DP2}`;
+      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(M)} of profit a month and costs ${cash(U)} a year to maintain.`;
+      ask = `How many years will it take to earn back the cost? Assume the profit comes in evenly through the year.${DP2}`;
       intro = "Work in years: turn the monthly profit into a yearly one, take off upkeep, then divide the cost by the net.";
       lines = [
         given("_cost", mv(cost)),
@@ -690,20 +859,24 @@ function genInvestment(difficulty, rng) {
   } else {
     // NPV: medium 2 cash flows, hard 3. Cost at year 0, flows at the end of each year.
     const n = difficulty === "medium" ? 2 : 3;
-    let cost, r;
-    const flows = [];
-    if (difficulty === "medium") {
-      cost = 1000 * rng.int(10, 80);
-      r = rng.int(5, 12);
-      for (let i = 0; i < n; i++) flows.push(100 * Math.round((cost * rng.int(40, 75)) / 10000));
-    } else {
-      cost = rng.int(20000, 150000);
-      r = rng.int(40, 150) / 10;
-      for (let i = 0; i < n; i++) flows.push(rng.int(Math.round(cost * 0.25), Math.round(cost * 0.55)));
+    let cost, r, flows, f, pvs;
+    // A multi-part NPV keeps at least $1 away from zero, so the invest rule is never decided by rounding.
+    for (let tries = 0; tries < 50; tries++) {
+      flows = [];
+      if (difficulty === "medium") {
+        cost = 1000 * rng.int(10, 80);
+        r = rng.int(5, 12);
+        for (let i = 0; i < n; i++) flows.push(100 * Math.round((cost * rng.int(40, 75)) / 10000));
+      } else {
+        cost = rng.int(20000, 150000);
+        r = rng.int(40, 150) / 10;
+        for (let i = 0; i < n; i++) flows.push(rng.int(Math.round(cost * 0.25), Math.round(cost * 0.55)));
+      }
+      f = 1 + r / 100;
+      pvs = flows.map((cf, i) => cf / Math.pow(f, i + 1));
+      exact = pvs.reduce((a, b) => a + b, 0) - cost;
+      if (!wantMulti || Math.abs(exact) >= 1) break;
     }
-    const f = 1 + r / 100;
-    const pvs = flows.map((cf, i) => cf / Math.pow(f, i + 1));
-    exact = pvs.reduce((a, b) => a + b, 0) - cost;
     fmt = "2dp";
     unit = "money";
     values = { cost, r, flows };
@@ -711,8 +884,8 @@ function genInvestment(difficulty, rng) {
       n === 2
         ? `${cash(flows[0])} at the end of year 1 and ${cash(flows[1])} at the end of year 2`
         : `${cash(flows[0])}, ${cash(flows[1])} and ${cash(flows[2])} at the end of years 1, 2 and 3`;
-    prompt =
-      `${p.biz} is considering ${p.asset}, which costs ${cash(cost)} today. It is expected to bring in ${flowText}. ` +
+    scen = `${p.biz} is considering ${p.asset}, which costs ${cash(cost)} today. It is expected to bring in ${flowText}.`;
+    ask =
       `Using a ${num(r)}% discount rate, what is the net present value (NPV), in dollars? The cost is paid now and is not discounted.` +
       `${DP2} Use a negative number if the NPV is negative.`;
     intro = "Discount each cash flow back to today by (1 + rate)^year, add them up, and subtract the cost.";
@@ -727,8 +900,56 @@ function genInvestment(difficulty, rng) {
     candidates = [sum - cost, exact + cost, sum / f - cost]; // no discounting, forgot the cost, discounted one year only
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { kind, values, fmt } };
+  if (wantMulti) return investmentMulti({ kind, scen, ask, exact, fmt, lines, intro, values, rng });
+  const base = { prompt: `${scen} ${ask}`, explanation: explain(intro, lines), params: { kind, values, fmt } };
   return finish(base, exact, fmt, candidates, rng);
+}
+
+// Investment as two parts: the figure, then Invest / Don't invest by the rule in the prompt.
+function investmentMulti({ kind, scen, ask, exact, fmt, lines, intro, values, rng }) {
+  const v = { ...values };
+  const L = lines.slice();
+  let rule, invest, why;
+  const shown = fmtAns(exact, fmt === "2dp");
+  if (kind === "npv") {
+    invest = exact > 0;
+    rule = "The owner invests only if the NPV is positive.";
+    why = `\`_npv\` (${dress(shown, "money")}) is ${invest ? "positive" : "not positive"}`;
+  } else if (kind === "roi") {
+    // A hurdle rate in whole 5% steps, at least 1 point away from the ROI.
+    let H;
+    for (let i = 0; i < 20; i++) {
+      H = 5 * Math.max(1, Math.round((exact + (rng.next() < 0.5 ? -1 : 1) * rng.int(3, 20)) / 5));
+      if (Math.abs(exact - H) >= 1) break;
+    }
+    if (Math.abs(exact - H) < 1) H += 5;
+    v.hurdle = H;
+    invest = exact >= H;
+    rule = `The owner invests only if the ROI is at least ${H}%.`;
+    L.push(given("_hurdle", H));
+    why = `\`_roi\` (${shown}%) is ${invest ? "at least" : "below"} \`_hurdle\` (${H}%)`;
+  } else {
+    // payback: a whole-year limit, at least 0.1 years away from the payback period.
+    let T;
+    for (let i = 0; i < 20; i++) {
+      T = Math.max(1, Math.round(exact) + rng.pick([-2, -1, 1, 2]));
+      if (Math.abs(exact - T) >= 0.1) break;
+    }
+    if (Math.abs(exact - T) < 0.1) T += 1;
+    v.maxYears = T;
+    invest = exact <= T;
+    rule = `The owner invests only if the payback period is at most ${years(T)}.`;
+    L.push(given("_max_years", T));
+    why = `\`_payback\` (${shown} years) is ${invest ? "within" : "over"} \`_max_years\` (${T})`;
+  }
+  const label = kind === "npv" ? "NPV" : kind === "roi" ? "ROI" : "Payback period";
+  const parts = [
+    numPart(kind, label, ask, exact, fmt),
+    recPart("Should it invest?", invest ? INVEST : PASS, REC_CHOICES.invest),
+  ];
+  const specs = [{ id: kind, kind, fmt }, { id: "rec", rec: `invest-${kind}` }];
+  const tail = `\n\n${why}, so the answer is **${invest ? INVEST : PASS}**.`;
+  return multiQuestion(`${scen} ${rule}`, parts, specs, explain(intro, L) + tail, { kind, values: v, fmt });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -770,9 +991,11 @@ function genPricing(difficulty, rng) {
   checkDifficulty(difficulty);
   const hard = difficulty === "hard";
   const kind = rng.pick(hard ? ["price-raise", "make-buy", "suppliers"] : ["price-ab", "make-buy", "suppliers"]);
-  const mode = rng.next() < 0.5 ? "which" : "diff";
+  // Half multi-part (Calculation + Recommendation), a quarter each "which option" and "by how much".
+  const r0 = rng.next();
+  const mode = r0 < 0.5 ? "multi" : r0 < 0.75 ? "which" : "diff";
   // A real tie now and then, so "Same profit" is a live option (not for the percentage price rise).
-  const tie = mode === "which" && kind !== "price-raise" && rng.next() < 0.15;
+  const tie = mode !== "diff" && kind !== "price-raise" && rng.next() < 0.15;
   const fmt = mode === "which" ? "choice" : difficulty === "easy" ? "int" : "2dp";
   const [labelA, labelB] = LABELS[kind];
   let prompt, intro, lines, values, rowA, rowB;
@@ -946,6 +1169,34 @@ function genPricing(difficulty, rng) {
   const diffC = Math.abs(gA - gB);
   const params = { kind, mode, values, fmt };
 
+  if (mode === "multi") {
+    const answer = gA > gB ? labelA : gB > gA ? labelB : SAME;
+    const exactDiff = diffC / 100;
+    lines.push(step("_diff", `abs(${rowA[0]} - ${rowB[0]})`, final(exactDiff, fmt, "money")));
+    const better =
+      gA === gB
+        ? `\`${rowA[0]}\` and \`${rowB[0]}\` are equal, so the difference is 0 and the answer is **${SAME}**.`
+        : `\`${gA > gB ? rowA[0] : rowB[0]}\` is ${isCost ? "lower" : "higher"}, so the answer is **${answer}**.`;
+    const parts = [
+      numPart(
+        "calc",
+        "Calculation",
+        `How much more profit, in dollars, does the better option make? Enter 0 if they are equal.${fmt === "2dp" ? DP2 : ""}`,
+        exactDiff,
+        fmt
+      ),
+      recPart("Which option should it choose?", answer, rng.shuffle([labelA, labelB, SAME])),
+    ];
+    const specs = [{ id: "calc", kind, fmt }, { id: "rec", rec: "pricing" }];
+    return multiQuestion(
+      `${prompt} The owner chooses the option with the higher profit, or "${SAME}" if both give the same profit.`,
+      parts,
+      specs,
+      explain(intro, lines) + `\n\n${better}`,
+      params
+    );
+  }
+
   if (mode === "which") {
     const answer = gA > gB ? labelA : gB > gA ? labelB : SAME;
     const better =
@@ -991,10 +1242,16 @@ export function generate({ subtopic, difficulty, rng }) {
 // defining relation and the residual is compared with 0.005 × (how strongly it reacts to the
 // answer). NPV is rebuilt by discounting backwards year by year. Option questions recompute
 // both profits from revenue and total cost.
+//
+// Multi-part questions: `answer` is { [partId]: value }. Every number part goes through the same
+// checks as a single question, and every Recommendation is recomputed from the scenario values
+// (never from the submitted calculation), with a guard band around its threshold.
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.values) return false; // regenerate from the seed to get params back
   const k = p.values;
+
+  if (question.answerType === "multi" || p.multi) return verifyMulti(question, answer);
 
   if (p.fmt === "choice") {
     const labels = LABELS[p.kind];
@@ -1013,6 +1270,136 @@ export function verify(question, answer) {
     if (!ch.includes(String(answer))) return false;
   }
 
+  if (p.fmt === "2dp" && !wellPosed2dp(p.kind, k, question.answer)) return false;
+  return verifyValue(p.kind, p.fmt, k, answer);
+}
+
+// A 2-decimal question is only well posed when exactly one 2-decimal answer passes: if the exact
+// value sits on a half cent, both neighbours would, so reject it (the engine regenerates).
+function wellPosed2dp(kind, k, own) {
+  const a = Number(own);
+  if (!Number.isFinite(a)) return false;
+  for (const d of [-0.01, 0.01]) {
+    if (verifyValue(kind, "2dp", k, Math.round((a + d) * 100) / 100)) return false;
+  }
+  return true;
+}
+
+function verifyMulti(question, answer) {
+  const p = question.params;
+  const k = p.values;
+  const parts = question.parts;
+  const specs = p.parts;
+  if (question.answerType !== "multi" || !p.multi || !Array.isArray(parts) || !Array.isArray(specs)) return false;
+  if (parts.length < 2 || parts.length > 4 || parts.length !== specs.length) return false;
+  if (!answer || typeof answer !== "object" || Array.isArray(answer)) return false;
+  if (Object.keys(answer).length !== parts.length) return false;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    const spec = specs[i];
+    if (!part || !spec || part.id !== spec.id || !Object.prototype.hasOwnProperty.call(answer, spec.id)) return false;
+    const value = answer[spec.id];
+    if (spec.rec) {
+      if (part.answerType !== "choice" || !recOk(spec.rec, p.kind, k, part.choices, value)) return false;
+    } else {
+      if (part.answerType !== "number" || !verifyValue(spec.kind, spec.fmt, k, value)) return false;
+      if (spec.fmt === "2dp" && !wellPosed2dp(spec.kind, k, part.answer)) return false;
+    }
+  }
+  return true;
+}
+
+// The one right Recommendation, recomputed from the values; null inside a guard band where
+// rounding could blur the rule (the generator never produces those).
+function recExpected(rec, kind, k) {
+  switch (rec) {
+    case "pricing": {
+      const g = optionProfitsC(kind, k);
+      if (!g || !g.every(Number.isFinite)) return null;
+      const labels = LABELS[kind];
+      return g[0] > g[1] ? labels[0] : g[1] > g[0] ? labels[1] : SAME;
+    }
+    case "demand-units": {
+      // Expected demand D covers the need iff D × margin ≥ fixed (+ target), in whole cents.
+      let marginC, needC;
+      if (kind === "price-change") {
+        marginC = Math.round((toC(k.P) * (100 + k.u)) / 100) - toC(k.C);
+        needC = toC(k.F);
+      } else {
+        const costC = k.costs ? k.costs.reduce((s, c) => s + toC(c), 0) : toC(k.C);
+        marginC = toC(k.P) - costC;
+        needC = toC(k.F) + (kind === "target-units" ? toC(k.T) : 0);
+      }
+      if (!(marginC > 0 && needC > 0 && Number.isInteger(k.D) && k.D > 0)) return null;
+      return k.D * marginC >= needC ? YES : NO;
+    }
+    case "demand-revenue": {
+      // Sales S break even iff S × r% ≥ F.
+      if (!(k.S > 0 && k.r > 0)) return null;
+      const diff = k.S * k.r - 100 * k.F;
+      if (Math.abs(diff) < 1e-6 * k.r) return YES;
+      return diff > 0 ? YES : NO;
+    }
+    case "invest-npv": {
+      const f = 1 + k.r / 100;
+      if (!(f > 0) || !Array.isArray(k.flows)) return null;
+      let v = 0;
+      for (let i = k.flows.length - 1; i >= 0; i--) v = (v + k.flows[i]) / f;
+      const npv = v - k.cost;
+      if (Math.abs(npv) < 0.5) return null;
+      return npv > 0 ? INVEST : PASS;
+    }
+    case "invest-roi": {
+      const cost = k.costs.reduce((s, c) => s + c, 0);
+      if (!(cost > 0) || !Number.isFinite(k.hurdle)) return null;
+      const gainPct = ((k.yearly * k.years + k.resale - cost) * 100) / cost;
+      if (Math.abs(gainPct - k.hurdle) < 0.5) return null;
+      return gainPct >= k.hurdle ? INVEST : PASS;
+    }
+    case "invest-payback": {
+      const net = (k.monthly ? k.inflow * 12 : k.inflow) - k.upkeep;
+      if (!(net > 0) || !Number.isFinite(k.maxYears)) return null;
+      // payback ≤ limit ⇔ cost ≤ limit × net
+      const slack = k.maxYears * net - k.cost;
+      if (Math.abs(slack) < 0.05 * net) return null;
+      return slack > 0 ? INVEST : PASS;
+    }
+    case "health": {
+      let ltv, cac;
+      if (kind === "ltv-cac") {
+        ltv = k.Y !== undefined ? k.Y * k.y : k.X * k.k * k.y;
+        cac = k.CAC;
+      } else {
+        if (!(k.c > 0)) return null;
+        ltv = (k.fee * k.g) / k.c;
+        cac = k.CAC;
+      }
+      if (!(cac > 0) || !Number.isFinite(ltv)) return null;
+      const ratio = ltv / cac;
+      const gap = ratio - HEALTHY_MIN;
+      if (Math.abs(gap) <= 1e-9) return HEALTHY; // exactly the threshold: "at least" includes it
+      if (Math.abs(gap) < 0.02) return null;
+      return gap > 0 ? HEALTHY : UNHEALTHY;
+    }
+    default:
+      return null;
+  }
+}
+
+function recOk(rec, kind, k, choices, value) {
+  const want =
+    rec === "pricing" ? (LABELS[kind] ? [...LABELS[kind], SAME] : null)
+      : rec === "health" ? REC_CHOICES.health
+        : rec.startsWith("invest-") ? REC_CHOICES.invest
+          : REC_CHOICES.demand;
+  if (!want || !Array.isArray(choices) || choices.length !== want.length) return false;
+  if (new Set(choices).size !== want.length || !want.every((c) => choices.includes(c))) return false;
+  const expected = recExpected(rec, kind, k);
+  return expected !== null && String(value) === expected;
+}
+
+// Checks one numeric answer for a question kind (shared by single questions and multi parts).
+function verifyValue(kind, fmt, k, answer) {
   if (answer === "" || answer === null || answer === undefined) return false;
   const x = Number(answer);
   if (!Number.isFinite(x)) return false;
@@ -1022,7 +1409,7 @@ export function verify(question, answer) {
     marginC > 0 && needC > 0 && Number.isInteger(x) && x * marginC >= needC && (x - 1) * marginC < needC;
 
   let residual, sens;
-  switch (p.kind) {
+  switch (kind) {
     case "units": {
       const costC = k.costs ? k.costs.reduce((s, c) => s + toC(c), 0) : toC(k.C);
       return coversExactly(toC(k.P) - costC, toC(k.F));
@@ -1074,6 +1461,10 @@ export function verify(question, answer) {
         residual = (x * 100) / (k.k * k.y) - k.A * k.g; // back to margin on one order
         sens = 100 / (k.k * k.y);
       }
+      break;
+    case "ltv-total": // LTV part of an LTV:CAC multi-part question, rebuilt from its inputs
+      residual = x - (k.Y !== undefined ? k.Y * k.y : k.X * k.k * k.y);
+      sens = 1;
       break;
     case "ltv-cac": {
       const ltv = k.Y !== undefined ? k.Y * k.y : k.X * k.k * k.y;
@@ -1127,7 +1518,7 @@ export function verify(question, answer) {
     case "price-raise":
     case "make-buy":
     case "suppliers": {
-      const g = optionProfitsC(p.kind, k);
+      const g = optionProfitsC(kind, k);
       if (!g || !g.every(Number.isFinite)) return false;
       residual = x * 100 - Math.abs(g[0] - g[1]);
       sens = 100;
@@ -1137,6 +1528,6 @@ export function verify(question, answer) {
       return false;
   }
   if (!Number.isFinite(residual)) return false;
-  if (p.fmt === "2dp") return Math.abs(residual) <= 0.005 * sens + 1e-6;
+  if (fmt === "2dp") return Math.abs(residual) <= 0.005 * sens + 1e-6;
   return Number.isInteger(x) && Math.abs(residual) <= 1e-6 * Math.max(1, sens);
 }

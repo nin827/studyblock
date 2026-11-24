@@ -1,0 +1,14 @@
+{
+  "id": "continents",
+  "title": "Continents and Oceans",
+  "description": "Place countries on the right continent and name the oceans and seas around them.",
+  "icon": "earth",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "africa-europe", "title": "Africa and Europe", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "asia-oceania", "title": "Asia and Oceania", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "americas", "title": "The Americas", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "oceans-seas", "title": "Oceans and seas", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

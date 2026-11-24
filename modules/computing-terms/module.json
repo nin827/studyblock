@@ -1,0 +1,14 @@
+{
+  "id": "computing-terms",
+  "title": "Computing Terms",
+  "description": "Key words for hardware, networks, units of data and staying secure online.",
+  "icon": "cpu",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "hardware", "title": "Hardware", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "networks", "title": "Networks", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "data-units", "title": "Units of data", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "security", "title": "Security", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -93,7 +93,7 @@ You can't install from `index.html` opened directly (a `file:///…` address), o
 | Page | What's there |
 |---|---|
 | **Home** | Domain cards with your progress, a "Continue" shortcut, and the mixed quiz with quick-start presets |
-| **Domain** | The subdomains in that domain (for example, Math → Arithmetic and Algebra) |
+| **Domain** | The subdomains in that domain (for example, Math → Arithmetic, Algebra, Fractions…) |
 | **Module** | An introduction to the topic, then a grid of subtopic × difficulty with your best score in each |
 | **Mix** | The mixed-quiz builder and your presets |
 | **History** | Every quiz you've taken, with full question-by-question review |
@@ -110,15 +110,25 @@ On phones the menu sits at the bottom of the screen.
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
    - **Text answers:** capital letters and extra spaces don't matter.
    - **Multiple choice:** tap an option, or press keys **1–9**.
+   - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
 3. Press **Check** (or **Enter**). You'll see whether you were right and how the answer is worked out.
 4. Press **Next** (or **Enter** again).
 5. At the end you get your score and a full review. **Retry** gives you a fresh set of questions on the same topic.
 
 Every question has a hidden seed, so StudyBlock can rebuild exactly the same question later for review.
 
+### Questions with several answers
+
+Some Business Case questions ask for more than one thing about the same scenario, for example a **Calculation** (the NPV) and a **Recommendation** (invest or not). Each part has its own numbered box:
+
+- Fill in every part, then press **Check**. Tapping a choice in a part only selects it; it doesn't submit.
+- **Enter** jumps to the next empty part, and checks the answer once every part is filled.
+- The calculator's **Use** fills whichever part you were last in.
+- The question counts as correct only when **every** part is right. The feedback, the review and History show a ✓ or ✗ for each part, with the right answer for any you missed.
+
 ### The calculator
 
-Every subject except Arithmetic has a calculator during quizzes. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
+Every subject has a calculator during quizzes, except those where working it out by hand is the point: Arithmetic, Fractions, Number Bases and the three Language subjects. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
 
 It works like a tiny spreadsheet. Each row has a **name**, a **calculation** and a live **result**:
 
@@ -133,7 +143,7 @@ _breakeven = ceil(3300 / _margin)    → 1000
 - **Use a stored value** by typing its name in another row.
 - **Change an earlier row and everything that depends on it updates instantly.** You can rework a whole chain by editing its first step.
 - **Rename a row** and every calculation that uses it is updated too.
-- **Use** copies a row's result into the answer box.
+- **Use** copies a row's result into the answer box (on a multi-part question, the part you were last in). It's off for multiple-choice answers.
 - **Keys:**
   - **Enter** adds a new row, and never submits your answer by accident.
   - **Ctrl+K** (⌘K on a Mac) jumps to the calculator.

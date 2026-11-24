@@ -1,0 +1,14 @@
+{
+  "id": "inventions",
+  "title": "Inventions and Discoveries",
+  "description": "Who made the breakthroughs in communication, transport, medicine and everyday technology, and when.",
+  "icon": "lightbulb",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "communication", "title": "Communication", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "transport", "title": "Transport", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "medicine", "title": "Medicine", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "everyday-tech", "title": "Everyday technology", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

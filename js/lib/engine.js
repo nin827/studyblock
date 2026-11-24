@@ -153,8 +153,67 @@ function csvQuestion(pool, seed) {
   };
 }
 
+const PART_TYPES = ['number', 'text', 'choice'];
+export const MULTI_MIN_PARTS = 2;
+export const MULTI_MAX_PARTS = 4;
+
+// One part of a multi-part question, normalised like a single question.
+function normalizePart(p) {
+  const answerType = PART_TYPES.includes(p?.answerType) ? p.answerType : 'text';
+  return {
+    id: String(p?.id ?? ''),
+    label: String(p?.label ?? ''),
+    ask: p?.ask ? String(p.ask) : '',
+    answerType,
+    answer: p?.answer,
+    choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
+    tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
+  };
+}
+
+// Shape check for a raw multi-part question: 2-4 parts, unique ids matching ID_RE, a label,
+// and each part valid as its own number/text/choice question.
+export function multiShapeOk(raw) {
+  const parts = raw?.parts;
+  if (!Array.isArray(parts) || parts.length < MULTI_MIN_PARTS || parts.length > MULTI_MAX_PARTS) return false;
+  const ids = new Set();
+  for (const p of parts) {
+    if (!p || typeof p !== 'object' || !isValidId(p.id) || ids.has(p.id)) return false;
+    ids.add(p.id);
+    if (typeof p.label !== 'string' || !p.label.trim()) return false;
+    if (!PART_TYPES.includes(p.answerType)) return false;
+    if (p.answerType === 'number') {
+      if (typeof p.answer !== 'number' || !Number.isFinite(p.answer)) return false;
+    } else if (p.answerType === 'text') {
+      if (typeof p.answer !== 'string' && typeof p.answer !== 'number') return false;
+      if (!String(p.answer).trim()) return false;
+    } else {
+      if (!Array.isArray(p.choices) || p.choices.length < 2) return false;
+      const cs = p.choices.map(String);
+      if (new Set(cs).size !== cs.length || !cs.includes(String(p.answer))) return false;
+    }
+  }
+  return true;
+}
+
+// The generator's own answers as { [partId]: value }.
+const multiAnswer = parts => Object.fromEntries(parts.map(p => [p.id, p.answer]));
+
 function normalizeGenerated(q, seed) {
-  const answerType = ['number', 'text', 'choice'].includes(q.answerType) ? q.answerType : 'text';
+  if (q.answerType === 'multi') {
+    const parts = (Array.isArray(q.parts) ? q.parts : []).map(normalizePart);
+    return {
+      seed,
+      prompt: String(q.prompt ?? ''),
+      answer: multiAnswer(parts),
+      answerType: 'multi',
+      parts,
+      choices: undefined,
+      tolerance: undefined,
+      explanation: q.explanation ? String(q.explanation) : '',
+    };
+  }
+  const answerType = PART_TYPES.includes(q.answerType) ? q.answerType : 'text';
   return {
     seed,
     prompt: String(q.prompt ?? ''),
@@ -173,8 +232,15 @@ function generateVerified(gen, subtopic, difficulty, seed, maxTries = 20) {
     try {
       const raw = gen.generate({ subtopic, difficulty, rng: createRng(s) });
       const q = normalizeGenerated(raw, s);
-      const shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
-      const ok = shapeOk && (typeof gen.verify !== 'function' || gen.verify(raw, raw.answer) === true);
+      let shapeOk, own;
+      if (raw.answerType === 'multi') {
+        shapeOk = multiShapeOk(raw);
+        own = shapeOk ? multiAnswer(raw.parts) : null;
+      } else {
+        shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
+        own = raw.answer;
+      }
+      const ok = shapeOk && (typeof gen.verify !== 'function' || gen.verify(raw, own) === true);
       if (ok) return q;
     } catch (e) {
       console.warn('StudyBlock: generator threw', e);
@@ -482,7 +548,25 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 
 const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
+/*
+ * Single questions: returns a boolean (unchanged).
+ * Multi-part questions (answerType "multi"): `userAnswer` is { [partId]: value } and the result is
+ * { correct, parts: [{ id, label, correct }] }; correct only if every part is correct.
+ */
 export function checkAnswer(question, userAnswer) {
+  if (question.answerType === 'multi') {
+    const given = userAnswer && typeof userAnswer === 'object' ? userAnswer : {};
+    const parts = (question.parts || []).map(p => ({
+      id: p.id,
+      label: p.label,
+      correct: Object.prototype.hasOwnProperty.call(given, p.id) && checkSingle(p, given[p.id]),
+    }));
+    return { correct: parts.length > 0 && parts.every(p => p.correct), parts };
+  }
+  return checkSingle(question, userAnswer);
+}
+
+function checkSingle(question, userAnswer) {
   switch (question.answerType) {
     case 'number': {
       let str = String(userAnswer ?? '').trim().replace(/−/g, '-');

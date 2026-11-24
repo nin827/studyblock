@@ -1,0 +1,14 @@
+{
+  "id": "world-history",
+  "title": "World History",
+  "description": "Key events, empires and dates from the ancient world to the end of the 20th century.",
+  "icon": "scroll",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "ancient", "title": "Ancient world", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "medieval-early-modern", "title": "Medieval and early modern", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "modern", "title": "Revolutions and the 19th century", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "20th-century", "title": "20th century", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

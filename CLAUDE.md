@@ -169,6 +169,33 @@ The engine samples rows with the seeded rng and shuffles choices.
 - text: trim, collapse whitespace, case-insensitive.
 - choice: exact match of the chosen string.
 
+### Multi-part questions (`answerType: "multi"`)
+
+One scenario, several labelled answer fields. Used by Business Case for things like *Calculation* + *Recommendation*.
+
+```js
+{
+  prompt: "…scenario…",
+  answerType: "multi",
+  parts: [
+    { id: "calc", label: "Calculation", ask: "Break-even units (round up)", answerType: "number", answer: 1000, tolerance: 0 },
+    { id: "rec",  label: "Recommendation", ask: "Should the café open?", answerType: "choice", answer: "Yes", choices: ["Yes", "No"] }
+  ],
+  explanation: "…"
+}
+```
+- **Parts:** 2–4. Each part is a mini-question with its own `answerType` (`number`, `text` or `choice`), `answer`, `tolerance` and `choices`, checked by the rules above. `id` matches `^[a-z0-9-]+$`, and `label` is a short heading such as *Calculation*, *Recommendation* or *Risk*.
+- **Generators:** `verify(question, answer)` gets `answer` as an object `{ [partId]: value }` and must check every part. The engine calls it with the generator's own answers.
+- **Scoring:** a multi-part question counts as correct only if every part is correct. Each part's result is stored, and review screens show part-by-part ticks. Per-part partial credit is not used for scores (see ticket 007).
+- **Quiz UI:**
+  - One field per part, stacked, each with its label and `ask` text: number/text inputs, or a choice button group, which doesn't submit on click.
+  - **Check** submits all parts together, once each part has a value.
+  - Enter moves to the next empty part, and submits on the last one.
+  - The calculator's **Use** fills the part that last had focus.
+  - Feedback shows ✓/✗ per part, with the correct value for each wrong one.
+- **Storage:** on the stored question, `answer` and `userAnswer` become objects keyed by part id, and `parts: [{id, label, correct}]` is added. These fields are optional on import.
+- **CSV modules:** not supported; multi-part is generator-only.
+
 ## Storage
 
 **localStorage** (`studyblock:data`) is the source of truth:
@@ -198,7 +225,7 @@ Scores per module/subtopic/difficulty are derived from attempts.
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic sets this, because doing the sums yourself is the point of it.
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**
@@ -236,7 +263,7 @@ The panel is a list of rows. Each row has:
 **Actions**
 - Add a row with Enter in the last expression, or the "+ Row" button.
 - Delete a row.
-- **Use:** puts that row's value into the answer field, at full precision, trimmed to at most 10 significant digits. It's disabled on choice questions and once an answer has been checked.
+- **Use:** puts that row's value into the answer field, at full precision, trimmed to at most 10 significant digits. It's disabled on choice questions (and when the last-focused part of a multi-part question is a choice) and once an answer has been checked.
 - Clear the sheet, after confirming.
 - Keyboard:
   - Ctrl/Cmd+K focuses the calculator.
@@ -271,6 +298,9 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Science | `#DDF1EE` / `#0F5E56` | `#14857A` |
   | Geography | `#FBEBD9` / `#8A4B0F` | `#C2671B` |
   | Business | `#F3E6F1` / `#7A2E6B` | `#9C3D8C` |
+  | Computing | `#DCEFFA` / `#0B5A86` | `#1A7FC1` |
+  | History | `#F8E3DF` / `#8E2A1E` | `#B23A2E` |
+  | Language | `#E8EFD9` / `#44591A` | `#6B8A23` |
 
   A domain can override these with `color` in `index.json`.
 - Correct and incorrect states always show an icon and a label, not colour alone.

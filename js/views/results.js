@@ -84,7 +84,7 @@ export async function render(root, params, ctx) {
           <span class="score ${scoreClass(p)}">${a.score}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
         </summary>
         ${isMix ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}
-        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct }, isMix)).join('')}</ol>
+        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct, ...(Array.isArray(q.parts) ? { parts: q.parts } : {}) }, isMix)).join('')}</ol>
       </details>
     </li>`;
   }).join('');

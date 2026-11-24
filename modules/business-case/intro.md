@@ -1,6 +1,8 @@
 # Business Case
 
-Short scenarios from small businesses: a café, a bike shop, a print shop, a SaaS startup. Each one asks a single question that takes a few steps to answer. Work through it in the calculator, one labelled row per step. Amounts are in dollars.
+Short scenarios from small businesses: a café, a bike shop, a print shop, a SaaS startup. Some ask a single question; about half are **multi-part**: one scenario with two or three labelled answers, such as a *Calculation* and a *Recommendation*. Work through it in the calculator, one labelled row per step. Amounts are in dollars.
+
+**Multi-part questions.** Each part has its own field. Fill them all, then press **Check**: the question counts as correct only when every part is right, and the feedback marks each part. Enter jumps to the next empty part. The calculator's **Use** fills the part you were last in. A *Recommendation* always follows a rule stated in the scenario, for example "invests only if the NPV is positive" or "healthy if LTV:CAC is at least 3:1", so work out the number first and apply the rule to it.
 
 | Formula | Meaning |
 | --- | --- |

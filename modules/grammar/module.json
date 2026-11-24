@@ -1,0 +1,15 @@
+{
+  "id": "grammar",
+  "title": "Grammar",
+  "description": "Parts of speech, verb tenses, punctuation and agreement in English sentences.",
+  "icon": "spell-check",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "calculator": false,
+  "subtopics": [
+    { "id": "parts-of-speech", "title": "Parts of speech", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "tenses", "title": "Verb tenses", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "punctuation", "title": "Punctuation", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "agreement", "title": "Agreement", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "fractions",
+  "title": "Fractions",
+  "description": "Simplify, add, subtract, multiply and divide fractions, and convert between fractions, decimals and percents.",
+  "icon": "divide",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "simplify", "title": "Simplifying", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "add-subtract", "title": "Adding and subtracting", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "multiply-divide", "title": "Multiplying and dividing", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "compare-convert", "title": "Comparing and converting", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "unit-conversion",
+  "title": "Unit Conversion",
+  "description": "Convert lengths, masses, volumes, times, speeds and temperatures between metric and everyday units.",
+  "icon": "ruler",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "length", "title": "Length", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "mass-volume", "title": "Mass and volume", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "time-speed", "title": "Time and speed", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "temperature", "title": "Temperature", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,49 @@
+subtopic,difficulty,prompt,answer,choices,explanation
+meanings,easy,What does *generous* mean?,Willing to give freely,Willing to give freely|Easily angered|Very old|Hard to see,Example: She was generous with her time and helped everyone who asked.
+meanings,easy,What does *fragile* mean?,Easily broken,Easily broken|Very heavy|Brightly colored|Moving quickly,Example: Pack the glasses carefully because they are fragile.
+meanings,easy,What does *ancient* mean?,Very old,Very old|Very small|Very loud|Very fast,"Example: The museum displays ancient coins from Rome."
+meanings,easy,What does *reluctant* mean?,Unwilling or hesitant,Unwilling or hesitant|Very excited|Extremely tired|Well known,Example: He was reluctant to jump into the cold water.
+meanings,medium,What does *benevolent* mean?,Kind and well-meaning,Kind and well-meaning|Cruel and harsh|Lazy and slow|Loud and boastful,"Benevolent comes from Latin bene (well) and volens (wishing), so it means wishing others well."
+meanings,medium,What does *meticulous* mean?,Showing great attention to detail,Showing great attention to detail|Careless and hasty|Quick to lose your temper|Generous with money,Example: The meticulous editor checked every comma in the book.
+meanings,medium,What does *ambiguous* mean?,Open to more than one interpretation,Open to more than one interpretation|Clear and obvious|Eager to succeed|Extremely large,"Example: The sign was ambiguous, so drivers were not sure which way to turn."
+meanings,medium,What does *candid* mean?,Truthful and straightforward,Truthful and straightforward|Shy and quiet|Bright and shiny|Slow and careful,Example: She gave a candid answer about the mistakes she had made.
+meanings,hard,What does *ephemeral* mean?,Lasting a very short time,Lasting a very short time|Lasting forever|Impossible to see|Very expensive,"Example: The beauty of the cherry blossoms is ephemeral, lasting only a week or two."
+meanings,hard,What does *obsequious* mean?,Too eager to please or obey,Too eager to please or obey|Hard to understand|Easy to notice|Refusing to change your mind,Example: The obsequious waiter laughed loudly at all of the manager's jokes.
+meanings,hard,What does *laconic* mean?,Using very few words,Using very few words|Talking a great deal|Lacking energy|Lacking color,Example: His laconic reply was simply No.
+meanings,hard,What does *pernicious* mean?,Harmful in a gradual or hidden way,Harmful in a gradual or hidden way|Extremely careful about details|Cheerful and friendly|Easily persuaded,Example: Rumors can have a pernicious effect on a team's trust.
+synonyms-antonyms,easy,Which word is a synonym of *big*?,Large,Large|Tiny|Narrow|Quiet,"Synonyms are words with the same or nearly the same meaning, like big and large."
+synonyms-antonyms,easy,Which word is an antonym of *difficult*?,Easy,Easy|Hard|Tough|Tricky,"Antonyms are words with opposite meanings, like difficult and easy."
+synonyms-antonyms,easy,Which word is a synonym of *begin*?,Start,Start|Finish|Stop|Pause,Begin and start both mean to do the first part of something.
+synonyms-antonyms,easy,Which word is an antonym of *brave*?,Cowardly,Cowardly|Bold|Fearless|Heroic,"Bold, fearless and heroic are all synonyms of brave; cowardly is its opposite."
+synonyms-antonyms,medium,Which word is a synonym of *abundant*?,Plentiful,Plentiful|Scarce|Empty|Fragile,"Abundant means existing in large quantities, the opposite of scarce."
+synonyms-antonyms,medium,Which word is an antonym of *generous*?,Stingy,Stingy|Kind|Charitable|Giving,A stingy person is unwilling to give or spend.
+synonyms-antonyms,medium,Which word is a synonym of *diligent*?,Hardworking,Hardworking|Lazy|Careless|Rude,Example: A diligent student reviews notes every evening.
+synonyms-antonyms,medium,Which word is an antonym of *transparent*?,Opaque,Opaque|Clear|See-through|Glassy,"Transparent material lets light through, while opaque material does not."
+synonyms-antonyms,hard,Which word is a synonym of *ubiquitous*?,Omnipresent,Omnipresent|Rare|Unique|Ancient,"Ubiquitous means found everywhere, as in: Smartphones are ubiquitous today."
+synonyms-antonyms,hard,Which word is an antonym of *verbose*?,Concise,Concise|Wordy|Talkative|Long-winded,"Verbose means using more words than needed, while concise means brief and to the point."
+synonyms-antonyms,hard,Which word is a synonym of *gregarious*?,Sociable,Sociable|Shy|Greedy|Gloomy,A gregarious person enjoys the company of others.
+synonyms-antonyms,hard,Which word is an antonym of *frugal*?,Extravagant,Extravagant|Thrifty|Economical|Sparing,"Frugal means careful with money, while extravagant means spending far too much."
+commonly-confused,easy,Choose the correct word: ____ going to the park after lunch.,They're,They're|Their|There,"They're is short for they are; their shows possession, and there refers to a place."
+commonly-confused,easy,Choose the correct word: The dog wagged ____ tail.,its,its|it's,"Its is possessive; it's always means it is or it has."
+commonly-confused,easy,Choose the correct word: I would rather walk ____ take the bus.,than,than|then,"Than is used in comparisons, while then refers to time or what comes next."
+commonly-confused,easy,Choose the correct word: I ate ____ much cake and felt sick.,too,too|to|two,"Too means excessively or also; to is a preposition, and two is the number 2."
+commonly-confused,medium,Choose the correct word: The new rules will ____ everyone in the office.,affect,affect|effect,"Affect is usually a verb meaning to influence, while effect is usually a noun meaning a result."
+commonly-confused,medium,Choose the correct word: The medicine had a strong ____ on her headache.,effect,effect|affect,"Effect is the noun meaning a result, as in: The new law had a big effect."
+commonly-confused,medium,Choose the correct word: That red scarf is a perfect ____ to your gray coat.,complement,complement|compliment,"A complement completes or goes well with something, while a compliment is praise."
+commonly-confused,medium,Choose the correct word: He paid her a ____ on her excellent presentation.,compliment,compliment|complement,A compliment is a polite expression of praise or admiration.
+commonly-confused,hard,Choose the correct word: The school ____ welcomed the new students.,principal,principal|principle,"Principal can mean the head of a school or the most important; a principle is a rule or belief."
+commonly-confused,hard,Choose the correct word: She stood by her ____ and refused to cheat.,principles,principles|principals,Principles are the rules or beliefs that guide someone's behavior.
+commonly-confused,hard,Choose the correct word: The car remained ____ at the red light.,stationary,stationary|stationery,"Stationary means not moving, while stationery means writing materials such as paper and envelopes."
+commonly-confused,hard,Choose the correct word: Please be ____ and don't tell anyone about the surprise party.,discreet,discreet|discrete,"Discreet means careful not to reveal things, while discrete means separate and distinct."
+context,easy,Choose the word that fits: I was so ____ after the long run that I drank three glasses of water.,thirsty,thirsty|sleepy|cold|quiet,Thirsty means needing or wanting to drink.
+context,easy,Choose the word that fits: Please ____ the door when you leave so the cat doesn't get out.,close,close|open|paint|knock,"Close means to shut, which keeps the cat inside."
+context,easy,"Choose the word that fits: The library is a ____ place, so please don't talk loudly.",quiet,quiet|noisy|crowded|messy,Quiet means making little or no noise.
+context,easy,Choose the word that fits: She put on her warm coat because it was ____ outside.,cold,cold|hot|sunny|dry,Cold weather is the reason to put on a warm coat.
+context,medium,Choose the word that fits: The scientist was ____ about the surprising results and wanted to repeat the experiment.,skeptical,skeptical|certain|confident|bored,"Skeptical means doubtful, and doubt is a good reason to repeat an experiment."
+context,medium,"Choose the word that fits: After weeks of practice, his improvement was ____ to everyone.",evident,evident|hidden|invisible|secret,Evident means clearly seen or understood.
+context,medium,Choose the word that fits: The instructions were so ____ that nobody knew what to do.,vague,vague|clear|precise|simple,"Vague means unclear or not specific, which is why nobody knew what to do."
+context,medium,Choose the word that fits: The hikers had to ____ their water because the next stream was far away.,conserve,conserve|waste|spill|pour out,Conserve means to use something carefully so it is not wasted or used up.
+context,hard,Choose the word that fits: The politician's ____ answer avoided the question completely.,evasive,evasive|candid|honest|direct,Evasive means avoiding a direct answer or commitment.
+context,hard,"Choose the word that fits: The old bridge was ____, so engineers closed it to traffic.",dilapidated,dilapidated|pristine|robust|sturdy,Dilapidated means in a state of disrepair because of age or neglect.
+context,hard,Choose the word that fits: The detective was very ____; no detail escaped her notice.,observant,observant|oblivious|careless|indifferent,Observant means quick to notice things.
+context,hard,Choose the word that fits: The committee reached a ____ decision because every member voted yes.,unanimous,unanimous|divided|tentative|partial,Unanimous means fully agreed by everyone involved.

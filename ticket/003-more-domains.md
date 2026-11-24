@@ -1,20 +1,24 @@
 # 003 — Which domains and subdomains next?
 
 **Status:** open
-**Raised:** 2026-11-24
+**Raised:** 2026-11-24 · **Updated:** 2026-11-24
+
+## Current subjects (24)
+- **Math:** Arithmetic, Algebra, Fractions, Geometry, Statistics
+- **Science:** Kinematics, Electricity, Unit Conversion, Chemical Elements, Biology
+- **Computing:** Number Bases, Boolean Logic, Computing Terms
+- **Geography:** World Capitals, Continents, Physical Geography
+- **History:** World History, Inventions
+- **Business:** Business Math, Business Case (multi-part), Accounting Terms
+- **Language:** Vocabulary, Word Roots, Grammar
 
 ## Question
-The current domains each have a starter module:
-- **Math:** Arithmetic, Algebra
-- **Science:** Kinematics, Chemical Elements
-- **Geography:** World Capitals
-- **Business:** Business Math, Business Case
-
-Which domains or subdomains should come next, and in what priority?
+Which should come next, and should any existing CSV subjects get bigger question pools (they have 48 rows each, 4 per subtopic × difficulty)?
 
 ## Ideas
-- **Math:** fractions, geometry (area/perimeter), statistics (mean/median), number bases.
-- **Science:** unit conversion, Ohm's law, biology terms (CSV).
-- **Geography:** flags described in text, rivers and mountains, country–continent.
-- **Business:** accounting terms (CSV), break-even, depreciation.
-- **New domains:** Language/Vocabulary (CSV), History (dates, CSV), Computing (binary/hex conversion, generator).
+- **Math:** percentages and ratios, sequences, simple trigonometry.
+- **Science:** chemistry equations (moles, balancing), waves and optics.
+- **Geography:** flags described in text, time zones.
+- **Business:** depreciation, interest schedules, more Business Case scenarios (inventory, hiring).
+- **Language:** a second language (Spanish/French vocabulary).
+- **Computing:** algorithms (Big-O), networking numbers (subnets).

@@ -1,0 +1,49 @@
+subtopic,difficulty,prompt,answer,choices,explanation
+africa-europe,easy,Which continent is Nigeria in?,Africa,,Nigeria lies in West Africa on the Gulf of Guinea.
+africa-europe,easy,Which continent is France in?,Europe,,Mainland France lies in Western Europe between the Atlantic and the Mediterranean.
+africa-europe,easy,Which continent is Kenya in?,Africa,Africa|Asia|South America|Europe,Kenya lies in East Africa on the Indian Ocean coast.
+africa-europe,easy,Which continent is Norway in?,Europe,Europe|North America|Asia|Africa,Norway lies on the western side of the Scandinavian Peninsula in northern Europe.
+africa-europe,medium,Which continent is Ghana in?,Africa,,Ghana lies in West Africa on the Gulf of Guinea.
+africa-europe,medium,Which continent is Hungary in?,Europe,,Hungary is a landlocked country in Central Europe.
+africa-europe,medium,Which continent is Madagascar in?,Africa,Africa|Asia|Oceania|South America,Madagascar is a large island in the Indian Ocean off the southeast coast of Africa.
+africa-europe,medium,Which continent is Iceland in?,Europe,Europe|North America|Asia|Africa,Iceland is a Nordic island nation in the North Atlantic and is counted as part of Europe.
+africa-europe,hard,Which continent is Burkina Faso in?,Africa,,Burkina Faso is a landlocked country in West Africa.
+africa-europe,hard,Which continent is Moldova in?,Europe,,Moldova is a landlocked country in Eastern Europe between Romania and Ukraine.
+africa-europe,hard,Which continent is Malawi in?,Africa,Africa|Asia|Europe|South America,Malawi is a landlocked country in southeastern Africa that borders Lake Malawi.
+africa-europe,hard,Which continent is Liechtenstein in?,Europe,Europe|Asia|Africa|Oceania,Liechtenstein is a small landlocked principality between Switzerland and Austria.
+asia-oceania,easy,Which continent is Japan in?,Asia,,Japan is an island country in East Asia.
+asia-oceania,easy,Which continent is Vietnam in?,Asia,,Vietnam lies in Southeast Asia along the South China Sea.
+asia-oceania,easy,Which continent is India in?,Asia,Asia|Africa|Europe|Oceania,India occupies most of the Indian subcontinent in South Asia.
+asia-oceania,easy,Which continent is New Zealand in?,Oceania,Oceania|Asia|Europe|South America,New Zealand is an island country in the southwestern Pacific Ocean.
+asia-oceania,medium,Which continent is Mongolia in?,Asia,,Mongolia is a landlocked country in East Asia between Russia and China.
+asia-oceania,medium,Which continent is Nepal in?,Asia,,Nepal is a landlocked country in South Asia that lies along the Himalayas.
+asia-oceania,medium,Which continent is Fiji in?,Oceania,Oceania|Asia|Africa|South America,Fiji is an island nation in the South Pacific Ocean.
+asia-oceania,medium,Which continent is Papua New Guinea in?,Oceania,Oceania|Asia|Africa|South America,Papua New Guinea occupies the eastern half of the island of New Guinea in the Pacific.
+asia-oceania,hard,Which continent is Bhutan in?,Asia,,Bhutan is a landlocked kingdom in the eastern Himalayas between China and India.
+asia-oceania,hard,Which continent is Laos in?,Asia,,Laos is the only landlocked country in Southeast Asia.
+asia-oceania,hard,Which continent is Vanuatu in?,Oceania,Oceania|Asia|Africa|South America,Vanuatu is an archipelago nation in the South Pacific Ocean.
+asia-oceania,hard,Which continent is Samoa in?,Oceania,Oceania|Asia|Africa|North America,Samoa is a Polynesian island nation in the South Pacific Ocean.
+americas,easy,Which continent is Brazil in?,South America,South America|North America|Africa|Europe,Brazil is the largest country in South America by area.
+americas,easy,Which continent is Canada in?,North America,North America|South America|Europe|Asia,Canada occupies most of the northern part of North America.
+americas,easy,Which continent is Argentina in? (Answer North America or South America.),South America,,Argentina lies in the southern part of South America.
+americas,easy,Which continent is Mexico in? (Answer North America or South America.),North America,,Mexico lies in North America directly south of the United States.
+americas,medium,Which continent is Colombia in?,South America,South America|North America|Africa|Europe,Colombia lies in the northwest of South America with coasts on the Caribbean and the Pacific.
+americas,medium,Which continent is Cuba in?,North America,North America|South America|Africa|Europe,Cuba is a Caribbean island nation and the Caribbean is counted as part of North America.
+americas,medium,Which continent is Peru in? (Answer North America or South America.),South America,,Peru lies on the Pacific coast of South America.
+americas,medium,Which continent is Guatemala in? (Answer North America or South America.),North America,,"Guatemala is in Central America, which is counted as part of North America."
+americas,hard,Which continent is Suriname in?,South America,South America|North America|Africa|Europe,Suriname lies on the northeastern coast of South America.
+americas,hard,Which continent is Belize in?,North America,North America|South America|Africa|Europe,Belize is in Central America on the Caribbean coast.
+americas,hard,Which continent is Paraguay in? (Answer North America or South America.),South America,,"Paraguay and Bolivia are the two landlocked countries of South America."
+americas,hard,Which continent is Uruguay in? (Answer North America or South America.),South America,,Uruguay lies on the southeastern coast of South America between Brazil and Argentina.
+oceans-seas,easy,What is the largest ocean on Earth?,Pacific Ocean,Pacific Ocean|Atlantic Ocean|Indian Ocean|Arctic Ocean,The Pacific is larger than all of Earth's land area combined.
+oceans-seas,easy,What is the smallest of Earth's oceans?,Arctic Ocean,Arctic Ocean|Indian Ocean|Atlantic Ocean|Pacific Ocean,The Arctic Ocean surrounds the North Pole and is partly covered by sea ice all year.
+oceans-seas,easy,Which ocean separates Europe and Africa from the Americas? (Leave out the word 'Ocean'.),Atlantic,,The Atlantic is the second-largest ocean on Earth.
+oceans-seas,easy,Which ocean washes the west coast of Australia?,Indian Ocean,Indian Ocean|Atlantic Ocean|Arctic Ocean|Pacific Ocean,"The Indian Ocean lies between Africa, Asia and Australia."
+oceans-seas,medium,Which ocean borders the west coast of South America? (Leave out the word 'Ocean'.),Pacific,,The Andes run parallel to South America's Pacific coast.
+oceans-seas,medium,Which ocean lies at the North Pole? (Leave out the word 'Ocean'.),Arctic,,The North Pole sits in the middle of the Arctic Ocean on drifting sea ice.
+oceans-seas,medium,Which ocean borders the east coast of Africa?,Indian Ocean,Indian Ocean|Atlantic Ocean|Pacific Ocean|Arctic Ocean,East African ports such as Mombasa and Dar es Salaam lie on the Indian Ocean.
+oceans-seas,medium,Which sea lies between southern Europe and northern Africa?,Mediterranean Sea,Mediterranean Sea|Caribbean Sea|Red Sea|Baltic Sea,The Mediterranean connects to the Atlantic through the Strait of Gibraltar.
+oceans-seas,hard,Which ocean is the Bay of Bengal part of? (Leave out the word 'Ocean'.),Indian,,The Bay of Bengal forms the northeastern part of the Indian Ocean.
+oceans-seas,hard,Which ocean is the Caribbean Sea part of? (Leave out the word 'Ocean'.),Atlantic,,The Caribbean Sea is a sea of the western Atlantic Ocean.
+oceans-seas,hard,Which sea separates the Arabian Peninsula from northeast Africa?,Red Sea,Red Sea|Black Sea|Caspian Sea|Arabian Sea,The Red Sea connects to the Mediterranean through the Suez Canal.
+oceans-seas,hard,Which strait connects the Mediterranean Sea to the Atlantic Ocean?,Strait of Gibraltar,Strait of Gibraltar|Strait of Hormuz|Strait of Malacca|Bosporus,The Strait of Gibraltar separates Spain from Morocco.

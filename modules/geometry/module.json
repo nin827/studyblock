@@ -1,0 +1,14 @@
+{
+  "id": "geometry",
+  "title": "Geometry",
+  "description": "Perimeter and area, angles, Pythagoras and the volume of solids.",
+  "icon": "triangle",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "perimeter-area", "title": "Perimeter and area", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "angles", "title": "Angles", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "pythagoras", "title": "Pythagoras", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "volume", "title": "Volume", "difficulties": ["medium", "hard"] }
+  ]
+}

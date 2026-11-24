@@ -1,0 +1,14 @@
+{
+  "id": "biology",
+  "title": "Biology",
+  "description": "Cells and organelles, the human body, genetics and ecology.",
+  "icon": "leaf",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "cells", "title": "Cells", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "human-body", "title": "Human body", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "genetics", "title": "Genetics", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "ecology", "title": "Ecology", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

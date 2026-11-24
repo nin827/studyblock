@@ -1,0 +1,15 @@
+{
+  "id": "word-roots",
+  "title": "Word Roots",
+  "description": "Latin and Greek roots, prefixes and suffixes that unlock the meaning of English words.",
+  "icon": "sprout",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "calculator": false,
+  "subtopics": [
+    { "id": "latin-roots", "title": "Latin roots", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "greek-roots", "title": "Greek roots", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "prefixes", "title": "Prefixes", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "suffixes", "title": "Suffixes", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "electricity",
+  "title": "Electricity",
+  "description": "Ohm's law, electrical power and energy, and the total resistance of series and parallel circuits.",
+  "icon": "zap",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "ohms-law", "title": "Ohm's law", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "power", "title": "Power and energy", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "series-parallel", "title": "Series and parallel", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}
