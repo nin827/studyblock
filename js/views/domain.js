@@ -2,22 +2,24 @@
 
 import { loadDomains, loadModulesOf } from '../lib/engine.js';
 import { getStats } from '../lib/storage.js';
-import { esc, icon, fmtPct, scoreClass, errorBox, hashPart } from './ui.js';
+import { esc, icon, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle } from './ui.js';
 import { crumbsHtml } from './quiz.js';
 
-export function moduleCard(m) {
+// `domainId` (optional) tints the card with its domain colour; `domain` adds its registry colour.
+export function moduleCard(m, domainId, domain) {
   const s = getStats({ module: m.id });
-  return `<a class="card module-card" href="#/m/${hashPart(m.id)}">
-    <div class="module-card-head">
-      <span class="module-icon">${icon(m.icon)}</span>
-      <h2>${esc(m.title ?? m.id)}</h2>
-    </div>
-    <p class="muted">${esc(m.description ?? '')}</p>
-    <div class="stats-row">
-      <span>${s.attempts} attempt${s.attempts === 1 ? '' : 's'}</span>
-      <span class="score ${scoreClass(s.best)}">Best ${fmtPct(s.best)}</span>
-      <span class="score ${scoreClass(s.last)}">Last ${fmtPct(s.last)}</span>
-    </div>
+  const best = s.best ?? 0;
+  return `<a class="domain-card ${domClass(domainId)}"${domStyle(domain)} href="#/m/${hashPart(m.id)}">
+    <span class="icon-tile">${icon(m.icon)}</span>
+    <span class="domain-card-text">
+      <span class="domain-card-title">${esc(m.title ?? m.id)}</span>
+      <span class="domain-card-sub">${esc(m.description ?? '')}</span>
+    </span>
+    <span class="domain-card-stats">
+      <span class="meter" role="img" aria-label="${esc(`Best score: ${fmtPct(s.best)}`)}"><span style="width:${best}%"></span></span>
+      <span class="meter-meta"><span>${s.attempts ? `${s.attempts} attempt${s.attempts === 1 ? '' : 's'} · last <span class="score ${scoreClass(s.last)}">${fmtPct(s.last)}</span>` : 'Not started'}</span>
+        <strong class="score ${scoreClass(s.best)}" title="Best score">${s.best === null ? '—' : `Best ${fmtPct(s.best)}`}</strong></span>
+    </span>
   </a>`;
 }
 
@@ -40,14 +42,23 @@ export async function render(root, { domainId }, ctx) {
   root.innerHTML = `
     ${crumbsHtml([{ href: '#/', label: 'Home' }, { label: domain.title }])}
     <section class="page-head">
-      <h1><span class="module-icon">${icon(domain.icon)}</span> ${esc(domain.title)}</h1>
-      <p class="muted">${esc(domain.description)}</p>
+      <div class="page-head-row ${domClass(domain.id)}"${domStyle(domain)}>
+        <span class="icon-tile">${icon(domain.icon)}</span>
+        <div>
+          <p class="eyebrow">Domain</p>
+          <h1>${esc(domain.title)}</h1>
+        </div>
+      </div>
+      ${domain.description ? `<p>${esc(domain.description)}</p>` : ''}
     </section>
     ${modules.length ? `
-      <a class="card continue mix-cta" href="#/mix?only=${hashPart(domain.id)}">
-        ${icon('shuffle')}<span>Mix this domain <span class="muted">— random questions from all ${esc(domain.title)} subdomains</span></span>${icon('chevron-right')}
+      <a class="card mix-cta" href="#/mix?only=${hashPart(domain.id)}">
+        <span class="icon-tile icon-tile-sm">${icon('shuffle')}</span>
+        <span class="mix-cta-text"><strong>Mix this domain</strong>
+          <span class="muted small">Random questions from all ${esc(domain.title)} subdomains</span></span>
+        ${icon('chevron-right')}
       </a>
-      <div class="grid">${modules.map(moduleCard).join('')}</div>`
+      <div class="domain-grid is-detailed">${modules.map(m => moduleCard(m, domain.id, domain)).join('')}</div>`
     : '<div class="card"><p class="muted">Coming soon — no subdomains are available here yet.</p></div>'}
   `;
 }

@@ -2,29 +2,9 @@
 
 import { createRng, randomSeed } from './rng.js';
 import { parseCSV } from './csv.js';
+import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
-const cache = new Map(); // url -> Promise
-
-const urlFor = path => new URL(path, document.baseURI).href;
-
-function fetchCached(path, kind) {
-  const url = urlFor(path);
-  const key = `${kind}:${url}`;
-  if (!cache.has(key)) {
-    const p = fetch(url).then(res => {
-      if (!res.ok) {
-        const err = new Error(`HTTP ${res.status} loading ${path}`);
-        err.status = res.status;
-        throw err;
-      }
-      return kind === 'json' ? res.json() : res.text();
-    });
-    p.catch(() => cache.delete(key)); // allow retry after failure
-    cache.set(key, p);
-  }
-  return cache.get(key);
-}
 
 export function isValidId(id) {
   return typeof id === 'string' && ID_RE.test(id);
@@ -53,19 +33,22 @@ function parseRegistry(idx) {
       seenModules.add(id);
       modules.push(id);
     }
-    domains.push({
+    const domain = {
       id: d.id,
       title: strOr(d.title, d.id),
       icon: strOr(d.icon, 'folder'),
       description: strOr(d.description, ''),
       modules,
-    });
+    };
+    // Optional solid colour for bars/segments; anything but #RRGGBB is dropped.
+    if (typeof d.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(d.color)) domain.color = d.color;
+    domains.push(domain);
   }
   return domains;
 }
 
 export async function loadDomains() {
-  const idx = await fetchCached('modules/index.json', 'json');
+  const idx = await loadJSON('modules/index.json');
   return parseRegistry(idx);
 }
 
@@ -98,7 +81,7 @@ async function assertListed(id) {
 
 export async function loadModule(id) {
   await assertListed(id);
-  const m = await fetchCached(`modules/${id}/module.json`, 'json');
+  const m = await loadJSON(`modules/${id}/module.json`);
   if (!m || typeof m !== 'object') throw new Error(`Bad module.json for ${id}`);
   return {
     ...m,
@@ -121,7 +104,7 @@ export async function loadAllModules() {
 export async function loadIntro(id) {
   await assertListed(id);
   try {
-    return await fetchCached(`modules/${id}/intro.md`, 'text');
+    return await loadText(`modules/${id}/intro.md`);
   } catch {
     return null;
   }
@@ -131,7 +114,7 @@ const generators = new Map();
 async function loadGenerator(id) {
   await assertListed(id);
   if (!generators.has(id)) {
-    const p = import(urlFor(`modules/${id}/generator.js`));
+    const p = loadSourceModule(`modules/${id}/generator.js`);
     p.catch(() => generators.delete(id));
     generators.set(id, p);
   }
@@ -142,7 +125,7 @@ async function loadGenerator(id) {
 
 async function loadCsvRows(id) {
   await assertListed(id);
-  const text = await fetchCached(`modules/${id}/questions.csv`, 'text');
+  const text = await loadText(`modules/${id}/questions.csv`);
   return parseCSV(text);
 }
 
@@ -355,7 +338,7 @@ export function officialToConfig(compact, domains, presetId = '?') {
 export async function loadOfficialPresets() {
   let ids = [];
   try {
-    const idx = await fetchCached('presets/index.json', 'json');
+    const idx = await loadJSON('presets/index.json');
     ids = (Array.isArray(idx?.presets) ? idx.presets : []).filter(id => {
       if (isValidId(id)) return true;
       console.warn(`StudyBlock: ignoring invalid official preset id ${JSON.stringify(id)}`);
@@ -370,7 +353,7 @@ export async function loadOfficialPresets() {
   const seen = new Set();
   const list = await Promise.all(ids.filter(id => !seen.has(id) && seen.add(id)).map(async id => {
     try {
-      const p = await fetchCached(`presets/${id}.json`, 'json');
+      const p = await loadJSON(`presets/${id}.json`);
       if (!p || typeof p !== 'object') throw new Error('not an object');
       const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 60) : id;
       return {

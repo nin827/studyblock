@@ -2,7 +2,7 @@ import { loadModule, loadIntro, domainOf } from '../lib/engine.js';
 import { crumbsHtml } from './quiz.js';
 import { getModuleCellStats, getCookie, setCookie } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
-import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart } from './ui.js';
+import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle } from './ui.js';
 
 const ORDER = ['easy', 'medium', 'hard'];
 
@@ -55,11 +55,17 @@ export async function render(root, { moduleId }, ctx) {
       { label: String(mod.title ?? mod.id) },
     ])}
     <section class="page-head">
-      <h1><span class="module-icon">${icon(mod.icon)}</span> ${esc(mod.title ?? mod.id)}</h1>
-      <p class="muted">${esc(mod.description ?? '')}</p>
+      <div class="page-head-row ${domClass(domain?.id)}"${domStyle(domain)}>
+        <span class="icon-tile">${icon(mod.icon)}</span>
+        <div>
+          ${domain ? `<p class="eyebrow">${esc(domain.title)}</p>` : ''}
+          <h1>${esc(mod.title ?? mod.id)}</h1>
+        </div>
+      </div>
+      ${mod.description ? `<p>${esc(mod.description)}</p>` : ''}
     </section>
     ${intro ? `<article class="card prose">${renderMarkdown(intro)}</article>` : ''}
-    <section class="card">
+    <section class="card practice">
       <div class="section-head">
         <h2>Practice</h2>
         <label class="inline-field">Difficulty

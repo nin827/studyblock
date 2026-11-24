@@ -1,6 +1,6 @@
 import { loadAllModules, loadDomains } from '../lib/engine.js';
 import { getAttempts, getModuleRecords, percent, MIX_MODULE } from '../lib/storage.js';
-import { esc, icon, cap, fmtDate, scoreClass, hashPart } from './ui.js';
+import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag } from './ui.js';
 import { reviewItem, moduleBreakdown } from './quiz.js';
 
 export async function render(root, params, ctx) {
@@ -17,7 +17,7 @@ export async function render(root, params, ctx) {
   const subTitle = (mid, sid) => byId[mid]?.subtopics.find(s => s.id === sid)?.title ?? sid;
 
   if (!attempts.length) {
-    root.innerHTML = `<section class="page-head"><h1>History</h1></section>
+    root.innerHTML = `<section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
       <div class="card"><p class="muted">No attempts yet. <a href="#/">Pick a module</a> to get started.</p></div>`;
     return;
   }
@@ -66,18 +66,20 @@ export async function render(root, params, ctx) {
   const items = attempts.map(a => {
     const p = percent(a);
     const isMix = a.module === MIX_MODULE;
+    const dom = isMix ? null : domainOfId.get(a.module);
+    const chip = isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : 'Other', domClass(dom?.id));
     const title = isMix
       ? `<strong>Mixed quiz</strong> · ${esc(a.difficulty === 'any' ? 'Any difficulty' : cap(a.difficulty))}`
       : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(cap(a.difficulty))}`;
     const qs = isMix
       ? a.questions.map(q => (typeof q.module === 'string'
-        ? { ...q, moduleTitle: modTitle(q.module), domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }
+        ? { ...q, moduleTitle: modTitle(q.module), domain: domainOfId.get(q.module)?.id, domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }
         : q))
       : a.questions;
     return `<li class="card attempt">
       <details>
         <summary>
-          <span class="attempt-title">${isMix ? `${icon('shuffle')} ` : ''}${title}</span>
+          <span class="attempt-title">${chip}<span>${title}</span></span>
           <span class="attempt-meta"><span class="muted">${esc(fmtDate(a.ts))}</span>
           <span class="score ${scoreClass(p)}">${a.score}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
         </summary>
@@ -88,7 +90,7 @@ export async function render(root, params, ctx) {
   }).join('');
 
   root.innerHTML = `
-    <section class="page-head"><h1>History</h1></section>
+    <section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
     <section class="card">
       <h2>By module</h2>
       <p class="muted small">Module stats include questions answered inside mixed quizzes.</p>

@@ -9,7 +9,9 @@ import * as results from './views/results.js';
 import * as settings from './views/settings.js';
 import { applyTheme } from './views/settings.js';
 import { getCookie } from './lib/storage.js';
-import { icons, errorBox } from './views/ui.js';
+import { icons, errorBox, esc, icon } from './views/ui.js';
+import * as folder from './lib/folder.js';
+import { registerPWA } from './lib/pwa.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -89,6 +91,122 @@ async function route() {
   window.scrollTo(0, 0);
 }
 
+// ---- data folder banner (outside #app, so routing never wipes it) ----
+
+const BANNER_DISMISS_KEY = 'studyblock:bannerDismissed';
+const isFileProtocol = location.protocol === 'file:';
+
+function bannerEl() {
+  let el = document.getElementById('sb-banner');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'sb-banner';
+    el.className = 'container';
+    el.hidden = true;
+    main.parentNode.insertBefore(el, main);
+  }
+  return el;
+}
+
+function bannerKind(f) {
+  if (f.status === 'needs-permission') return f.denied ? 'denied' : 'resume';
+  if (!isFileProtocol) return null;
+  if (f.status === 'none') return 'connect';
+  if (f.status === 'unsupported') return 'export';
+  return null;
+}
+
+function dismissed(kind) {
+  try { return sessionStorage.getItem(BANNER_DISMISS_KEY) === kind; } catch { return false; }
+}
+
+function renderBanner(f = folder.info()) {
+  const el = bannerEl();
+  const kind = bannerKind(f);
+  if (!kind || dismissed(kind)) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const name = f.name ? `<strong>${esc(f.name)}</strong>` : 'your data folder';
+  let text;
+  let action = '';
+  if (kind === 'resume') {
+    text = `Click anywhere to resume syncing to ${name}.`;
+    action = `<button type="button" class="btn btn-small btn-primary" data-banner="reconnect" data-folder-skip>${icon('refresh-cw')} Reconnect</button>`;
+  } else if (kind === 'denied') {
+    text = `StudyBlock can't save to ${name} until you allow it again.`;
+    action = `<button type="button" class="btn btn-small btn-primary" data-banner="reconnect" data-folder-skip>${icon('refresh-cw')} Reconnect</button>`;
+  } else if (kind === 'connect') {
+    text = 'Connect a data folder so your progress is safe.';
+    action = `<button type="button" class="btn btn-small btn-primary" data-banner="connect" data-folder-skip>${icon('folder-plus')} Connect data folder</button>`;
+  } else {
+    text = 'Progress saved from a file opened on disk is easy to lose. Export it regularly from Settings.';
+    action = `<a class="btn btn-small" href="#/settings">${icon('settings')} Settings</a>`;
+  }
+  const msg = f.message && f.messageKind === 'bad' ? `<p class="msg bad">${esc(f.message)}</p>` : '';
+  el.innerHTML = `<div class="card" role="status">
+      ${icon(kind === 'export' ? 'triangle-alert' : 'folder-sync')}
+      <p>${text}</p>
+      <div class="btn-row">${action}
+        <button type="button" class="btn btn-small" data-banner="dismiss" data-folder-skip aria-label="Dismiss">${icon('x')}</button>
+      </div>${msg}
+    </div>`;
+  el.hidden = false;
+  icons();
+}
+
+bannerEl().addEventListener('click', e => {
+  const b = e.target.closest('[data-banner]');
+  if (!b) return;
+  const what = b.dataset.banner;
+  if (what === 'dismiss') {
+    try { sessionStorage.setItem(BANNER_DISMISS_KEY, bannerKind(folder.info()) || ''); } catch { /* ignore */ }
+    renderBanner();
+  } else if (what === 'reconnect') folder.reconnect();
+  else if (what === 'connect') folder.connect();
+});
+
+// Re-render pages that show stored data when a folder merge brought in new attempts/presets.
+const REFRESH_ON_MERGE = new Set(['home', 'results']);
+folder.subscribe(f => {
+  renderBanner(f);
+  if (f.merged) {
+    const r = match(location.hash);
+    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== mix) route();
+  }
+});
+
+// ---- PWA update toast ("Update available · Reload"); never auto-applies ----
+
+function showUpdateToast(applyUpdate) {
+  if (document.getElementById('sb-update')) return;
+  const el = document.createElement('div');
+  el.id = 'sb-update';
+  el.className = 'card';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<span>Update available</span>
+    <button type="button" class="btn btn-small btn-primary" data-act="reload">${icon('refresh-cw')} Reload</button>
+    <button type="button" class="btn btn-small" data-act="close" aria-label="Dismiss">${icon('x')}</button>`;
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'reload') {
+      // A quiz in progress would be lost on reload: ask first.
+      const inQuiz = /^#\/(q\/|mix\/play)/.test(location.hash);
+      if (inQuiz && !confirm('Reload now? The quiz in progress will be lost.')) return;
+      applyUpdate();
+    } else el.remove();
+  });
+  document.body.appendChild(el);
+  icons();
+}
+
+registerPWA({ onUpdate: showUpdateToast }).catch(e => console.warn('StudyBlock: PWA setup failed', e));
+
 applyTheme(getCookie('theme'));
 window.addEventListener('hashchange', route);
 route();
+// init() sets its instant guess (from the sb_folder marker) synchronously, before the banner draws.
+folder.init().catch(e => console.error('StudyBlock: data folder init failed', e));
+renderBanner();

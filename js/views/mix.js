@@ -8,7 +8,7 @@ import {
   loadMixDraft, saveMixDraft, getPresets, createPreset, updatePreset, renamePreset, deletePreset,
   PRESET_NAME_MAX, MIX_MODULE,
 } from '../lib/storage.js';
-import { esc, icon, icons, cap, errorBox } from './ui.js';
+import { esc, icon, icons, cap, errorBox, domClass, domVars, domStyle } from './ui.js';
 import { runQuiz, storedQuestion, crumbsHtml } from './quiz.js';
 
 // Domains with only their loadable modules: [{ ...domain, modules: [ids], loaded: [module objects] }].
@@ -79,48 +79,53 @@ function draw(root, available, official, only, flash) {
     for (const id in state) state[id].on = id === only;
   }
 
-  const weightInput = (name, value, label, disabled) =>
-    `<input type="number" class="weight-input" name="${name}" min="0" step="any" inputmode="decimal" enterkeyhint="next"
-      value="${esc(String(value))}" aria-label="${esc(label)}" ${disabled ? 'disabled' : ''}>`;
+  // A real number input (fractional weights still typeable) between −/+ buttons.
+  const weightInput = (name, value, title, disabled) =>
+    `<span class="stepper" role="group" aria-label="${esc(`${title} weight`)}">
+      <button type="button" class="step" data-step="-1" aria-label="${esc(`Decrease ${title} weight`)}" ${disabled ? 'disabled' : ''}>−</button>
+      <input type="number" class="weight-input" name="${name}" min="0" step="any" inputmode="decimal" enterkeyhint="next"
+        value="${esc(String(value))}" aria-label="${esc(`Weight for ${title}`)}" ${disabled ? 'disabled' : ''}>
+      <button type="button" class="step" data-step="1" aria-label="${esc(`Increase ${title} weight`)}" ${disabled ? 'disabled' : ''}>+</button>
+    </span>`;
 
   const domainBlocks = available.map(d => {
     const s = state[d.id];
+    const dc = domClass(d.id);
     if (!d.modules.length) {
-      return `<li class="mix-domain is-empty">
-        <div class="mix-row">
-          <label class="mix-check"><input type="checkbox" disabled><span class="module-icon">${icon(d.icon)}</span>
+      return `<li class="mix-domain is-empty is-off ${dc}"${domStyle(d)}>
+        <div class="mix-row mix-domain-head">
+          <label class="mix-check"><input type="checkbox" disabled><span class="swatch"></span>
             <span class="mix-name">${esc(d.title)}</span></label>
-          <span class="muted">Coming soon</span>
+          <span class="soon">Coming soon</span>
         </div>
       </li>`;
     }
+    const n = d.modules.length;
     const mods = d.loaded.map(m => {
       const ms = s.modules[m.id];
+      const title = String(m.title ?? m.id);
       return `<li class="mix-row mix-module" data-domain="${esc(d.id)}" data-module="${esc(m.id)}">
         <label class="mix-check"><input type="checkbox" data-role="module" ${ms.on ? 'checked' : ''}>
-          ${icon(m.icon)}<span class="mix-name">${esc(m.title ?? m.id)}</span></label>
-        <span class="mix-controls">
-          ${weightInput('mw', ms.weight, `Weight for ${m.title ?? m.id}`, !ms.on)}
-          <span class="mix-share" data-share>–</span>
-        </span>
+          <span class="mix-name">${esc(title)}</span></label>
+        <span class="mix-share" data-share>–</span>
+        ${weightInput('mw', ms.weight, title, !ms.on)}
       </li>`;
     }).join('');
-    return `<li class="mix-domain" data-domain="${esc(d.id)}">
-      <div class="mix-row">
+    return `<li class="mix-domain ${dc}"${domStyle(d)} data-domain="${esc(d.id)}">
+      <div class="mix-row mix-domain-head">
         <label class="mix-check"><input type="checkbox" data-role="domain" ${s.on ? 'checked' : ''}>
-          <span class="module-icon">${icon(d.icon)}</span><span class="mix-name">${esc(d.title)}</span></label>
-        <span class="mix-controls">
-          ${weightInput('dw', s.weight, `Weight for ${d.title}`, !s.on)}
-          <span class="mix-share mix-share-domain" data-dshare>–</span>
-        </span>
+          <span class="swatch"></span><span class="mix-name">${esc(d.title)}</span>
+          <span class="mix-count">${n} subdomain${n === 1 ? '' : 's'}</span></label>
+        <span class="mix-share mix-share-domain" data-dshare>–</span>
+        ${weightInput('dw', s.weight, d.title, !s.on)}
       </div>
       <ul class="mix-modules" ${s.on ? '' : 'hidden'}>${mods}</ul>
     </li>`;
   }).join('');
 
-  const chip = p => `<span class="chip ${p.official ? 'is-official' : ''} ${p.id === draft.presetId ? 'is-linked' : ''}" data-id="${esc(p.id)}">
+  const chip = p => `<span class="chip ${p.official ? 'is-official' : ''} ${p.id === draft.presetId ? 'is-linked' : ''}" data-id="${esc(p.id)}" role="listitem">
       <button type="button" class="chip-main" data-act="load" title="${esc(p.description || `Load ${p.name}`)}">
-        ${p.official ? icon('badge-check') : icon('bookmark')}<span>${esc(p.name)}</span></button>
+        ${p.official ? `${icon('badge-check')}<span class="sr-only">Official preset: </span>` : ''}<span>${esc(p.name)}</span></button>
       ${p.official ? '' : `<button type="button" class="chip-icon" data-act="rename" aria-label="Rename ${esc(p.name)}">${icon('pencil')}</button>
       <button type="button" class="chip-icon chip-danger" data-act="delete" aria-label="Delete ${esc(p.name)}">${icon('trash-2')}</button>`}
     </span>`;
@@ -128,51 +133,68 @@ function draw(root, available, official, only, flash) {
   root.innerHTML = `
     ${crumbsHtml([{ href: '#/', label: 'Home' }, { label: 'Mixed quiz' }])}
     <section class="page-head">
-      <h1><span class="module-icon">${icon('shuffle')}</span> Mixed quiz</h1>
-      <p class="muted">Pick domains and subdomains and weight them. Each question draws a domain by weight, then a subdomain by weight, then a random subtopic.</p>
+      <p class="eyebrow">Mixed quiz</p>
+      <h1>Build your mix</h1>
+      <p>Tick what to include and set how often each appears. A weight of 2 shows up twice as often as a weight of 1.</p>
     </section>
-    <section class="card presets">
-      <div class="section-head">
-        <h2>Presets</h2>
-        <span class="draft-status" id="draft-status" role="status" aria-live="polite"></span>
+    <section class="card presets-bar" aria-label="Presets">
+      <div class="presets-top">
+        <div class="presets-chips">
+          <span class="presets-label" aria-hidden="true">Presets</span>
+          <div class="chip-scroll">
+            ${official.length ? `<div class="chip-group" role="list" aria-label="Official presets">${official.map(chip).join('')}</div>
+              <span class="chip-divider" aria-hidden="true"></span>` : ''}
+            ${presets.length
+              ? `<div class="chip-group" role="list" aria-label="Your presets">${presets.map(chip).join('')}</div>`
+              : '<span class="chip-empty">None saved yet</span>'}
+          </div>
+        </div>
+        <span class="status-pill" id="draft-status" role="status" aria-live="polite"></span>
       </div>
-      ${official.length ? `<p class="chip-group-label">${icon('badge-check')} Official</p>
-        <div class="chip-scroll" role="list">${official.map(chip).join('')}</div>` : ''}
-      <p class="chip-group-label">${icon('bookmark')} Yours</p>
-      ${presets.length ? `<div class="chip-scroll" role="list">${presets.map(chip).join('')}</div>` : '<p class="muted small">No saved presets yet.</p>'}
-      <div class="btn-row">
-        <button type="button" class="btn" id="preset-new">${icon('save')} Save as new</button>
+      <div class="presets-actions">
+        <button type="button" class="btn btn-soft" id="preset-new">${icon('save')} Save as new</button>
         <button type="button" class="btn" id="preset-update" hidden>${icon('refresh-cw')} Update preset</button>
-        <button type="button" class="btn" id="draft-clear">${icon('eraser')} Clear</button>
+        <button type="button" class="btn btn-ghost" id="draft-clear">Clear draft</button>
       </div>
+      <p class="presets-note">Your current mix is kept in this browser until you save it as a preset or clear it.</p>
       <p id="preset-msg" class="msg" role="status" aria-live="polite"></p>
     </section>
-    <form class="card mix-form" id="mix-form" novalidate>
-      <div class="section-head">
-        <h2>Domains</h2>
-        <span class="muted mix-legend">Weight · share</span>
+    <form class="mix-layout" id="mix-form" novalidate>
+      <div class="mix-main">
+        <h2 class="sr-only">Domains</h2>
+        <ul class="mix-list">${domainBlocks}</ul>
       </div>
-      <ul class="mix-list">${domainBlocks}</ul>
-      <div class="mix-options">
-        <label class="inline-field">Difficulty
-          <select id="mix-diff">${['any', ...DIFFICULTY_ORDER].map(d =>
-            `<option value="${d}" ${d === cfg.difficulty ? 'selected' : ''}>${esc(cap(d))}</option>`).join('')}</select>
-        </label>
-        <label class="inline-field">Questions
-          <input type="number" id="mix-count" class="count-input" min="1" max="${MIX_MAX_COUNT}" step="1"
-            inputmode="numeric" enterkeyhint="go" value="${cfg.count}">
-        </label>
-      </div>
-      <div class="mix-summary" id="mix-summary">
+      <aside class="mix-summary" id="mix-summary" aria-label="Mix summary">
+        <h2 class="mix-summary-title">Your mix</h2>
         <button type="button" class="mix-summary-toggle" id="mix-summary-toggle" aria-expanded="false" aria-controls="mix-sheet">
-          <span class="share-bar" id="share-bar" aria-hidden="true"></span>
-          <span class="mix-summary-text" id="mix-summary-text"></span>
-          ${icon('chevron-up', 'chev')}
+          <span class="sheet-handle" aria-hidden="true"></span>
+          <span class="share-bar" id="share-bar" role="img" aria-label="Share of questions per subdomain"></span>
+          <span class="mix-summary-line">
+            <span class="mix-summary-text" id="mix-summary-text"></span>
+            <span class="mix-summary-hint"><span id="mix-sheet-hint">Details</span>${icon('chevron-up', 'chev')}</span>
+          </span>
         </button>
-        <div class="mix-sheet" id="mix-sheet" hidden><ul class="mix-sheet-list" id="mix-sheet-list"></ul></div>
+        <div class="mix-sheet" id="mix-sheet" hidden>
+          <ul class="mix-sheet-list" id="mix-sheet-list"></ul>
+          <div class="mix-options">
+            <label class="field-row"><span class="field-label">Difficulty</span>
+              <select id="mix-diff">${['any', ...DIFFICULTY_ORDER].map(d =>
+                `<option value="${d}" ${d === cfg.difficulty ? 'selected' : ''}>${esc(cap(d))}</option>`).join('')}</select>
+            </label>
+            <div class="field-row">
+              <label class="field-label" for="mix-count">Questions</label>
+              <span class="stepper count-stepper" role="group" aria-label="Question count">
+                <button type="button" class="step" data-count-step="-1" aria-label="Fewer questions">−</button>
+                <input type="number" id="mix-count" class="count-input" min="1" max="${MIX_MAX_COUNT}" step="1"
+                  inputmode="numeric" enterkeyhint="go" value="${cfg.count}">
+                <button type="button" class="step" data-count-step="1" aria-label="More questions">+</button>
+              </span>
+            </div>
+          </div>
+        </div>
         <p id="mix-msg" class="msg bad" role="status" aria-live="polite"></p>
         <button type="submit" class="btn btn-primary mix-start" id="mix-start">${icon('play')} <span id="mix-start-label">Start</span></button>
-      </div>
+      </aside>
     </form>`;
 
   const form = root.querySelector('#mix-form');
@@ -196,11 +218,26 @@ function draw(root, available, official, only, flash) {
   };
   if (flash) say(flash, true);
 
+  const sheetHint = root.querySelector('#mix-sheet-hint');
   toggle.addEventListener('click', () => {
     const open = sheet.hidden;
     sheet.hidden = !open;
     toggle.setAttribute('aria-expanded', String(open));
+    sheetHint.textContent = open ? 'Hide details' : 'Details';
   });
+
+  // −/+ steppers edit the number input, then fire the same input event typing would.
+  const bump = (input, delta, min, max) => {
+    if (!input || input.disabled) return;
+    const cur = parseFloat(input.value);
+    const next = Math.min(max, Math.max(min, Math.round(((Number.isFinite(cur) ? cur : 0) + delta) * 1000) / 1000));
+    input.value = String(next);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  root.querySelectorAll('.step[data-step]').forEach(b => b.addEventListener('click', () =>
+    bump(b.parentElement.querySelector('.weight-input'), +b.dataset.step, 0, Infinity)));
+  root.querySelectorAll('.step[data-count-step]').forEach(b => b.addEventListener('click', () =>
+    bump(countInput, +b.dataset.countStep, 1, MIX_MAX_COUNT)));
 
   // Read inputs into `state`; returns the config in CLAUDE.md shape.
   function readForm() {
@@ -213,6 +250,7 @@ function draw(root, available, official, only, flash) {
       w.setAttribute('aria-invalid', String(Number.isNaN(parsed)));
       s.weight = Number.isNaN(parsed) ? 0 : parsed;
       w.disabled = !s.on;
+      w.parentElement.querySelectorAll('.step').forEach(b => { b.disabled = !s.on; });
       li.querySelector('.mix-modules').hidden = !s.on;
     }
     for (const li of root.querySelectorAll('.mix-module')) {
@@ -224,6 +262,7 @@ function draw(root, available, official, only, flash) {
       w.setAttribute('aria-invalid', String(Number.isNaN(parsed)));
       ms.weight = Number.isNaN(parsed) ? 0 : parsed;
       w.disabled = !ms.on;
+      w.parentElement.querySelectorAll('.step').forEach(b => { b.disabled = !ms.on; });
     }
     const domains = {};
     for (const d of available) {
@@ -248,19 +287,22 @@ function draw(root, available, official, only, flash) {
     const l = linked();
     if (l) {
       const dirty = !sameConfig(draft.config, l.config, available);
-      statusEl.innerHTML = `${icon(l.official ? 'badge-check' : 'bookmark')} <span>${esc(l.name)}</span>${dirty ? ' <span class="badge">Unsaved changes</span>' : ''}`;
+      statusEl.className = `status-pill ${dirty ? 'is-unsaved' : 'is-saved'}`;
+      statusEl.innerHTML = `<span>${dirty ? 'Unsaved changes to' : 'Saved ·'} ${esc(l.name)}</span>`;
       // Official presets are read-only: no Update.
       updateBtn.hidden = !!l.official;
       updateBtn.disabled = !dirty;
       updateBtn.innerHTML = `${icon('refresh-cw')} Update “${esc(l.name)}”`;
     } else {
-      statusEl.innerHTML = `<span class="muted">Draft — not saved as a preset</span>`;
+      statusEl.className = 'status-pill is-draft';
+      statusEl.innerHTML = '<span>Draft · kept on this device</span>';
       updateBtn.hidden = true;
     }
     icons();
   }
 
   const titleOfDomain = new Map(available.map(d => [d.id, d.title]));
+  const domById = new Map(available.map(d => [d.id, d]));
   const titleOfModule = new Map(available.flatMap(d => d.loaded.map(m => [m.id, String(m.title ?? m.id)])));
 
   function update(persist) {
@@ -283,21 +325,24 @@ function draw(root, available, official, only, flash) {
 
     // Summary: share bar (per domain), text, and the expandable sheet.
     const domainShares = [...byDomain.entries()];
-    shareBar.innerHTML = domainShares.map(([id, s]) =>
-      `<span class="share-seg" style="width:${(s * 100).toFixed(2)}%" title="${esc(`${titleOfDomain.get(id) ?? id} ${fmtShare(s)}`)}"></span>`).join('');
+    shareBar.innerHTML = shares.map(r =>
+      `<span class="share-seg ${domClass(r.domain)}" style="${domVars(domById.get(r.domain))}flex-grow:${r.share.toFixed(4)}"></span>`).join('');
+    shareBar.setAttribute('aria-label', shares.length
+      ? `Share of questions: ${shares.map(r => `${titleOfModule.get(r.module) ?? r.module} ${fmtShare(r.share)}`).join(', ')}`
+      : 'Nothing selected');
     summaryText.textContent = shares.length
       ? `${domainShares.length} domain${domainShares.length === 1 ? '' : 's'} · ${shares.length} subdomain${shares.length === 1 ? '' : 's'} · ${cap(config.difficulty)}`
       : 'Nothing selected';
-    sheetList.innerHTML = domainShares.map(([id, s]) => `<li>
-        <div class="sheet-row"><strong>${esc(titleOfDomain.get(id) ?? id)}</strong><span>${esc(fmtShare(s))}</span></div>
+    sheetList.innerHTML = domainShares.map(([id, s]) => `<li class="${domClass(id)}"${domStyle(domById.get(id))}>
+        <div class="sheet-row"><span class="swatch"></span><strong>${esc(titleOfDomain.get(id) ?? id)}</strong><span>${esc(fmtShare(s))}</span></div>
         <ul>${shares.filter(r => r.domain === id).map(r =>
-          `<li class="sheet-row"><span>${esc(titleOfModule.get(r.module) ?? r.module)}</span><span>${esc(fmtShare(r.share))}</span></li>`).join('')}</ul>
+          `<li class="sheet-row"><span></span><span>${esc(titleOfModule.get(r.module) ?? r.module)}</span><span>${esc(fmtShare(r.share))}</span></li>`).join('')}</ul>
       </li>`).join('') || '<li class="muted">No subdomains selected.</li>';
     startLabel.textContent = `Start · ${config.count} question${config.count === 1 ? '' : 's'}`;
 
     const ok = shares.length > 0;
     startBtn.disabled = !ok;
-    msg.textContent = ok ? '' : 'Total weight is 0 — tick at least one subdomain with a weight above 0.';
+    msg.textContent = ok ? '' : 'Nothing selected — tick at least one subdomain with a weight above 0.';
     if (persist) saveMixDraft(draft); // draft is auto-saved on every change
     refreshStatus();
     return { config, ok };

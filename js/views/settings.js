@@ -1,5 +1,8 @@
 import { exportData, importData, clearData, getAttempts, getCookie, setCookie } from '../lib/storage.js';
-import { icon, icons } from './ui.js';
+import { loadModule } from '../lib/source.js';
+import * as folder from '../lib/folder.js';
+import * as pwa from '../lib/pwa.js';
+import { icon, icons, esc, fmtDate } from './ui.js';
 
 export function applyTheme(theme) {
   const root = document.documentElement;
@@ -7,9 +10,68 @@ export function applyTheme(theme) {
   else root.removeAttribute('data-theme');
 }
 
-export async function render(root) {
+// theme.js (accent colours) is loaded through source.js and guarded, so Settings still
+// renders if it is missing or fails to load.
+async function loadTheme() {
+  try {
+    const t = await loadModule('js/lib/theme.js');
+    return Array.isArray(t.ACCENT_HUES) && typeof t.getAccent === 'function' && typeof t.setAccent === 'function' ? t : null;
+  } catch (e) {
+    console.warn('StudyBlock: accent colours unavailable', e);
+    return null;
+  }
+}
+
+function accentHtml(theme) {
+  if (!theme) return '<p class="muted">Accent colours are not available right now.</p>';
+  const current = theme.getAccent();
+  const hues = theme.ACCENT_HUES.filter(h => Number.isInteger(h) && h >= 0 && h <= 345);
+  const swatch = (value, bg, label) => {
+    const on = value === current;
+    return `<button type="button" class="accent-swatch" data-accent="${esc(String(value))}" aria-pressed="${on}"
+      aria-label="${esc(label)}" title="${esc(label)}" style="background:${bg}"></button>`;
+  };
+  return `<div class="accent-grid" role="group" aria-label="Accent colour">
+    ${hues.map(h => swatch(h, `oklch(0.50 0.16 ${h})`, `Hue ${h} degrees`)).join('')}
+    ${swatch('grey', 'oklch(0.50 0 0)', 'Grey')}
+  </div>`;
+}
+
+function folderHtml(f) {
+  if (f.status === 'unsupported') {
+    return `<p class="muted">This browser can't connect a data folder (only Chromium browsers such as Chrome and Edge can).
+      Use <strong>Export JSON</strong> below regularly, and <strong>Import</strong> to restore.</p>`;
+  }
+  const name = f.name ? `<strong>${esc(f.name)}</strong>` : 'the folder';
+  let line;
+  let buttons;
+  const connectOther = `<button type="button" class="btn" id="folder-connect" data-folder-skip>${icon('folder-open')} Choose another folder</button>`;
+  const disconnect = `<button type="button" class="btn btn-danger" id="folder-disconnect" data-folder-skip>${icon('unlink')} Disconnect</button>`;
+  if (f.status === 'connected') {
+    line = `${icon('folder-check')} Connected to ${name}.`;
+    buttons = connectOther + disconnect;
+  } else if (f.status === 'needs-permission') {
+    line = f.denied
+      ? `${icon('folder-lock')} Access to ${name} was not granted this session.`
+      : `${icon('folder-lock')} Click anywhere to resume syncing to ${name}.`;
+    buttons = `<button type="button" class="btn btn-primary" id="folder-reconnect" data-folder-skip>${icon('refresh-cw')} Reconnect data folder</button>`
+      + connectOther + disconnect;
+  } else {
+    line = `${icon('folder')} No data folder connected.`;
+    buttons = `<button type="button" class="btn btn-primary" id="folder-connect" data-folder-skip>${icon('folder-plus')} Connect data folder</button>`;
+  }
+  const synced = f.lastSync && f.status !== 'none' ? `<p class="muted small">Last synced ${esc(fmtDate(f.lastSync))}.</p>` : '';
+  const kind = f.messageKind === 'bad' ? 'bad' : f.messageKind === 'good' ? 'good' : '';
+  const msg = f.message ? `<p class="msg ${kind}">${esc(f.message)}</p>` : '';
+  return `<p>${line}</p>${synced}
+    <div class="btn-row">${buttons}</div>${msg}`;
+}
+
+export async function render(root, params = {}, ctx = {}) {
   const theme = ['light', 'dark'].includes(getCookie('theme')) ? getCookie('theme') : 'system';
   const count = getAttempts().length;
+  const themeMod = await loadTheme();
+  if (typeof ctx.alive === 'function' && !ctx.alive()) return;
 
   root.innerHTML = `
     <section class="page-head"><h1>Settings</h1></section>
@@ -21,6 +83,18 @@ export async function render(root) {
           <label class="seg"><input type="radio" name="theme" value="${v}" ${v === theme ? 'checked' : ''}>
             <span>${icon(ic)} ${label}</span></label>`).join('')}
       </div>
+      <h3>Accent colour</h3>
+      <div id="accent-picker">${accentHtml(themeMod)}</div>
+    </section>
+
+    <section class="card" id="install-card" hidden></section>
+
+    <section class="card">
+      <h2>${icon('folder-sync')} Data folder</h2>
+      <p class="muted">Keep a copy of your progress in a folder you choose, for example one that is backed up or synced.
+        StudyBlock reads and writes only <code>studyblock-data.json</code> there, after every change.
+        Your progress also stays in this browser.</p>
+      <div id="folder-status" role="status" aria-live="polite">${folderHtml(folder.info())}</div>
     </section>
 
     <section class="card">
@@ -48,6 +122,73 @@ export async function render(root) {
     setCookie('theme', r.value);
     applyTheme(r.value);
   }));
+
+  const updateCount = () => {
+    const n = getAttempts().length;
+    const dc = root.querySelector('#data-count');
+    if (dc) dc.textContent = `${n} attempt${n === 1 ? '' : 's'} stored in this browser.`;
+  };
+
+  const picker = root.querySelector('#accent-picker');
+  picker.addEventListener('click', e => {
+    const b = e.target.closest('[data-accent]');
+    if (!b || !themeMod) return;
+    const raw = b.dataset.accent;
+    const value = raw === 'grey' ? 'grey' : Number(raw);
+    if (value !== 'grey' && !themeMod.ACCENT_HUES.includes(value)) return;
+    try { themeMod.setAccent(value); } catch (err) { console.error(err); }
+    picker.innerHTML = accentHtml(themeMod);
+    picker.querySelector(`[data-accent="${value}"]`)?.focus();
+  });
+
+  // Install app card: hidden when installed or when there's nothing to offer.
+  const installCard = root.querySelector('#install-card');
+  const drawInstall = () => {
+    if (pwa.isInstalled()) {
+      installCard.hidden = true;
+      installCard.innerHTML = '';
+    } else if (pwa.canInstall()) {
+      installCard.innerHTML = `<h2>${icon('download')} Install app</h2>
+        <p class="muted">Install StudyBlock to open it from your home screen or app list, in its own window, even offline.</p>
+        <div class="btn-row"><button type="button" class="btn btn-primary" id="install-btn">${icon('monitor-down')} Install StudyBlock</button></div>`;
+      installCard.hidden = false;
+    } else if (pwa.showIOSHint()) {
+      installCard.innerHTML = `<h2>${icon('download')} Install app</h2>
+        <p>Tap ${icon('share')} <strong>Share</strong>, then <strong>Add to Home Screen</strong>.</p>`;
+      installCard.hidden = false;
+    } else {
+      installCard.hidden = true;
+      installCard.innerHTML = '';
+    }
+    icons();
+  };
+  installCard.addEventListener('click', async e => {
+    if (!e.target.closest('#install-btn')) return;
+    await pwa.promptInstall();
+    drawInstall();
+  });
+  const offInstall = pwa.onInstallChange(drawInstall);
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(offInstall);
+  drawInstall();
+
+  const folderBox = root.querySelector('#folder-status');
+  const unsubscribe = folder.subscribe(f => {
+    folderBox.innerHTML = folderHtml(f);
+    icons();
+    if (f.merged) updateCount();
+  });
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(unsubscribe);
+  folderBox.addEventListener('click', async e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'folder-connect') await folder.connect();
+    else if (b.id === 'folder-reconnect') await folder.reconnect();
+    else if (b.id === 'folder-disconnect') {
+      if (!confirm('Disconnect the data folder? Nothing in the folder is deleted; StudyBlock just stops writing to it.')) return;
+      await folder.disconnect();
+    }
+    updateCount();
+  });
 
   root.querySelector('#export').addEventListener('click', () => exportData());
 
@@ -83,7 +224,8 @@ export async function render(root) {
   replace.addEventListener('click', () => doImport('replace'));
 
   root.querySelector('#clear').addEventListener('click', () => {
-    if (!confirm('Delete all quiz history stored in this browser? This cannot be undone. Consider exporting first.')) return;
+    const linked = folder.status() === 'connected' ? ' The connected data folder file will be updated to match.' : '';
+    if (!confirm(`Delete all quiz history stored in this browser? This cannot be undone. Consider exporting first.${linked}`)) return;
     clearData();
     const m = root.querySelector('#clear-msg');
     m.className = 'msg good';

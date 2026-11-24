@@ -24,7 +24,7 @@ Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser
 
 - **Main chat orchestrates; subagents implement or fetch.** The main session plans, writes contracts/instructions, reviews diffs and verifies in the browser. Implementation and web lookups go to subagents with a narrow, explicit brief. Parallel agents must never touch the same files.
 - **Don't block on questions.** Open questions/decisions go into `ticket/NNN-slug.md` (see `ticket/README.md`) and work continues with a sensible default. When the user says "clear tickets", walk through the open ones.
-- **Group commits.** Commit one coherent unit of work (a feature, a module, a fix set), not every small file change. Only commit when asked or at the end of a completed task.
+- **Group commits, then push as a checkpoint.** Commit one coherent unit of work (a feature, a module, a fix set), not every small file change. Commit only finished, tested work: never half-written files a running agent still owns. After each grouped commit, push to `origin main`.
 
 ## Layout
 
@@ -241,7 +241,10 @@ Mobile is a first-class target: build mobile-first, so the layout works from 360
 
 The same code runs in three places.
 
-1. **Local server:** `py -m http.server 8000 --bind 127.0.0.1`. Used for development.
+1. **Local server:** `launcher_win.bat`, `launcher_mac.command` (opens in Terminal on double-click) or `launcher_linux.sh`. All three run `tools/serve.py`.
+   - Standard library only. It binds 127.0.0.1, takes the first free port from 8000, sends `Cache-Control: no-cache` and opens the browser.
+   - Closing the console window stops it.
+   - Plain `py -m http.server 8000 --bind 127.0.0.1` also works.
 2. **GitHub Pages / any static HTTPS host:** works as-is. Rules:
    - Every path is relative: no leading `/` in fetches, imports or links.
    - Add a `.nojekyll` file at the repo root.
@@ -301,6 +304,12 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Safety:**
   - The app touches only `studyblock-data.json` in the chosen folder; it never lists, reads or deletes other files.
   - The file's contents are validated the same way as an import.
+
+## Docs
+
+- `README.md` is an introduction for newcomers: what StudyBlock is, what it can do, a three-way quick start, and a link to the guide. Keep it short and friendly, not a manual.
+- `INSTRUCTION.md` is the full user guide (running, using, data, adding subjects, presets, troubleshooting). Update it whenever user-facing behaviour changes.
+- `CLAUDE.md` is the developer and agent spec. The main session owns all three; agents report doc changes instead of editing them.
 
 ## Adding a module
 

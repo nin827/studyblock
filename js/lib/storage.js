@@ -1,9 +1,30 @@
 // localStorage store (source of truth), cookie cache, import/export.
 
+import { requestPersistentStorage } from './pwa.js';
+
 const KEY = 'studyblock:data';
 const VERSION = 1;
 
 const empty = () => ({ version: VERSION, attempts: [] });
+
+// ---- change notifications (the data folder listens to these; no import cycle) ----
+
+const saveListeners = new Set();
+
+// Registers fn() to be called after every successful save of attempts, presets or the draft.
+// Returns an unsubscribe function.
+export function onSaved(fn) {
+  saveListeners.add(fn);
+  return () => saveListeners.delete(fn);
+}
+
+function notifySaved() {
+  // Ask the browser not to evict our storage (call-once inside pwa.js; harmless on file://).
+  requestPersistentStorage().catch(() => {});
+  for (const fn of saveListeners) {
+    try { fn(); } catch (e) { console.error('StudyBlock: save listener failed', e); }
+  }
+}
 
 function load() {
   try {
@@ -25,6 +46,7 @@ function load() {
 function save(data) {
   try {
     localStorage.setItem(KEY, JSON.stringify(data));
+    notifySaved();
     return true;
   } catch (e) {
     console.error('StudyBlock: could not save data', e);
@@ -244,7 +266,9 @@ export function loadMixDraft() {
 }
 
 export function saveMixDraft(draft) {
-  return writeJson(MIX_KEY, { config: draft.config, presetId: draft.presetId ?? null });
+  const ok = writeJson(MIX_KEY, { config: draft.config, presetId: draft.presetId ?? null });
+  if (ok) notifySaved();
+  return ok;
 }
 
 export function normalizePresetName(name) {
@@ -283,6 +307,7 @@ export function getPresets() {
 
 function savePresets(list) {
   if (!writeJson(PRESETS_KEY, list)) throw new Error('Could not write to local storage (full or blocked?).');
+  notifySaved();
 }
 
 const nameTaken = (list, name, exceptId) =>
@@ -341,22 +366,95 @@ function uniqueName(list, name) {
 }
 
 // ---- cookies (small cache only) ----
+//
+// Over HTTP(S): cookies named sb_<name>, scoped to the app's directory (not "/"), because a host
+// like username.github.io is shared by every repo of that user.
+// On file:// cookies don't work, so the same small values live in localStorage "studyblock:prefs".
 
-export function getCookie(name) {
+const PREFS_KEY = 'studyblock:prefs';
+const isFile = () => typeof location !== 'undefined' && location.protocol === 'file:';
+const appDir = () => {
+  try { return location.pathname.replace(/[^/]*$/, '') || '/'; } catch { return '/'; }
+};
+
+function readPrefs() {
+  const v = readJson(PREFS_KEY);
+  return isObj(v) ? v : {};
+}
+
+function rawCookies() {
+  const out = new Map();
   try {
-    const prefix = `sb_${name}=`;
     for (const part of document.cookie.split(';')) {
       const p = part.trim();
-      if (p.startsWith(prefix)) return decodeURIComponent(p.slice(prefix.length));
+      const eq = p.indexOf('=');
+      if (eq <= 3 || !p.startsWith('sb_')) continue;
+      const k = p.slice(3, eq);
+      // document.cookie lists more specific paths first; keep the first value for each name.
+      if (!out.has(k)) {
+        try { out.set(k, decodeURIComponent(p.slice(eq + 1))); } catch { /* skip malformed */ }
+      }
     }
   } catch { /* ignore */ }
-  return null;
+  return out;
+}
+
+const COOKIE_NAME_RE = /^[A-Za-z0-9_]+$/;
+
+function writeCookie(name, value, path, maxAge = 31536000) {
+  document.cookie = `sb_${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=${path}; SameSite=Lax`;
+}
+
+// One-time migration of old cookies written with path=/ (before cookies were scoped to the
+// app directory). Read their values, expire the path=/ copies, then re-create any value that
+// only existed there under the app directory. Skipped when the app itself lives at "/".
+function migrateRootCookies() {
+  if (isFile()) return;
+  const dir = appDir();
+  if (dir === '/') return;
+  try {
+    const before = rawCookies();
+    if (!before.size) return;
+    for (const k of before.keys()) {
+      if (COOKIE_NAME_RE.test(k)) document.cookie = `sb_${k}=; max-age=0; path=/; SameSite=Lax`;
+    }
+    const after = rawCookies();
+    for (const [k, v] of before) {
+      if (!after.has(k) && COOKIE_NAME_RE.test(k)) writeCookie(k, v, dir);
+    }
+  } catch { /* ignore */ }
+}
+migrateRootCookies();
+
+export function getCookie(name) {
+  if (isFile()) {
+    const v = readPrefs()[name];
+    return typeof v === 'string' ? v : null;
+  }
+  const v = rawCookies().get(name);
+  return v === undefined ? null : v;
 }
 
 export function setCookie(name, value) {
-  try {
-    document.cookie = `sb_${name}=${encodeURIComponent(value)}; max-age=31536000; path=/; SameSite=Lax`;
-  } catch { /* ignore */ }
+  if (!COOKIE_NAME_RE.test(String(name))) return;
+  if (isFile()) {
+    const prefs = readPrefs();
+    prefs[name] = String(value);
+    writeJson(PREFS_KEY, prefs);
+    return;
+  }
+  try { writeCookie(name, String(value), appDir()); } catch { /* ignore */ }
+}
+
+export function deleteCookie(name) {
+  if (!COOKIE_NAME_RE.test(String(name))) return;
+  if (isFile()) {
+    const prefs = readPrefs();
+    delete prefs[name];
+    writeJson(PREFS_KEY, prefs);
+    return;
+  }
+  try { document.cookie = `sb_${name}=; max-age=0; path=${appDir()}; SameSite=Lax`; } catch { /* ignore */ }
 }
 
 // ---- export / import / clear ----
@@ -367,11 +465,17 @@ function today() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export function exportData() {
-  // Optional extra fields (version stays 1): mixPresets + mixDraft.
+// Everything worth keeping, in the export/import shape. Optional extra fields (version stays 1):
+// mixPresets + mixDraft. Also the contents of the data folder's studyblock-data.json.
+export function snapshot() {
   const out = { ...load(), mixPresets: getPresets() };
   const draft = loadMixDraft();
   if (draft) out.mixDraft = draft;
+  return out;
+}
+
+export function exportData() {
+  const out = snapshot();
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -383,17 +487,25 @@ export function exportData() {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-// Reads a File, validates, and merges or replaces. Returns { added, total }.
+// Reads a File, validates, and merges or replaces. Returns { added, total, presetsAdded }.
 export async function importData(file, mode) {
-  if (mode !== 'merge' && mode !== 'replace') throw new Error('Import mode must be "merge" or "replace".');
   if (!file) throw new Error('No file selected.');
-  const text = await file.text();
+  return importText(await file.text(), mode);
+}
+
+// Same as importData, for JSON text from anywhere (e.g. the data folder). Data only, never executed.
+export function importText(text, mode) {
   let incoming;
   try {
     incoming = JSON.parse(text);
   } catch {
     throw new Error('File is not valid JSON.');
   }
+  return importObject(incoming, mode);
+}
+
+function importObject(incoming, mode) {
+  if (mode !== 'merge' && mode !== 'replace') throw new Error('Import mode must be "merge" or "replace".');
   validate(incoming);
   // Keep only known fields (data only).
   const clean = incoming.attempts.map(a => ({
@@ -451,4 +563,5 @@ export async function importData(file, mode) {
 
 export function clearData() {
   try { localStorage.removeItem(KEY); } catch { /* ignore */ }
+  notifySaved();
 }

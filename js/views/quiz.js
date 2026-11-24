@@ -1,20 +1,25 @@
 import { loadModule, domainOf, checkAnswer, buildQuiz } from '../lib/engine.js';
 import { saveAttempt, setCookie } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
-import { esc, icon, icons, cap, errorBox, hashPart, scoreClass } from './ui.js';
+import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag } from './ui.js';
 
 export function renderPrompt(src) {
   const s = String(src ?? '');
   return s.includes('\n') ? renderMarkdown(s) : `<p>${renderInline(s)}</p>`;
 }
 
-// "Domain › Module · subtopic · difficulty" tag for questions that carry their own origin.
-// All parts are optional (older stored attempts have none).
+// "Domain › Module" + "subtopic · difficulty" tags for questions that carry their own origin.
+// All parts are optional (older stored attempts have none). `q.domain` (id) picks the tint.
 export function questionTag(q) {
   if (!q || typeof q.module !== 'string') return '';
-  const where = [q.domainTitle, q.moduleTitle ?? q.module].filter(Boolean).map(esc).join(' › ');
-  const rest = [q.subtopicTitle ?? q.subtopic, q.difficulty ? cap(q.difficulty) : null].filter(Boolean).map(esc);
-  return `<p class="q-tag">${[where, ...rest].join(' · ')}</p>`;
+  return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty)}</p>`;
+}
+
+// Plain-text parts; tag() escapes them.
+function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty) {
+  const where = [domainTitle, moduleTitle].filter(Boolean).join(' › ');
+  const rest = [subtopicTitle, difficulty ? cap(difficulty) : null].filter(Boolean).join(' · ');
+  return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '');
 }
 
 /*
@@ -25,6 +30,7 @@ export function questionTag(q) {
  *   crumbs           HTML for the breadcrumb nav (already escaped)
  *   backHref/backLabel/backIcon   secondary button on the results screen
  *   showTags         show questionTag() above each prompt / in the review
+ *   cardTags         optional HTML (already escaped) shown above every prompt when showTags is off
  *   toAttempt(results)  -> attempt fields (module/subtopic/difficulty/questions/score/total)
  */
 export async function runQuiz(root, ctx, opts) {
@@ -35,7 +41,7 @@ export async function runQuiz(root, ctx, opts) {
 
   async function start() {
     phase = 'loading';
-    root.innerHTML = `${opts.crumbs}<div class="card"><p class="muted">${icon('loader')} Building quiz…</p></div>`;
+    root.innerHTML = `<div class="page-narrow quiz-page">${opts.crumbs}<div class="card"><p class="muted">${icon('loader')} Building quiz…</p></div></div>`;
     icons();
     let built;
     try {
@@ -55,50 +61,67 @@ export async function runQuiz(root, ctx, opts) {
     showQuestion();
   }
 
+  const correctCount = () => results.filter(r => r.correct).length;
+  const progressText = () => `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${correctCount()} correct`;
+
+  // Segmented progress: one segment per question, coloured correct / wrong / current.
   function header() {
     const n = questions.length;
-    const pctDone = Math.round((idx / n) * 100);
+    const segs = questions.map((_, i) => {
+      const cls = i < results.length ? (results[i].correct ? 'is-correct' : 'is-wrong') : (i === idx ? 'is-current' : '');
+      return `<span class="${cls}"></span>`;
+    }).join('');
     return `${opts.crumbs}
-      <div class="quiz-head">
-        <h1 class="quiz-title">${opts.title}</h1>
-        <span class="muted">Question ${Math.min(idx + 1, n)} of ${n}</span>
-      </div>
-      <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${idx}">
-        <div class="progress-bar" style="width:${pctDone}%"></div>
+      <div class="quiz-top">
+        <div class="quiz-bar">
+          <a class="quiz-quit" href="${opts.backHref}" aria-label="Quit quiz">${icon('x')}<span class="quiz-quit-label">Quit</span></a>
+          <div class="quiz-heading">
+            <h1 class="quiz-title">${opts.title}</h1>
+            <p class="quiz-meta">Question <strong>${Math.min(idx + 1, n)}</strong> of ${n}</p>
+          </div>
+          <span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> correct</span></span>
+        </div>
+        <div class="seg-progress ${n > 20 ? 'is-dense' : ''}" id="seg-progress" role="progressbar" aria-label="Quiz progress"
+          aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${idx}" aria-valuetext="${esc(progressText())}">${segs}</div>
       </div>`;
   }
 
   function inputHtml(q) {
     if (q.answerType === 'choice') {
       return `<div class="choices">${(q.choices || []).map((c, i) =>
-        `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key">${i + 1}</span><span>${renderInline(c)}</span></button>`).join('')}</div>`;
+        `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
     }
     const num = q.answerType === 'number';
     // The Check button lives in the action bar (sticky on phones) and targets this form by id.
     return `<form class="answer-form" id="answer-form" autocomplete="off">
+      <label class="field-label" for="answer">Your answer</label>
       <input id="answer" class="answer-input" type="text" ${num ? 'inputmode="decimal"' : ''} enterkeyhint="go"
         autocapitalize="off" autocorrect="off"
-        placeholder="${num ? 'Enter a number' : 'Type your answer'}" aria-label="Your answer" spellcheck="false">
+        placeholder="${num ? 'Type a number' : 'Type your answer'}" spellcheck="false">
     </form>`;
   }
 
   function actionBar(q) {
-    return q.answerType === 'choice'
-      ? '<p class="muted action-hint">Tap an answer</p>'
-      : `<button type="submit" form="answer-form" class="btn btn-primary">${icon('check')} Check</button>`;
+    if (q.answerType === 'choice') {
+      const n = Math.min((q.choices || []).length, 9);
+      return `<p class="action-hint"><span class="action-hint-tap">Tap an answer</span>
+        <span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to answer</span></p>`;
+    }
+    return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to check</span></p>
+      <button type="submit" form="answer-form" class="btn btn-primary">${icon('check')} Check</button>`;
   }
 
   function showQuestion() {
     phase = 'answer';
     const q = questions[idx];
-    root.innerHTML = `${header()}
+    root.innerHTML = `<div class="page-narrow quiz-page">${header()}
       <section class="card question">
-        ${opts.showTags ? questionTag(q) : ''}
+        ${opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}</p>` : '')}
         <div class="prompt prose">${renderPrompt(q.prompt)}</div>
         ${inputHtml(q)}
         <div id="feedback"></div>
         <div class="action-bar" id="action-bar">${actionBar(q)}</div>
-      </section>`;
+      </section></div>`;
     icons();
     const form = root.querySelector('.answer-form');
     if (form) {
@@ -122,14 +145,28 @@ export async function runQuiz(root, ctx, opts) {
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice').forEach(el => { el.disabled = true; });
     if (q.answerType === 'choice') {
+      root.querySelector('.choices')?.classList.add('is-answered');
       root.querySelectorAll('.choice').forEach(b => {
         const c = q.choices[+b.dataset.i];
-        if (String(c) === String(q.answer)) b.classList.add('is-correct');
-        else if (+b.dataset.i === choiceIndex) b.classList.add('is-wrong');
+        const mark = b.querySelector('.choice-mark');
+        if (String(c) === String(q.answer)) {
+          b.classList.add('is-correct');
+          if (mark) mark.innerHTML = `${icon('circle-check')}<span class="sr-only">Correct answer</span>`;
+        } else if (+b.dataset.i === choiceIndex) {
+          b.classList.add('is-wrong');
+          if (mark) mark.innerHTML = `${icon('circle-x')}<span class="sr-only">Your answer, incorrect</span>`;
+        }
       });
     } else {
       root.querySelector('#answer')?.classList.add(correct ? 'is-correct' : 'is-wrong');
     }
+
+    // Progress: colour the current segment and bump the correct count.
+    const seg = root.querySelector(`#seg-progress > span:nth-child(${idx + 1})`);
+    if (seg) { seg.classList.remove('is-current'); seg.classList.add(correct ? 'is-correct' : 'is-wrong'); }
+    const counter = root.querySelector('#quiz-correct');
+    if (counter) counter.textContent = String(correctCount());
+    root.querySelector('#seg-progress')?.setAttribute('aria-valuetext', progressText());
 
     const last = idx === questions.length - 1;
     root.querySelector('#feedback').innerHTML = `
@@ -139,7 +176,8 @@ export async function runQuiz(root, ctx, opts) {
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
     root.querySelector('#action-bar').innerHTML =
-      `<button type="button" class="btn btn-primary" id="next">${last ? `${icon('flag')} Finish` : `Next ${icon('arrow-right')}`}</button>`;
+      `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to continue</span></p>
+      <button type="button" class="btn btn-primary" id="next">${last ? `${icon('flag')} Finish` : `Next question ${icon('arrow-right')}`}</button>`;
     icons();
     const next = root.querySelector('#next');
     next.addEventListener('click', advance);
@@ -159,11 +197,13 @@ export async function runQuiz(root, ctx, opts) {
     const total = results.length;
     saveAttempt({ ...opts.toAttempt(results), score, total });
     const pct = total ? Math.round((score / total) * 100) : 0;
-    root.innerHTML = `
+    root.innerHTML = `<div class="page-narrow">
       ${opts.crumbs}
       <section class="card result-summary">
+        <p class="eyebrow">Quiz complete</p>
         <h1 class="quiz-title">${opts.title}</h1>
         <p class="big-score score ${scoreClass(pct)}">${score} / ${total} <span>(${pct}%)</span></p>
+        <div class="result-meter" aria-hidden="true">${results.map(r => `<span class="${r.correct ? 'is-correct' : 'is-wrong'}"></span>`).join('')}</div>
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Retry</button>
           <a class="btn" href="${opts.backHref}">${icon(opts.backIcon || 'layout-grid')} ${esc(opts.backLabel)}</a>
@@ -174,7 +214,7 @@ export async function runQuiz(root, ctx, opts) {
       <section class="card">
         <h2>Review</h2>
         <ol class="review">${results.map(r => reviewItem(r, opts.showTags)).join('')}</ol>
-      </section>`;
+      </section></div>`;
     icons();
     root.querySelector('#retry').addEventListener('click', start);
   }
@@ -244,7 +284,7 @@ export function reviewItem(r, showTag = false) {
   const q = r.q ?? r;
   const answer = q.answer;
   return `<li class="review-item ${r.correct ? 'good' : 'bad'}">
-    <div class="review-mark">${icon(r.correct ? 'circle-check' : 'circle-x')}</div>
+    <div class="review-mark">${icon(r.correct ? 'circle-check' : 'circle-x')}<span class="sr-only">${r.correct ? 'Correct' : 'Incorrect'}</span></div>
     <div class="review-body">
       ${showTag ? questionTag(q) : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
@@ -292,6 +332,7 @@ export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
   await runQuiz(root, ctx, {
     build: () => buildQuiz(mod.id, st.id, difficulty),
     title: `${esc(modTitle)} · ${esc(st.title ?? st.id)} · ${esc(cap(difficulty))}`,
+    cardTags: originTags(domain?.id, domain?.title, modTitle, String(st.title ?? st.id), difficulty),
     crumbs,
     backHref: moduleHref,
     backLabel: 'Module',

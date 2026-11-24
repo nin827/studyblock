@@ -1,0 +1,305 @@
+# StudyBlock — User Guide
+
+This guide covers everything from opening StudyBlock for the first time to adding your own subjects. For a short introduction, see the [README](README.md).
+
+**Contents**
+
+1. [Ways to run StudyBlock](#1-ways-to-run-studyblock)
+2. [Finding your way around](#2-finding-your-way-around)
+3. [Taking a quiz](#3-taking-a-quiz)
+4. [Mixed quizzes](#4-mixed-quizzes)
+5. [Presets](#5-presets)
+6. [Your progress and data](#6-your-progress-and-data)
+7. [Appearance](#7-appearance)
+8. [Adding your own subjects](#8-adding-your-own-subjects)
+9. [Writing official presets](#9-writing-official-presets)
+10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## 1. Ways to run StudyBlock
+
+### A. Install it as an app (recommended)
+
+StudyBlock can be hosted for free on GitHub Pages and installed from there like an app.
+
+**Publish it once**
+1. Push the repository to GitHub.
+2. Open the repository's **Settings → Pages**.
+3. Under **Build and deployment**, choose **Deploy from a branch**. Select `main` and the **/ (root)** folder, then press **Save**.
+4. About a minute later the site is live at `https://<your-user>.github.io/<repo>/`.
+
+**Install it**
+- **Chrome, Edge (desktop or Android):** open the site and choose **Settings → Install StudyBlock**, or use the install icon in the address bar.
+- **iPhone and iPad (Safari):** tap **Share**, then **Add to Home Screen**.
+
+Once installed, it opens in its own window and works offline. When you publish a new version, a small **Update available · Reload** message appears. It never interrupts a quiz in progress.
+
+### B. Open it as a single file (no setup)
+
+Run this once to build the file:
+
+```
+py tools/bundle.py
+```
+
+That creates `dist/studyblock.html`. Double-click it, or copy it to a USB stick or a shared drive. Everything the app needs is inside that one file.
+
+Things to know about the single file:
+- Icons come from the internet, so offline you'll see text labels without icons. Everything still works.
+- Browsers can clear storage for local files more easily, so StudyBlock will ask you to **connect a data folder** (see [section 6](#6-your-progress-and-data)).
+- Rebuild the file after adding or changing subjects or presets.
+
+### C. Use the local launcher
+
+This runs the project folder directly, which is handy if you edit subjects or presets.
+
+Pick the launcher for your system. All three are in the main project folder.
+
+| Your computer | Launch this file | How |
+|---|---|---|
+| **Windows** | **`launcher_win.bat`** | Double-click it |
+| **macOS** | **`launcher_mac.command`** | Double-click it. The first time, macOS may block it: right-click → **Open** → **Open**. |
+| **Linux** | **`launcher_linux.sh`** | Run `./launcher_linux.sh` in a terminal |
+
+A small window opens and your browser goes to StudyBlock at `http://127.0.0.1:8000`. The server:
+- only accepts connections from this computer
+- always serves your latest files
+- if StudyBlock is already running, just opens it again instead of starting a second copy
+
+**To stop it, close the window,** or press Ctrl+C. Nothing keeps running in the background.
+
+The launcher needs Python 3, which it uses as a tiny web server. If Python isn't installed, the window tells you so; use option B instead.
+
+To run the server by hand, use `py tools/serve.py`. It takes these options:
+- `--port 8123` to use a different port (your data there is separate)
+- `--no-browser` to skip opening a tab
+
+If you double-click `index.html` itself, you'll only see a notice, because browsers won't run the app's code straight from the project folder. Use the launcher or option B.
+
+**Install it as an app from the launcher, with no GitHub needed**
+1. Start the launcher. In Chrome or Edge, open **Settings → Install StudyBlock**, or click the install icon at the right of the address bar.
+2. StudyBlock now has its own window and Start-menu entry, and it works **offline even after you close the launcher**, because the app keeps a copy of itself.
+3. Start the launcher again whenever you want the app to pick up changes you made to subjects or presets.
+
+> **Keep the same address.** Your progress, settings and installed app belong to one exact address, port number included (`http://127.0.0.1:8000`). If port 8000 is taken by another program, the launcher uses a different port and warns you. Everything will look empty there, because it's a separate address. Free port 8000 and relaunch to get your usual StudyBlock back.
+
+You can't install from `index.html` opened directly (a `file:///…` address), or from the single file. Browsers only allow installing from `http://localhost`, `http://127.0.0.1` or an `https://` site.
+
+---
+
+## 2. Finding your way around
+
+| Page | What's there |
+|---|---|
+| **Home** | Domain cards with your progress, a "Continue" shortcut, and the mixed quiz with quick-start presets |
+| **Domain** | The subdomains in that domain (for example, Math → Arithmetic and Algebra) |
+| **Module** | An introduction to the topic, then a grid of subtopic × difficulty with your best score in each |
+| **Mix** | The mixed-quiz builder and your presets |
+| **History** | Every quiz you've taken, with full question-by-question review |
+| **Settings** | Theme, accent colour, installing, data folder, export, import, clearing data |
+
+On phones the menu sits at the bottom of the screen.
+
+---
+
+## 3. Taking a quiz
+
+1. From a module page, choose a subtopic and difficulty and press **Start**.
+2. Answer each question:
+   - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
+   - **Text answers:** capital letters and extra spaces don't matter.
+   - **Multiple choice:** tap an option, or press keys **1–9**.
+3. Press **Check** (or **Enter**). You'll see whether you were right and how the answer is worked out.
+4. Press **Next** (or **Enter** again).
+5. At the end you get your score and a full review. **Retry** gives you a fresh set of questions on the same topic.
+
+Every question has a hidden seed, so StudyBlock can rebuild exactly the same question later for review.
+
+---
+
+## 4. Mixed quizzes
+
+Open **Mix** to build a quiz across several domains.
+
+1. **Tick the domains** you want. Within each one, tick or untick its subdomains.
+2. **Set weights.** Each domain and subdomain has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
+3. Watch the **share bar** and the percentages update as you change things.
+4. Choose a **difficulty** (Any, Easy, Medium or Hard) and the **number of questions** (1–50).
+5. Press **Start**.
+
+How a question is picked: first a domain (by domain weight), then a subdomain inside it (by subdomain weight), then a random subtopic. If a subtopic doesn't have the difficulty you chose, the closest one is used.
+
+Results from mixed quizzes also count toward each subject's own statistics.
+
+---
+
+## 5. Presets
+
+### Your current mix (the draft)
+Whatever you set up in the builder is saved automatically as your **draft**. It stays, even after closing the browser, until you save it as a preset or press **Clear draft**, which resets everything to weight 1.
+
+### Your presets
+- **Save as new:** give the current mix a name of up to 40 characters. Each name must be unique.
+- **Update:** after changing a mix you loaded from one of your presets, save the changes back into it. The status badge shows **Unsaved changes** until you do.
+- **Load, Rename, Delete:** from the preset chips. Deleting asks you to confirm first.
+
+### Official presets
+Presets marked with a ✓ badge come with the app. You can load them and start from them, but not change them. To keep a changed version, use **Save as new**.
+
+Presets also appear on Home as one-tap quick starts.
+
+---
+
+## 6. Your progress and data
+
+### Where your progress is kept
+- **In the browser:** saved automatically after every quiz.
+- **In a data folder (optional):** in Chrome, Edge and other Chromium browsers, StudyBlock can also keep a copy in a folder you choose.
+- **In an export file:** a backup you make yourself.
+
+StudyBlock also asks the browser to keep its storage permanently, so it isn't cleared to save space.
+
+### Data folder
+1. Go to **Settings → Data folder → Connect data folder** and pick a folder. A backed-up or cloud-synced folder works well.
+2. StudyBlock creates `studyblock-data.json` there and updates it about a second after every change.
+3. The folder is remembered. On later visits it syncs automatically. If the browser asks for permission again, **your first click anywhere on the page** re-grants it. Choose **Allow on every visit** when Chrome offers it, and you won't be asked again.
+4. When you connect or reconnect, the file and your browser's progress are merged, with no duplicates.
+
+StudyBlock only ever touches `studyblock-data.json` in that folder; it never reads, lists or deletes anything else. Firefox and Safari don't support data folders; use export and import there.
+
+### Export and import
+- **Export** downloads `studyblock-progress-YYYY-MM-DD.json`, containing your history, your presets and your current mix.
+- **Import** reads such a file. Choose:
+  - **Merge** to add it to what you have; duplicates are skipped.
+  - **Replace** to swap everything for the file's contents.
+
+  Official presets are never imported or exported; they come from the app.
+
+### Clearing data
+**Settings → Clear all data** deletes your quiz history, after you confirm. Export first if you might want it back.
+
+---
+
+## 7. Appearance
+
+- **Theme:** System, Light or Dark.
+- **Accent colour:** 24 hues around the colour wheel, plus grey. The default is purple. Every option is tuned so that text on buttons stays readable.
+- Each domain keeps its own colour (Math, Science, Geography, Business), whichever accent you pick.
+
+---
+
+## 8. Adding your own subjects
+
+Subjects live in `modules/`, one folder each, and are grouped into domains in `modules/index.json`.
+
+### Step 1: create the folder
+`modules/<id>/`, where `<id>` uses lowercase letters, digits and dashes, for example `fractions`.
+
+### Step 2: describe it in `module.json`
+```json
+{
+  "id": "fractions",
+  "title": "Fractions",
+  "description": "Add, simplify and compare fractions.",
+  "icon": "percent",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "simplify", "title": "Simplify", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}
+```
+`icon` is any [Lucide](https://lucide.dev/icons) icon name. `type` is `"generator"` or `"csv"`.
+
+### Step 3a: a generator (`generator.js`)
+Questions are made by code, so they never run out.
+```js
+export function generate({ subtopic, difficulty, rng }) {
+  const a = rng.int(2, 9), b = rng.int(2, 9);
+  return {
+    prompt: `What is \`${a} × ${b}\`?`,
+    answer: a * b,
+    answerType: 'number',
+    explanation: `${a} × ${b} = ${a * b}`,
+    params: { a, b }
+  };
+}
+
+// Check the answer a different way.
+export function verify(question, answer) {
+  const { a, b } = question.params;
+  return answer / b === a;
+}
+```
+- Use only the `rng` you're given (`int`, `pick`, `shuffle`, `next`), never `Math.random`. That way every question can be rebuilt from its seed.
+- `verify` should check the answer by an independent route, such as working backwards. Questions that fail it are thrown away and remade.
+- For multiple choice, set `answerType: 'choice'` and `choices: [...]`; the answer must be one of the choices.
+- For rounded answers, add `tolerance: 0.005`.
+
+### Step 3b: or a question list (`questions.csv`)
+```csv
+subtopic,difficulty,prompt,answer,choices,explanation
+simplify,easy,Simplify 2/4,1/2,,Divide both by 2.
+simplify,medium,Which equals 3/9?,1/3,1/3|1/6|3/1|2/3,Divide both by 3.
+```
+- `choices` are separated by `|`. Leave it empty for a typed answer.
+- Leave `difficulty` empty to use the row at every difficulty.
+- Put fields containing commas inside double quotes.
+
+### Step 4: optional introduction (`intro.md`)
+Plain Markdown shown on the module page: headings, lists, tables, `code`, links.
+
+### Step 5: add it to a domain
+In `modules/index.json`, add the id to a domain's `modules` list, or add a new domain:
+```json
+{ "id": "math", "title": "Math", "icon": "sigma", "description": "…", "modules": ["arithmetic", "algebra", "fractions"] }
+```
+
+Reload the app to see it. Rebuild the single file (`py tools/bundle.py`) if you use one.
+
+---
+
+## 9. Writing official presets
+
+Official presets live in `presets/`.
+
+1. Create `presets/<id>.json`:
+   ```json
+   {
+     "id": "exam-week",
+     "name": "Exam week",
+     "description": "Heavy on algebra, a little of everything else.",
+     "config": {
+       "domains": {
+         "math": { "weight": 3, "modules": { "algebra": 2, "arithmetic": 1 } },
+         "science": { "weight": 1 },
+         "geography": { "weight": 1 }
+       },
+       "difficulty": "medium",
+       "count": 20
+     }
+   }
+   ```
+2. Add `"exam-week"` to the list in `presets/index.json`.
+
+Rules:
+- A domain you leave out isn't included.
+- A domain without `modules` includes all of its subdomains, each at weight 1.
+- `difficulty` is `any`, `easy`, `medium` or `hard`; `count` is 1–50.
+- Unknown domain or module ids are skipped, with a warning in the browser console.
+
+---
+
+## 10. Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Blank page, or a "needs a server" notice, when opening `index.html` | Double-click the launcher for your system (`launcher_win.bat`, `launcher_mac.command` or `launcher_linux.sh`), or use the single file (`dist/studyblock.html`) or the installed app; see [section 1](#1-ways-to-run-studyblock) |
+| The launcher window flashes and closes | Run it from a terminal to read the message. Usually Python isn't installed; get it from python.org, or use the single file. |
+| No icons | You're offline and icons come from the internet. Everything still works. |
+| "Click anywhere to resume syncing" | Your browser needs permission for the data folder again. Click once, and choose **Allow on every visit** if offered. |
+| Data folder option missing | Your browser doesn't support it (Firefox, Safari). Use Export/Import. |
+| A new subject or preset doesn't show up | Check that its id is listed in `modules/index.json` or `presets/index.json`. Reload twice if the app is installed, since the first reload fetches the update. Rebuild the single file if you use one. |
+| Progress disappeared | Re-import your last export, or reconnect your data folder; both are merged back in. |
+| Install button doesn't appear | It only appears over `https://` or localhost in supporting browsers, and is hidden once installed. On iPhone use **Share → Add to Home Screen**. |
