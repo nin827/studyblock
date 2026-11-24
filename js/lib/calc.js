@@ -10,6 +10,9 @@
 // Aliases: × -> *, ÷ -> /, − -> -. Trig works in degrees. `%` is modulo (JS sign rules).
 // Names starting with "_" are row references (labels); bare names are only constants and functions,
 // so `e` is always Euler's number and `_e` is a row.
+// Graph mode: parse(src, { vars: ['x'] }) also accepts the bare name `x` as a variable node
+// ({ k: 'var', name: 'x' }), evaluated with evaluate(ast, lookup, { x }). Without the option `x` stays
+// "unknown function or constant: x", so sheet rows can't use it.
 
 export const MAX_EXPR = 200;
 export const MAX_ROWS = 30;
@@ -122,10 +125,11 @@ export function tokenize(src, { lenient = false } = {}) {
 
 // ---------- parser ----------
 // AST: { k: 'num', v } | { k: 'ref', name } | { k: 'const', name } | { k: 'call', name, args }
-//    | { k: 'neg', a } | { k: 'bin', op, a, b }
+//    | { k: 'neg', a } | { k: 'bin', op, a, b } | { k: 'var', name }   (var only with opts.vars)
 
-export function parse(src) {
+export function parse(src, { vars } = {}) {
   const s = String(src ?? '');
+  const varSet = new Set((Array.isArray(vars) ? vars : []).map(v => String(v).toLowerCase()));
   if (s.length > MAX_EXPR) fail(`expression too long (max ${MAX_EXPR} characters)`);
   const toks = tokenize(s);
   if (!toks.length) fail('empty expression');
@@ -134,6 +138,15 @@ export function parse(src) {
   const peek = () => toks[p];
   const isOp = (tok, ops) => tok && tok.t === 'op' && ops.includes(tok.v);
   const describe = tok => (!tok ? 'end of expression' : tok.t === ',' ? '"," (no thousands separators: write 1000)' : `"${tok.v}"`);
+  // Graph mode only: "2x" / "3(x+1)" / "x(x-1)" get a hint instead of a bare "unexpected".
+  function implicitHint(at) {
+    if (!varSet.size) return '';
+    const prev = toks[at - 1];
+    const tok = toks[at];
+    if (!prev || !tok || (prev.t !== 'num' && prev.t !== ')' && prev.t !== 'name')) return '';
+    if (tok.t !== 'name' && tok.t !== '(' && tok.t !== 'num') return '';
+    return `missing * before ${describe(tok)} (write 2*x, not 2x)`;
+  }
 
   function enter() { if (++depth > MAX_DEPTH) fail('expression is nested too deeply'); }
 
@@ -177,7 +190,7 @@ export function parse(src) {
     if (tok.t === '(') {
       p++;
       const node = expr();
-      if (!peek() || peek().t !== ')') fail('missing ")"');
+      if (!peek() || peek().t !== ')') fail(implicitHint(p) || 'missing ")"');
       p++;
       return node;
     }
@@ -188,6 +201,9 @@ export function parse(src) {
         return { k: 'ref', name: tok.v };
       }
       const low = tok.v.toLowerCase();
+      if (varSet.has(low) && !has(FUNCTIONS, low) && !has(CONSTANTS, low)) {
+        return { k: 'var', name: low };
+      }
       if (peek() && peek().t === '(') {
         if (!has(FUNCTIONS, low)) fail(`unknown function or constant: ${tok.v}`);
         p++;
@@ -199,7 +215,7 @@ export function parse(src) {
             const nx = peek();
             if (nx && nx.t === ',') { p++; continue; }
             if (nx && nx.t === ')') { p++; break; }
-            fail(`expected "," or ")" in ${low}(…)`);
+            fail(implicitHint(p) || `expected "," or ")" in ${low}(…)`);
           }
         }
         const [min, max] = FUNCTIONS[low];
@@ -217,7 +233,7 @@ export function parse(src) {
   }
 
   const ast = expr();
-  if (p < toks.length) fail(`unexpected ${describe(toks[p])}`);
+  if (p < toks.length) fail(implicitHint(p) || `unexpected ${describe(toks[p])}`);
   return ast;
 }
 
@@ -241,24 +257,30 @@ function usesTrig(ast) {
 
 const finite = (x, what = 'result') => (Number.isFinite(x) ? x : fail(`${what} is not a finite number`));
 
-// lookup(nameLowerCase) -> number. Throws CalcError on any problem.
-export function evaluate(ast, lookup = () => undefined) {
+// lookup(nameLowerCase) -> number. vars: { name: number } for 'var' nodes (graph mode).
+// Throws CalcError on any problem.
+export function evaluate(ast, lookup = () => undefined, vars) {
   switch (ast.k) {
     case 'num': return finite(ast.v, 'number');
     case 'const': return CONSTANTS[ast.name];
+    case 'var': {
+      const v = vars && has(vars, ast.name) ? vars[ast.name] : undefined;
+      if (typeof v === 'number') return finite(v, ast.name);
+      return fail(`unknown function or constant: ${ast.name}`);
+    }
     case 'ref': {
       const v = lookup(ast.name.toLowerCase());
       if (v !== undefined) return v;
       return fail(`unknown value: ${ast.name}`);
     }
-    case 'neg': return -evaluate(ast.a, lookup);
+    case 'neg': return -evaluate(ast.a, lookup, vars);
     case 'call': {
-      const args = ast.args.map(a => evaluate(a, lookup));
+      const args = ast.args.map(a => evaluate(a, lookup, vars));
       return finite(FUNCTIONS[ast.name][2](...args));
     }
     case 'bin': {
-      const a = evaluate(ast.a, lookup);
-      const b = evaluate(ast.b, lookup);
+      const a = evaluate(ast.a, lookup, vars);
+      const b = evaluate(ast.b, lookup, vars);
       switch (ast.op) {
         case '+': return finite(a + b);
         case '-': return finite(a - b);
@@ -368,6 +390,28 @@ export function evaluateSheet(rows) {
 
   for (let i = 0; i < n; i++) visit(i);
   return out;
+}
+
+// Lookup over an evaluated sheet, with the same rules as inside evaluateSheet: the first row with a
+// valid label owns it; unknown names give undefined ("unknown value: _x"); blank and failing rows
+// throw "_a is empty" / "_a has an error". `results` = evaluateSheet(rows).
+export function sheetLookup(rows, results) {
+  const list = Array.isArray(rows) ? rows : [];
+  const byName = new Map();
+  for (let i = 0; i < list.length && i < MAX_ROWS; i++) {
+    const label = String(list[i]?.label ?? '');
+    if (labelProblem(label, [...byName.keys()])) continue;
+    byName.set(label.toLowerCase(), i);
+  }
+  return name => {
+    const j = byName.get(String(name).toLowerCase());
+    if (j === undefined) return undefined;
+    const label = String(list[j].label);
+    const r = results && results[j];
+    if (!r || r.error) fail(`${label} has an error`);
+    if (r.value === null || r.value === undefined) fail(`${label} is empty`);
+    return r.value;
+  };
 }
 
 // Next free suggested label: _a, _b, _c, …, then _a1, _b1, …

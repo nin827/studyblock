@@ -40,6 +40,9 @@ js/lib/csv.js           RFC4180-ish CSV parser (quotes, commas, newlines, "")
 js/lib/rng.js           seeded PRNG (mulberry32) + helpers
 js/lib/storage.js       localStorage store, cookie cache, import/export
 js/lib/engine.js        loads modules, generates + verifies questions, checks answers
+js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
+js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
+js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
 modules/<id>/intro.md   optional markdown shown on the module page
@@ -294,6 +297,22 @@ given: [ { label: "_price", value: 4.5 }, { label: "_cost", value: 1.2 } ]
 - **Engine:** validates `given` (drops bad labels, duplicates and non-finite values, max 8) and passes it through on the question. It isn't stored in attempts; `work` already captures the rows.
 - **Calculator:** when a question appears, rows still marked *given* from the previous question are removed, unless the user has edited them, and the new question's given rows are added at the top with a small "given" tag. Editing a given row's label or expression turns it into a normal row. A label clash with a user row gets a suffix (`_price_2`). A *blank* row whose label matches a given label moves to the next free name; non-blank user rows are never touched. Values are written with up to 12 significant digits, and the tag is visible text plus a screen-reader label. User rows that reference a given label follow the current question's value (ticket 008).
 - Shown only when the calculator itself is shown.
+
+**Sheet | Graph**
+
+A two-button switch (`aria-pressed`) at the top of the calculator picks the mode. Sheet is the row calculator above; Graph plots functions (`js/views/graph.js` for the UI, `js/lib/graph.js` for the maths, with no DOM). Open choices are in ticket 009.
+- **Functions:** up to 6, in fixed slots `y1 … y6`. Deleting y2 keeps y3's name and colour. Each slot has its own colour (`--graph-1..6`, light and dark) and its name drawn on the plot. There is a show/hide toggle and a delete button. Enter in the last function adds one.
+- **Grammar:** the sheet grammar plus the variable `x`, allowed only here: `parse(src, { vars: ['x'] })` → `{k:'var'}`, and `evaluate(ast, lookup, { x })`. In a sheet row, `x` stays "unknown function or constant: x". Graph mode suggests "write 2*x, not 2x". Trig is in degrees.
+- **Sheet references:** `_a` takes the sheet's live value via `calc.sheetLookup`. A blank or failing row shows "_a is empty" / "_a has an error" under the function. Renaming a sheet label rewrites graph references too (whole tokens only).
+- **Plot:** a canvas (devicePixelRatio aware, ResizeObserver, redraws batched per animation frame), with the default window x, y ∈ [−10, 10] and "nice" ticks.
+  - Curves break at errors and asymptotes instead of drawing vertical lines.
+  - Drag pans, and wheel or pinch zooms (`touch-action: none` on the canvas only). There are zoom in/out/reset buttons and **Fit y** (IQR-based, ignores outliers).
+  - A **Window** disclosure has x/y min/max fields (expressions allowed; finite, min < max, span 1e-6 to 1e9).
+  - Keys on the focusable canvas: arrows pan, + / − zoom, 0 resets, and Shift+←/→ moves the trace.
+  - Tapping traces the nearest curve; the readout is aria-live polite.
+- **Points:** for one function, within the visible x range: zeros, minima, maxima and intersections with the other visible functions, up to 10 of each. They are drawn as rings on the plot. **Add x / Add y** writes the value to the sheet (12 significant digits, in a trailing blank row or the next free label; "sheet is full" at 30 rows).
+- **Storage:** the optional `mode` and `graph: { fns: [{ slot, expr, hidden }], view }` fields sit in the same `studyblock:calc` record. Older records still load. `work` stays sheet-only.
+- **Phone:** in the bottom sheet, the plot height is min(75% of width, 30% of the viewport), at least 150px.
 
 **Lifetime**
 - One sheet per quiz run. It carries over between questions, so values can be reused later, and it's cleared when a new quiz starts.

@@ -168,6 +168,15 @@ If something's wrong, that row shows why, for example "unknown value: _x" or "ci
 
 Your rows stay for the whole quiz, so values from one question can be reused in the next, and they survive a page reload. A new quiz starts with a clean sheet. When you check an answer, your rows are saved with it and shown as **Your working** in the review and in History.
 
+**Graphing.** Switch the calculator from **Sheet** to **Graph** to plot up to six functions of x, `y1` to `y6`.
+- **Typing a function:** for example `x^2 - 4` or `2*x + 1`. Write `2*x`, not `2x`. Trig is in degrees, so try a window from -360 to 360 for `sin(x)`.
+- **Sheet values:** you can use them, as in `_a*x`. The curve follows the sheet as you edit it, and renaming a row updates the functions too.
+- **Moving around:** drag to move, and scroll or pinch to zoom, or use the buttons. **Fit y** fits the curves on screen, and **Window** sets exact ranges.
+- **Keys:** with the graph focused, the arrow keys move the view, **+** and **−** zoom, and **0** resets it.
+- **Reading values:** tap a curve to read its value, then use Shift + ←/→ to step along it.
+- **Points:** lists a function's zeros, lowest and highest points, and where it crosses the other curves, within the current view. **Add x** and **Add y** copy a value into the sheet, ready for **Use**.
+- The graph is kept if you reload, and cleared when a new quiz starts. It isn't saved with your answers.
+
 ---
 
 ## 4. Mixed quizzes

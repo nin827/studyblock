@@ -1232,3 +1232,103 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ================= calculator: Sheet | Graph (js/views/calculator.js, js/views/graph.js) ================= */
+
+/* Curve colours (distinct, readable on surface in both themes). Every curve also carries its name. */
+:root {
+  --graph-1: #1F6FD1; --graph-2: #C2410C; --graph-3: #15803D;
+  --graph-4: #8B3FC9; --graph-5: #0E7C8C; --graph-6: #B0306E;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --graph-1: #6AA8F5; --graph-2: #F2954B; --graph-3: #5CC98A;
+    --graph-4: #C08CF2; --graph-5: #4CC6D6; --graph-6: #EE7AAE;
+  }
+}
+:root[data-theme="dark"] {
+  --graph-1: #6AA8F5; --graph-2: #F2954B; --graph-3: #5CC98A;
+  --graph-4: #C08CF2; --graph-5: #4CC6D6; --graph-6: #EE7AAE;
+}
+
+.calc-modes {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
+  background: var(--sunken); border-radius: var(--r-control);
+}
+.calc-mode {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 12px;
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--text-2);
+  background: transparent; border: 1px solid transparent; border-radius: 9px; cursor: pointer;
+}
+.calc-mode .icon { width: 16px; height: 16px; }
+.calc-mode[aria-pressed="true"] { background: var(--surface); color: var(--accent-ink); border-color: var(--line); box-shadow: var(--shadow-card); }
+.calc-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.calc-sheet, .calc-graph { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.calc-sheet[hidden], .calc-graph[hidden] { display: none; }
+
+.graph { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.graph-c1 { --fn: var(--graph-1); } .graph-c2 { --fn: var(--graph-2); } .graph-c3 { --fn: var(--graph-3); }
+.graph-c4 { --fn: var(--graph-4); } .graph-c5 { --fn: var(--graph-5); } .graph-c6 { --fn: var(--graph-6); }
+/* The border sits on the wrapper so the canvas' CSS size equals its measured width (sharp pixels). */
+.graph-plot { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; background: var(--surface); }
+.graph-canvas { display: block; width: 100%; height: 240px; touch-action: none; cursor: crosshair; }
+.graph-canvas:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.graph-readout { margin: 0; min-height: 1.4em; font-family: var(--mono); font-size: 14px; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.graph-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.graph-tool { width: 44px; padding: 0; }
+.graph-tools .icon, .graph-fn .icon, .graph-points .icon { width: 16px; height: 16px; }
+
+.graph-fns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.graph-fn {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px;
+  background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--fn); border-radius: var(--r-control);
+}
+.graph-fn.is-hidden { border-left-style: dashed; }
+.graph-fn-main { display: flex; align-items: center; gap: 6px; }
+.graph-fn-name { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-weight: 650; color: var(--ink); }
+.graph-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--fn); }
+.graph-fn.is-hidden .graph-swatch { background: transparent; box-shadow: inset 0 0 0 2px var(--fn); }
+.graph-expr {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 10px; font-family: var(--mono); font-size: 16px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+}
+.graph-expr:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.graph-expr[aria-invalid="true"] { border-color: var(--wrong); }
+.graph-fn-out { display: flex; align-items: center; gap: 6px; }
+.graph-fn-msg { flex: 1; min-width: 0; margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 1.3; color: var(--muted); }
+.graph-fn-msg.is-error { color: var(--wrong-fg); font-weight: 600; }
+.graph-eye { flex-shrink: 0; width: 44px; padding: 0; color: var(--text-2); background: transparent; }
+.graph-eye[aria-pressed="false"] { color: var(--muted); }
+.graph-pts-btn { flex-shrink: 0; padding: 0 10px; gap: 6px; }
+.graph-pts-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+.graph-foot { display: flex; flex-wrap: wrap; gap: 8px; }
+.graph-status { margin: 0; font-size: 13px; color: var(--text-2); }
+.graph-status:empty { display: none; }
+
+.graph-points {
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;
+  background: var(--sunken); border-radius: var(--r-control);
+}
+.graph-points[hidden] { display: none; }
+.graph-points-head { display: flex; align-items: center; gap: 8px; }
+.graph-points-title { flex: 1; min-width: 0; margin: 0; font-size: 15px; }
+.graph-points-sub { font-size: 12px; font-weight: 500; color: var(--muted); }
+.graph-points-close { flex-shrink: 0; width: 44px; padding: 0; background: transparent; border-color: transparent; }
+.graph-pt-group h4 { margin: 0 0 4px; font-size: 13px; color: var(--text-2); }
+.graph-pt-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.graph-pt { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.graph-pt-text { flex: 1 1 8em; min-width: 0; font-family: var(--mono); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.graph-pt-btns { display: inline-flex; gap: 6px; }
+.graph-points-empty { margin: 0; font-size: 13px; color: var(--muted); }
+
+.graph-window { font-size: 14px; }
+.graph-window summary { min-height: 44px; display: flex; align-items: center; font-weight: 600; color: var(--accent-ink); }
+.graph-window-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 8px; }
+.graph-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text-2); }
+.graph-win-input {
+  min-width: 0; min-height: 44px; padding: 0 10px; font-family: var(--mono); font-size: 16px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+}
+.graph-win-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.graph-win-input[aria-invalid="true"] { border-color: var(--wrong); }
+.graph-win-err { margin: 6px 0 0; font-size: 13px; font-weight: 600; color: var(--wrong-fg); }

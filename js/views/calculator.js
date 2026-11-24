@@ -9,10 +9,16 @@
 // previous question) and inserts the new ones at the top. Editing a given row's label or expression
 // clears its flag, so it stays like any other row. The flag is kept in sessionStorage too.
 //
+// Sheet | Graph: a segmented switch at the top picks the mode. Graph mode (js/views/graph.js) plots
+// y1 … y6 in terms of x and can read sheet rows (_a) live. The mode and the graph's functions and
+// view window are kept in the same sessionStorage record as the rows (optional fields), so they
+// survive a reload and are cleared with the sheet when a new quiz starts. snapshot() stays sheet-only.
+//
 // All user text goes into the page through textContent / attributes, never innerHTML.
 
-import { evaluateSheet, nextLabel, renameLabel, formatValue, labelProblem, normalizeLabel, MAX_ROWS, MAX_EXPR, LABEL_RE } from '../lib/calc.js';
+import { evaluateSheet, sheetLookup, nextLabel, renameLabel, formatValue, labelProblem, normalizeLabel, MAX_ROWS, MAX_EXPR, LABEL_RE } from '../lib/calc.js';
 import { icon, icons } from './ui.js';
+import { mountGraph, cleanGraphState } from './graph.js';
 
 const DEFAULT_KEY = 'studyblock:calc';
 const GIVEN_MAX = 8;
@@ -56,6 +62,8 @@ function withIcon(node, name, text) {
   return node;
 }
 
+// -> { rows: [...] | null, mode: 'sheet' | 'graph', graph: state | null } or null.
+// `mode` and `graph` are optional: older records (rows only) still load.
 function readStore(key, owner) {
   try {
     const raw = sessionStorage.getItem(key);
@@ -66,7 +74,7 @@ function readStore(key, owner) {
     const rows = v.rows.slice(0, MAX_ROWS)
       .filter(r => r && typeof r === 'object' && typeof r.label === 'string' && typeof r.expr === 'string')
       .map(r => ({ label: r.label.slice(0, 24), expr: r.expr.slice(0, MAX_EXPR), given: r.given === true }));
-    return rows.length ? rows : null;
+    return { rows: rows.length ? rows : null, mode: v.mode === 'graph' ? 'graph' : 'sheet', graph: cleanGraphState(v.graph) };
   } catch {
     return null;
   }
@@ -76,7 +84,10 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   const id = `calc${++uid}`;
   let nextId = 1;
   const withId = r => ({ id: nextId++, label: r.label, expr: r.expr, given: r.given === true });
-  let rows = (readStore(storageKey, owner) || [{ label: '_a', expr: '' }]).map(withId);
+  const stored = readStore(storageKey, owner);
+  let rows = (stored?.rows || [{ label: '_a', expr: '' }]).map(withId);
+  let mode = stored?.mode || 'sheet';
+  let graph = null;
   let results = [];
   let useEnabled = true;
   let announceTimer = 0;
@@ -84,6 +95,12 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
 
   // ---- static shell ----
   const root = el('div', 'calc');
+  const modes = el('div', 'calc-modes', { role: 'group', 'aria-label': 'Calculator mode' });
+  const sheetBtn = withIcon(el('button', 'calc-mode', { type: 'button', 'data-mode': 'sheet' }), 'table-2', 'Sheet');
+  const graphBtn = withIcon(el('button', 'calc-mode', { type: 'button', 'data-mode': 'graph' }), 'chart-spline', 'Graph');
+  modes.append(sheetBtn, graphBtn);
+  const sheetWrap = el('div', 'calc-sheet');
+  const graphWrap = el('div', 'calc-graph');
   const list = el('ol', 'calc-rows', { 'aria-label': 'Calculator rows' });
   const foot = el('div', 'calc-foot');
   const addBtn = withIcon(el('button', 'btn btn-small calc-add', { type: 'button' }), 'plus', 'Row');
@@ -97,13 +114,19 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   const help = el('p', 'calc-help');
   help.textContent = 'Use + − × ÷ ^ % ( ), pi, e. Functions: sqrt, round(x, 2), min, max, log, ln, sin… (degrees). Type a row name like _a to reuse its value.';
   const live = el('div', 'sr-only', { 'aria-live': 'polite', 'aria-atomic': 'true' });
-  root.append(list, foot, status, useHint, help, live);
+  sheetWrap.append(list, foot, status, useHint, help);
+  root.append(modes, sheetWrap, graphWrap, live);
   container.appendChild(root);
 
   // ---- persistence ----
   function save() {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify({ v: 1, owner: String(owner ?? ''), rows: rows.map(r => (r.given ? { label: r.label, expr: r.expr, given: true } : { label: r.label, expr: r.expr })) }));
+      sessionStorage.setItem(storageKey, JSON.stringify({
+        v: 1, owner: String(owner ?? ''),
+        rows: rows.map(r => (r.given ? { label: r.label, expr: r.expr, given: true } : { label: r.label, expr: r.expr })),
+        mode,
+        graph: graph ? graph.getState() : (stored?.graph || null),
+      }));
     } catch { /* storage full or blocked: the sheet still works for this page */ }
   }
 
@@ -208,6 +231,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
       use.disabled = !useEnabled || kind !== 'value';
     });
     icons();
+    graph?.refresh();
   }
 
   // Politely announce the result of the row being edited, after typing pauses.
@@ -304,7 +328,9 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
       e.target.setAttribute('aria-invalid', problem ? 'true' : 'false');
       if (problem || v === row.label) return;
       // Valid new name: rename and rewrite references in the other rows straight away.
-      const renamed = renameLabel(rows, row.label, v);
+      const oldLabel = row.label;
+      const renamed = renameLabel(rows, oldLabel, v);
+      graph?.renameRef(oldLabel, v); // graph functions follow the rename too (re-plotted by recompute)
       rows.forEach((r, i) => {
         const nr = renamed[i];
         r.label = nr.label;
@@ -424,16 +450,62 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   }
 
   function focus() {
+    if (mode === 'graph' && graph) { graph.focus(); return; }
     const target = (lastFocusedRow && rowEl(lastFocusedRow)) || list.lastElementChild;
     target?.querySelector('.calc-expr')?.focus();
   }
 
+  // ---- Sheet | Graph ----
+  function setMode(m, { store = true } = {}) {
+    mode = m === 'graph' ? 'graph' : 'sheet';
+    sheetBtn.setAttribute('aria-pressed', mode === 'sheet' ? 'true' : 'false');
+    graphBtn.setAttribute('aria-pressed', mode === 'graph' ? 'true' : 'false');
+    sheetWrap.hidden = mode !== 'sheet';
+    graphWrap.hidden = mode !== 'graph';
+    graph?.setActive(mode === 'graph' && !root.hidden);
+    if (store) save();
+  }
+  modes.addEventListener('click', e => {
+    const b = e.target.closest('.calc-mode');
+    if (!b || b.dataset.mode === mode) return;
+    setMode(b.dataset.mode);
+  });
+
+  // A value from the graph (a zero, extremum, ...) as a sheet row; a trailing blank row is reused.
+  function addValueRow(value) {
+    const expr = givenExpr(value);
+    if (!expr) return { ok: false, message: 'That value is not a finite number.' };
+    const lastRow = rows[rows.length - 1];
+    let row;
+    if (lastRow && !lastRow.expr.trim() && !lastRow.given) {
+      row = lastRow;
+      row.expr = expr;
+    } else {
+      if (rows.length >= MAX_ROWS) return { ok: false, message: `The sheet is full (at most ${MAX_ROWS} rows). Delete a row first.` };
+      row = withId({ label: nextLabel(rows), expr });
+      rows.push(row);
+    }
+    setStatus('');
+    renderAll();
+    save();
+    return { ok: true, label: row.label, expr };
+  }
+
+  graph = mountGraph(graphWrap, {
+    state: stored?.graph || null,
+    getLookup: () => sheetLookup(rows.map(r => ({ label: r.label, expr: r.expr })), results),
+    onChange: () => save(),
+    onAddValue: addValueRow,
+  });
+
   renderAll();
+  setMode(mode, { store: false });
   save();
 
   return {
     setVisible(v) {
       root.hidden = !v;
+      graph?.setActive(!!v && mode === 'graph');
     },
     // [{ label, expr, value }] for rows with an expression (value: number, or null on error).
     snapshot() {
@@ -456,6 +528,8 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     },
     destroy({ forget = false } = {}) {
       clearTimeout(announceTimer);
+      graph?.destroy();
+      graph = null;
       root.remove();
       if (forget) {
         try { sessionStorage.removeItem(storageKey); } catch { /* ignore */ }

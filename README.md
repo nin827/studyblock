@@ -14,7 +14,7 @@ Everything happens in your browser. There's no account and no server-side databa
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
 - **Mix it up.** Build a quiz that pulls from several domains at once. You decide how often each one appears by giving it a weight; everything starts at 1.
 - **Save your favourite mixes.** Keep mixes as presets, or start from the official ones that ship with the app. A mix you're still working on is kept until you save it or clear it.
-- **Work it out on screen.** A built-in calculator starts with the question's numbers filled in, and lets you name values (`_price`, `_cost`) and build on them. Change an early step and everything after it updates live.
+- **Work it out on screen.** A built-in calculator starts with the question's numbers filled in, and lets you name values (`_price`, `_cost`) and build on them. Change an early step and everything after it updates live. Switch to **Graph** to plot functions and find where they cross zero or each other.
 - **Learn from mistakes.** Every question comes with a worked explanation, and your history keeps every question, answer and your working for review.
 - **Keep your progress safe.** Progress is saved automatically in the browser. You can also export it to a file, or sync it to a folder on your computer.
 - **Use it anywhere.** It's laid out for phones as well as desktops, can be installed as an app, and works offline.
