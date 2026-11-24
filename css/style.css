@@ -979,6 +979,125 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
   .share-bar { height: 14px; }
 }
 
+/* ================= quiz calculator (js/views/calculator.js, wired in quiz.js) ================= */
+
+/* Phone + tablet (<900px): a bottom sheet opened from the action bar; above the tab bar and keyboard. */
+.quiz-shell { --calc-base: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); }
+@media (min-width: 640px) { .quiz-shell { --calc-base: env(safe-area-inset-bottom, 0px); } }
+.quiz-shell.sheet-open .quiz-main { padding-bottom: 55vh; }
+
+.calc-panel {
+  position: fixed; left: 0; right: 0; z-index: 30;
+  bottom: max(var(--calc-kb, 0px), var(--calc-base));
+  display: none; flex-direction: column;
+  max-height: min(60vh, calc(100vh - var(--calc-kb, 0px) - var(--topbar-h)));
+  padding: 6px max(16px, env(safe-area-inset-right, 0px)) 12px max(16px, env(safe-area-inset-left, 0px));
+  background: var(--surface); border-top: 1px solid var(--line);
+  border-radius: var(--r-hero) var(--r-hero) 0 0; box-shadow: var(--shadow-sheet);
+}
+.calc-panel.is-open { display: flex; }
+.calc-panel[hidden] { display: none !important; }
+.calc-panel-head { position: relative; display: flex; align-items: center; gap: 8px; padding-top: 10px; }
+.calc-panel-head .sheet-handle { position: absolute; top: 0; left: 50%; transform: translateX(-50%); }
+.calc-title { flex: 1; min-width: 0; margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.calc-title .icon { width: 18px; height: 18px; color: var(--accent-ink); }
+.calc-shortcut {
+  display: none; font-family: inherit; font-size: 12px; padding: 1px 6px; color: var(--text-2);
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--paper);
+}
+.calc-collapse { display: none; }
+.calc-close { width: 44px; min-height: 44px; padding: 0; }
+.calc-panel .btn-small { min-height: 44px; }
+.calc-panel-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 2px 2px; }
+.calc-collapse .icon.when-collapsed { display: none; }
+.calc-panel:not(.is-collapsed) .calc-collapse-label {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+.action-bar .calc-open-btn { flex: 0 0 auto; padding: 0 14px; }
+.calc-open-btn[aria-expanded="true"] { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+
+/* sheet contents */
+.calc { display: flex; flex-direction: column; gap: 10px; }
+.calc[hidden] { display: none; }
+.calc-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.calc-row {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px;
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r-control);
+}
+.calc-row-main { display: flex; align-items: center; gap: 6px; }
+.calc-label, .calc-expr {
+  min-width: 0; min-height: 44px; padding: 0 10px; font-family: var(--mono);
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+}
+.calc-label { flex: 0 0 5.2em; width: 5.2em; font-weight: 650; color: var(--accent-ink); }
+.calc-expr { flex: 1; }
+.calc-label:focus, .calc-expr:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.calc-label[aria-invalid="true"], .calc-expr[aria-invalid="true"] { border-color: var(--wrong); }
+.calc-eq { color: var(--muted); font-family: var(--mono); flex-shrink: 0; }
+.calc-row-out { display: flex; align-items: center; gap: 6px; }
+.calc-result {
+  flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 6px; padding-left: 2px;
+  font-family: var(--mono); font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
+.calc-result.is-empty { color: var(--muted); font-weight: 500; }
+.calc-result.is-error { color: var(--wrong-fg); font-family: var(--font); font-size: 13px; font-weight: 600; line-height: 1.3; }
+.calc-result .icon { width: 16px; height: 16px; }
+.calc-deg {
+  font-family: var(--font); font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: var(--r-pill);
+  background: var(--sunken); color: var(--text-2);
+}
+.calc-use { flex-shrink: 0; }
+.calc-del { flex-shrink: 0; width: 44px; padding: 0; color: var(--text-2); background: transparent; }
+.calc-del i[data-lucide]::before { content: "\00D7"; font-size: 20px; font-style: normal; line-height: 1; } /* no Lucide (offline) */
+.calc-label-err { margin: 0; font-size: 13px; font-weight: 600; color: var(--wrong-fg); }
+.calc-foot { display: flex; flex-wrap: wrap; gap: 8px; }
+.calc-status, .calc-use-hint { margin: 0; font-size: 13px; color: var(--text-2); }
+.calc-status:empty { display: none; }
+.calc-help { margin: 0; font-size: 12px; line-height: 1.45; color: var(--muted); }
+
+/* Desktop (>=900px): a sticky, collapsible panel beside the question. */
+@media (min-width: 900px) {
+  .quiz-shell.has-calc {
+    display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start;
+    max-width: 1120px; margin: 0 auto;
+  }
+  .quiz-shell.has-calc.calc-collapsed { grid-template-columns: minmax(0, 1fr) auto; }
+  .quiz-shell.has-calc .quiz-main { width: 100%; }
+  .quiz-shell.sheet-open .quiz-main { padding-bottom: 0; }
+  .calc-panel {
+    position: sticky; top: calc(var(--topbar-h) + 16px); left: auto; right: auto; bottom: auto; z-index: 1;
+    display: flex; max-height: calc(100vh - var(--topbar-h) - 32px);
+    padding: 16px; border: 1px solid var(--line); border-radius: var(--r-hero); box-shadow: var(--shadow-raised);
+  }
+  .calc-panel-head { padding-top: 0; }
+  .calc-panel-head .sheet-handle, .calc-close, .calc-open-btn { display: none !important; }
+  .calc-shortcut { display: inline-block; }
+  .calc-collapse { display: inline-flex; width: 44px; padding: 0; }
+  .calc-panel.is-collapsed { padding: 8px; }
+  .calc-panel.is-collapsed .calc-panel-body,
+  .calc-panel.is-collapsed .calc-title,
+  .calc-panel.is-collapsed .calc-shortcut { display: none; }
+  .calc-panel.is-collapsed .calc-collapse { width: auto; padding: 0 14px; }
+  .calc-panel.is-collapsed .calc-collapse .icon.when-open { display: none; }
+  .calc-panel.is-collapsed .calc-collapse .icon.when-collapsed { display: inline-block; }
+}
+
+/* "Your working" in the quiz review and History */
+.review details.work summary { gap: 6px; }
+.work-list {
+  list-style: none; margin: 6px 0 4px; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px;
+  background: var(--sunken); border-radius: var(--r-control); font-size: 14px;
+}
+.work-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; overflow-wrap: anywhere; min-width: 0; }
+.work-list code { font-family: var(--mono); background: none; padding: 0; }
+.work-label { font-weight: 650; color: var(--accent-ink); }
+.work-expr { min-width: 0; }
+.work-eq, .work-arrow { color: var(--muted); }
+.work-value { font-family: var(--mono); font-weight: 650; }
+.work-err { display: inline-flex; align-items: center; gap: 4px; color: var(--wrong-fg); font-weight: 600; }
+.work-err .icon { width: 14px; height: 14px; }
+
 /* ================= settings: accent picker ================= */
 
 .accent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px; max-width: 520px; }

@@ -5,6 +5,7 @@
   "icon": "calculator",
   "type": "generator",
   "questionsPerQuiz": 10,
+  "calculator": false,
   "subtopics": [
     { "id": "addition", "title": "Addition", "difficulties": ["easy", "medium", "hard"] },
     { "id": "subtraction", "title": "Subtraction", "difficulties": ["easy", "medium", "hard"] },

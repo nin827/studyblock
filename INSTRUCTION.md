@@ -116,6 +116,41 @@ On phones the menu sits at the bottom of the screen.
 
 Every question has a hidden seed, so StudyBlock can rebuild exactly the same question later for review.
 
+### The calculator
+
+Every subject except Arithmetic has a calculator during quizzes. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
+
+It works like a tiny spreadsheet. Each row has a **name**, a **calculation** and a live **result**:
+
+```
+_price     = 4.50
+_cost      = 1.20
+_margin    = _price - _cost          → 3.3
+_breakeven = ceil(3300 / _margin)    → 1000
+```
+
+- **Names start with an underscore**, like `_price`. StudyBlock suggests `_a`, `_b`, `_c`…, and you can type any name; the `_` is added for you. Names without an underscore are built-ins, so `e` is always Euler's number (2.718…) and `_e` is your own value.
+- **Use a stored value** by typing its name in another row.
+- **Change an earlier row and everything that depends on it updates instantly.** You can rework a whole chain by editing its first step.
+- **Rename a row** and every calculation that uses it is updated too.
+- **Use** copies a row's result into the answer box.
+- **Keys:**
+  - **Enter** adds a new row, and never submits your answer by accident.
+  - **Ctrl+K** (⌘K on a Mac) jumps to the calculator.
+  - **Esc** jumps back to the answer.
+
+**What you can type**
+
+| | |
+|---|---|
+| Operators | `+ - * / ^` and brackets. `×`, `÷` and `−` work too. `%` is the remainder (`10 % 3` = 1). |
+| Constants | `pi`, `e` |
+| Functions | `sqrt`, `abs`, `round(x, digits)`, `floor`, `ceil`, `min`, `max`, `log` (base 10), `ln`, `exp`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`. Angles are in **degrees**. |
+
+If something's wrong, that row shows why, for example "unknown value: _x" or "circular reference: _a → _b → _a". The other rows keep working.
+
+Your rows stay for the whole quiz, so values from one question can be reused in the next, and they survive a page reload. A new quiz starts with a clean sheet. When you check an answer, your rows are saved with it and shown as **Your working** in the review and in History.
+
 ---
 
 ## 4. Mixed quizzes
@@ -210,7 +245,7 @@ Subjects live in `modules/`, one folder each, and are grouped into domains in `m
   ]
 }
 ```
-`icon` is any [Lucide](https://lucide.dev/icons) icon name. `type` is `"generator"` or `"csv"`.
+`icon` is any [Lucide](https://lucide.dev/icons) icon name. `type` is `"generator"` or `"csv"`. Add `"calculator": false` to hide the quiz calculator for this subject, as Arithmetic does.
 
 ### Step 3a: a generator (`generator.js`)
 Questions are made by code, so they never run out.

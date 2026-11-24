@@ -8,7 +8,7 @@ The current domains each have a starter module:
 - **Math:** Arithmetic, Algebra
 - **Science:** Kinematics, Chemical Elements
 - **Geography:** World Capitals
-- **Business:** Business Math
+- **Business:** Business Math, Business Case
 
 Which domains or subdomains should come next, and in what priority?
 

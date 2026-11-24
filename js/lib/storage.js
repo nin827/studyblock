@@ -99,6 +99,23 @@ function validate(data) {
   data.attempts.forEach(validateAttempt);
 }
 
+// Calculator working saved on a question: [{ label, expr, value }], at most 30 rows.
+// Rows with a bad shape are dropped; returns null when nothing valid is left. Data only.
+export const WORK_MAX_ROWS = 30;
+const WORK_LABEL_RE = /^_[A-Za-z0-9_]{1,23}$/;
+
+export function cleanWork(work) {
+  if (!Array.isArray(work)) return null;
+  const out = [];
+  for (const r of work) {
+    if (out.length >= WORK_MAX_ROWS) break;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) continue;
+    if (!isStr(r.label) || !WORK_LABEL_RE.test(r.label) || !isStr(r.expr) || r.expr.length > 200) continue;
+    out.push({ label: r.label, expr: r.expr, value: isNum(r.value) ? r.value : null });
+  }
+  return out.length ? out : null;
+}
+
 // ---- attempts ----
 
 export function saveAttempt(attempt) {
@@ -522,6 +539,8 @@ function importObject(incoming, mode) {
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),
       ...(isStr(q.subtopic) ? { subtopic: q.subtopic } : {}),
       ...(isStr(q.difficulty) ? { difficulty: q.difficulty } : {}),
+      // Optional calculator working ("Your working"); validated and capped.
+      ...(cleanWork(q.work) ? { work: cleanWork(q.work) } : {}),
     })),
   }));
   // Optional mix fields: invalid presets are dropped individually; an invalid draft is ignored.

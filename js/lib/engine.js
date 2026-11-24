@@ -88,6 +88,8 @@ export async function loadModule(id) {
     id,
     questionsPerQuiz: Number.isInteger(m.questionsPerQuiz) && m.questionsPerQuiz > 0 ? m.questionsPerQuiz : 10,
     subtopics: Array.isArray(m.subtopics) ? m.subtopics : [],
+    // Quiz calculator panel; a module opts out with "calculator": false.
+    calculator: m.calculator !== false,
   };
 }
 
@@ -471,6 +473,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
       subtopic: st.id,
       subtopicTitle: String(st.title ?? st.id),
       difficulty,
+      calculator: mod.calculator !== false,
     });
   }
   if (!questions.length) throw new Error('The mixed quiz could not generate any questions.');

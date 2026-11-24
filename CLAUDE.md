@@ -193,6 +193,66 @@ Scores per module/subtopic/difficulty are derived from attempts.
 
 **Export** downloads the full JSON via Blob. **Import** reads a file, validates `version` + shape, and asks merge (dedupe by attempt id) or replace.
 
+## Calculator with stored values
+
+The quiz screen has a calculator panel that works like a small live worksheet.
+
+**Where it appears**
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic sets this, because doing the sums yourself is the point of it.
+- In mixed quizzes it follows each question's own module, so it shows and hides as you go.
+
+**Rows**
+
+The panel is a list of rows. Each row has:
+- a **label**: a variable name that **must start with an underscore** and match `^_[A-Za-z0-9_]{1,23}$`, unique ignoring case. A new row suggests the next free name: `_a`, `_b`, `_c`, …
+  - The underscore keeps your values apart from built-in names. `_e` is your variable; `e` is Euler's number, 2.718….
+  - Typing a label without the underscore adds it automatically, so `speed` becomes `_speed`.
+  - In expressions, any name starting with `_` is a row reference. Names without `_` are only constants and functions. An unknown `_name` is an "unknown value" error; an unknown bare name is an "unknown function or constant" error.
+- an **expression**
+- a live **result**, or an inline error message.
+
+**Expressions**
+- **Numbers:** decimals and `1e-3` notation. Commas used as thousands separators are not accepted, to keep things unambiguous.
+- **Operators:** `+ - * / ^ %`. `%` is modulo; precedence is the usual one, with `^` right-associative. Also unary minus and parentheses, and `×`, `÷`, `−` are accepted as aliases.
+- **Constants:** `pi`, `e`.
+- **Functions:** `sqrt abs round(x[,digits]) floor ceil min max log (base 10) ln exp sin cos tan asin acos atan`. Trig functions take degrees; the result shows a small "deg" hint.
+- **References to other rows** by label, in any order.
+
+**Evaluation**
+- **Live:** every keystroke re-evaluates the whole sheet in dependency order. Editing an early row updates every row that depends on it, straight away.
+- **Errors:** each one appears on its own row only; unaffected rows keep their values. The messages:
+  - "circular reference: _a → _b → _a"
+  - "unknown value: _x"
+  - "unknown function or constant: foo"
+  - "_a is empty" (a reference to a blank row)
+  - "_a has an error" (a row that depends on a failing row)
+  - "invalid name: … already used" (a duplicate label)
+  - Division by zero, overflow and tan at 90° + k·180° are errors too.
+  - `%` follows JavaScript's sign rule: `-7 % 3` is -1.
+- **Renaming a label** rewrites references to it in other rows, matching whole tokens only.
+
+**Safety:** expressions are parsed by a hand-written tokenizer and recursive-descent parser in `js/lib/calc.js`. No `eval` or `new Function`. Labels and expressions are escaped wherever they're displayed.
+
+**Actions**
+- Add a row with Enter in the last expression, or the "+ Row" button.
+- Delete a row.
+- **Use:** puts that row's value into the answer field, at full precision, trimmed to at most 10 significant digits. It's disabled on choice questions and once an answer has been checked.
+- Clear the sheet, after confirming.
+- Keyboard:
+  - Ctrl/Cmd+K focuses the calculator.
+  - Esc returns to the answer.
+  - Plain Enter inside the calculator never submits the quiz answer.
+
+**Lifetime**
+- One sheet per quiz run. It carries over between questions, so values can be reused later, and it's cleared when a new quiz starts.
+- The live sheet is kept in `sessionStorage` (`studyblock:calc`), so a reload during a quiz doesn't lose it.
+- When an answer is checked, a snapshot of the rows (`[{label, expr, value}]`, at most 30 rows) is saved on that question as `work`. Only rows that have an expression are kept, and a failing row is stored as `value: null`. The quiz review and History show it as "Your working".
+- `work` is optional on import.
+
+**Layout**
+- **Desktop (≥ 900px):** a panel beside the question, collapsible and remembered.
+- **Phone:** a "Calculator" button in the sticky action bar opens a bottom sheet. The sheet stays above the keyboard, and expression inputs use `inputmode="text"` so operators can be typed.
+
 ## Visual design
 
 The reference design is the "StudyBlock Visual Refresh" design canvas: https://claude.ai/artifact/4PzANTrTiRc2zi3XnGDESV

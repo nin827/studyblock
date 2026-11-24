@@ -25,8 +25,8 @@
       "id": "business",
       "title": "Business",
       "icon": "briefcase",
-      "description": "Percentages, interest, margins and more.",
-      "modules": ["business-math"]
+      "description": "Percentages, interest, margins and real-world cases.",
+      "modules": ["business-math", "business-case"]
     }
   ]
 }
