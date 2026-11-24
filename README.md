@@ -2,7 +2,7 @@
 
 **Practice that never runs out of questions.**
 
-StudyBlock is a small quiz app with 24 subjects across seven areas: Math, Science, Computing, Geography, History, Business and Language — from fractions and Ohm's law to binary, world capitals, accounting and word roots. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
+StudyBlock is a small quiz app with 30 subjects across seven areas: Math, Science, Computing, Geography, History, Business and Language — from fractions and trigonometry to chemistry, binary, world capitals, loans and word roots. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
 
 Everything happens in your browser. There's no account and no server-side database, and none of your progress leaves your device unless you export it.
 
@@ -14,7 +14,7 @@ Everything happens in your browser. There's no account and no server-side databa
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
 - **Mix it up.** Build a quiz that pulls from several domains at once. You decide how often each one appears by giving it a weight; everything starts at 1.
 - **Save your favourite mixes.** Keep mixes as presets, or start from the official ones that ship with the app. A mix you're still working on is kept until you save it or clear it.
-- **Work it out on screen.** A built-in calculator lets you name values (`_price`, `_cost`) and build on them. Change an early step and everything after it updates live.
+- **Work it out on screen.** A built-in calculator starts with the question's numbers filled in, and lets you name values (`_price`, `_cost`) and build on them. Change an early step and everything after it updates live.
 - **Learn from mistakes.** Every question comes with a worked explanation, and your history keeps every question, answer and your working for review.
 - **Keep your progress safe.** Progress is saved automatically in the browser. You can also export it to a file, or sync it to a folder on your computer.
 - **Use it anywhere.** It's laid out for phones as well as desktops, can be installed as an app, and works offline.

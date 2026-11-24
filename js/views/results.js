@@ -1,7 +1,7 @@
 import { loadAllModules, loadDomains } from '../lib/engine.js';
 import { getAttempts, getModuleRecords, percent, MIX_MODULE } from '../lib/storage.js';
-import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag } from './ui.js';
-import { reviewItem, moduleBreakdown } from './quiz.js';
+import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
+import { reviewItem, moduleBreakdown, cellTag } from './quiz.js';
 
 export async function render(root, params, ctx) {
   const attempts = getAttempts(); // newest first
@@ -14,7 +14,7 @@ export async function render(root, params, ctx) {
   const domainOfId = new Map();
   for (const d of domains) for (const mid of d.modules) domainOfId.set(mid, d);
   const modTitle = id => byId[id]?.title ?? id;
-  const subTitle = (mid, sid) => byId[mid]?.subtopics.find(s => s.id === sid)?.title ?? sid;
+  const subTitle = (mid, sid) => subtopicLabel(sid, byId[mid]?.subtopics.find(s => s.id === sid)?.title);
 
   if (!attempts.length) {
     root.innerHTML = `<section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
@@ -66,25 +66,27 @@ export async function render(root, params, ctx) {
   const items = attempts.map(a => {
     const p = percent(a);
     const isMix = a.module === MIX_MODULE;
+    const isAll = !isMix && (a.subtopic === 'all' || a.difficulty === 'all');
     const dom = isMix ? null : domainOfId.get(a.module);
     const chip = isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : 'Other', domClass(dom?.id));
     const title = isMix
       ? `<strong>Mixed quiz</strong> · ${esc(a.difficulty === 'any' ? 'Any difficulty' : cap(a.difficulty))}`
-      : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(cap(a.difficulty))}`;
+      : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(difficultyLabel(a.difficulty))}`;
     const qs = isMix
       ? a.questions.map(q => (typeof q.module === 'string'
         ? { ...q, moduleTitle: modTitle(q.module), domain: domainOfId.get(q.module)?.id, domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }
         : q))
+      : isAll ? a.questions.map(q => (typeof q.subtopic === 'string' ? { ...q, subtopicTitle: subTitle(a.module, q.subtopic) } : q))
       : a.questions;
     return `<li class="card attempt">
       <details>
         <summary>
           <span class="attempt-title">${chip}<span>${title}</span></span>
           <span class="attempt-meta"><span class="muted">${esc(fmtDate(a.ts))}</span>
-          <span class="score ${scoreClass(p)}">${a.score}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
+          <span class="score ${scoreClass(p)}">${fmtScore(a.score)}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
         </summary>
         ${isMix ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}
-        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct, ...(Array.isArray(q.parts) ? { parts: q.parts } : {}) }, isMix)).join('')}</ol>
+        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct, ...(typeof q.credit === 'number' ? { credit: q.credit } : {}), ...(Array.isArray(q.parts) ? { parts: q.parts } : {}) }, isMix || (isAll ? cellTag : false))).join('')}</ol>
       </details>
     </li>`;
   }).join('');

@@ -3,12 +3,9 @@
 // a subpath such as https://<user>.github.io/studyblock/.
 
 // Bump on every release: activating a new version deletes all older caches.
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const CACHE_PREFIX = 'studyblock-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
-
-// The pinned Lucide build from index.html: the only cross-origin URL ever cached (cache-first).
-const LUCIDE_URL = 'https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js';
 
 // App shell, relative to the scope. js/** is listed explicitly (globbed by hand).
 // When adding/removing a JS file, update this list and bump CACHE_VERSION.
@@ -38,6 +35,7 @@ const PRECACHE = [
   'js/views/results.js',
   'js/views/settings.js',
   'js/views/ui.js',
+  'vendor/lucide.min.js',
   'modules/index.json',
   'presets/index.json',
   'icons/icon.svg',
@@ -63,11 +61,6 @@ async function precache() {
       } catch (e) { /* ignore */ }
     }));
   }
-  // Best effort: warm the Lucide script (opaque response is fine for a <script>).
-  try {
-    const res = await fetch(LUCIDE_URL, { mode: 'no-cors' });
-    if (res.ok || res.type === 'opaque') await cache.put(LUCIDE_URL, res);
-  } catch (e) { /* offline during install: cached on first use instead */ }
 }
 
 self.addEventListener('install', (event) => {
@@ -125,17 +118,6 @@ async function staleWhileRevalidate(event) {
   return network;
 }
 
-// The pinned Lucide URL: cache first, network once.
-async function cacheFirst(event) {
-  const req = event.request;
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(LUCIDE_URL);
-  if (cached) return cached;
-  const res = await fetch(req);
-  if (res.ok || res.type === 'opaque') event.waitUntil(cache.put(LUCIDE_URL, res.clone()));
-  return res;
-}
-
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
@@ -143,10 +125,6 @@ self.addEventListener('fetch', (event) => {
 
   if (req.mode === 'navigate' && url.origin === self.location.origin) {
     event.respondWith(handleNavigation(event));
-    return;
-  }
-  if (url.href === LUCIDE_URL) {
-    event.respondWith(cacheFirst(event));
     return;
   }
   if (url.origin === self.location.origin && url.href.startsWith(self.registration.scope)) {

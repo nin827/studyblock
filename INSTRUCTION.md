@@ -46,7 +46,7 @@ py tools/bundle.py
 That creates `dist/studyblock.html`. Double-click it, or copy it to a USB stick or a shared drive. Everything the app needs is inside that one file.
 
 Things to know about the single file:
-- Icons come from the internet, so offline you'll see text labels without icons. Everything still works.
+- It works fully offline, icons included.
 - Browsers can clear storage for local files more easily, so StudyBlock will ask you to **connect a data folder** (see [section 6](#6-your-progress-and-data)).
 - Rebuild the file after adding or changing subjects or presets.
 
@@ -105,12 +105,17 @@ On phones the menu sits at the bottom of the screen.
 
 ## 3. Taking a quiz
 
-1. From a module page, choose a subtopic and difficulty and press **Start**.
+1. From a module page, choose a subtopic and difficulty and press **Start**. To practise a whole subject, use the **All topics** row or the **All** column: questions come from every topic and/or difficulty (10 per quiz for the hand-written subjects), and History labels them "All topics" / "All difficulties".
 2. Answer each question:
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
    - **Text answers:** capital letters and extra spaces don't matter.
    - **Multiple choice:** tap an option, or press keys **1–9**.
    - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
+   - **Ratios:** type them like `3:4`.
+   - **Percentages:** type the number without the `%` sign, with a minus for a decrease.
+   - **Scientific sizes:** some answers ask for a number "× 10²³" or "× 10⁸ m/s"; type just the number in front.
+   - **Lenses (Waves):** every question states the sign convention; virtual images give negative answers, so include the minus sign.
+   - Angles are always in **degrees**. Every question says how to round.
 3. Press **Check** (or **Enter**). You'll see whether you were right and how the answer is worked out.
 4. Press **Next** (or **Enter** again).
 5. At the end you get your score and a full review. **Retry** gives you a fresh set of questions on the same topic.
@@ -124,7 +129,7 @@ Some Business Case questions ask for more than one thing about the same scenario
 - Fill in every part, then press **Check**. Tapping a choice in a part only selects it; it doesn't submit.
 - **Enter** jumps to the next empty part, and checks the answer once every part is filled.
 - The calculator's **Use** fills whichever part you were last in.
-- The question counts as correct only when **every** part is right. The feedback, the review and History show a ✓ or ✗ for each part, with the right answer for any you missed.
+- You get **partial credit**: 2 of 3 parts right scores 0.67 of a question and shows as **Partly correct**, so quiz scores like `6.5 / 8` are possible. The feedback, the review and History show a ✓ or ✗ for each part, with the right answer for any you missed.
 
 ### The calculator
 
@@ -158,6 +163,8 @@ _breakeven = ceil(3300 / _margin)    → 1000
 | Functions | `sqrt`, `abs`, `round(x, digits)`, `floor`, `ceil`, `min`, `max`, `log` (base 10), `ln`, `exp`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`. Angles are in **degrees**. |
 
 If something's wrong, that row shows why, for example "unknown value: _x" or "circular reference: _a → _b → _a". The other rows keep working.
+
+**Given values.** Many questions fill in their starting numbers for you, as rows marked *given*, named like the rows in the worked explanation (for example `_price = 4.5`). They're replaced when the next question appears, unless you've edited them; an edited given row becomes one of your own rows and stays.
 
 Your rows stay for the whole quiz, so values from one question can be reused in the next, and they survive a page reload. A new quiz starts with a clean sheet. When you check an answer, your rows are saved with it and shown as **Your working** in the review and in History.
 
@@ -342,7 +349,7 @@ Rules:
 |---|---|
 | Blank page, or a "needs a server" notice, when opening `index.html` | Double-click the launcher for your system (`launcher_win.bat`, `launcher_mac.command` or `launcher_linux.sh`), or use the single file (`dist/studyblock.html`) or the installed app; see [section 1](#1-ways-to-run-studyblock) |
 | The launcher window flashes and closes | Run it from a terminal to read the message. Usually Python isn't installed; get it from python.org, or use the single file. |
-| No icons | You're offline and icons come from the internet. Everything still works. |
+| No icons | Reload the page. If you're using the single file, rebuild it with `py tools/bundle.py`. Everything still works without icons. |
 | "Click anywhere to resume syncing" | Your browser needs permission for the data folder again. Click once, and choose **Allow on every visit** if offered. |
 | Data folder option missing | Your browser doesn't support it (Firefox, Safari). Use Export/Import. |
 | A new subject or preset doesn't show up | Check that its id is listed in `modules/index.json` or `presets/index.json`. Reload twice if the app is installed, since the first reload fetches the update. Rebuild the single file if you use one. |

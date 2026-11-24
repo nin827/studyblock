@@ -1,6 +1,6 @@
 # 002 — Quiz length for small CSV banks
 
-**Status:** open
+**Status:** resolved (2026-11-24): every module gets "All topics" and "All difficulties" options that draw from the whole bank (10 questions for CSV subjects).
 **Raised:** 2026-11-24
 
 ## Question

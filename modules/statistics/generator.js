@@ -89,6 +89,11 @@ function checkDifficulty(difficulty) {
   }
 }
 
+// Pre-filled calculator rows (question.given) for questions with 2–8 stated numbers. Data-set questions
+// (mean, median, quartiles of a list) get none: one row per data point isn't useful.
+// [[label, value], ...] -> { given: [{ label, value }, ...] }, or {} when there is nothing to pre-fill.
+const givenRows = (pairs) => (pairs && pairs.length >= 2 && pairs.length <= 8 ? { given: pairs.map(([label, value]) => ({ label, value })) } : {});
+
 const sorted = (arr) => arr.slice().sort((a, b) => a - b);
 const sum = (arr) => arr.reduce((s, x) => s + x, 0);
 const list = (arr) => arr.join(", ");
@@ -276,7 +281,7 @@ const COLOURS = ["red", "blue", "green", "yellow", "white", "black"];
 function genProbability(difficulty, rng) {
   checkDifficulty(difficulty);
   // Exact probability is always N/D with whole numbers; params carry the raw counts.
-  let kind, values, prompt, N, D, steps, fracCands, decCands;
+  let kind, values, prompt, N, D, steps, fracCands, decCands, gv;
 
   const bag = (k) => {
     const cols = rng.shuffle(COLOURS).slice(0, k);
@@ -293,6 +298,7 @@ function genProbability(difficulty, rng) {
       const i = rng.int(0, 2);
       const f = b.counts[i];
       values = { f, t: b.total };
+      gv = b.cols.map((c, j) => [`_${c}`, b.counts[j]]); // marbles of each colour
       prompt = `A bag holds ${bagText(b)} marbles. One marble is picked at random. What is the probability that it is ${b.cols[i]}?`;
       steps = [`There are ${b.total} marbles and ${f} of them are ${b.cols[i]}.`, `P = \`${f}/${b.total}\``];
     } else {
@@ -342,6 +348,7 @@ function genProbability(difficulty, rng) {
       f1 = f2 = b.counts[i];
       t1 = t2 = b.total;
       story = `A bag holds ${bagText(b)} marbles. A marble is picked at random, put back, and a second marble is picked. What is the probability that both are ${b.cols[i]}?`;
+      gv = b.cols.map((c, j) => [`_${c}`, b.counts[j]]);
     } else if (r < 0.67) {
       const target = rng.int(1, 6);
       f1 = 1;
@@ -358,6 +365,7 @@ function genProbability(difficulty, rng) {
       f2 = k2;
       t2 = 6;
       story = `Two fair six-sided dice are rolled. What is the probability that the first shows ${k1} or more and the second shows ${k2} or less?`;
+      gv = [["_k1", k1], ["_k2", k2]];
       if (f1 === 6 || f2 === 6) return genProbability(difficulty, rng); // avoid a certain event
     }
     kind = "both";
@@ -388,6 +396,7 @@ function genProbability(difficulty, rng) {
       f = 5 * rng.int(2, 12);
       n = rng.int(2, 4);
       story = `Each day there is a ${f}% chance of rain, independently of other days. What is the probability that it rains on at least one of the next ${n} days?`;
+      gv = [["_pct", f], ["_days", n]];
     }
     kind = "atleast";
     values = { f, t, n };
@@ -415,6 +424,7 @@ function genProbability(difficulty, rng) {
       tolerance: 0.005,
       explanation: steps.join("\n\n"),
       params: { kind, values, format: "decimal" },
+      ...givenRows(gv),
     };
     const cands = decCands || (fracCands || []).map(([a, b]) => a / b);
     return finish(base, exact, true, cands, rng, { lo: 0.01, hi: 0.99, step: 0.01 });
@@ -422,7 +432,7 @@ function genProbability(difficulty, rng) {
   const answer = fracStr(N, D);
   const [rn, rd] = reduce(N, D);
   steps[steps.length - 1] += rn === N ? ` = **${answer}**` : `, which simplifies to **${answer}** (divide top and bottom by ${N / rn}).`;
-  const base = { prompt, tolerance: 0, explanation: steps.join("\n\n"), params: { kind, values, format: "fraction" } };
+  const base = { prompt, tolerance: 0, explanation: steps.join("\n\n"), params: { kind, values, format: "fraction" }, ...givenRows(gv) };
   if (rd === 1 || rn === 0) return genProbability(difficulty, rng);
   if (rng.next() < 0.35) {
     const { answer: a, choices } = fracChoices(N, D, fracCands, rng);
@@ -436,7 +446,7 @@ function genWeighted(difficulty, rng) {
   const hard = difficulty === "hard";
   const kind = hard ? rng.pick(["percent", "credits", "required"]) : rng.pick(["percent", "credits"]);
   const rounded = true;
-  let prompt, exact, explanation, candidates, values;
+  let prompt, exact, explanation, candidates, values, gv;
 
   if (kind === "percent" || kind === "required") {
     const names = rng.shuffle(["Homework", "Quizzes", "Project", "Midterm", "Lab work", "Essay"]);
@@ -467,6 +477,8 @@ function genWeighted(difficulty, rng) {
       } while ((need < 0 || need > 100) && tries < 50);
       if (need < 0 || need > 100) return genWeighted(difficulty, rng);
       values = { weights, scores, target: T };
+      // _w4 is the final exam's weight: 4 weights + 3 scores + target = 8 rows.
+      gv = [...weights.map((w, i) => [`_w${i + 1}`, w]), ...scores.map((x, i) => [`_s${i + 1}`, x]), ["_target", T]];
       exact = need;
       prompt =
         `A course grade is ${list(parts.map((p, i) => `${p} ${weights[i]}%`))} and Final exam ${wf}%. ` +
@@ -477,12 +489,13 @@ function genWeighted(difficulty, rng) {
         `\`${parts.map((_, i) => `${weights[i]} × ${scores[i]}`).join(" + ")} + ${wf} × x = 100 × ${T}\`\n\n` +
         `\`${partial} + ${wf}x = ${100 * T}\`, so \`x = (${100 * T} - ${partial}) / ${wf} = ${100 * T - partial} / ${wf}\` ${result(exact, rounded)}`;
       candidates = [T, k * T - sum(scores), (100 * T - partial) / 100, 2 * T - sum(scores) / (k - 1)]; // the target itself, weights ignored, forgot to divide by the weight, averaged
-      const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded } };
+      const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
       return finish(base, exact, rounded, candidates, rng, { lo: 0, hi: 100, step: 1 });
     }
     const parts = names.slice(0, k);
     const scores = parts.map(() => rng.int(40, 100));
     values = { weights, scores };
+    gv = [...weights.map((w, i) => [`_w${i + 1}`, w]), ...scores.map((x, i) => [`_s${i + 1}`, x])];
     const total = sum(scores.map((s, i) => s * weights[i]));
     exact = total / 100;
     prompt = `A course grade is made up of ${list(parts.map((p, i) => `${p} (${weights[i]}%)`))}. A student scored ${list(parts.map((p, i) => `${scores[i]} on ${p}`))}. What is the overall grade?${ROUND_IF}`;
@@ -497,6 +510,7 @@ function genWeighted(difficulty, rng) {
     const credits = courses.map(() => rng.int(1, 5));
     const grades = courses.map(() => (hard ? rng.int(0, 8) / 2 : rng.int(1, 4))); // grade points 0–4
     values = { weights: credits, scores: grades };
+    gv = [...credits.map((c, i) => [`_c${i + 1}`, c]), ...grades.map((g, i) => [`_g${i + 1}`, g])]; // 5 courses = 10 rows: skipped
     const total = sum(grades.map((g, i) => g * credits[i]));
     const cr = sum(credits);
     exact = total / cr;
@@ -506,7 +520,7 @@ function genWeighted(difficulty, rng) {
       `\`(${courses.map((_, i) => `${credits[i]} × ${num(grades[i])}`).join(" + ")}) / (${credits.join(" + ")}) = ${num(total)} / ${cr}\` ${result(exact, rounded)}`;
     candidates = [sum(grades) / k, total / k, total];
   }
-  const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded } };
+  const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 });
 }
 

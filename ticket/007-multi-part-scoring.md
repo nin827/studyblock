@@ -1,6 +1,6 @@
 # 007 — Scoring multi-part questions
 
-**Status:** open (built with the default below)
+**Status:** resolved (2026-11-24): partial credit. A multi-part question earns parts right / parts total; scores can be decimals such as 6.5 / 8.
 **Raised:** 2026-11-24
 
 Business Case questions can have several answer fields (for example *Calculation* + *Recommendation*).

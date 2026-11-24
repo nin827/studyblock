@@ -7,8 +7,7 @@ Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser
 ## Hard rules
 
 - **No build step, no npm.** Native ES modules only (`<script type="module">`). Node is not installed.
-- **No third-party assets except Lucide icons**, loaded from a pinned CDN URL in `index.html`
-  (`https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js`). No markdown/CSV/UI libraries — those are hand-rolled in `js/lib/`.
+- **No third-party assets except Lucide icons**, vendored as `vendor/lucide.min.js` (v0.460.0, ISC, licence in `vendor/LICENSE-lucide.txt`) and loaded by `index.html`. Nothing is loaded from a CDN, so the app works fully offline. To upgrade, replace the file with a pinned version (download only with the user's OK). No markdown/CSV/UI libraries — those are hand-rolled in `js/lib/`.
 - **Must be served over HTTP** (ES modules, `fetch`, and cookies don't work on `file://`):
   ```
   py -m http.server 8000
@@ -31,7 +30,8 @@ Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser
 ## Layout
 
 ```
-index.html              app shell, loads Lucide + js/app.js
+index.html              app shell, loads vendor/lucide.min.js + js/app.js
+vendor/                 Lucide (the only third-party file) + its licence
 css/style.css           theme tokens (light/dark), layout
 js/app.js               bootstrap + hash router
 js/views/*.js           home, module, quiz, results, settings views
@@ -54,7 +54,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
 
 ## Registry — `modules/index.json`
 
@@ -135,6 +135,16 @@ A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `d
 }
 ```
 
+`all` is a reserved id: a subtopic with id `all` is skipped with a console warning.
+
+### Whole-module quizzes (`all`)
+
+- The module page has an **All topics** row (2+ subtopics) and an **All** difficulty column (2+ difficulties).
+- Per question: pick a subtopic uniformly from the allowed ones (a fixed difficulty skips subtopics that lack it), then a difficulty uniformly from that subtopic's list (`all`), or the fixed one. A subtopic with no list counts as `medium`.
+- Each question is drawn from its own cell, so its seed regenerates it, and carries `module`, `subtopic`, `difficulty` (as in mixes).
+- Length: CSV = min(max(questionsPerQuiz, 10), unique prompts across the cells), never repeating a prompt; generators = questionsPerQuiz.
+- The attempt stores `subtopic`/`difficulty` as chosen (`all`). Stats count it whole for its module and its own `all` cell, and slice it by question origin for specific cells.
+
 ### Generator modules — `generator.js`
 
 ```js
@@ -166,7 +176,7 @@ The engine samples rows with the seeded rng and shuffles choices.
 ### Answer checking
 
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
-- text: trim, collapse whitespace, case-insensitive.
+- text: trim, collapse whitespace, case-insensitive, and spaces around `:` ignored (so `2 : 7` matches `2:7`).
 - choice: exact match of the chosen string.
 
 ### Multi-part questions (`answerType: "multi"`)
@@ -186,7 +196,11 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 ```
 - **Parts:** 2–4. Each part is a mini-question with its own `answerType` (`number`, `text` or `choice`), `answer`, `tolerance` and `choices`, checked by the rules above. `id` matches `^[a-z0-9-]+$`, and `label` is a short heading such as *Calculation*, *Recommendation* or *Risk*.
 - **Generators:** `verify(question, answer)` gets `answer` as an object `{ [partId]: value }` and must check every part. The engine calls it with the generator's own answers.
-- **Scoring:** a multi-part question counts as correct only if every part is correct. Each part's result is stored, and review screens show part-by-part ticks. Per-part partial credit is not used for scores (see ticket 007).
+- **Scoring (partial credit, ticket 007):**
+  - Each stored question has `credit` (0–1): single questions 1 or 0; multi-part = parts right / parts total. `correct` is true only if every part is right.
+  - Attempt `score` = sum of credits, rounded to 2 decimals (may be decimal, ≤ total); percentages are score/total. Scores display without trailing zeros: 6.5 / 8, 6.67 / 8.
+  - A partly right question shows "Partly correct · n of m parts right" (`circle-dot` icon, warn colours) in feedback, progress, results and review. 0 parts right is "Incorrect".
+  - Stats use `credit`, falling back to `correct ? 1 : 0` for older data.
 - **Quiz UI:**
   - One field per part, stacked, each with its label and `ask` text: number/text inputs, or a choice button group, which doesn't submit on click.
   - **Check** submits all parts together, once each part has a value.
@@ -207,14 +221,14 @@ One scenario, several labelled answer fields. Used by Business Case for things l
       "id": "uuid", "ts": 0,
       "module": "arithmetic", "subtopic": "addition", "difficulty": "easy",
       "questions": [
-        { "seed": 123, "prompt": "...", "answer": 7, "userAnswer": "7", "correct": true }
+        { "seed": 123, "prompt": "...", "answer": 7, "userAnswer": "7", "correct": true, "credit": 1 }
       ],
       "score": 9, "total": 10
     }
   ]
 }
 ```
-Scores per module/subtopic/difficulty are derived from attempts.
+Scores per module/subtopic/difficulty are derived from attempts. On import, `credit` is optional and clamped to 0–1; `score` may be a decimal ≥ 0 and ≤ total.
 
 **Cookies** are a small cache only (≤ ~1KB): last module, last difficulty, theme. `SameSite=Lax; path=/`. Never store history in cookies.
 
@@ -269,6 +283,17 @@ The panel is a list of rows. Each row has:
   - Ctrl/Cmd+K focuses the calculator.
   - Esc returns to the answer.
   - Plain Enter inside the calculator never submits the quiz answer.
+
+**Given values (pre-filled rows)**
+
+A generator question may hand the calculator its starting numbers, so the user doesn't retype them:
+```js
+given: [ { label: "_price", value: 4.5 }, { label: "_cost", value: 1.2 } ]
+```
+- **Generators:** optional, 1–8 entries. Only numbers stated in the prompt (never the answer or an intermediate step). Labels follow the row rule (`^_[A-Za-z0-9_]{1,23}$`, unique ignoring case) and should match the labels used in the explanation, so the worked steps can be followed in the calculator. Add it to questions with two or more numeric inputs; skip it where the point is to work by hand. CSV modules don't support it.
+- **Engine:** validates `given` (drops bad labels, duplicates and non-finite values, max 8) and passes it through on the question. It isn't stored in attempts; `work` already captures the rows.
+- **Calculator:** when a question appears, rows still marked *given* from the previous question are removed, unless the user has edited them, and the new question's given rows are added at the top with a small "given" tag. Editing a given row's label or expression turns it into a normal row. A label clash with a user row gets a suffix (`_price_2`). A *blank* row whose label matches a given label moves to the next free name; non-blank user rows are never touched. Values are written with up to 12 significant digits, and the tag is visible text plus a screen-reader label. User rows that reference a given label follow the current question's value (ticket 008).
+- Shown only when the calculator itself is shown.
 
 **Lifetime**
 - One sheet per quiz run. It carries over between questions, so values can be reused later, and it's cleared when a new quiz starts.
@@ -349,7 +374,7 @@ The same code runs in three places.
      - `loadText(path)` and `loadJSON(path)`: `fetch` normally, or read the embedded bundle.
      - `loadModule(path)`: dynamic `import()` normally, or the mapped specifier.
    - No other file may call `fetch` or `import()` on project paths.
-   - Lucide is inlined in the bundle only if it's vendored (ticket 001). Otherwise icons fall back to text labels offline.
+   - Lucide is inlined in the bundle from `vendor/lucide.min.js`.
    - The bundler uses only the Python standard library and writes only inside `dist/`.
 
 ## Installable web app (PWA)
@@ -364,7 +389,7 @@ Applies when the app is served over http(s): GitHub Pages or localhost. It is of
   - `CACHE_VERSION` is a constant to bump on release.
   - It precaches the app shell (`index.html`, css, all `js/**`) and `modules/index.json` + `presets/index.json`.
   - Same-origin GETs: stale-while-revalidate, so modules and presets get cached on first use. Navigations fall back to the cached `index.html` when offline.
-  - It never caches cross-origin requests apart from the pinned Lucide CDN URL, which is cache-first.
+  - `vendor/lucide.min.js` is precached with the shell. Cross-origin requests are never cached.
   - Activating a new version deletes old caches.
 - **Updates:** a new service worker waits. The app shows a small "Update available · Reload" toast; reloading posts `SKIP_WAITING`. Nothing auto-reloads while a quiz is in progress.
 - **Install button:**

@@ -32,7 +32,10 @@ function signedTerm(n, suffix = "") {
   return `${n > 0 ? " + " : " - "}${mag}${suffix}`;
 }
 
-const linearText = (a, b, c) => `${coefX(a)}${signedTerm(b)} = ${c}`;
+// Pre-filled calculator rows: [[label, value], ...] -> [{ label, value }, ...].
+const givenRows = (pairs) => pairs.map(([label, value]) => ({ label, value }));
+
+const linearText =(a, b, c) => `${coefX(a)}${signedTerm(b)} = ${c}`;
 const quadText = (p, q) => `x²${signedTerm(p, "x")}${signedTerm(q)} = 0`;
 
 // (x - r) factor; r = 0 gives "x"
@@ -113,6 +116,8 @@ function genLinear(difficulty, rng) {
     explanation: steps.join("\n\n"),
     params: { kind: "linear", a, b, c, rounded },
   };
+  // Calculator rows only where a calculator helps (hard: non-whole answers); easy/medium are by hand.
+  if (rounded) base.given = givenRows([["_a", a], ["_b", b], ["_c", c]].filter(([label]) => label !== "_b" || b !== 0));
 
   // Multiple choice only for whole-number answers (easy/medium).
   if (!rounded && rng.next() < 0.35) {
@@ -164,6 +169,8 @@ function genQuadratic(difficulty, rng) {
     explanation: steps.join("\n\n"),
     params: { kind: "quadratic", p, q },
   };
+  // b and c of x² + bx + c = 0 (a = 1 is implied); only when both terms appear in the equation.
+  if (p !== 0 && q !== 0) base.given = givenRows([["_b", p], ["_c", q]]);
 
   if (rng.next() < 0.4) {
     const { answer, choices } = buildChoices(

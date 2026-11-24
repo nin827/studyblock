@@ -79,7 +79,8 @@ function validateAttempt(a, idx) {
   for (const k of ['module', 'subtopic', 'difficulty']) {
     if (!isStr(a[k])) throw new Error(`${where} has no valid "${k}".`);
   }
-  if (!isNum(a.score) || !isNum(a.total) || a.total < 0 || a.score < 0) {
+  // `score` is a sum of per-question credits, so it may be a decimal (e.g. 6.67), never above `total`.
+  if (!isNum(a.score) || !isNum(a.total) || a.total < 0 || a.score < 0 || a.score > a.total + 1e-9) {
     throw new Error(`${where} has an invalid "score" or "total".`);
   }
   if (!Array.isArray(a.questions)) throw new Error(`${where} has no "questions" list.`);
@@ -163,6 +164,17 @@ function cleanAnswer(v) {
   return v === null || v === undefined ? '' : String(v);
 }
 
+// ---- credit (partial credit for multi-part questions) ----
+
+// A question's credit, 0–1: the stored `credit` (clamped), else 1/0 from `correct` (older data).
+export function creditOf(q) {
+  if (q && isNum(q.credit)) return Math.min(1, Math.max(0, q.credit));
+  return q && q.correct ? 1 : 0;
+}
+
+// Scores are sums of credits, kept to 2 decimals.
+export const roundScore = n => Math.round((Number(n) || 0) * 100) / 100;
+
 // ---- attempts ----
 
 export function saveAttempt(attempt) {
@@ -195,33 +207,41 @@ function summarize(list) {
 }
 
 export const MIX_MODULE = 'mix';
+export const ALL_ID = 'all';
+
+// A whole-module attempt: subtopic and/or difficulty "all"; its questions carry their own origin.
+const isAllAttempt = a => a.module !== MIX_MODULE && (a.subtopic === ALL_ID || a.difficulty === ALL_ID);
 
 /*
  * Per-module attribution rule (kept deliberately simple):
  * - A single-module attempt counts for its module as-is.
  * - A mixed attempt (module "mix") is split into one "slice" per module (optionally narrowed
  *   further to a subtopic/difficulty) using each question's own module/subtopic/difficulty.
- *   A slice behaves like a small attempt: { ts, score = correct questions, total = questions }.
+ *   A slice behaves like a small attempt: { ts, score = sum of question credits, total = questions }.
  *   So it adds 1 to that module's attempt count and its percentage feeds Best/Last/Overall
  *   (a 1-question slice answered correctly therefore counts as a 100% "best").
  * - Mixed questions without a `module` field (shouldn't happen) are ignored for per-module stats.
+ * - A whole-module attempt ("all" topics and/or difficulties) counts as-is for its module and for
+ *   its own "all" cell; for a specific subtopic/difficulty it is sliced like a mixed attempt.
  */
-function mixSlices(attempts, match) {
-  const out = [];
-  for (const a of attempts) {
-    if (a.module !== MIX_MODULE) continue;
-    const groups = new Map();
-    for (const q of a.questions) {
-      if (typeof q.module !== 'string' || !match(q)) continue;
-      const key = `${q.module}|${q.subtopic ?? ''}|${q.difficulty ?? ''}`;
-      if (!groups.has(key)) groups.set(key, { ts: a.ts, module: q.module, subtopic: q.subtopic, difficulty: q.difficulty, score: 0, total: 0, fromMix: true, attemptId: a.id });
-      const g = groups.get(key);
-      g.total++;
-      if (q.correct) g.score++;
-    }
-    out.push(...groups.values());
+function slicesOf(a, match) {
+  const groups = new Map();
+  for (const q of a.questions) {
+    const mod = typeof q.module === 'string' ? q.module : (a.module !== MIX_MODULE ? a.module : null);
+    if (!mod) continue;
+    const qq = { ...q, module: mod };
+    if (!match(qq)) continue;
+    const key = `${mod}|${q.subtopic ?? ''}|${q.difficulty ?? ''}`;
+    if (!groups.has(key)) groups.set(key, { ts: a.ts, module: mod, subtopic: q.subtopic, difficulty: q.difficulty, score: 0, total: 0, fromMix: true, attemptId: a.id });
+    const g = groups.get(key);
+    g.total++;
+    g.score += creditOf(q);
   }
-  return out;
+  return [...groups.values()];
+}
+
+function mixSlices(attempts, match) {
+  return attempts.filter(a => a.module === MIX_MODULE).flatMap(a => slicesOf(a, match));
 }
 
 // Merges the per-key slices of one mixed attempt back into one slice (for module-level stats).
@@ -242,7 +262,12 @@ const matches = (filter, x) =>
 // Attempt-like records for a module (single attempts + mixed slices), optionally narrowed.
 function recordsFor(attempts, filter) {
   const single = attempts.filter(a => a.module !== MIX_MODULE && matches(filter, a));
-  const slices = mergeSlices(mixSlices(attempts, q => matches(filter, q)));
+  // Whole-module attempts that don't match as stored (e.g. filter subtopic "addition", attempt "all"):
+  // count the questions that do match, as one slice per attempt.
+  const allSlices = attempts
+    .filter(a => isAllAttempt(a) && !matches(filter, a) && (filter.module === undefined || a.module === filter.module))
+    .flatMap(a => slicesOf(a, q => matches(filter, q)));
+  const slices = mergeSlices(mixSlices(attempts, q => matches(filter, q)).concat(allSlices));
   return single.concat(slices);
 }
 
@@ -273,12 +298,19 @@ export function getModuleRecords(module) {
 }
 
 // Map "subtopic|difficulty" -> stats for one module (mixed questions included).
+// Whole-module attempts count under their own key ("all|easy", "addition|all", "all|all") and
+// their questions are also attributed to the real cells they came from.
 export function getModuleCellStats(module) {
   const attempts = load().attempts;
   const groups = {};
   for (const a of attempts) {
     if (a.module !== module) continue;
     (groups[`${a.subtopic}|${a.difficulty}`] ||= []).push(a);
+    if (isAllAttempt(a)) {
+      for (const s of slicesOf(a, q => q.module === module && q.subtopic !== ALL_ID && q.difficulty !== ALL_ID)) {
+        (groups[`${s.subtopic}|${s.difficulty}`] ||= []).push(s);
+      }
+    }
   }
   for (const s of mixSlices(attempts, q => q.module === module)) {
     (groups[`${s.subtopic}|${s.difficulty}`] ||= []).push(s);
@@ -581,6 +613,8 @@ function importObject(incoming, mode) {
       answer: cleanAnswer(q.answer),
       userAnswer: isStr(q.userAnswer) ? q.userAnswer : isObj(q.userAnswer) ? (cleanPartMap(q.userAnswer) ?? '') : String(q.userAnswer ?? ''),
       correct: q.correct,
+      // Optional partial credit (0–1); older data has none and falls back to `correct`.
+      ...(isNum(q.credit) ? { credit: Math.min(1, Math.max(0, q.credit)) } : {}),
       // Optional per-part results of a multi-part question.
       ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),

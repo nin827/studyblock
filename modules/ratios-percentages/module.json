@@ -1,0 +1,13 @@
+{
+  "id": "ratios-percentages",
+  "title": "Ratios and Percentages",
+  "description": "Simplify and share ratios, direct and inverse proportion, and percentage change.",
+  "icon": "percent",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "ratios", "title": "Ratios", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "proportion", "title": "Proportion", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "percentages", "title": "Percentages", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

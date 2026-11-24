@@ -167,7 +167,7 @@ def main():
     html = re.sub(r'[ \t]*<link\b[^>]*\brel\s*=\s*["\']manifest["\'][^>]*>\r?\n?', "", html, flags=re.I)
     html = inline_icon_links(html)
 
-    lucide_rx = r'<script\s+src="https://unpkg\.com/lucide@[^"]+"\s*>\s*</script>'
+    lucide_rx = r'<script\s+src="(?:https://unpkg\.com/lucide@[^"]+|vendor/lucide\.min\.js)"\s*>\s*</script>'
     vendor = ROOT / "vendor" / "lucide.min.js"
     lucide_note = "CDN (icons need internet)"
     if vendor.is_file():

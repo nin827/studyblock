@@ -30,6 +30,13 @@ function intWithMinAbs(rng, lo, hi, minAbs) {
   return v;
 }
 
+// Pre-filled calculator rows from the stated inputs: { u: 3, t: 5 } -> [{ label: "_u", value: 3 }, ...].
+// skip lists inputs the prompt only states in words ("from rest" for u = 0).
+const givenFrom = (values, skip = []) =>
+  Object.entries(values)
+    .filter(([k]) => !skip.includes(k))
+    .map(([k, value]) => ({ label: `_${k}`, value }));
+
 const WHO = ["A cyclist", "A runner", "A car", "A train", "A skateboarder", "A delivery drone", "A sprinter", "A bus"];
 
 // Final line of an explanation: "= **15 m/s**" or "≈ 14.2857 m/s, which rounds to **14.29 m/s**".
@@ -129,6 +136,7 @@ function genSpeed(difficulty, rng) {
     tolerance: rounded ? 0.005 : 0,
     explanation,
     params: { formula: "speed", unknown, values, rounded },
+    given: givenFrom(values),
   };
   return finish(base, exact, rounded, candidates, rng);
 }
@@ -212,6 +220,7 @@ function genAccel(difficulty, rng) {
     tolerance: rounded ? 0.005 : 0,
     explanation,
     params: { formula: "accel", unknown, values, rounded },
+    given: givenFrom(values),
   };
   return finish(base, exact, rounded, candidates, rng);
 }
@@ -329,6 +338,7 @@ function genMotion(difficulty, rng) {
     tolerance: rounded ? 0.005 : 0,
     explanation,
     params: { formula, unknown, values, rounded },
+    given: givenFrom(values, u === 0 ? ["u"] : []), // u = 0 is stated as "from rest"
   };
   return finish(base, exact, rounded, candidates, rng);
 }

@@ -1,6 +1,6 @@
 # Business Case
 
-Short scenarios from small businesses: a café, a bike shop, a print shop, a SaaS startup. Some ask a single question; about half are **multi-part**: one scenario with two or three labelled answers, such as a *Calculation* and a *Recommendation*. Work through it in the calculator, one labelled row per step. Amounts are in dollars.
+Short scenarios from small businesses: a café, a bike shop, a print shop, a SaaS startup. Some ask a single question; about half are **multi-part**: one scenario with two or three labelled answers, such as a *Calculation* and a *Recommendation*. Inventory and hiring scenarios ask things like "Should it reorder now?" or "Hire or don't hire?". Work through it in the calculator, one labelled row per step. Amounts are in dollars.
 
 **Multi-part questions.** Each part has its own field. Fill them all, then press **Check**: the question counts as correct only when every part is right, and the feedback marks each part. Enter jumps to the next empty part. The calculator's **Use** fills the part you were last in. A *Recommendation* always follows a rule stated in the scenario, for example "invests only if the NPV is positive" or "healthy if LTV:CAC is at least 3:1", so work out the number first and apply the rule to it.
 
@@ -17,6 +17,13 @@ Short scenarios from small businesses: a café, a bike shop, a print shop, a Saa
 | `ROI = (return - cost) / cost × 100` | net gain as a percent of the cost |
 | `payback = cost / net cash per year` | years to earn the cost back |
 | `NPV = CF1 / (1 + r) + CF2 / (1 + r)^2 + … - cost` | today's value of future cash, minus the cost paid now |
+| `reorder point = daily demand × lead time + safety stock` | order when stock falls to this level |
+| `ordering cost = demand / order size × cost per order` | yearly cost of placing orders |
+| `holding cost = order size / 2 × holding cost per unit` | yearly cost of keeping stock (average stock is half an order) |
+| `EOQ = √(2 × demand × cost per order / holding cost)` | order size that balances the two |
+| `hire cost = salary × (1 + overhead) / 12` | full monthly cost of a new employee |
+| `net gain = extra sales × margin - hire cost` | what a hire adds each month |
+| `payback months = up-front cost / net gain` | round **up** to whole months |
 
 ## Worked example
 
@@ -32,6 +39,6 @@ A café sells coffee for $4.50 a cup. Each cup costs $1.20 in variable costs, an
 | --- | --- |
 | Easy | Round numbers, whole-number answers, about 2 steps |
 | Medium | Prices with cents, rounding up to whole units, about 3 steps |
-| Hard | Target profits, churn, NPV over 3 years, 3–4 steps with 2-decimal answers |
+| Hard | Target profits, churn, NPV over 3 years, EOQ costs, hiring payback, 3–4 steps with 2-decimal answers |
 
 **Tip:** store each given value in its own row (`_price`, `_fixed`, …) and build later rows from those labels. If you mistype a number, fix that one row and every row after it updates. Rows also carry over to the next question. Each prompt says how to round: "round up to whole units" means `ceil`, and "2 decimal places" accepts answers within 0.005. Type percents and ratios as plain numbers: `25` for 25%, `3.5` for 3.5:1.

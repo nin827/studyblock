@@ -1,6 +1,6 @@
 # 003 — Which domains and subdomains next?
 
-**Status:** open
+**Status:** resolved (2026-11-24): next batch chosen: Math (ratios & percentages, sequences, trigonometry), Science (chemistry, waves), Business (finance module; inventory and hiring Business Cases).
 **Raised:** 2026-11-24 · **Updated:** 2026-11-24
 
 ## Current subjects (24)

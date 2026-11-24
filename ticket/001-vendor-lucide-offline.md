@@ -1,6 +1,6 @@
 # 001 — Vendor Lucide for offline use?
 
-**Status:** open
+**Status:** resolved (2026-11-24): vendored as `vendor/lucide.min.js` v0.460.0 with its ISC licence; index.html, sw.js and the bundle use it, so icons work fully offline.
 **Raised:** 2026-11-24
 
 ## Question

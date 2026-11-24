@@ -1228,12 +1228,491 @@ function genPricing(difficulty, rng) {
   };
 }
 
-export function generate({ subtopic, difficulty, rng }) {
+// ---------------------------------------------------------------------------------------------
+// Inventory: reorder point, ordering vs holding cost, EOQ.
+
+// True when x is clearly away from a half cent, so exactly one 2-decimal answer is right.
+function tieFree(x) {
+  const c = Math.abs(x) * 100;
+  const f = c - Math.floor(c);
+  return Math.abs(f - 0.5) > 0.002;
+}
+
+const SMALLER = "Order smaller batches";
+const LARGER = "Order larger batches";
+const KEEP = "Keep the current size";
+const SWITCH = "Switch to the EOQ";
+const HIRE = "Hire";
+const NO_HIRE = "Don't hire";
+// Recommendation choices for the inventory and hiring subtopics, keyed by params.parts[].rec.
+const NEW_REC_CHOICES = {
+  "reorder-now": [YES, NO],
+  "batch-size": [SMALLER, LARGER],
+  "eoq-keep": [KEEP, SWITCH],
+  "eoq-switch": [KEEP, SWITCH],
+  hire: [HIRE, NO_HIRE],
+};
+
+const STOCK = [
+  { biz: "A café", item: "bags of coffee beans", unit: "bag", units: "bags" },
+  { biz: "A bike shop", item: "inner tubes", unit: "tube", units: "tubes" },
+  { biz: "A hardware store", item: "boxes of screws", unit: "box", units: "boxes" },
+  { biz: "A pet-supply store", item: "sacks of dog food", unit: "sack", units: "sacks" },
+  { biz: "A print shop", item: "reams of paper", unit: "ream", units: "reams" },
+  { biz: "A garden center", item: "bags of potting soil", unit: "bag", units: "bags" },
+];
+
+// Reorder point = ceil(demand × (lead days + safety days) ÷ days) + safety units, in whole numbers.
+// Easy has whole daily demand (W = 1); medium spreads annual demand over working days; hard uses
+// weekly demand and a safety stock given in days of demand.
+const ropOf = (k) => ceilDiv(k.A * (k.L + k.sd), k.W) + k.ss;
+// EOQ rounded to the nearest whole unit.
+const eoqOf = (k) => Math.round(Math.sqrt((2 * k.D * k.S) / k.H));
+const invCost = (k, Q) => (k.D * k.S) / Q + (Q * k.H) / 2;
+
+function genInventory(difficulty, rng) {
+  checkDifficulty(difficulty);
+  const s = rng.pick(STOCK);
+  const kind = rng.pick(difficulty === "easy" ? ["reorder-point", "inv-costs"] : difficulty === "medium" ? ["reorder-point", "eoq"] : ["reorder-point", "eoq-cost"]);
+  // Decided up front so a seed always gives the same question; about 60% multi-part.
+  const wantMulti = rng.next() < 0.6;
+  let scen, ask, exact, fmt, unit, lines, intro, candidates, values;
+
+  if (kind === "reorder-point") {
+    let A, W, L, ss, sd;
+    for (let t = 0; t < 50; t++) {
+      if (difficulty === "easy") {
+        A = rng.int(3, 40);
+        W = 1;
+        L = rng.int(2, 10);
+        ss = 5 * rng.int(0, 20);
+        sd = 0;
+      } else if (difficulty === "medium") {
+        A = rng.int(800, 20000);
+        W = rng.pick([250, 300, 360]);
+        L = rng.int(3, 14);
+        ss = 5 * rng.int(2, 40);
+        sd = 0;
+      } else {
+        A = rng.int(20, 400);
+        W = rng.pick([5, 6, 7]);
+        L = rng.int(3, 12);
+        ss = 0;
+        sd = rng.int(2, 7);
+      }
+      // Keep demand × days clear of a whole number, so a calculator's ceil() never trips over binary
+      // error (10.2 × 3 = 30.599999…, but 0.1 × 30 can land just above 3). Easy demand is whole.
+      const rem = (A * (L + sd)) % W;
+      if (W === 1 || (rem / W >= 0.02 && rem / W <= 0.98)) break;
+    }
+    values = { A, W, L, ss, sd };
+    exact = ropOf(values);
+    fmt = "int";
+    unit = s.units;
+    const lead = `A new order takes ${L} days to arrive`;
+    if (difficulty === "easy") {
+      scen = `${s.biz} uses about ${A} ${s.item} a day. ${lead}, and it keeps a safety stock of ${ss} ${s.units}.`;
+      ask = `What is its reorder point, the stock level at which it should place a new order? Use reorder point = daily demand × lead time + safety stock.`;
+      intro = "During the lead time the shop keeps selling, so it must order while it still has enough to cover that demand plus the safety stock.";
+      lines = [given("_daily", A), given("_lead", L), given("_safety", ss), step("_rop", "_daily * _lead + _safety", final(exact, fmt, unit))];
+      candidates = [A * L, A * L + ss + A, A + ss]; // forgot safety stock, one day too many, forgot the lead time
+    } else if (difficulty === "medium") {
+      scen =
+        `${s.biz} sells ${A} ${s.item} a year and is open ${W} days a year. ${lead}, and it keeps a safety stock of ${ss} ${s.units}.`;
+      ask = `What is its reorder point? Use daily demand = yearly demand ÷ ${W}, and round the reorder point up to whole ${s.units}.`;
+      intro = "Turn yearly demand into daily demand, cover the lead time, add the safety stock, and round up so you never order too late.";
+      lines = [
+        given("_yearly", A),
+        given("_days", W),
+        given("_lead", L),
+        given("_safety", ss),
+        step("_daily", "_yearly / _days", num(A / W)),
+        step("_rop", "ceil(_daily * _lead) + _safety", final(exact, fmt, unit)),
+      ];
+      candidates = [Math.ceil((A * L) / W), exact - 1, Math.ceil((A * L) / 365) + ss]; // forgot safety stock, rounded down, used 365 days
+    } else {
+      scen =
+        `${s.biz} sells about ${A} ${s.item} a week and is open ${W} days a week. ${lead}, and it keeps a safety stock ` +
+        `equal to ${sd} days of demand.`;
+      ask = `What is its reorder point? Round up to whole ${s.units} at the end.`;
+      intro = "Daily demand = weekly demand ÷ open days. The order must cover the lead time plus the safety days; round up at the end.";
+      lines = [
+        given("_weekly", A),
+        given("_open_days", W),
+        given("_lead", L),
+        given("_safety_days", sd),
+        step("_daily", "_weekly / _open_days", num(A / W)),
+        step("_rop", "ceil(_daily * (_lead + _safety_days))", final(exact, fmt, unit)),
+      ];
+      candidates = [Math.ceil((A * L) / W), exact - 1, Math.ceil((A * (L + sd)) / 7)]; // forgot safety stock, rounded down, used 7 days
+    }
+
+    if (wantMulti) {
+      // Stock on hand at least 10% (and 3 units) away from the reorder point.
+      const delta = Math.max(3, Math.round((exact * rng.int(10, 35)) / 100));
+      const onHand = rng.next() < 0.5 || exact - delta < 1 ? exact + delta : exact - delta;
+      const reorder = onHand <= exact;
+      const v = { ...values, onHand };
+      const L2 = [...lines, given("_on_hand", onHand)];
+      const tail = `\n\n\`_on_hand\` (${onHand}) is ${reorder ? "at or below" : "above"} \`_rop\` (${exact}), so the answer is **${reorder ? YES : NO}**.`;
+      const parts = [
+        numPart("rop", "Reorder point", ask, exact, "int"),
+        recPart("Should it place an order now?", reorder ? YES : NO, NEW_REC_CHOICES["reorder-now"]),
+      ];
+      const specs = [{ id: "rop", kind, fmt }, { id: "rec", rec: "reorder-now" }];
+      const prompt = `${scen} It has ${onHand} ${s.units} on hand now, and it orders as soon as stock is at or below the reorder point.`;
+      return multiQuestion(prompt, parts, specs, explain(intro, L2) + tail, { kind, values: v, fmt });
+    }
+  } else if (kind === "inv-costs") {
+    // Easy: yearly ordering cost = orders × cost per order; holding = average stock (Q/2) × cost per unit.
+    // Which cost should come out higher is picked first, so both recommendations are equally common.
+    const holdHigher = rng.next() < 0.5;
+    let Q, m, S, H;
+    for (let t = 0; t < 80; t++) {
+      Q = 10 * rng.int(5, 60);
+      m = rng.int(4, 40);
+      S = 5 * rng.int(4, 40);
+      H = rng.int(1, 12);
+      const o = m * S;
+      const h = (Q * H) / 2;
+      if (Math.abs(o - h) >= 0.1 * Math.max(o, h) && h > o === holdHigher) break;
+    }
+    const D = Q * m;
+    const order = m * S;
+    const hold = (Q * H) / 2;
+    values = { D, Q, S, H };
+    fmt = "int";
+    unit = "money";
+    scen =
+      `${s.biz} sells ${D} ${s.item} a year and orders ${Q} at a time. Each order costs ${cash(S)} to place, and holding one ${s.unit} ` +
+      `in stock for a year costs ${cash(H)}. Average stock is half the order size.`;
+    intro = "Ordering cost = orders per year × cost per order. Holding cost = average stock (order size ÷ 2) × holding cost per unit.";
+    lines = [
+      given("_demand", D),
+      given("_order_size", Q),
+      given("_order_cost", mv(S)),
+      given("_holding", mv(H)),
+      step("_orders", "_demand / _order_size", m),
+      step("_ordering", "_orders * _order_cost", mv(order)),
+      step("_holding_total", "_order_size / 2 * _holding", mv(hold)),
+    ];
+    if (wantMulti) {
+      const smaller = hold > order;
+      const tail =
+        `\n\n\`_holding_total\` (${cash(hold)}) is ${smaller ? "higher" : "lower"} than \`_ordering\` (${cash(order)}), ` +
+        `so the answer is **${smaller ? SMALLER : LARGER}**.`;
+      const parts = [
+        numPart("ordering", "Ordering cost", "What is the yearly ordering cost, in dollars?", order, "int"),
+        numPart("holding", "Holding cost", "What is the yearly holding cost, in dollars?", hold, "int"),
+        recPart("Which way should it change its order size?", smaller ? SMALLER : LARGER, NEW_REC_CHOICES["batch-size"]),
+      ];
+      const specs = [
+        { id: "ordering", kind: "order-cost", fmt },
+        { id: "holding", kind: "hold-cost", fmt },
+        { id: "rec", rec: "batch-size" },
+      ];
+      const prompt =
+        `${scen} If the yearly holding cost is higher than the yearly ordering cost, the manager orders smaller batches; otherwise, larger batches.`;
+      return multiQuestion(prompt, parts, specs, explain(intro, lines) + tail, { kind, values, fmt });
+    }
+    exact = order + hold;
+    ask = "What is the total yearly ordering and holding cost, in dollars?";
+    lines.push(step("_total", "_ordering + _holding_total", final(exact, fmt, unit)));
+    candidates = [order + Q * H, D * S + hold, order]; // forgot ÷ 2, forgot ÷ order size, ordering only
+    values = { ...values, total: true };
+  } else {
+    // EOQ = sqrt(2DS/H), rounded to the nearest whole unit (kept clear of x.5).
+    const hard = kind === "eoq-cost";
+    let D, S, H, E;
+    for (let t = 0; t < 80; t++) {
+      D = rng.int(500, 20000);
+      S = hard ? rng.int(2000, 25000) / 100 : 5 * rng.int(4, 40);
+      H = hard ? rng.int(150, 2500) / 100 : 0.5 * rng.int(2, 40);
+      E = Math.sqrt((2 * D * S) / H);
+      const f = E - Math.floor(E);
+      if (E >= 40 && Math.abs(f - 0.5) >= 0.05 && (!hard || tieFree(invCost({ D, S, H }, Math.round(E))))) break;
+    }
+    const Q = Math.round(E);
+    values = { D, S, H };
+    fmt = "int";
+    unit = s.units;
+    scen =
+      `${s.biz} sells ${D} ${s.item} a year. Each order costs ${cash(S)} to place, and holding one ${s.unit} in stock for a year costs ${cash(H)}.`;
+    ask = `What is its economic order quantity (EOQ)? Use EOQ = √(2 × yearly demand × order cost ÷ holding cost), rounded to the nearest whole ${s.unit}.`;
+    intro = "The EOQ balances ordering cost (fewer, bigger orders) against holding cost (less stock on the shelf).";
+    lines = [
+      given("_demand", D),
+      given("_order_cost", mv(S)),
+      given("_holding", mv(H)),
+      step("_eoq_exact", "sqrt(2 * _demand * _order_cost / _holding)", num(E)),
+      step("_eoq", "round(_eoq_exact)", final(Q, "int", unit)),
+    ];
+    candidates = [Math.round(Math.sqrt((D * S) / H)), Math.round(Math.sqrt((2 * D * H) / S)), Math.round(Math.sqrt(2 * D * S) / H)]; // forgot 2, swapped costs, divided outside the root
+    exact = Q;
+
+    if (!hard && wantMulti) {
+      // Current order size either within 5% of the EOQ or 18-45% away; the rule's line is 10%.
+      const near = rng.next() < 0.5;
+      const sign = rng.next() < 0.5 ? -1 : 1;
+      const N = Math.round(E * (1 + (sign * (near ? rng.int(0, 5) : rng.int(18, 45))) / 100));
+      const keep = Math.abs(N / E - 1) <= 0.1;
+      const v = { ...values, N };
+      const L2 = [...lines, given("_current", N), step("_gap", "abs(_current / _eoq - 1) * 100", `${(Math.abs(N / Q - 1) * 100).toFixed(1)}%`)];
+      const tail = `\n\n\`_current\` (${N}) is ${keep ? "within" : "more than"} 10% ${keep ? "of" : "away from"} the EOQ (${Q}), so the answer is **${keep ? KEEP : SWITCH}**.`;
+      const parts = [
+        numPart("eoq", "EOQ", ask, Q, "int"),
+        recPart(`Should it keep ordering ${N} at a time?`, keep ? KEEP : SWITCH, NEW_REC_CHOICES["eoq-keep"]),
+      ];
+      const specs = [{ id: "eoq", kind: "eoq", fmt }, { id: "rec", rec: "eoq-keep" }];
+      const prompt = `${scen} It now orders ${N} at a time. It keeps that order size if it is within 10% of the EOQ; otherwise it switches to the EOQ.`;
+      return multiQuestion(prompt, parts, specs, explain(intro, L2) + tail, { kind, values: v, fmt });
+    }
+
+    if (hard) {
+      const cost = invCost(values, Q);
+      if (wantMulti) {
+        // Current order size N and a savings bar T, with the actual saving well clear of T.
+        // The outcome is picked first, then a bar from the list that gives it with room to spare.
+        const wantSwitch = rng.next() < 0.5;
+        let N, T, save;
+        for (let t = 0; t < 80; t++) {
+          const sign = rng.next() < 0.5 ? -1 : 1;
+          N = Math.max(5, Math.round(Q * (1 + (sign * rng.int(15, 70)) / 100)));
+          save = invCost(values, N) - cost;
+          const ok = [25, 50, 100, 150, 200, 300, 500, 800].filter(
+            (b) => Math.abs(save - b) >= Math.max(10, 0.2 * b) && save >= b === wantSwitch
+          );
+          T = ok.length ? rng.pick(ok) : 100;
+          if (ok.length) break;
+        }
+        const sw = save >= T;
+        const v = { ...values, N, T };
+        const L2 = [
+          ...lines,
+          step("_cost_eoq", "_demand / _eoq * _order_cost + _eoq / 2 * _holding", final(cost, "2dp", "money")),
+          given("_current", N),
+          given("_min_saving", T),
+          step("_cost_now", "_demand / _current * _order_cost + _current / 2 * _holding", mv(invCost(values, N))),
+          step("_saving", "_cost_now - _cost_eoq", mv(save)),
+        ];
+        const tail = `\n\n\`_saving\` (${cash(save)}) is ${sw ? "at least" : "less than"} \`_min_saving\` (${cash(T)}), so the answer is **${sw ? SWITCH : KEEP}**.`;
+        const parts = [
+          numPart("eoq", "EOQ", ask, Q, "int"),
+          numPart(
+            "cost",
+            "Cost at EOQ",
+            `What is the total yearly ordering and holding cost if it orders the EOQ (rounded) each time? Use (demand ÷ EOQ) × order cost + (EOQ ÷ 2) × holding cost.${DP2}`,
+            cost,
+            "2dp"
+          ),
+          recPart("Should it switch to the EOQ?", sw ? SWITCH : KEEP, NEW_REC_CHOICES["eoq-switch"]),
+        ];
+        const specs = [{ id: "eoq", kind: "eoq", fmt: "int" }, { id: "cost", kind: "eoq-cost", fmt: "2dp" }, { id: "rec", rec: "eoq-switch" }];
+        const prompt =
+          `${scen} It now orders ${N} at a time. It switches to the EOQ (rounded) only if that cuts its total yearly ordering and holding cost by at least ${cash(T)}.`;
+        return multiQuestion(prompt, parts, specs, explain(intro, L2) + tail, { kind, values: v, fmt: "int" });
+      }
+      // Single hard question: the yearly cost at the rounded EOQ.
+      exact = cost;
+      fmt = "2dp";
+      unit = "money";
+      ask =
+        `First find the EOQ = √(2 × yearly demand × order cost ÷ holding cost), rounded to the nearest whole ${s.unit}. ` +
+        `What is the total yearly ordering and holding cost when it orders that amount each time?${DP2}`;
+      lines.push(step("_cost_eoq", "_demand / _eoq * _order_cost + _eoq / 2 * _holding", final(cost, fmt, unit)));
+      candidates = [(D * S) / Q + Q * H, (D * S) / Q, (Q * H) / 2]; // forgot ÷ 2, ordering only, holding only
+    }
+  }
+
+  const base = { prompt: `${scen} ${ask}`, explanation: explain(intro, lines), params: { kind, values, fmt } };
+  return finish(base, exact, fmt, candidates, rng);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Hiring: full monthly cost of a hire vs the gross profit it brings in.
+
+const ROLES = [
+  { biz: "A café", role: "a barista" },
+  { biz: "A bike shop", role: "a second mechanic" },
+  { biz: "A print shop", role: "a designer" },
+  { biz: "An online plant shop", role: "a marketing assistant" },
+  { biz: "A SaaS startup", role: "a salesperson" },
+  { biz: "A bakery", role: "an early-morning baker" },
+  { biz: "A dog-grooming salon", role: "a groomer" },
+];
+
+// Monthly cost of a hire = salary × (1 + overhead%) ÷ 12.
+const hireCostOf = (k) => (k.salary * (100 + k.o)) / 1200;
+
+function genHiring(difficulty, rng) {
+  checkDifficulty(difficulty);
+  const r = rng.pick(ROLES);
+  const kind = difficulty === "easy" ? "hire-cost" : difficulty === "medium" ? "hire-net" : "hire-payback";
+  const wantMulti = rng.next() < 0.6;
+  let salary, o, R, g, F, cost, contrib, net, months, exact, fmt, unit, candidates, ask;
+
+  for (let t = 0; t < 80; t++) {
+    if (kind === "hire-cost") {
+      salary = 1200 * rng.int(20, 80);
+      o = rng.pick([10, 20, 25, 30, 40]);
+    } else {
+      salary = kind === "hire-net" ? 500 * rng.int(50, 180) : rng.int(30000, 95000);
+      o = rng.int(12, 40);
+    }
+    cost = hireCostOf({ salary, o });
+    if (kind === "hire-cost") break;
+    g = rng.int(kind === "hire-net" ? 25 : 30, kind === "hire-net" ? 70 : 75);
+    // Gross profit the hire brings in: 60-160% of the cost (medium), 110-200% (hard), never near 100%.
+    const ratio = kind === "hire-net" ? rng.int(60, 160) / 100 : rng.int(110, 200) / 100;
+    R = kind === "hire-net" ? 100 * Math.max(1, Math.round((cost * ratio * 100) / g / 100)) : Math.max(100, Math.round((cost * ratio * 100) / g));
+    contrib = (R * g) / 100;
+    net = contrib - cost;
+    if (!tieFree(cost) || !tieFree(net) || Math.abs(net) < 0.05 * cost) continue;
+    if (kind === "hire-net") break;
+    F = 100 * rng.int(10, 150);
+    const x = F / net;
+    const f = x - Math.floor(x);
+    if (net > 0 && x <= 36 && f >= 0.03 && f <= 0.97) break;
+  }
+  const values = { salary, o };
+  const lines = [given("_salary", mv(salary)), given("_overhead", o), step("_cost", "_salary * (1 + _overhead / 100) / 12", kind === "hire-cost" ? mv(cost) : num(cost))];
+  let scen =
+    `${r.biz} is thinking of hiring ${r.role} on a salary of ${cash(salary)} a year. Taxes, benefits and other overheads add ${o}% on top of the salary.`;
+  let intro = "The full cost of a hire is the salary plus overheads, spread over 12 months.";
+
+  if (kind === "hire-cost") {
+    exact = cost;
+    fmt = "int";
+    unit = "money";
+    ask = "What is the full monthly cost of the hire, in dollars?";
+    lines[2] = step("_cost", "_salary * (1 + _overhead / 100) / 12", final(cost, fmt, unit));
+    candidates = [salary / 12, (salary * (100 + o)) / 100, salary / 12 + o]; // no overhead, yearly cost, added the % as dollars
+    if (wantMulti) {
+      // Extra monthly gross profit, in $50 steps, 10-40% away from the cost.
+      let G;
+      for (let t = 0; t < 20; t++) {
+        const sign = rng.next() < 0.5 ? -1 : 1;
+        G = 50 * Math.round((cost * (1 + (sign * rng.int(10, 40)) / 100)) / 50);
+        if (G > 0 && Math.abs(G - cost) >= 0.08 * cost) break;
+      }
+      const hire = G >= cost;
+      const v = { ...values, G };
+      const L2 = [...lines, given("_extra_profit", mv(G))];
+      const tail = `\n\n\`_extra_profit\` (${cash(G)}) is ${hire ? "at least" : "below"} \`_cost\` (${cash(cost)}), so the answer is **${hire ? HIRE : NO_HIRE}**.`;
+      const parts = [
+        numPart("cost", "Monthly cost", ask, cost, "int"),
+        recPart("Should it hire?", hire ? HIRE : NO_HIRE, NEW_REC_CHOICES.hire),
+      ];
+      const specs = [{ id: "cost", kind: "hire-cost", fmt: "int" }, { id: "rec", rec: "hire" }];
+      const prompt =
+        `${scen} The owner expects the hire to bring in ${cash(G)} of extra gross profit a month, and hires only if that is at least the hire's full monthly cost.`;
+      return multiQuestion(prompt, parts, specs, explain(intro, L2) + tail, { kind, values: v, fmt });
+    }
+  } else {
+    values.R = R;
+    values.g = g;
+    scen += ` The extra work should bring in ${cash(R)} of sales a month at a ${g}% gross margin.`;
+    lines.push(
+      given("_extra_sales", mv(R)),
+      given("_margin", g),
+      step("_extra_profit", "_extra_sales * _margin / 100", mv(contrib)),
+      step("_net", "_extra_profit - _cost", kind === "hire-net" ? final(net, "2dp", "money") : num(net))
+    );
+    lines[2] = step("_cost", "_salary * (1 + _overhead / 100) / 12", final(cost, "2dp", "money"));
+    const costAsk = `What is the full monthly cost of the hire, in dollars?${DP2}`;
+
+    if (kind === "hire-net") {
+      intro = "Compare the gross profit the hire brings in with their full monthly cost; the difference is the net monthly gain.";
+      exact = net;
+      fmt = "2dp";
+      unit = "money";
+      ask = `What is the net monthly gain from the hire (extra gross profit minus full monthly cost), in dollars? Use a negative number if it loses money.${DP2}`;
+      candidates = [R - cost, contrib - salary / 12, cost - contrib]; // ignored the margin, ignored overheads, sign flipped
+      if (wantMulti) {
+        const hire = net > 0;
+        const tail = `\n\n\`_net\` (${cash(net)}) is ${hire ? "positive" : "negative"}, so the answer is **${hire ? HIRE : NO_HIRE}**.`;
+        const parts = [
+          numPart("cost", "Monthly cost", costAsk, cost, "2dp"),
+          numPart("net", "Net monthly gain", ask, net, "2dp"),
+          recPart("Should it hire?", hire ? HIRE : NO_HIRE, NEW_REC_CHOICES.hire),
+        ];
+        const specs = [{ id: "cost", kind: "hire-cost", fmt: "2dp" }, { id: "net", kind: "hire-net", fmt: "2dp" }, { id: "rec", rec: "hire" }];
+        const prompt = `${scen} The owner hires only if the net monthly gain is positive.`;
+        return multiQuestion(prompt, parts, specs, explain(intro, lines) + tail, { kind, values, fmt });
+      }
+    } else {
+      values.F = F;
+      months = Math.ceil(F / net);
+      scen += ` Recruiting and training cost ${cash(F)} up front.`;
+      intro = "The net monthly gain (extra gross profit minus full monthly cost) pays back the up-front cost. Round up: the cost is only covered at a month end.";
+      lines.push(given("_upfront", mv(F)), step("_payback", "ceil(_upfront / _net)", final(months, "int", "months")));
+      exact = months;
+      fmt = "int";
+      unit = "months";
+      ask = "How many months will the net monthly gain take to pay back the up-front cost? Round up to whole months.";
+      candidates = [
+        Math.ceil(F / contrib), // ignored the salary
+        contrib - salary / 12 > 0 ? Math.ceil(F / (contrib - salary / 12)) : NaN, // ignored overheads
+        months - 1, // rounded down
+      ];
+      if (wantMulti) {
+        // A whole-month limit at least 0.3 months away from the exact payback.
+        const x = F / net;
+        let T;
+        for (let t = 0; t < 20; t++) {
+          T = Math.max(1, Math.round(x) + rng.pick([-3, -2, -1, 1, 2, 3]));
+          if (Math.abs(x - T) >= 0.3) break;
+        }
+        if (Math.abs(x - T) < 0.3) T += 2;
+        const hire = x <= T;
+        const v = { ...values, T };
+        const L2 = [...lines, given("_max_months", T)];
+        const tail = `\n\n\`_payback\` (${months} months) is ${hire ? "within" : "over"} \`_max_months\` (${T}), so the answer is **${hire ? HIRE : NO_HIRE}**.`;
+        const parts = [
+          numPart("cost", "Monthly cost", costAsk, cost, "2dp"),
+          numPart("months", "Payback", ask, months, "int"),
+          recPart("Should it hire?", hire ? HIRE : NO_HIRE, NEW_REC_CHOICES.hire),
+        ];
+        const specs = [{ id: "cost", kind: "hire-cost", fmt: "2dp" }, { id: "months", kind: "hire-payback", fmt: "int" }, { id: "rec", rec: "hire" }];
+        const prompt = `${scen} The owner hires only if the up-front cost is paid back within ${T} months.`;
+        return multiQuestion(prompt, parts, specs, explain(intro, L2) + tail, { kind, values: v, fmt });
+      }
+    }
+  }
+
+  const base = { prompt: `${scen} ${ask}`, explanation: explain(intro, lines), params: { kind, values, fmt } };
+  return finish(base, exact, fmt, candidates, rng);
+}
+
+// Given values for the calculator: the explanation's given rows (`- \`_price = 4.50\``, no "→"),
+// which are exactly the numbers stated in the prompt, under the same labels. Read after the question
+// is built, so it never touches the rng. Max 8, unique ignoring case; omitted when there are none.
+const GIVEN_ROW = /^- `(_[A-Za-z0-9_]{1,23}) = (-?\d+(?:\.\d+)?)`$/gm;
+function withGiven(q) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(q.explanation || "").matchAll(GIVEN_ROW)) {
+    const key = m[1].toLowerCase();
+    const value = Number(m[2]);
+    if (seen.has(key) || !Number.isFinite(value) || out.length >= 8) continue;
+    seen.add(key);
+    out.push({ label: m[1], value });
+  }
+  return out.length ? { ...q, given: out } : q;
+}
+
+function generateRaw(subtopic, difficulty, rng) {
   if (subtopic === "break-even") return genBreakEven(difficulty, rng);
   if (subtopic === "unit-economics") return genUnitEconomics(difficulty, rng);
   if (subtopic === "investment") return genInvestment(difficulty, rng);
   if (subtopic === "pricing-decision") return genPricing(difficulty, rng);
+  if (subtopic === "inventory") return genInventory(difficulty, rng);
+  if (subtopic === "hiring") return genHiring(difficulty, rng);
   throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+export function generate({ subtopic, difficulty, rng }) {
+  return withGiven(generateRaw(subtopic, difficulty, rng));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1381,6 +1860,50 @@ function recExpected(rec, kind, k) {
       if (Math.abs(gap) < 0.02) return null;
       return gap > 0 ? HEALTHY : UNHEALTHY;
     }
+    case "reorder-now": {
+      if (!(k.W > 0 && Number.isInteger(k.onHand))) return null;
+      return k.onHand <= ropOf(k) ? YES : NO;
+    }
+    case "batch-size": {
+      if (!(k.Q > 0)) return null;
+      const order = (k.D * k.S) / k.Q;
+      const hold = (k.Q * k.H) / 2;
+      if (Math.abs(order - hold) < 0.05 * Math.max(order, hold)) return null;
+      return hold > order ? SMALLER : LARGER;
+    }
+    case "eoq-keep": {
+      if (!(k.H > 0 && k.N > 0)) return null;
+      const gap = Math.abs(k.N / Math.sqrt((2 * k.D * k.S) / k.H) - 1);
+      if (Math.abs(gap - 0.1) < 0.02) return null;
+      return gap <= 0.1 ? KEEP : SWITCH;
+    }
+    case "eoq-switch": {
+      if (!(k.H > 0 && k.N > 0 && k.T > 0)) return null;
+      const save = invCost(k, k.N) - invCost(k, eoqOf(k));
+      if (Math.abs(save - k.T) < 1) return null;
+      return save >= k.T ? SWITCH : KEEP;
+    }
+    case "hire": {
+      // Rebuilt in whole cents where possible: cost × 1200 = salary × (100 + overhead).
+      const cost = hireCostOf(k);
+      if (!(cost > 0)) return null;
+      if (kind === "hire-cost") {
+        if (Math.abs(k.G - cost) < 0.01 * cost) return null;
+        return k.G >= cost ? HIRE : NO_HIRE;
+      }
+      const net = (k.R * k.g) / 100 - cost;
+      if (kind === "hire-net") {
+        if (Math.abs(net) < 0.5) return null;
+        return net > 0 ? HIRE : NO_HIRE;
+      }
+      if (kind === "hire-payback") {
+        if (!(net > 0 && k.T > 0)) return null;
+        const x = k.F / net;
+        if (Math.abs(x - k.T) < 0.1) return null;
+        return x <= k.T ? HIRE : NO_HIRE;
+      }
+      return null;
+    }
     default:
       return null;
   }
@@ -1388,7 +1911,8 @@ function recExpected(rec, kind, k) {
 
 function recOk(rec, kind, k, choices, value) {
   const want =
-    rec === "pricing" ? (LABELS[kind] ? [...LABELS[kind], SAME] : null)
+    NEW_REC_CHOICES[rec] ? NEW_REC_CHOICES[rec]
+    : rec === "pricing" ? (LABELS[kind] ? [...LABELS[kind], SAME] : null)
       : rec === "health" ? REC_CHOICES.health
         : rec.startsWith("invest-") ? REC_CHOICES.invest
           : REC_CHOICES.demand;
@@ -1513,6 +2037,56 @@ function verifyValue(kind, fmt, k, answer) {
       residual = x - (v - k.cost);
       sens = 1;
       break;
+    }
+    case "reorder-point": {
+      // x - safety stock is the smallest whole number covering demand over lead + safety days
+      if (!(k.W > 0) || !Number.isInteger(x)) return false;
+      const need = k.A * (k.L + k.sd);
+      const q = x - k.ss;
+      return q >= 0 && q * k.W >= need && (q - 1) * k.W < need;
+    }
+    case "order-cost": // ordering cost × order size = demand × cost per order
+      residual = x * k.Q - k.D * k.S;
+      sens = k.Q;
+      break;
+    case "hold-cost": // holding cost × 2 = order size × holding cost per unit
+      residual = x * 2 - k.Q * k.H;
+      sens = 2;
+      break;
+    case "inv-costs":
+      if (!(k.Q > 0)) return false;
+      residual = x * k.Q - (k.D * k.S + (k.Q * k.Q * k.H) / 2);
+      sens = k.Q;
+      break;
+    case "eoq": {
+      // nearest whole unit: (x - 0.5)^2 < 2DS/H < (x + 0.5)^2
+      if (!(k.H > 0) || !Number.isInteger(x) || x < 1) return false;
+      const v = (2 * k.D * k.S) / k.H;
+      return (x - 0.5) * (x - 0.5) < v && v < (x + 0.5) * (x + 0.5);
+    }
+    case "eoq-cost": {
+      // cost at the rounded EOQ, with the EOQ found by search rather than sqrt
+      if (!(k.H > 0 && k.D > 0 && k.S > 0)) return false;
+      const v = (2 * k.D * k.S) / k.H;
+      let Q = 1;
+      while ((Q + 0.5) * (Q + 0.5) < v) Q++;
+      residual = x * Q - (k.D * k.S + (Q * Q * k.H) / 2);
+      sens = Q;
+      break;
+    }
+    case "hire-cost": // monthly cost × 1200 = salary × (100 + overhead %)
+      residual = x * 1200 - k.salary * (100 + k.o);
+      sens = 1200;
+      break;
+    case "hire-net": // (net + cost) × 100 = sales × margin
+      residual = (x + (k.salary * (100 + k.o)) / 1200) * 100 - k.R * k.g;
+      sens = 100;
+      break;
+    case "hire-payback": {
+      // whole months: x months of net gain cover the up-front cost, x - 1 do not
+      const net = (k.R * k.g) / 100 - (k.salary * (100 + k.o)) / 1200;
+      if (!(net > 0) || !Number.isInteger(x)) return false;
+      return x * net >= k.F && (x - 1) * net < k.F;
     }
     case "price-ab":
     case "price-raise":

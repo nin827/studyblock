@@ -1,7 +1,7 @@
 import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares } from '../lib/engine.js';
 import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, MIX_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
-import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag } from './ui.js';
+import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 
 const RECENT_COUNT = 4;
 const INSTALL_DISMISS_KEY = 'studyblock:installCardDismissed';
@@ -70,7 +70,7 @@ export async function render(root, params, ctx) {
   const modById = new Map(modules.map(m => [m.id, m]));
   const domainOfModule = new Map(domains.flatMap(d => d.modules.map(mid => [mid, d])));
   const modTitle = id => String(modById.get(id)?.title ?? id);
-  const subTitle = (mid, sid) => String(modById.get(mid)?.subtopics.find(s => s.id === sid)?.title ?? sid);
+  const subTitle = (mid, sid) => subtopicLabel(sid, modById.get(mid)?.subtopics.find(s => s.id === sid)?.title);
 
   // ---- continue card ----
   const lastId = getCookie('lastModule');
@@ -80,7 +80,7 @@ export async function render(root, params, ctx) {
     const d = domainOfModule.get(last.id);
     const a = attempts.find(x => x.module === last.id);
     const title = a ? `${modTitle(last.id)} · ${subTitle(last.id, a.subtopic)}` : modTitle(last.id);
-    const meta = a ? `${cap(a.difficulty)} · last score ${a.score} / ${a.total}` : (last.description || 'Not started yet');
+    const meta = a ? `${difficultyLabel(a.difficulty)} · last score ${fmtScore(a.score)} / ${a.total}` : (last.description || 'Not started yet');
     continueCard = `<a class="continue-card" href="#/m/${hashPart(last.id)}">
       <span class="continue-body">
         <span class="continue-label"><span>Continue where you left off</span>${d ? tag(d.title, domClass(d.id)) : ''}</span>
@@ -174,11 +174,11 @@ export async function render(root, params, ctx) {
     } else {
       const d = domainOfModule.get(a.module);
       chip = tag(d ? d.title : 'Other', domClass(d?.id));
-      title = `${modTitle(a.module)} · ${subTitle(a.module, a.subtopic)} · ${cap(a.difficulty)}`;
+      title = `${modTitle(a.module)} · ${subTitle(a.module, a.subtopic)} · ${difficultyLabel(a.difficulty)}`;
     }
     return `<li>${chip}<span class="recent-title">${esc(title)}</span>
       <span class="recent-when">${esc(fmtDate(a.ts))}</span>
-      <span class="recent-score">${a.score} / ${a.total}</span></li>`;
+      <span class="recent-score">${fmtScore(a.score)} / ${a.total}</span></li>`;
   }).join('');
 
   root.innerHTML = `<div class="stack">

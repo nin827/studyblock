@@ -6,6 +6,11 @@ import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js'
 
 const ID_RE = /^[a-z0-9-]+$/;
 
+// Reserved id meaning "every subtopic" / "every difficulty" of one module.
+export const ALL = 'all';
+// Target length of a CSV quiz that uses "all" (single CSV cells are often only 4 questions).
+const CSV_ALL_TARGET = 10;
+
 export function isValidId(id) {
   return typeof id === 'string' && ID_RE.test(id);
 }
@@ -83,11 +88,16 @@ export async function loadModule(id) {
   await assertListed(id);
   const m = await loadJSON(`modules/${id}/module.json`);
   if (!m || typeof m !== 'object') throw new Error(`Bad module.json for ${id}`);
+  // "all" is reserved for whole-module quizzes (#/q/<module>/all/<difficulty>).
+  const subtopics = (Array.isArray(m.subtopics) ? m.subtopics : []).filter(s => {
+    if (s && s.id === ALL) { console.warn(`StudyBlock: module ${id} has a subtopic called "${ALL}", which is reserved; skipping it`); return false; }
+    return true;
+  });
   return {
     ...m,
     id,
     questionsPerQuiz: Number.isInteger(m.questionsPerQuiz) && m.questionsPerQuiz > 0 ? m.questionsPerQuiz : 10,
-    subtopics: Array.isArray(m.subtopics) ? m.subtopics : [],
+    subtopics,
     // Quiz calculator panel; a module opts out with "calculator": false.
     calculator: m.calculator !== false,
   };
@@ -199,7 +209,37 @@ export function multiShapeOk(raw) {
 // The generator's own answers as { [partId]: value }.
 const multiAnswer = parts => Object.fromEntries(parts.map(p => [p.id, p.answer]));
 
-function normalizeGenerated(q, seed) {
+// Calculator "given values": [{ label, value }] rows the calculator pre-fills for a question.
+// Max 8; labels follow the calculator row rule and are unique ignoring case; values finite.
+// Bad entries are dropped (one console.warn per generator module). Never stored in attempts.
+export const GIVEN_MAX = 8;
+const GIVEN_LABEL_RE = /^_[A-Za-z0-9_]{1,23}$/;
+const givenWarned = new WeakSet();
+
+export function sanitizeGiven(raw, warnKey) {
+  if (raw === undefined || raw === null) return undefined;
+  const out = [];
+  const seen = new Set();
+  let bad = !Array.isArray(raw);
+  for (const g of Array.isArray(raw) ? raw : []) {
+    const label = g && typeof g === 'object' ? g.label : undefined;
+    const value = g && typeof g === 'object' ? g.value : undefined;
+    const low = typeof label === 'string' ? label.toLowerCase() : '';
+    if (out.length >= GIVEN_MAX || typeof label !== 'string' || !GIVEN_LABEL_RE.test(label) || seen.has(low)
+      || typeof value !== 'number' || !Number.isFinite(value)) { bad = true; continue; }
+    seen.add(low);
+    out.push({ label, value });
+  }
+  if (bad && warnKey && typeof warnKey === 'object' && !givenWarned.has(warnKey)) {
+    givenWarned.add(warnKey);
+    console.warn('StudyBlock: a generator returned invalid "given" entries; they were dropped', raw);
+  }
+  return out.length ? out : undefined;
+}
+
+function normalizeGenerated(q, seed, warnKey) {
+  const given = sanitizeGiven(q?.given, warnKey);
+  const extra = given ? { given } : {};
   if (q.answerType === 'multi') {
     const parts = (Array.isArray(q.parts) ? q.parts : []).map(normalizePart);
     return {
@@ -211,6 +251,7 @@ function normalizeGenerated(q, seed) {
       choices: undefined,
       tolerance: undefined,
       explanation: q.explanation ? String(q.explanation) : '',
+      ...extra,
     };
   }
   const answerType = PART_TYPES.includes(q.answerType) ? q.answerType : 'text';
@@ -222,6 +263,7 @@ function normalizeGenerated(q, seed) {
     choices: answerType === 'choice' && Array.isArray(q.choices) ? q.choices.map(String) : undefined,
     tolerance: typeof q.tolerance === 'number' ? q.tolerance : undefined,
     explanation: q.explanation ? String(q.explanation) : '',
+    ...extra,
   };
 }
 
@@ -231,7 +273,7 @@ function generateVerified(gen, subtopic, difficulty, seed, maxTries = 20) {
   for (let t = 0; t < maxTries; t++) {
     try {
       const raw = gen.generate({ subtopic, difficulty, rng: createRng(s) });
-      const q = normalizeGenerated(raw, s);
+      const q = normalizeGenerated(raw, s, gen);
       let shapeOk, own;
       if (raw.answerType === 'multi') {
         shapeOk = multiShapeOk(raw);
@@ -251,8 +293,98 @@ function generateVerified(gen, subtopic, difficulty, seed, maxTries = 20) {
   return null;
 }
 
+/*
+ * Cells a whole-module quiz may draw from: [{ st, diffs: [difficulty] }].
+ * subtopic "all" = every subtopic; difficulty "all" = each subtopic's own difficulties
+ * (a subtopic without a list counts as "medium", like mixed quizzes). A fixed difficulty skips
+ * subtopics that don't support it. An unknown subtopic yields [].
+ */
+export function allowedCells(mod, subtopic, difficulty) {
+  const subs = subtopic === ALL ? mod.subtopics : mod.subtopics.filter(s => s.id === subtopic);
+  const out = [];
+  for (const st of subs) {
+    if (!st || typeof st.id !== 'string' || !st.id) continue;
+    const list = Array.isArray(st.difficulties) && st.difficulties.length ? st.difficulties.map(String) : null;
+    if (difficulty === ALL) out.push({ st, diffs: list ?? ['medium'] });
+    else if (!list || list.includes(difficulty)) out.push({ st, diffs: [difficulty] });
+  }
+  return out;
+}
+
+// Origin fields carried by every question of a whole-module quiz (same as mixed quizzes).
+function annotate(q, mod, st, difficulty) {
+  return {
+    ...q,
+    module: mod.id,
+    moduleTitle: String(mod.title ?? mod.id),
+    subtopic: st.id,
+    subtopicTitle: String(st.title ?? st.id),
+    difficulty,
+    calculator: mod.calculator !== false,
+  };
+}
+
+// Quiz over several cells of one module: subtopic and/or difficulty is "all".
+// Per question: a subtopic uniformly from the allowed ones, then a difficulty uniformly from its
+// allowed list. Each question is drawn from its own cell's pool so `regenerate` works from the seed.
+async function buildAllQuiz(mod, subtopic, difficulty) {
+  const cells = allowedCells(mod, subtopic, difficulty);
+  if (!cells.length) throw new Error('No subtopic supports this difficulty.');
+  const rng = createRng(randomSeed());
+  const nextSeed = () => Math.floor(rng.next() * 0x100000000) >>> 0;
+  const questions = [];
+  const seen = new Set();
+
+  if (mod.type === 'csv') {
+    const rows = await loadCsvRows(mod.id);
+    // Per cell: its pool and the set of its prompts (to know when a cell is used up).
+    let live = cells.map(c => ({
+      st: c.st,
+      diffs: c.diffs.map(d => {
+        const pool = csvPool(rows, c.st.id, d);
+        return { d, pool, prompts: new Set(pool.map(r => r.prompt)) };
+      }).filter(x => x.pool.length),
+    })).filter(c => c.diffs.length);
+    if (!live.length) throw new Error('No questions available for this selection.');
+    const unique = new Set(live.flatMap(c => c.diffs.flatMap(x => [...x.prompts]))).size;
+    const target = Math.min(Math.max(mod.questionsPerQuiz, CSV_ALL_TARGET), unique);
+    let tries = 0;
+    while (questions.length < target && tries < target * 200 && live.length) {
+      tries++;
+      const c = rng.pick(live);
+      const x = rng.pick(c.diffs);
+      const q = csvQuestion(x.pool, nextSeed());
+      if (!seen.has(q.prompt)) {
+        seen.add(q.prompt);
+        questions.push(annotate(q, mod, c.st, x.d));
+      }
+      // Drop cells whose prompts have all been used, so sampling never stalls on them.
+      live = live
+        .map(cc => ({ ...cc, diffs: cc.diffs.filter(y => [...y.prompts].some(p => !seen.has(p))) }))
+        .filter(cc => cc.diffs.length);
+    }
+  } else {
+    const gen = await loadGenerator(mod.id);
+    const n = mod.questionsPerQuiz;
+    let failures = 0;
+    let dupTries = 0;
+    while (questions.length < n && failures < n) {
+      const c = rng.pick(cells);
+      const d = rng.pick(c.diffs);
+      const q = generateVerified(gen, c.st.id, d, nextSeed());
+      if (!q) { failures++; continue; }
+      if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
+      seen.add(q.prompt);
+      questions.push(annotate(q, mod, c.st, d));
+    }
+  }
+  if (!questions.length) throw new Error('This quiz could not generate any valid questions.');
+  return questions;
+}
+
 export async function buildQuiz(moduleId, subtopic, difficulty) {
   const mod = await loadModule(moduleId);
+  if (subtopic === ALL || difficulty === ALL) return buildAllQuiz(mod, subtopic, difficulty);
   const st = mod.subtopics.find(s => s.id === subtopic);
   if (!st) throw new Error('Unknown subtopic.');
   if (Array.isArray(st.difficulties) && !st.difficulties.includes(difficulty)) throw new Error('Unknown difficulty.');
@@ -298,7 +430,7 @@ export async function regenerate(moduleId, subtopic, difficulty, seed) {
   }
   const gen = await loadGenerator(moduleId);
   const raw = gen.generate({ subtopic, difficulty, rng: createRng(seed) });
-  return normalizeGenerated(raw, seed);
+  return normalizeGenerated(raw, seed, gen);
 }
 
 // ---- multi-domain mix ----
@@ -546,12 +678,14 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
   return questions;
 }
 
-const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+// Spaces around ":" don't matter, so "2 : 7" matches the ratio "2:7".
+const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').toLowerCase();
 
 /*
  * Single questions: returns a boolean (unchanged).
  * Multi-part questions (answerType "multi"): `userAnswer` is { [partId]: value } and the result is
- * { correct, parts: [{ id, label, correct }] }; correct only if every part is correct.
+ * { correct, credit, parts: [{ id, label, correct }] }; `correct` only if every part is correct,
+ * `credit` = parts right / parts total (partial credit, 0–1).
  */
 export function checkAnswer(question, userAnswer) {
   if (question.answerType === 'multi') {
@@ -561,7 +695,8 @@ export function checkAnswer(question, userAnswer) {
       label: p.label,
       correct: Object.prototype.hasOwnProperty.call(given, p.id) && checkSingle(p, given[p.id]),
     }));
-    return { correct: parts.length > 0 && parts.every(p => p.correct), parts };
+    const right = parts.filter(p => p.correct).length;
+    return { correct: parts.length > 0 && right === parts.length, credit: parts.length ? right / parts.length : 0, parts };
   }
   return checkSingle(question, userAnswer);
 }

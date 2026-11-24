@@ -1,6 +1,6 @@
 # 006 — Calculator: defaults to confirm
 
-**Status:** open (built with the defaults below)
+**Status:** resolved (2026-11-24): all defaults kept.
 **Raised:** 2026-11-24
 
 The calculator is being built with these choices. Change any you disagree with.

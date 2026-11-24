@@ -69,6 +69,10 @@ function checkDifficulty(difficulty) {
   }
 }
 
+// Pre-filled calculator rows (question.given) for questions with two or more stated numbers.
+// [[label, value], ...] -> { given: [{ label, value }, ...] }, or {} when there is nothing to pre-fill.
+const givenRows = (pairs) => (pairs ? { given: pairs.map(([label, value]) => ({ label, value })) } : {});
+
 const dec1 = (rng, lo, hi) => rng.int(lo * 10, hi * 10) / 10; // one decimal place
 
 function genPerimArea(difficulty, rng) {
@@ -80,7 +84,7 @@ function genPerimArea(difficulty, rng) {
   }[difficulty];
   const kind = rng.pick(kinds);
   const hard = difficulty === "hard";
-  let prompt, exact, rounded, unit, explanation, candidates, values;
+  let prompt, exact, rounded, unit, explanation, candidates, values, gv;
 
   if (kind === "rect-area" || kind === "rect-perim") {
     let l, w;
@@ -94,6 +98,7 @@ function genPerimArea(difficulty, rng) {
       if (w === l) w = l === 1 ? 2 : l - 1;
     }
     values = { l, w };
+    gv = [["_l", l], ["_w", w]];
     rounded = hard;
     const end = rounded ? ROUND : WHOLE;
     if (kind === "rect-area") {
@@ -122,6 +127,7 @@ function genPerimArea(difficulty, rng) {
       } while ((b * h) % 2 !== 0); // keep the area whole
     }
     values = { b, h };
+    gv = [["_b", b], ["_h", h]];
     rounded = hard;
     exact = (b * h) / 2;
     unit = "cm²";
@@ -137,6 +143,7 @@ function genPerimArea(difficulty, rng) {
       c = rng.int(3, 25);
     } while (a + b <= c || a + c <= b || b + c <= a);
     values = { a, b, c };
+    gv = [["_a", a], ["_b", b], ["_c", c]];
     rounded = false;
     exact = a + b + c;
     unit = "cm";
@@ -183,7 +190,7 @@ function genPerimArea(difficulty, rng) {
     }
   }
 
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded } };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -197,7 +204,7 @@ function genAngles(difficulty, rng) {
   const kind = rng.pick(kinds);
   const NAMES = { 3: "triangle", 4: "quadrilateral", 5: "pentagon", 6: "hexagon", 7: "heptagon", 8: "octagon", 9: "nonagon", 10: "decagon", 12: "dodecagon" };
   const shape = (n) => (NAMES[n] ? `${NAMES[n]} (${n} sides)` : `${n}-sided polygon`);
-  let prompt, exact, rounded = false, explanation, candidates, values;
+  let prompt, exact, rounded = false, explanation, candidates, values, gv;
 
   if (kind === "triangle") {
     let a, b;
@@ -206,6 +213,7 @@ function genAngles(difficulty, rng) {
       b = rng.int(15, 120);
     } while (180 - a - b < 10);
     values = { angles: [a, b], total: 180 };
+    gv = [["_a", a], ["_b", b]];
     exact = 180 - a - b;
     prompt = `Two angles of a triangle are ${a}° and ${b}°. What is the third angle?${DEG}`;
     explanation = `The angles in a triangle add up to 180°.\n\n\`180 - ${a} - ${b}\` ${result(exact, false, "°")}`;
@@ -272,6 +280,7 @@ function genAngles(difficulty, rng) {
       if (missing >= 40 && missing <= 179) break;
     }
     values = { angles, total: sum };
+    gv = [["_n", n], ...angles.map((x, i) => [`_a${i + 1}`, x])]; // n ≤ 8, so at most 8 rows
     exact = missing;
     const known = angles.reduce((s, x) => s + x, 0);
     prompt = `A ${shape(n)} has interior angles of ${angles.map((x) => `${x}°`).join(", ")} and one unknown angle. What is the unknown angle?${DEG}`;
@@ -281,7 +290,7 @@ function genAngles(difficulty, rng) {
     candidates = [n * 180 - known, (n - 1) * 180 - known, 360 - (known % 360)];
   }
 
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded } };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -312,9 +321,10 @@ function genPythagoras(difficulty, rng) {
   }
   const rounded = difficulty === "hard";
   const end = rounded ? ROUND : WHOLE;
-  let prompt, exact, explanation, candidates, values;
+  let prompt, exact, explanation, candidates, values, gv;
   if (find === "hyp") {
     values = { a, b };
+    gv = [["_a", a], ["_b", b]];
     exact = Math.sqrt(a * a + b * b);
     prompt = `A right triangle has legs of ${num(a)} cm and ${num(b)} cm. How long is the hypotenuse, in cm?${end}`;
     explanation =
@@ -324,6 +334,7 @@ function genPythagoras(difficulty, rng) {
     candidates = [a + b, a * a + b * b, Math.sqrt(Math.abs(a * a - b * b))]; // added the sides, forgot the root, subtracted
   } else {
     values = { a, c };
+    gv = [["_c", c], ["_a", a]];
     exact = Math.sqrt(c * c - a * a);
     prompt = `A right triangle has a hypotenuse of ${num(c)} cm and one leg of ${num(a)} cm. How long is the other leg, in cm?${end}`;
     explanation =
@@ -332,7 +343,7 @@ function genPythagoras(difficulty, rng) {
       `\`b = √${num(c * c - a * a)}\` ${result(exact, rounded, "cm")}`;
     candidates = [Math.sqrt(c * c + a * a), c - a, c * c - a * a]; // added the squares, subtracted the sides, forgot the root
   }
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind: find, values, rounded } };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind: find, values, rounded }, ...givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -340,7 +351,7 @@ function genVolume(difficulty, rng) {
   if (difficulty !== "medium" && difficulty !== "hard") throw new Error(`volume has no "${difficulty}" level`);
   const hard = difficulty === "hard";
   const kind = rng.pick(["cuboid", "cylinder", "sphere"]);
-  let prompt, exact, rounded, explanation, candidates, values;
+  let prompt, exact, rounded, explanation, candidates, values, gv;
 
   if (kind === "cuboid") {
     let l, w, h;
@@ -355,6 +366,7 @@ function genVolume(difficulty, rng) {
     }
     rounded = hard;
     values = { l, w, h };
+    gv = [["_l", l], ["_w", w], ["_h", h]];
     exact = l * w * h;
     prompt = `A cuboid is ${num(l)} cm long, ${num(w)} cm wide and ${num(h)} cm high. What is its volume, in cm³?${rounded ? ROUND : WHOLE}`;
     explanation = `Volume of a cuboid = length × width × height.\n\n\`${num(l)} × ${num(w)} × ${num(h)}\` ${result(exact, rounded, "cm³")}`;
@@ -376,6 +388,7 @@ function genVolume(difficulty, rng) {
     const given = byDiameter ? `a diameter of ${num(d)} cm` : `a radius of ${num(r)} cm`;
     if (kind === "cylinder") {
       values = { r, h };
+      gv = [byDiameter ? ["_d", d] : ["_r", r], ["_h", h]]; // whichever the prompt states
       exact = Math.PI * r * r * h;
       prompt = `A cylinder has ${given} and a height of ${num(h)} cm. What is its volume, in cm³?${PI_ROUND}`;
       explanation = `${toR}Volume of a cylinder = π × r² × h.\n\n\`π × ${num(r)}² × ${num(h)} = π × ${num(r * r * h)}\` ${result(exact, true, "cm³")}`;
@@ -388,7 +401,7 @@ function genVolume(difficulty, rng) {
       candidates = [4 * Math.PI * r * r, Math.PI * r ** 3, (4 / 3) * 3.14 * r ** 3]; // surface area, forgot 4/3, used 3.14
     }
   }
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded } };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 

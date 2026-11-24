@@ -334,11 +334,53 @@ function genMargins(difficulty, rng) {
   return finish(base, exact, rounded, candidates, rng);
 }
 
-export function generate({ subtopic, difficulty, rng }) {
+// Given values for the calculator: the numbers stated in the prompt, as they are written there
+// (percentages as the plain percent number, e.g. 15 for "15%"). Built from params after the question
+// is made, so it never touches the rng.
+function givenFor(kind, k) {
+  switch (kind) {
+    case "of":
+      return [["_percent", k.p], ["_amount", k.N]];
+    case "change":
+      return [["_old", k.A], ["_new", k.B]];
+    case "original":
+      return [["_percent", Math.abs(k.p)], ["_new_price", k.B]];
+    case "simple-interest":
+    case "simple-total":
+    case "compound-total":
+    case "compound-interest":
+      return [["_principal", k.P], ["_rate", k.r], ["_years", k.t]];
+    case "simple-rate":
+      return [["_principal", k.P], ["_years", k.t], ["_interest", k.I]];
+    case "price":
+      return [["_cost", k.C], ["_markup", k.m]];
+    case "markup":
+    case "margin":
+      return [["_cost", k.C], ["_price", k.S]];
+    case "target":
+      return [["_cost", k.C], ["_margin", k.g]];
+    default:
+      return [];
+  }
+}
+
+function withGiven(q) {
+  const p = q.params || {};
+  const given = givenFor(p.kind, p.values || {})
+    .filter(([, value]) => Number.isFinite(value))
+    .map(([label, value]) => ({ label, value }));
+  return given.length ? { ...q, given } : q;
+}
+
+function generateRaw(subtopic, difficulty, rng) {
   if (subtopic === "percentages") return genPercent(difficulty, rng);
   if (subtopic === "interest") return genInterest(difficulty, rng);
   if (subtopic === "margins") return genMargins(difficulty, rng);
   throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+export function generate({ subtopic, difficulty, rng }) {
+  return withGiven(generateRaw(subtopic, difficulty, rng));
 }
 
 // Independent check: work backwards from the answer (reverse the percent, re-apply the rate,

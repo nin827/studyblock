@@ -1,8 +1,8 @@
-import { loadModule, domainOf, checkAnswer, buildQuiz } from '../lib/engine.js';
-import { saveAttempt, setCookie, getCookie, cleanWork } from '../lib/storage.js';
+import { loadModule, domainOf, checkAnswer, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
+import { saveAttempt, setCookie, getCookie, cleanWork, creditOf, roundScore } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
-import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag } from './ui.js';
+import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 import { mountCalculator } from './calculator.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
@@ -30,6 +30,18 @@ export function questionTag(q) {
   return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty)}</p>`;
 }
 
+// "Subtopic · Difficulty" tag only (whole-module quizzes, where the module is already known).
+export function cellTag(q) {
+  if (!q || (typeof q.subtopic !== 'string' && typeof q.difficulty !== 'string')) return '';
+  return `<p class="q-tag tag-row">${originTags(null, null, null, q.subtopicTitle ?? q.subtopic, q.difficulty)}</p>`;
+}
+
+// Result state of a question from its credit: full, partial (multi-part only) or none.
+export function creditState(credit) {
+  return credit >= 1 - 1e-9 ? 'correct' : credit > 1e-9 ? 'partial' : 'wrong';
+}
+const SEG_CLASS = { correct: 'is-correct', partial: 'is-partial', wrong: 'is-wrong' };
+
 // Plain-text parts; tag() escapes them.
 function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty) {
   const where = [domainTitle, moduleTitle].filter(Boolean).join(' › ');
@@ -45,6 +57,8 @@ function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficult
  *   crumbs           HTML for the breadcrumb nav (already escaped)
  *   backHref/backLabel/backIcon   secondary button on the results screen
  *   showTags         show questionTag() above each prompt / in the review
+ *   tagsFor(q)       optional: HTML (already escaped) tag row for each question, overrides showTags
+ *   breakdown        show the per-module breakdown on the results screen (default: showTags)
  *   cardTags         optional HTML (already escaped) shown above every prompt when showTags is off
  *   toAttempt(results)  -> attempt fields (module/subtopic/difficulty/questions/score/total)
  */
@@ -233,14 +247,15 @@ export async function runQuiz(root, ctx, opts) {
     showQuestion();
   }
 
-  const correctCount = () => results.filter(r => r.correct).length;
+  // Running score = sum of credits (multi-part questions can earn part of a point).
+  const correctCount = () => fmtScore(results.reduce((s, r) => s + r.credit, 0));
   const progressText = () => `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${correctCount()} correct`;
 
   // Segmented progress: one segment per question, coloured correct / wrong / current.
   function header() {
     const n = questions.length;
     const segs = questions.map((_, i) => {
-      const cls = i < results.length ? (results[i].correct ? 'is-correct' : 'is-wrong') : (i === idx ? 'is-current' : '');
+      const cls = i < results.length ? SEG_CLASS[creditState(results[i].credit)] : (i === idx ? 'is-current' : '');
       return `<span class="${cls}"></span>`;
     }).join('');
     return `${opts.crumbs}
@@ -410,13 +425,15 @@ export async function runQuiz(root, ctx, opts) {
     if (!main) return;
     main.innerHTML = `${header()}
       <section class="card question">
-        ${opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}</p>` : '')}
+        ${opts.tagsFor ? opts.tagsFor(q) : opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}</p>` : '')}
         <div class="prompt prose">${renderPrompt(q.prompt)}</div>
         ${inputHtml(q)}
         <div id="feedback"></div>
         <div class="action-bar" id="action-bar">${actionBar(q)}</div>
       </section>`;
     if (isMulti(q)) lastPart = q.parts?.[0]?.id ?? null;
+    // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
+    calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
     applyCalc(q);
     icons();
     if (isMulti(q)) { bindMulti(q); return; }
@@ -442,13 +459,15 @@ export async function runQuiz(root, ctx, opts) {
     phase = 'feedback';
     const res = checkAnswer(q, value);
     const correct = multi ? !!res.correct : res;
+    const credit = multi ? res.credit : (correct ? 1 : 0);
+    const state = creditState(credit);
     const partResults = multi ? res.parts : null;
     // Snapshot of the calculator sheet at check time ("Your working"), when it was shown.
     const work = calcAllowed(q) && calc ? cleanWork(calc.snapshot()) : null;
     const userAnswer = multi
       ? Object.fromEntries((q.parts || []).map(p => [p.id, String(value[p.id] ?? '')]))
       : String(value ?? '');
-    results.push({ q, userAnswer, correct, ...(partResults ? { parts: partResults } : {}), ...(work ? { work } : {}) });
+    results.push({ q, userAnswer, correct, credit, ...(partResults ? { parts: partResults } : {}), ...(work ? { work } : {}) });
     applyCalc(q);
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice').forEach(el => { el.disabled = true; });
@@ -494,18 +513,21 @@ export async function runQuiz(root, ctx, opts) {
 
     // Progress: colour the current segment and bump the correct count.
     const seg = root.querySelector(`#seg-progress > span:nth-child(${idx + 1})`);
-    if (seg) { seg.classList.remove('is-current'); seg.classList.add(correct ? 'is-correct' : 'is-wrong'); }
+    if (seg) { seg.classList.remove('is-current'); seg.classList.add(SEG_CLASS[state]); }
     const counter = root.querySelector('#quiz-correct');
     if (counter) counter.textContent = String(correctCount());
     root.querySelector('#seg-progress')?.setAttribute('aria-valuetext', progressText());
 
     const last = idx === questions.length - 1;
     const nRight = multi ? partResults.filter(p => p.correct).length : 0;
-    const title = correct
+    const partsSub = multi ? ` <span class="feedback-sub">${nRight} of ${partResults.length} parts right</span>` : '';
+    const title = state === 'correct'
       ? `${icon('circle-check')} Correct`
-      : `${icon('circle-x')} Incorrect${multi ? ` <span class="feedback-sub">${nRight} of ${partResults.length} parts right</span>` : ''}`;
+      : state === 'partial'
+        ? `${icon('circle-dot')} Partly correct ·${partsSub}`
+        : `${icon('circle-x')} Incorrect${partsSub}`;
     root.querySelector('#feedback').innerHTML = `
-      <div class="feedback ${correct ? 'good' : 'bad'}">
+      <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${title}</p>
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
           : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`}
@@ -530,7 +552,7 @@ export async function runQuiz(root, ctx, opts) {
   function finish() {
     phase = 'done';
     teardownCalc();
-    const score = results.filter(r => r.correct).length;
+    const score = roundScore(results.reduce((s, r) => s + r.credit, 0));
     const total = results.length;
     saveAttempt({ ...opts.toAttempt(results), score, total });
     const pct = total ? Math.round((score / total) * 100) : 0;
@@ -539,18 +561,18 @@ export async function runQuiz(root, ctx, opts) {
       <section class="card result-summary">
         <p class="eyebrow">Quiz complete</p>
         <h1 class="quiz-title">${opts.title}</h1>
-        <p class="big-score score ${scoreClass(pct)}">${score} / ${total} <span>(${pct}%)</span></p>
-        <div class="result-meter" aria-hidden="true">${results.map(r => `<span class="${r.correct ? 'is-correct' : 'is-wrong'}"></span>`).join('')}</div>
+        <p class="big-score score ${scoreClass(pct)}">${fmtScore(score)} / ${total} <span>(${pct}%)</span></p>
+        <div class="result-meter" aria-hidden="true">${results.map(r => `<span class="${SEG_CLASS[creditState(r.credit)]}"></span>`).join('')}</div>
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Retry</button>
           <a class="btn" href="${opts.backHref}">${icon(opts.backIcon || 'layout-grid')} ${esc(opts.backLabel)}</a>
           <a class="btn" href="#/results">${icon('history')} History</a>
         </div>
       </section>
-      ${opts.showTags ? moduleBreakdown(results.map(r => ({ ...r.q, correct: r.correct }))) : ''}
+      ${(opts.breakdown ?? opts.showTags) ? moduleBreakdown(results.map(r => ({ ...r.q, correct: r.correct, credit: r.credit }))) : ''}
       <section class="card">
         <h2>Review</h2>
-        <ol class="review">${results.map(r => reviewItem(r, opts.showTags)).join('')}</ol>
+        <ol class="review">${results.map(r => reviewItem(r, opts.tagsFor || opts.showTags)).join('')}</ol>
       </section></div>`;
     icons();
     root.querySelector('#retry').addEventListener('click', start);
@@ -597,6 +619,8 @@ export async function runQuiz(root, ctx, opts) {
 export function storedQuestion(r, withOrigin) {
   return {
     seed: r.q.seed, prompt: r.q.prompt, answer: r.q.answer, userAnswer: r.userAnswer, correct: r.correct,
+    // Partial credit 0–1 (multi-part: parts right / parts total); `correct` stays the strict flag.
+    credit: typeof r.credit === 'number' ? roundScore(r.credit) : (r.correct ? 1 : 0),
     // Multi-part: answer/userAnswer are { [partId]: value } objects, plus per-part results.
     ...(Array.isArray(r.parts) ? { parts: r.parts.map(p => ({ id: p.id, label: p.label, correct: !!p.correct })) } : {}),
     ...(r.q.explanation ? { explanation: r.q.explanation } : {}),
@@ -605,7 +629,7 @@ export function storedQuestion(r, withOrigin) {
   };
 }
 
-// Per-module correct/total table for mixed quizzes. `qs` = [{ module, moduleTitle?, domainTitle?, correct }].
+// Per-module score/total table for mixed quizzes. `qs` = [{ module, moduleTitle?, domainTitle?, correct, credit? }].
 // `titleFor(moduleId)` optionally returns { module, domain } titles for stored questions.
 export function moduleBreakdown(qs, titleFor) {
   const groups = new Map();
@@ -620,11 +644,11 @@ export function moduleBreakdown(qs, titleFor) {
     }
     const g = groups.get(id);
     g.total++;
-    if (q.correct) g.correct++;
+    g.correct += creditOf(q);
   }
   const rows = [...groups.values()].map(g => {
     const p = g.total ? Math.round((g.correct / g.total) * 100) : 0;
-    return `<tr><th scope="row">${esc(g.label)}</th><td>${g.correct}/${g.total}</td><td class="score ${scoreClass(p)}">${p}%</td></tr>`;
+    return `<tr><th scope="row">${esc(g.label)}</th><td>${fmtScore(g.correct)}/${g.total}</td><td class="score ${scoreClass(p)}">${p}%</td></tr>`;
   }).join('');
   return `<section class="card breakdown">
     <h2>By module</h2>
@@ -660,18 +684,28 @@ export function partListHtml(defs, parts, userAnswer, answer, cls = '') {
   }).join('')}</ul>`;
 }
 
+// `showTag`: true = questionTag(), or a function (q) -> tag HTML (already escaped).
+// `r.credit` (or the stored question's `credit`) picks the state: correct, partly correct or incorrect.
 export function reviewItem(r, showTag = false) {
   const q = r.q ?? r;
+  const credit = typeof r.credit === 'number' ? Math.min(1, Math.max(0, r.credit)) : creditOf({ credit: q.credit, correct: r.correct ?? q.correct });
+  const state = creditState(credit);
+  const nParts = Array.isArray(r.parts) ? r.parts.length : 0;
+  const nRight = Array.isArray(r.parts) ? r.parts.filter(p => p.correct).length : 0;
   const answer = q.answer;
   const multi = isPlainObj(answer) || isPlainObj(r.userAnswer);
   const answers = multi
     ? partListHtml(q.parts, r.parts ?? q.parts, r.userAnswer, answer, 'review-parts')
     : `<p class="review-answers">Your answer: <strong>${esc(r.userAnswer === '' ? '(blank)' : String(r.userAnswer ?? ''))}</strong>
         ${r.correct ? '' : ` · Correct: <strong>${renderInline(String(answer ?? ''))}</strong>`}</p>`;
-  return `<li class="review-item ${r.correct ? 'good' : 'bad'}">
-    <div class="review-mark">${icon(r.correct ? 'circle-check' : 'circle-x')}<span class="sr-only">${r.correct ? 'Correct' : 'Incorrect'}</span></div>
+  const partialText = nParts ? `Partly correct · ${nRight} of ${nParts} parts right` : 'Partly correct';
+  const markIcon = state === 'correct' ? 'circle-check' : state === 'partial' ? 'circle-dot' : 'circle-x';
+  const markText = state === 'correct' ? 'Correct' : state === 'partial' ? partialText : 'Incorrect';
+  return `<li class="review-item ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
+    <div class="review-mark">${icon(markIcon)}<span class="sr-only">${esc(markText)}</span></div>
     <div class="review-body">
-      ${showTag ? questionTag(q) : ''}
+      ${typeof showTag === 'function' ? showTag(q) : showTag ? questionTag(q) : ''}
+      ${state === 'partial' ? `<p class="review-partial">${esc(partialText)}</p>` : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
       ${answers}
       ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
@@ -706,10 +740,17 @@ export function crumbsHtml(parts) {
 
 export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
   let mod, st, domain;
+  // "all" in either position = a whole-module quiz; its questions carry their own subtopic/difficulty.
+  const whole = subtopic === ALL || difficulty === ALL;
   try {
     mod = await loadModule(moduleId);
-    st = mod.subtopics.find(s => s.id === subtopic);
-    if (!st || (Array.isArray(st.difficulties) && !st.difficulties.includes(difficulty))) throw new Error('Unknown subtopic or difficulty.');
+    if (whole) {
+      st = subtopic === ALL ? { id: ALL } : mod.subtopics.find(s => s.id === subtopic);
+      if (!st || !allowedCells(mod, subtopic, difficulty).length) throw new Error('Unknown subtopic or difficulty.');
+    } else {
+      st = mod.subtopics.find(s => s.id === subtopic);
+      if (!st || (Array.isArray(st.difficulties) && !st.difficulties.includes(difficulty))) throw new Error('Unknown subtopic or difficulty.');
+    }
     domain = await domainOf(mod.id);
   } catch (e) {
     console.error(e);
@@ -728,10 +769,13 @@ export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
     { href: moduleHref, label: modTitle },
   ]);
 
+  const stTitle = subtopicLabel(st.id, st.title);
   await runQuiz(root, ctx, {
     build: () => buildQuiz(mod.id, st.id, difficulty),
-    title: `${esc(modTitle)} · ${esc(st.title ?? st.id)} · ${esc(cap(difficulty))}`,
-    cardTags: originTags(domain?.id, domain?.title, modTitle, String(st.title ?? st.id), difficulty),
+    title: `${esc(modTitle)} · ${esc(stTitle)} · ${esc(difficultyLabel(difficulty))}`,
+    cardTags: originTags(domain?.id, domain?.title, modTitle, stTitle, difficulty === ALL ? null : difficulty),
+    // Whole-module quizzes tag each question with the subtopic/difficulty it came from.
+    ...(whole ? { tagsFor: cellTag, breakdown: false } : {}),
     crumbs,
     backHref: moduleHref,
     backLabel: 'Module',
@@ -740,7 +784,7 @@ export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
     calculator: mod.calculator !== false,
     toAttempt: results => ({
       module: mod.id, subtopic: st.id, difficulty,
-      questions: results.map(r => storedQuestion(r, false)),
+      questions: results.map(r => storedQuestion(r, whole)),
     }),
   });
 }

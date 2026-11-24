@@ -257,6 +257,7 @@ function sumQ(rng, { parts, labels, to, expr, fmt, prompt, intro, candidates }) 
     prompt: prompt + (fmt === "2dp" ? DP2 : EXACT),
     explanation: `${intro}\n\n${lines.join("\n")}`,
     params: { kind: "sum", parts, to, fmt },
+    given: parts.map(([value], i) => ({ label: labels[i], value })), // the stated quantities, as in the explanation
   };
   return finish(base, exact, fmt, candidates, rng);
 }
@@ -431,6 +432,7 @@ function genTimeSpeed(difficulty, rng) {
       prompt: `A train travels ${show(km)} km in ${mins} minutes at a steady speed. What is its speed, in km/h?${DP2}`,
       explanation: `Speed = distance ÷ time, with the time in hours.\n\n${lines.join("\n")}`,
       params: { kind: "rate", dist: [km, "km"], time: [mins, "min"], to: "kmh", fmt },
+      given: [{ label: "_km", value: km }, { label: "_min", value: mins }],
     };
     return finish(base, exact, fmt, [km / mins, (km * mins) / 60, km / (mins / 100)], rng);
   }
@@ -443,6 +445,7 @@ function genTimeSpeed(difficulty, rng) {
     prompt: `A runner covers ${m} m in ${s} seconds at a steady pace. What is the runner's speed, in km/h?${DP2}`,
     explanation: `Find the speed in m/s first, then convert: 1 m/s = 3.6 km/h.\n\n${lines.join("\n")}`,
     params: { kind: "rate", dist: [m, "m"], time: [s, "s"], to: "kmh", fmt },
+    given: [{ label: "_m", value: m }, { label: "_s", value: s }],
   };
   return finish(base, exact, fmt, [m / s, m / s / 3.6, (m / s) * 60], rng);
 }

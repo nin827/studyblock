@@ -1,7 +1,7 @@
 {
   "id": "business-case",
   "title": "Business Case",
-  "description": "Short business scenarios: break-even, unit economics, investment returns and pricing decisions.",
+  "description": "Short business scenarios: break-even, unit economics, investment returns, pricing, inventory and hiring decisions.",
   "icon": "clipboard-list",
   "type": "generator",
   "questionsPerQuiz": 8,
@@ -9,6 +9,8 @@
     { "id": "break-even", "title": "Break-even", "difficulties": ["easy", "medium", "hard"] },
     { "id": "unit-economics", "title": "Unit economics", "difficulties": ["easy", "medium", "hard"] },
     { "id": "investment", "title": "Investment returns", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "pricing-decision", "title": "Pricing decisions", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "pricing-decision", "title": "Pricing decisions", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "inventory", "title": "Inventory", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "hiring", "title": "Hiring", "difficulties": ["easy", "medium", "hard"] }
   ]
 }

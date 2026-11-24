@@ -1,8 +1,8 @@
-import { loadModule, loadIntro, domainOf } from '../lib/engine.js';
+import { loadModule, loadIntro, domainOf, ALL } from '../lib/engine.js';
 import { crumbsHtml } from './quiz.js';
 import { getModuleCellStats, getCookie, setCookie } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
-import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle } from './ui.js';
+import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle, difficultyLabel } from './ui.js';
 
 const ORDER = ['easy', 'medium', 'hard'];
 
@@ -29,24 +29,37 @@ export async function render(root, { moduleId }, ctx) {
   const domain = await domainOf(mod.id).catch(() => null);
   if (!ctx.alive()) return;
   const stats = getModuleCellStats(mod.id);
-  const cols = difficultyColumns(mod.subtopics);
+  const diffCols = difficultyColumns(mod.subtopics);
+  // Whole-module options: an "All" difficulty column (when there is more than one difficulty) and an
+  // "All topics" row (when there is more than one subtopic). "all" is a reserved id (see engine.js).
+  const withAllCol = diffCols.length > 1;
+  const withAllRow = mod.subtopics.length > 1;
+  const cols = withAllCol ? [...diffCols, ALL] : diffCols;
   const cookieDiff = getCookie('lastDifficulty');
   const preferred = cols.includes(cookieDiff) ? cookieDiff : cols[0];
+  const colLabel = d => (d === ALL ? 'All' : cap(d));
 
-  const rows = mod.subtopics.map(st => {
-    const cells = cols.map(d => {
-      if (!(st.difficulties || []).includes(d)) return '<td class="na">–</td>';
-      const s = stats[`${st.id}|${d}`];
-      const best = s ? s.best : null;
-      const href = `#/q/${hashPart(mod.id)}/${hashPart(st.id)}/${hashPart(d)}`;
-      return `<td class="${d === preferred ? 'preferred' : ''}">
+  const cell = (stId, stTitle, d) => {
+    const s = stats[`${stId}|${d}`];
+    const best = s ? s.best : null;
+    const href = `#/q/${hashPart(mod.id)}/${hashPart(stId)}/${hashPart(d)}`;
+    return `<td class="${d === preferred ? 'preferred' : ''} ${d === ALL ? 'all-col' : ''}">
         <a class="btn btn-small ${d === preferred ? 'btn-primary' : ''}" href="${href}" data-diff="${esc(d)}"
-           aria-label="Start ${esc(st.title ?? st.id)}, ${esc(d)}">${icon('play')} Start</a>
+           aria-label="Start ${esc(stTitle)}, ${esc(difficultyLabel(d).toLowerCase())}">${icon('play')} Start</a>
         <div class="cell-score score ${scoreClass(best)}" title="${s ? `${s.attempts} attempt(s)` : 'Not attempted'}">Best ${fmtPct(best)}</div>
       </td>`;
+  };
+
+  const rows = mod.subtopics.map(st => {
+    const title = String(st.title ?? st.id);
+    const cells = cols.map(d => {
+      if (d !== ALL && !(st.difficulties || []).includes(d)) return '<td class="na">–</td>';
+      return cell(st.id, title, d);
     }).join('');
-    return `<tr><th scope="row">${esc(st.title ?? st.id)}</th>${cells}</tr>`;
-  }).join('');
+    return `<tr><th scope="row">${esc(title)}</th>${cells}</tr>`;
+  }).join('') + (withAllRow
+    ? `<tr class="all-row"><th scope="row">${icon('layers')}All topics</th>${cols.map(d => cell(ALL, 'all topics', d)).join('')}</tr>`
+    : '');
 
   root.innerHTML = `
     ${crumbsHtml([
@@ -69,11 +82,11 @@ export async function render(root, { moduleId }, ctx) {
       <div class="section-head">
         <h2>Practice</h2>
         <label class="inline-field">Difficulty
-          <select id="diff-select">${cols.map(d => `<option value="${esc(d)}" ${d === preferred ? 'selected' : ''}>${esc(cap(d))}</option>`).join('')}</select>
+          <select id="diff-select">${cols.map(d => `<option value="${esc(d)}" ${d === preferred ? 'selected' : ''}>${esc(d === ALL ? 'All difficulties' : cap(d))}</option>`).join('')}</select>
         </label>
       </div>
       ${mod.subtopics.length ? `<div class="table-wrap"><table class="matrix">
-        <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}">${esc(cap(d))}</th>`).join('')}</tr></thead>
+        <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}" ${d === ALL ? 'class="all-col" title="All difficulties"' : ''}>${esc(colLabel(d))}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '<p class="muted">This module has no subtopics.</p>'}
     </section>

@@ -26,6 +26,9 @@ const cash = (n) => `$${round2(n).toFixed(2)}`;
 const given = (label, v) => `- \`${label} = ${num(v)}\``;
 const step = (label, expr, shown) => `- \`${label} = ${expr}\` → ${shown}`;
 const explain = (intro, lines) => `${intro}\n\n${lines.join("\n")}`;
+// Pre-filled calculator rows (question.given): only values stated in the prompt, labelled like the
+// explanation's rows where those hold the same number. [[label, value], ...] -> [{ label, value }, ...].
+const givenRows = (pairs) => pairs.map(([label, value]) => ({ label, value }));
 
 // The value shown on the last row: "**12 V**" or "14.2857, which rounds to **14.29 Ω**".
 function final(exact, rounded, unit) {
@@ -111,13 +114,17 @@ function genOhm(difficulty, rng) {
   const end = rounded ? DP2 : "";
   const toA = (x) => (milli ? x / 1000 : x); // mA -> A
   const toOhm = (x) => (milli ? x * 1000 : x); // kΩ -> Ω
-  let prompt, exact, unit, intro, lines, candidates;
+  let prompt, exact, unit, intro, lines, candidates, gv;
+  // Medium states mA and kΩ; the explanation's _I/_R rows hold amps and ohms, so those get their own labels.
+  const gI = milli ? "_mA" : "_I";
+  const gR = milli ? "_kOhm" : "_R";
   if (unknown === "V") {
     exact = I * R;
     unit = "V";
     prompt = `A current of ${num(I)} ${uI} flows through ${dev} with a resistance of ${num(R)} ${uR}. What is the voltage across it, in V?${end}`;
     intro = "Use Ohm's law: `V = I × R`." + (milli ? " Convert to amps and ohms first." : "");
     lines = [given("_I", toA(I)), given("_R", toOhm(R)), step("_V", "_I * _R", final(exact, rounded, unit))];
+    gv = [[gI, I], [gR, R]];
     candidates = [I / R, R / I, I + R];
   } else if (unknown === "I") {
     exact = V / R;
@@ -125,6 +132,7 @@ function genOhm(difficulty, rng) {
     prompt = `A voltage of ${num(V)} V is applied across ${dev} with a resistance of ${num(R)} ${uR}. What current flows, in ${uI}?${end}`;
     intro = "Rearrange Ohm's law to `I = V / R`." + (milli ? " Work in ohms, then convert amps to milliamps (× 1000)." : "");
     lines = [given("_V", V), given("_R", toOhm(R))];
+    gv = [["_V", V], [gR, R]];
     if (milli) {
       lines.push(step("_I", "_V / _R", `${num(V / toOhm(R))} A`), step("_I_mA", "_I * 1000", final(exact, rounded, unit)));
     } else {
@@ -137,6 +145,7 @@ function genOhm(difficulty, rng) {
     prompt = `${dev[0].toUpperCase()}${dev.slice(1)} draws ${num(I)} ${uI} when ${num(V)} V is applied across it. What is its resistance, in ${uR}?${end}`;
     intro = "Rearrange Ohm's law to `R = V / I`." + (milli ? " Work in amps, then convert ohms to kilohms (÷ 1000)." : "");
     lines = [given("_V", V), given("_I", toA(I))];
+    gv = [["_V", V], [gI, I]];
     if (milli) {
       lines.push(step("_R", "_V / _I", `${num(V / toA(I))} Ω`), step("_R_k", "_R / 1000", final(exact, rounded, unit)));
     } else {
@@ -147,7 +156,7 @@ function genOhm(difficulty, rng) {
 
   const values = { V, I, R };
   delete values[unknown];
-  const base = { prompt, explanation: explain(intro, lines), params: { formula: "ohm", unknown, values, rounded } };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula: "ohm", unknown, values, rounded }, given: givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -177,7 +186,7 @@ function genPower(difficulty, rng) {
   );
   const dev = rng.pick(DEVICES);
   const end = rounded ? DP2 : "";
-  let prompt, exact, unit, intro, lines, candidates, formula, unknown, values;
+  let prompt, exact, unit, intro, lines, candidates, formula, unknown, values, gv;
 
   if (kind === "vi-P" || kind === "vi-I" || kind === "vi-V") {
     formula = "vi";
@@ -194,6 +203,7 @@ function genPower(difficulty, rng) {
       prompt = `${a.name[0].toUpperCase()}${a.name.slice(1)} is rated ${P} W and runs on a ${V} V supply. What current does it draw, in A?${end}`;
       intro = "Rearrange `P = V × I` to `I = P / V`.";
       lines = [given("_P", P), given("_V", V), step("_I", "_P / _V", final(exact, rounded, unit))];
+      gv = [["_P", P], ["_V", V]];
       candidates = [P * V, V / P, P / (V * V), (P / V) * 10];
     } else {
       V = difficulty === "easy" ? rng.int(2, 24) : rng.int(6, 240);
@@ -207,6 +217,7 @@ function genPower(difficulty, rng) {
         prompt = `${dev[0].toUpperCase()}${dev.slice(1)} has ${V} V across it and ${I} A flowing through it. What power does it use, in W?`;
         intro = "Use `P = V × I`.";
         lines = [given("_V", V), given("_I", I), step("_P", "_V * _I", final(exact, false, unit))];
+        gv = [["_V", V], ["_I", I]];
         candidates = [V / I, I / V, V + I];
       } else if (kind === "vi-I") {
         unknown = "I";
@@ -216,6 +227,7 @@ function genPower(difficulty, rng) {
         prompt = `${dev[0].toUpperCase()}${dev.slice(1)} uses ${P} W of power with ${V} V across it. What current flows through it, in A?`;
         intro = "Rearrange `P = V × I` to `I = P / V`.";
         lines = [given("_P", P), given("_V", V), step("_I", "_P / _V", final(exact, false, unit))];
+        gv = [["_P", P], ["_V", V]];
         candidates = [P * V, V / P, P - V];
       } else {
         unknown = "V";
@@ -225,6 +237,7 @@ function genPower(difficulty, rng) {
         prompt = `${dev[0].toUpperCase()}${dev.slice(1)} uses ${P} W of power while ${I} A flows through it. What is the voltage across it, in V?`;
         intro = "Rearrange `P = V × I` to `V = P / I`.";
         lines = [given("_P", P), given("_I", I), step("_V", "_P / _I", final(exact, false, unit))];
+        gv = [["_P", P], ["_I", I]];
         candidates = [P * I, I / P, P - I];
       }
     }
@@ -241,6 +254,7 @@ function genPower(difficulty, rng) {
       prompt = `A current of ${I} A flows through ${dev} with a resistance of ${R} Ω. What power does it use, in W?`;
       intro = "Use `P = I² × R`.";
       lines = [given("_I", I), given("_R", R), step("_P", "_I^2 * _R", final(exact, false, unit))];
+      gv = [["_I", I], ["_R", R]];
       candidates = [I * R, 2 * I * R, I * R * R]; // forgot to square, doubled instead, squared R
     } else {
       unknown = "I";
@@ -250,6 +264,7 @@ function genPower(difficulty, rng) {
       prompt = `${dev[0].toUpperCase()}${dev.slice(1)} with a resistance of ${R} Ω uses ${P} W of power. What current flows through it, in A?`;
       intro = "Rearrange `P = I² × R` to `I = √(P / R)`.";
       lines = [given("_P", P), given("_R", R), step("_I", "sqrt(_P / _R)", final(exact, false, unit))];
+      gv = [["_P", P], ["_R", R]];
       candidates = [P / R, P * R, Math.sqrt(P * R)]; // forgot the root, multiplied, root of product
     }
   } else if (kind === "v2r-P" || kind === "v2r-R") {
@@ -274,6 +289,7 @@ function genPower(difficulty, rng) {
       prompt = `A voltage of ${num(V)} V is applied across ${dev} with a resistance of ${num(R)} Ω. What power does it use, in W?${end}`;
       intro = "Use `P = V² / R`.";
       lines = [given("_V", V), given("_R", R), step("_P", "_V^2 / _R", final(exact, rounded, unit))];
+      gv = [["_V", V], ["_R", R]];
       candidates = [V / R, V * V * R, (2 * V) / R]; // forgot to square, multiplied, doubled
     } else {
       unknown = "R";
@@ -283,6 +299,7 @@ function genPower(difficulty, rng) {
       prompt = `${dev[0].toUpperCase()}${dev.slice(1)} uses ${num(P)} W of power with ${num(V)} V across it. What is its resistance, in Ω?`;
       intro = "Rearrange `P = V² / R` to `R = V² / P`.";
       lines = [given("_V", V), given("_P", P), step("_R", "_V^2 / _P", final(exact, rounded, unit))];
+      gv = [["_V", V], ["_P", P]];
       candidates = [P / (V * V), V / P, P / V];
     }
   } else {
@@ -295,6 +312,8 @@ function genPower(difficulty, rng) {
     const appl = `${a.name[0].toUpperCase()}${a.name.slice(1)}`;
     const setup = `${appl} rated ${P} W runs for ${num(hours)} hours a day for ${days} days.`;
     lines = [given("_P_kW", P / 1000), given("_hours", hours * days)];
+    // The prompt states watts and hours per day; _P_kW and _hours above are worked values, so new labels.
+    gv = [["_P_W", P], ["_h_per_day", hours], ["_days", days]];
     if (kind === "energy") {
       formula = "energy";
       unknown = "E";
@@ -314,12 +333,13 @@ function genPower(difficulty, rng) {
       values = { P, hours, days, price };
       prompt = `${setup} Electricity costs ${cash(price)} per kWh. How much does this cost, in dollars?${end}`;
       intro = "Find the energy in kWh (power in kW × total hours), then multiply by the price per kWh.";
+      gv.push(["_price", price]);
       lines.push(given("_price", price), step("_E", "_P_kW * _hours", `${num(E)} kWh`), step("_cost", "_E * _price", final(exact, rounded, unit)));
       candidates = [P * hours * days * price, ((P * hours) / 1000) * price, E / price];
     }
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { formula, unknown, values, rounded } };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula, unknown, values, rounded }, given: givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -340,7 +360,7 @@ function genCircuit(difficulty, rng) {
   checkDifficulty(difficulty);
   const rounded = difficulty === "hard";
   const end = rounded ? DP2 : "";
-  let prompt, exact, intro, lines, candidates, kind, values;
+  let prompt, exact, intro, lines, candidates, kind, values, gv;
   const unit = "Ω";
 
   if (difficulty === "easy") {
@@ -356,6 +376,7 @@ function genCircuit(difficulty, rng) {
       prompt = `Resistors of ${all.slice(0, -1).join(", ")} and ${all[n - 1]} are connected in series. What is the total resistance, in Ω?`;
       intro = "In series, resistances simply add: `R_total = R1 + R2 + …`.";
       lines = [...rs.map((r, i) => given(labels[i], r)), step("_R_total", labels.join(" + "), final(exact, false, unit))];
+      gv = rs.map((r, i) => [labels[i], r]);
       candidates = [total - rs[0], Math.max(...rs), total + rs[n - 1]];
     } else {
       const known = rs.slice(0, -1);
@@ -368,6 +389,7 @@ function genCircuit(difficulty, rng) {
         `The total resistance is ${total} Ω. What is the resistance of the extra resistor, in Ω?`;
       intro = "In series, resistances add, so the missing one is the total minus the others.";
       const kl = labels.slice(0, -1);
+      gv = [["_R_total", total], ...known.map((r, i) => [kl[i], r])];
       lines = [given("_R_total", total), ...known.map((r, i) => given(kl[i], r)), step("_R_x", `_R_total - ${kl.join(" - ")}`, final(exact, false, unit))];
       candidates = [total + known.reduce((s, r) => s + r, 0), total, total - known[0] + 1];
     }
@@ -378,6 +400,7 @@ function genCircuit(difficulty, rng) {
     values = { a, b };
     prompt = `Two resistors of ${a} Ω and ${b} Ω are connected in parallel. What is their combined resistance, in Ω?`;
     intro = "For two resistors in parallel, `R = (R1 × R2) / (R1 + R2)` (product over sum). The result is always smaller than either resistor.";
+    gv = [["_R1", a], ["_R2", b]];
     lines = [given("_R1", a), given("_R2", b), step("_R_total", "(_R1 * _R2) / (_R1 + _R2)", final(exact, false, unit))];
     candidates = [a + b, (a + b) / 2, a * b, Math.abs(a - b)];
   } else {
@@ -387,6 +410,7 @@ function genCircuit(difficulty, rng) {
     const r2 = pickR();
     const r3 = pickR();
     values = { r1, r2, r3 };
+    gv = [["_R1", r1], ["_R2", r2], ["_R3", r3]];
     if (kind === "s+p") {
       const p = (r2 * r3) / (r2 + r3);
       exact = r1 + p;
@@ -420,7 +444,7 @@ function genCircuit(difficulty, rng) {
     }
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded } };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded }, given: givenRows(gv) };
   return finish(base, exact, rounded, candidates, rng);
 }
 

@@ -2,15 +2,41 @@
 // in CLAUDE.md). The maths lives in js/lib/calc.js; this file is DOM only.
 //
 // mountCalculator(container, { onUse(valueString), onEscape(), storageKey, owner })
-//   -> { setVisible(bool), snapshot(), clear(), destroy({ forget }), focus(), setUseEnabled(bool, hint) }
+//   -> { setVisible(bool), snapshot(), clear(), destroy({ forget }), focus(), setUseEnabled(bool, hint),
+//        setGiven([{ label, value }]) }
+//
+// Given values: setGiven() drops the rows still flagged `given` (untouched pre-filled rows from the
+// previous question) and inserts the new ones at the top. Editing a given row's label or expression
+// clears its flag, so it stays like any other row. The flag is kept in sessionStorage too.
 //
 // All user text goes into the page through textContent / attributes, never innerHTML.
 
-import { evaluateSheet, nextLabel, renameLabel, formatValue, labelProblem, normalizeLabel, MAX_ROWS, MAX_EXPR } from '../lib/calc.js';
+import { evaluateSheet, nextLabel, renameLabel, formatValue, labelProblem, normalizeLabel, MAX_ROWS, MAX_EXPR, LABEL_RE } from '../lib/calc.js';
 import { icon, icons } from './ui.js';
 
 const DEFAULT_KEY = 'studyblock:calc';
+const GIVEN_MAX = 8;
 let uid = 0;
+
+// A given value as a compact expression: up to 12 significant digits, no float noise (0.1, not 0.1000000000000000055).
+export function givenExpr(v) {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return '';
+  if (v === 0) return '0';
+  const r = Number(v.toPrecision(12));
+  return String(r === 0 ? 0 : r);
+}
+
+// `label` made unique (ignoring case) against `used` (a Set of lower-cased labels) with _2, _3, ...
+function uniqueLabel(label, used) {
+  if (!used.has(label.toLowerCase())) return label;
+  for (let n = 2; n < 1000; n++) {
+    const suffix = `_${n}`;
+    const cand = label.slice(0, 24 - suffix.length) + suffix;
+    if (!LABEL_RE.test(cand)) continue;
+    if (!used.has(cand.toLowerCase())) return cand;
+  }
+  return null;
+}
 
 function el(tag, cls, attrs) {
   const n = document.createElement(tag);
@@ -39,7 +65,7 @@ function readStore(key, owner) {
     if (String(v.owner ?? '') !== String(owner ?? '')) return null;
     const rows = v.rows.slice(0, MAX_ROWS)
       .filter(r => r && typeof r === 'object' && typeof r.label === 'string' && typeof r.expr === 'string')
-      .map(r => ({ label: r.label.slice(0, 24), expr: r.expr.slice(0, MAX_EXPR) }));
+      .map(r => ({ label: r.label.slice(0, 24), expr: r.expr.slice(0, MAX_EXPR), given: r.given === true }));
     return rows.length ? rows : null;
   } catch {
     return null;
@@ -49,7 +75,7 @@ function readStore(key, owner) {
 export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAULT_KEY, owner = '' } = {}) {
   const id = `calc${++uid}`;
   let nextId = 1;
-  const withId = r => ({ id: nextId++, label: r.label, expr: r.expr });
+  const withId = r => ({ id: nextId++, label: r.label, expr: r.expr, given: r.given === true });
   let rows = (readStore(storageKey, owner) || [{ label: '_a', expr: '' }]).map(withId);
   let results = [];
   let useEnabled = true;
@@ -77,7 +103,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   // ---- persistence ----
   function save() {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify({ v: 1, owner: String(owner ?? ''), rows: rows.map(r => ({ label: r.label, expr: r.expr })) }));
+      sessionStorage.setItem(storageKey, JSON.stringify({ v: 1, owner: String(owner ?? ''), rows: rows.map(r => (r.given ? { label: r.label, expr: r.expr, given: true } : { label: r.label, expr: r.expr })) }));
     } catch { /* storage full or blocked: the sheet still works for this page */ }
   }
 
@@ -92,7 +118,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     const exprId = `${id}-e${row.id}`;
     const errId = `${id}-x${row.id}`;
     const lblLabel = el('label', 'sr-only', { for: labelId });
-    lblLabel.textContent = `Name of row ${index + 1}`;
+    lblLabel.textContent = `Name of row ${index + 1}${row.given ? ' (given value)' : ''}`;
     const lbl = el('input', 'calc-label', {
       id: labelId, type: 'text', maxlength: '24', autocomplete: 'off', autocapitalize: 'off',
       autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next', 'aria-describedby': errId,
@@ -109,6 +135,12 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     main.append(lblLabel, lbl, eq, exLabel, ex);
 
     const out = el('div', 'calc-row-out');
+    if (row.given) {
+      li.classList.add('is-given');
+      const g = el('span', 'calc-given', { title: 'Given in the question. Edit it to keep it for later questions.' });
+      g.textContent = 'given';
+      out.appendChild(g);
+    }
     const res = el('output', 'calc-result', { for: exprId });
     const use = el('button', 'btn btn-small btn-soft calc-use', { type: 'button' });
     use.textContent = 'Use';
@@ -241,6 +273,15 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     const hit = rowOf(e.target);
     if (!hit) return;
     const { li, row } = hit;
+    if (row.given) {
+      // Editing a pre-filled row makes it the user's own: it's kept when the next question comes.
+      row.given = false;
+      li.classList.remove('is-given');
+      li.querySelector('.calc-given')?.remove();
+      const sr = li.querySelector('label.sr-only:not(.calc-expr-name)');
+      if (sr) sr.textContent = sr.textContent.replace(' (given value)', '');
+      save();
+    }
     if (e.target.classList.contains('calc-expr')) {
       row.expr = e.target.value.slice(0, MAX_EXPR);
       save();
@@ -348,6 +389,40 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     if (e.target.tagName === 'INPUT' && !e.ctrlKey && !e.metaKey) e.stopPropagation();
   });
 
+  // Replace the untouched given rows of the previous question with this question's (may be empty).
+  function setGiven(list) {
+    const kept = rows.filter(r => !r.given);
+    // A blank row (e.g. the starter "_a") gives way to a given label: it moves to the next free
+    // name instead, so the given rows keep the names the explanation uses.
+    const wanted = new Set((Array.isArray(list) ? list : []).map(g => String(g?.label ?? '').toLowerCase()));
+    let renamed = false;
+    for (const r of kept) {
+      if (r.expr.trim() || !wanted.has(r.label.toLowerCase())) continue;
+      r.label = nextLabel([...kept, ...[...wanted].map(label => ({ label }))]);
+      renamed = true;
+    }
+    const used = new Set(kept.map(r => r.label.toLowerCase()));
+    const room = Math.max(0, MAX_ROWS - kept.length);
+    const fresh = [];
+    for (const g of Array.isArray(list) ? list.slice(0, GIVEN_MAX) : []) {
+      if (fresh.length >= room) break;
+      if (!g || typeof g.label !== 'string' || !LABEL_RE.test(g.label)) continue;
+      const expr = givenExpr(g.value);
+      if (!expr) continue;
+      const label = uniqueLabel(g.label, used);
+      if (!label) continue;
+      used.add(label.toLowerCase());
+      fresh.push(withId({ label, expr, given: true }));
+    }
+    if (kept.length === rows.length && !fresh.length && !renamed) return; // nothing to change
+    rows = [...fresh, ...kept];
+    if (!rows.length) rows.push(withId({ label: nextLabel([]), expr: '' }));
+    if (lastFocusedRow && !rows.some(r => r.id === lastFocusedRow)) lastFocusedRow = null;
+    setStatus('');
+    renderAll();
+    save();
+  }
+
   function focus() {
     const target = (lastFocusedRow && rowEl(lastFocusedRow)) || list.lastElementChild;
     target?.querySelector('.calc-expr')?.focus();
@@ -372,6 +447,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     },
     clear: clearSheet,
     focus,
+    setGiven,
     setUseEnabled(enabled, hint) {
       useEnabled = !!enabled;
       useHint.textContent = !enabled && hint ? hint : '';

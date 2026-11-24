@@ -49,6 +49,20 @@ export function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Scores are sums of credits: at most 2 decimals, no trailing zeros ("6.5", "7", "6.67").
+export function fmtScore(n) {
+  const v = Math.round((Number(n) || 0) * 100) / 100;
+  return String(v);
+}
+
+// Labels for the reserved "all" subtopic / difficulty of whole-module quizzes.
+export function difficultyLabel(d) {
+  return d === 'all' ? 'All difficulties' : cap(d);
+}
+export function subtopicLabel(id, title) {
+  return id === 'all' ? 'All topics' : String(title ?? id);
+}
+
 export function fmtPct(v) {
   return v === null || v === undefined ? '–' : `${v}%`;
 }
