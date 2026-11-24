@@ -107,7 +107,8 @@ function genSpeed(difficulty, rng) {
   }
 
   const end = rounded ? " Round to 2 decimal places." : "";
-  let prompt, exact, unit, explanation, candidates, values;
+  const thenRound = rounded ? " Then round to 2 decimal places." : "";
+  let prompt, exact, unit, explanation, candidates, values, hints;
   if (unknown === "v") {
     exact = d / t;
     unit = "m/s";
@@ -115,6 +116,10 @@ function genSpeed(difficulty, rng) {
     prompt = `${who} covers ${num(d)} m in ${num(t)} s at a constant speed. What is its speed, in m/s?${end}`;
     explanation = `Use \`v = d / t\`.\n\n\`v = ${num(d)} / ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [d * t, t / d, d - t]; // multiplied, divided the wrong way, subtracted
+    hints = [
+      `You know the distance (${num(d)} m) and the time (${num(t)} s). Speed is distance divided by time: \`v = d / t\`.`,
+      `Substitute: \`v = ${num(d)} / ${num(t)}\` (in the calculator: \`_d / _t\`).${thenRound}`,
+    ];
   } else if (unknown === "d") {
     exact = v * t;
     unit = "m";
@@ -122,6 +127,10 @@ function genSpeed(difficulty, rng) {
     prompt = `${who} moves at a constant ${num(v)} m/s for ${num(t)} s. How far does it travel, in m?${end}`;
     explanation = `Rearrange \`v = d / t\` to \`d = v × t\`.\n\n\`d = ${num(v)} × ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [v / t, t / v, v + t];
+    hints = [
+      `You know the speed and the time and want the distance. Rearrange \`v = d / t\` to \`d = v × t\`.`,
+      `Substitute: \`d = ${num(v)} × ${num(t)}\` (in the calculator: \`_v * _t\`).${thenRound}`,
+    ];
   } else {
     exact = d / v;
     unit = "s";
@@ -129,6 +138,10 @@ function genSpeed(difficulty, rng) {
     prompt = `${who} moves at a constant ${num(v)} m/s. How long does it take to cover ${num(d)} m, in s?${end}`;
     explanation = `Rearrange \`v = d / t\` to \`t = d / v\`.\n\n\`t = ${num(d)} / ${num(v)}\` ${result(exact, rounded, unit)}`;
     candidates = [d * v, v / d, d - v];
+    hints = [
+      `You know the distance and the speed and want the time. Rearrange \`v = d / t\` to \`t = d / v\`.`,
+      `Substitute: \`t = ${num(d)} / ${num(v)}\` (in the calculator: \`_d / _v\`).${thenRound}`,
+    ];
   }
 
   const base = {
@@ -137,6 +150,7 @@ function genSpeed(difficulty, rng) {
     explanation,
     params: { formula: "speed", unknown, values, rounded },
     given: givenFrom(values),
+    hints,
   };
   return finish(base, exact, rounded, candidates, rng);
 }
@@ -182,7 +196,8 @@ function genAccel(difficulty, rng) {
 
   const end = rounded ? " Round to 2 decimal places." : "";
   const accel = (x) => `a constant acceleration of ${num(x)} m/s²`;
-  let prompt, exact, unit, explanation, candidates, values;
+  const thenRound = rounded ? " Then round to 2 decimal places." : "";
+  let prompt, exact, unit, explanation, candidates, values, hints;
   if (unknown === "a") {
     exact = (v - u) / t;
     unit = "m/s²";
@@ -192,6 +207,11 @@ function genAccel(difficulty, rng) {
     prompt = `${who} ${verb} from ${num(u)} m/s to ${num(v)} m/s in ${num(t)} s. What is its acceleration, in m/s²?${hint}${end}`;
     explanation = `Use \`a = (v - u) / t\`.\n\n\`a = (${num(v)} - ${num(u)}) / ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [(v - u) * t, v / t, (v + u) / t]; // multiplied by t, ignored u, added u
+    hints = [
+      "Acceleration is the change in velocity divided by the time: `a = (v - u) / t`, with u the start and v the end velocity.",
+      `Substitute: \`a = (${num(v)} - ${num(u)}) / ${num(t)}\` (in the calculator: \`(_v - _u) / _t\`).` +
+        (v < u ? " The bracket is negative, because it slows down." : "") + thenRound,
+    ];
   } else if (unknown === "v") {
     exact = u + a * t;
     unit = "m/s";
@@ -199,6 +219,10 @@ function genAccel(difficulty, rng) {
     prompt = `${who} starts at ${num(u)} m/s and has ${accel(a)} for ${num(t)} s. What is its final velocity, in m/s?${end}`;
     explanation = `Use \`v = u + at\`.\n\n\`v = ${num(u)} + ${par(a)} × ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [u + a, a * t, u - a * t]; // forgot t, forgot u, wrong sign
+    hints = [
+      "The final velocity is the start velocity plus the speed gained: `v = u + at`.",
+      `Substitute: \`v = ${num(u)} + ${par(a)} × ${num(t)}\` (in the calculator: \`_u + _a * _t\`). Multiply before you add.${thenRound}`,
+    ];
   } else if (unknown === "u") {
     exact = v - a * t;
     unit = "m/s";
@@ -206,6 +230,10 @@ function genAccel(difficulty, rng) {
     prompt = `${who} has ${accel(a)} for ${num(t)} s and ends at ${num(v)} m/s. What was its initial velocity, in m/s?${end}`;
     explanation = `Rearrange \`v = u + at\` to \`u = v - at\`.\n\n\`u = ${num(v)} - ${par(a)} × ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [v + a * t, v - a, a * t];
+    hints = [
+      "Start from `v = u + at` and take the speed gained away from the final velocity: `u = v - at`.",
+      `Substitute: \`u = ${num(v)} - ${par(a)} × ${num(t)}\` (in the calculator: \`_v - _a * _t\`).${thenRound}`,
+    ];
   } else {
     exact = (v - u) / a;
     unit = "s";
@@ -213,6 +241,10 @@ function genAccel(difficulty, rng) {
     prompt = `${who} goes from ${num(u)} m/s to ${num(v)} m/s with ${accel(a)}. How long does this take, in s?${end}`;
     explanation = `Rearrange \`v = u + at\` to \`t = (v - u) / a\`.\n\n\`t = (${num(v)} - ${num(u)}) / ${par(a)}\` ${result(exact, rounded, unit)}`;
     candidates = [(v - u) * a, v / a, (v + u) / a];
+    hints = [
+      "Rearrange `v = u + at` for the time: `t = (v - u) / a`.",
+      `Substitute: \`t = (${num(v)} - ${num(u)}) / ${par(a)}\` (in the calculator: \`(_v - _u) / _a\`).${thenRound}`,
+    ];
   }
 
   const base = {
@@ -221,6 +253,7 @@ function genAccel(difficulty, rng) {
     explanation,
     params: { formula: "accel", unknown, values, rounded },
     given: givenFrom(values),
+    hints,
   };
   return finish(base, exact, rounded, candidates, rng);
 }
@@ -262,7 +295,11 @@ function genMotion(difficulty, rng) {
   const end = rounded ? " Round to 2 decimal places." : "";
   const start = u === 0 ? "starts from rest" : `starts at ${num(u)} m/s`;
   const from = u === 0 ? "from rest" : `from ${num(u)} m/s`;
-  let prompt, exact, unit, explanation, candidates, values, formula, unknown;
+  let prompt, exact, unit, explanation, candidates, values, formula, unknown, hints;
+  // Guided-mode hints: u = 0 has no calculator row ("from rest"), so write 0 in its place.
+  const U = u === 0 ? "0" : "_u";
+  const rest = u === 0 ? " Starting from rest means u = 0." : "";
+  const thenRound = rounded ? " Then round to 2 decimal places." : "";
 
   if (kind === "s1") {
     formula = "displacement";
@@ -275,6 +312,10 @@ function genMotion(difficulty, rng) {
       `Use \`s = ut + ½at²\`.\n\n` +
       `\`s = ${num(u)} × ${num(t)} + ½ × ${num(a)} × ${num(t)}² = ${num(u * t)} + ${num(0.5 * a * t * t)}\` ${result(exact, rounded, unit)}`;
     candidates = [u * t + a * t * t, u * t, (u + a * t) * t]; // forgot the ½, ignored a, used final speed
+    hints = [
+      `You know u, a and t and want the distance, so use the equation without v: \`s = ut + ½at²\`.${rest}`,
+      `Substitute: \`s = ${num(u)} × ${num(t)} + ½ × ${num(a)} × ${num(t)}²\` (in the calculator: \`${U} * _t + 0.5 * _a * _t^2\`). Square t before multiplying.${thenRound}`,
+    ];
   } else if (kind === "a1") {
     formula = "displacement";
     unknown = "a";
@@ -286,6 +327,10 @@ function genMotion(difficulty, rng) {
       `Rearrange \`s = ut + ½at²\` to \`a = 2(s - ut) / t²\`.\n\n` +
       `\`a = 2 × (${num(s)} - ${num(u)} × ${num(t)}) / ${num(t)}²\` ${result(exact, rounded, unit)}`;
     candidates = [(s - u * t) / (t * t), (2 * s) / (t * t), (2 * (s - u * t)) / t]; // forgot the ½, ignored u, t not squared
+    hints = [
+      `You know s, u and t, so start from \`s = ut + ½at²\` and rearrange for a: \`a = 2(s - ut) / t²\`.${rest}`,
+      `Substitute: \`a = 2 × (${num(s)} - ${num(u)} × ${num(t)}) / ${num(t)}²\` (in the calculator: \`2 * (_s - ${U} * _t) / _t^2\`).${thenRound}`,
+    ];
   } else if (kind === "u1") {
     formula = "displacement";
     unknown = "u";
@@ -297,6 +342,10 @@ function genMotion(difficulty, rng) {
       `Rearrange \`s = ut + ½at²\` to \`u = (s - ½at²) / t\`.\n\n` +
       `\`u = (${num(s)} - ½ × ${num(a)} × ${num(t)}²) / ${num(t)}\` ${result(exact, rounded, unit)}`;
     candidates = [(s - a * t * t) / t, s / t, s - 0.5 * a * t * t]; // forgot the ½, ignored a, forgot to divide by t
+    hints = [
+      "You know s, a and t, so start from `s = ut + ½at²` and rearrange for u: `u = (s - ½at²) / t`.",
+      `Substitute: \`u = (${num(s)} - ½ × ${num(a)} × ${num(t)}²) / ${num(t)}\` (in the calculator: \`(_s - 0.5 * _a * _t^2) / _t\`).`,
+    ];
   } else if (kind === "v2") {
     formula = "vsquared";
     unknown = "v";
@@ -309,6 +358,10 @@ function genMotion(difficulty, rng) {
       `Use \`v² = u² + 2as\`, so \`v = √(u² + 2as)\`.\n\n` +
       `\`v = √(${num(u)}² + 2 × ${num(a)} × ${num(s)}) = √${num(vSq)}\` ${result(exact, rounded, unit)}`;
     candidates = [Math.sqrt(u * u + a * s), Math.sqrt(2 * a * s), vSq]; // forgot the 2, ignored u, forgot the root
+    hints = [
+      `There is no time given, so use \`v² = u² + 2as\`.${rest}`,
+      `Substitute: \`v² = ${num(u)}² + 2 × ${num(a)} × ${num(s)}\`, then take the square root (in the calculator: \`sqrt(${U}^2 + 2 * _a * _s)\`).${thenRound}`,
+    ];
   } else if (kind === "s2") {
     formula = "vsquared";
     unknown = "s";
@@ -320,6 +373,10 @@ function genMotion(difficulty, rng) {
       `Rearrange \`v² = u² + 2as\` to \`s = (v² - u²) / 2a\`.\n\n` +
       `\`s = (${num(v)}² - ${num(u)}²) / (2 × ${num(a)})\` ${result(exact, rounded, unit)}`;
     candidates = [(v * v - u * u) / a, (v * v + u * u) / (2 * a), (v - u) / (2 * a)]; // forgot the 2, sign slip, no squares
+    hints = [
+      `There is no time given, so use \`v² = u² + 2as\` and rearrange for s: \`s = (v² - u²) / 2a\`.${rest}`,
+      `Substitute: \`s = (${num(v)}² - ${num(u)}²) / (2 × ${num(a)})\` (in the calculator: \`(_v^2 - ${U}^2) / (2 * _a)\`).${thenRound}`,
+    ];
   } else {
     formula = "vsquared";
     unknown = "a";
@@ -331,6 +388,10 @@ function genMotion(difficulty, rng) {
       `Rearrange \`v² = u² + 2as\` to \`a = (v² - u²) / 2s\`.\n\n` +
       `\`a = (${num(v)}² - ${num(u)}²) / (2 × ${num(s)})\` ${result(exact, rounded, unit)}`;
     candidates = [(v * v - u * u) / s, (v * v + u * u) / (2 * s), (v - u) / (2 * s)];
+    hints = [
+      `There is no time given, so use \`v² = u² + 2as\` and rearrange for a: \`a = (v² - u²) / 2s\`.${rest}`,
+      `Substitute: \`a = (${num(v)}² - ${num(u)}²) / (2 × ${num(s)})\` (in the calculator: \`(_v^2 - ${U}^2) / (2 * _s)\`).${thenRound}`,
+    ];
   }
 
   const base = {
@@ -339,6 +400,7 @@ function genMotion(difficulty, rng) {
     explanation,
     params: { formula, unknown, values, rounded },
     given: givenFrom(values, u === 0 ? ["u"] : []), // u = 0 is stated as "from rest"
+    hints,
   };
   return finish(base, exact, rounded, candidates, rng);
 }

@@ -184,7 +184,14 @@ function genSimplify(difficulty, rng) {
     [n - k, d - k], // subtracted instead of dividing
     format === "mixed" ? [a + b, b] : [a, b * 2],
   ];
-  return finishFrac(base, a, b, format, format === "mixed" ? NOTE.mixed : NOTE.proper, candidates, rng);
+  const hints = [
+    `Find the greatest common factor (GCF) of ${n} and ${d}: the biggest number that divides into both exactly.`,
+    `The GCF of ${n} and ${d} is ${k}.`,
+    format === "mixed"
+      ? `Divide the top and bottom by ${k} to get the improper fraction \`${a}/${b}\`. Then ask how many whole ${b}s fit into ${a}: that is the whole number, and what is left over goes over ${b}.`
+      : `Divide the top and the bottom by ${k}.`,
+  ];
+  return { ...finishFrac(base, a, b, format, format === "mixed" ? NOTE.mixed : NOTE.proper, candidates, rng), hints };
 }
 
 function genAddSub(difficulty, rng) {
@@ -249,7 +256,19 @@ function genAddSub(difficulty, rng) {
     [-N, D], // sign slip
     [top + 1, L],
   ];
-  return finishFrac(base, N, D, "fraction", note, candidates, rng);
+  const verb = op === "+" ? "add" : "subtract";
+  const hints =
+    b === d
+      ? [
+          `The denominators are both ${b}, so keep ${b} on the bottom and just ${verb} the numerators: \`${a} ${op} ${c}\`.`,
+          `Then check whether the result over ${b} can be simplified (does any number divide both top and bottom?).`,
+        ]
+      : [
+          `You can only ${verb} fractions with the same denominator. Find the lowest common denominator of ${b} and ${d}: the smallest number both divide into.`,
+          `The lowest common denominator is ${L}. Rewrite both fractions over ${L}: \`${a}/${b} = ${(a * L) / b}/${L}\` and \`${c}/${d} = ${(c * L) / d}/${L}\`.`,
+          `Now ${verb} the numerators, \`${(a * L) / b} ${op} ${(c * L) / d}\`${a < 0 ? " (watch the minus signs)" : ""}, keep ${L} on the bottom, and simplify if you can.`,
+        ];
+  return { ...finishFrac(base, N, D, "fraction", note, candidates, rng), hints };
 }
 
 function genMulDiv(difficulty, rng) {
@@ -327,7 +346,22 @@ function genMulDiv(difficulty, rng) {
           [a * c, b * d * 2],
           [N + D, D],
         ];
-  return finishFrac(base, N, D, format, note, candidates, rng);
+  const hints = [];
+  if (mixedOps) {
+    const parts = [];
+    if (a > b) parts.push(`\`${showOp(a, b, true)} = ${a}/${b}\``);
+    if (c > d) parts.push(`\`${showOp(c, d, true)} = ${c}/${d}\``);
+    hints.push(`Turn mixed numbers into improper fractions first (whole × bottom + top): ${parts.join(" and ")}.`);
+  }
+  if (op === "÷") hints.push(`Dividing by \`${c}/${d}\` is the same as multiplying by its reciprocal (flip it): work out \`${a}/${b} × ${d}/${c}\`.`);
+  else hints.push(`Multiply the tops together and the bottoms together: \`${a} × ${c}\` over \`${b} × ${d}\`.`);
+  const g = gcd(N, D);
+  hints.push(
+    g > 1
+      ? `That gives \`${N}/${D}\`. Simplify it: the greatest common factor of ${N} and ${D} is ${g}.${format === "mixed" ? " Then turn the result into a mixed number." : ""}`
+      : `Work out both products. They share no common factor, so that fraction is already in simplest form${format === "mixed" ? "; then turn it into a mixed number" : ""}.`
+  );
+  return { ...finishFrac(base, N, D, format, note, candidates, rng), hints };
 }
 
 // Exact decimal text for n/d when d divides a power of 10 (up to 4 places).
@@ -384,7 +418,15 @@ function genCompare(difficulty, rng) {
             `Turn each fraction into a decimal: ${fracs.map(([n, d]) => `\`${n}/${d} ≈ ${(n / d).toFixed(4)}\``).join(", ")}.`,
             `The ${want} is **${answer}**.`,
           ].join("\n\n");
+    const hints = [
+      `To compare fractions, put them all over the same denominator (or turn each one into a decimal).`,
+      L <= 120
+        ? `A common denominator for ${[...new Set(fracs.map(([, d]) => d))].join(", ")} is ${L}. Multiply each top by ${L} ÷ its bottom.`
+        : `The common denominator would be large (${L}), so divide each top by its bottom instead, to 3 decimal places.`,
+      `Compare the new numerators (or decimals): the ${want} one wins.${difficulty === "hard" ? " Any fraction with a top bigger than its bottom is more than 1." : ""}`,
+    ];
     return {
+      hints,
       prompt: `Which of these fractions is the ${want}?`,
       answer,
       answerType: "choice",
@@ -447,7 +489,17 @@ function genCompare(difficulty, rng) {
       [n + 1, d],
       [n, d + 1],
     ];
-    return finishFrac(base, n, d, "fraction", NOTE.proper, candidates, rng);
+    const gk = gcd(given.k, given.scale);
+    const hints = [
+      asPercent
+        ? `A percent is "out of 100": \`${shown} = ${scaleTop}/100\`.` +
+          (given.scale !== 100 ? ` Clear the decimal by multiplying top and bottom by ${given.scale / 100}: \`${given.k}/${given.scale}\`.` : "")
+        : `${shown} has ${places} decimal place${places === 1 ? "" : "s"}, so it is a number of ${given.scale}ths: put the digits after the point (${given.k}) over ${given.scale}.`,
+      gk > 1
+        ? `Now simplify: the greatest common factor of ${given.k} and ${given.scale} is ${gk}. Divide the top and bottom by it.`
+        : `Check whether ${given.k} and ${given.scale} share a factor bigger than 1; if not, it is already in simplest form.`,
+    ];
+    return { ...finishFrac(base, n, d, "fraction", NOTE.proper, candidates, rng), hints };
   }
 
   // to-decimal / to-percent: number answers.
@@ -484,6 +536,7 @@ function genCompare(difficulty, rng) {
     explanation,
     params: { kind, values: { n, d }, rounded },
   };
+  base.hints = decimalHints(n, d, pct, rounded);
   if (rng.next() < 0.35) {
     const candidates = pct
       ? [n / d, (100 * d) / n, (10 * n) / d, 100 - exact] // forgot ×100, flipped, ×10, complement
@@ -492,6 +545,32 @@ function genCompare(difficulty, rng) {
     return { ...base, answer, answerType: "choice", choices };
   }
   return { ...base, answer: rounded ? round2(exact) : exact, answerType: "number", choices: undefined };
+}
+
+// Hints for fraction -> decimal / percent, by short division; stops before the final digits.
+function decimalHints(n, d, pct, rounded) {
+  const top = pct ? 100 * n : n;
+  const hints = [pct ? `To make a percent, multiply by 100: work out \`${100 * n} ÷ ${d}\`.` : `A fraction is a division: work out \`${n} ÷ ${d}\`.`];
+  if (!rounded) {
+    const m = 100 % d === 0;
+    hints.push(
+      pct
+        ? `Easier: make the bottom 100. Multiply the top and the bottom by 100 ÷ ${d}; the new top is the percent.`
+        : m
+        ? `Easier: make the bottom 10 or 100. Multiply the top and the bottom by ${d === 2 || d === 5 || d === 10 ? `10 ÷ ${d}` : `100 ÷ ${d}`}, then read it off as tenths or hundredths.`
+        : `Use short division, adding zeros after the decimal point.`
+    );
+    return hints;
+  }
+  const W = Math.floor(top / d);
+  const R = top - W * d;
+  if (R === 0) {
+    hints.push(`${d} goes into ${top} exactly, with no remainder.`);
+    return hints;
+  }
+  hints.push(`${d} goes into ${top} ${W} time${W === 1 ? "" : "s"} with remainder ${R}, so the whole-number part is ${W}.`);
+  hints.push(`Bring down zeros: \`${10 * R} ÷ ${d}\` gives the first decimal digit. Work out 3 decimal places, then round to 2.`);
+  return hints;
 }
 
 export function generate({ subtopic, difficulty, rng }) {

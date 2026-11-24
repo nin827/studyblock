@@ -158,6 +158,23 @@ function final(exact, o, unit) {
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // ---------------------------------------------------------------------------------------------
+// Guided-mode hints. Built only from values already drawn (never calls rng).
+
+// " (in the calculator: `_n * _M`)" when every label in expr is one of the question's given rows
+// (the same rule as withGiven), otherwise "".
+function calcFor(prompt, explanation) {
+  const have = new Set(promptNumbers(prompt).length >= 2 ? givenFrom(prompt, explanation).map((g) => g.label) : []);
+  return (expr) => {
+    const labels = expr.match(/_[A-Za-z0-9_]+/g) || [];
+    return labels.length && labels.every((l) => have.has(l)) ? ` (in the calculator: \`${expr}\`)` : "";
+  };
+}
+
+// "2*1 + 16" -> "2 × 1 + 16"
+const times = (e) => e.replace(/\*/g, " × ");
+const roundHint = (o) => (o && o.rounded ? ` Then${roundNote(o.dp).replace(" Round", " round")}` : "");
+
+// ---------------------------------------------------------------------------------------------
 // Chemistry data
 
 // Rounded relative atomic masses (the values used in most school data sheets).
@@ -265,7 +282,9 @@ function genMoles(d, rng) {
   const mLine = d === "easy" ? given("_M", M, "g/mol") : step("_M", massExpr(f), `${num(M)} g/mol`);
   const mIntro = d === "easy" ? "" : ` First add up the molar mass of ${P} from the atomic masses.`;
   const mGiven = d === "easy" ? `The molar mass of ${what} is ${num(M)} g/mol.` : `Use ${massNote([f])}.`;
-  let kind, prompt, exact, unit, intro, lines, candidates, values, o;
+  let kind, prompt, exact, unit, intro, lines, candidates, values, o, hintFn;
+  // Hint line for the molar mass when the prompt only gives atomic masses.
+  const mHint = `Molar mass of ${P}: \`${times(massExpr(f))}\` = ${num(M)} g/mol.`;
 
   if (d === "easy" || d === "medium") {
     kind = rng.pick(d === "easy" ? ["n", "m", "M"] : ["n", "m", "atoms"]);
@@ -282,6 +301,11 @@ function genMoles(d, rng) {
       intro = `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit (${k}).${mIntro}`;
       lines = [given("_mass", m, "g"), mLine, step("_n", "_mass / _M", `${num(n)} mol`), step("_n_" + el, `_n * ${k}`, final(exact, o, unit))];
       candidates = [n, n * k * 2, m / A[el], (m * k) / A[el], n / k];
+      hintFn = () => [
+        `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit.`,
+        mHint,
+        `One formula unit of ${P} has ${k} ${el} atom${k === 1 ? "" : "s"}, so work out \`(${num(m)} / ${num(M)}) × ${k}\`.`,
+      ];
     } else if (kind === "n") {
       exact = n;
       unit = "mol";
@@ -290,6 +314,11 @@ function genMoles(d, rng) {
       intro = `Use \`n = m / M\` (moles = mass ÷ molar mass).${mIntro}`;
       lines = [given("_mass", m, "g"), mLine, step("_n", "_mass / _M", final(exact, o, unit))];
       candidates = [m * M, M / m, n * 10, n / 10];
+      hintFn = (calc) => [
+        "Use `n = m / M` (moles = mass ÷ molar mass).",
+        ...(d === "easy" ? [] : [mHint]),
+        `Substitute: \`n = ${num(m)} / ${num(M)}\`${calc("_mass / _M")}.`,
+      ];
     } else if (kind === "m") {
       exact = m;
       unit = "g";
@@ -298,6 +327,11 @@ function genMoles(d, rng) {
       intro = `Rearrange \`n = m / M\` to \`m = n × M\`.${mIntro}`;
       lines = [given("_n", n, "mol"), mLine, step("_mass", "_n * _M", final(exact, o, unit))];
       candidates = [M / n, n / M, M, m * 2];
+      hintFn = (calc) => [
+        "Rearrange `n = m / M` to `m = n × M` (mass = moles × molar mass).",
+        ...(d === "easy" ? [] : n === 1 ? [`Molar mass of ${P}: add up \`${times(massExpr(f))}\`.`] : [mHint]),
+        `Substitute: \`m = ${num(n)} × ${d === "easy" || n !== 1 ? num(M) : `(${times(massExpr(f))})`}\`${calc("_n * _M")}.`,
+      ];
     } else {
       exact = M;
       unit = "g/mol";
@@ -306,6 +340,10 @@ function genMoles(d, rng) {
       intro = "Rearrange `n = m / M` to `M = m / n`.";
       lines = [given("_mass", m, "g"), given("_n", n, "mol"), step("_M", "_mass / _n", final(exact, o, unit))];
       candidates = [m * n, n / m, m];
+      hintFn = (calc) => [
+        "Rearrange `n = m / M` to `M = m / n` (molar mass = mass ÷ moles).",
+        `Substitute: \`M = ${num(m)} / ${num(n)}\`${calc("_mass / _n")}.`,
+      ];
     }
   } else {
     kind = rng.pick(["n", "m", "particles", "atoms"]);
@@ -319,6 +357,11 @@ function genMoles(d, rng) {
       intro = "Add up the molar mass, then use `m = n × M`.";
       lines = [given("_n", n, "mol"), step("_M", massExpr(f), `${num(M)} g/mol`), step("_mass", "_n * _M", final(exact, o, unit))];
       candidates = [M / n, n / M, n * (M - 1), M];
+      hintFn = (calc) => [
+        "Add up the molar mass from the atomic masses, then use `m = n × M`.",
+        n === 1 ? `Molar mass of ${P}: add up \`${times(massExpr(f))}\`.` : mHint,
+        `Substitute: \`m = ${num(n)} × ${n === 1 ? `(${times(massExpr(f))})` : num(M)}\`${calc("_n * _M")}.${roundHint(o)}`,
+      ];
     } else {
       // A mass with 1 decimal giving roughly 0.05–8 mol.
       const m = roundTo((rng.int(50, 8000) / 1000) * M, 1);
@@ -335,6 +378,11 @@ function genMoles(d, rng) {
         intro = "Add up the molar mass, then use `n = m / M`.";
         lines = [...mLines, step("_n", "_mass / _M", final(exact, o, unit))];
         candidates = [m * M, M / m, n * 10, m / (M + 1)];
+        hintFn = (calc) => [
+          "Add up the molar mass from the atomic masses, then use `n = m / M`.",
+          mHint,
+          `Substitute: \`n = ${num(m)} / ${num(M)}\`${calc("_mass / _M")}.${roundHint(o)}`,
+        ];
       } else if (kind === "particles") {
         o = { dp: 2, rounded: true };
         exact = n * L_AVO;
@@ -346,6 +394,11 @@ function genMoles(d, rng) {
         intro = "Find the moles with `n = m / M`, then multiply by the Avogadro constant (6.02 × 10²³ per mol). Working in units of 10²³ keeps the numbers small.";
         lines = [...mLines, nLine, given("_L", L_AVO, "× 10²³ per mol"), step("_particles", "_n * _L", final(exact, o, unit))];
         candidates = [L_AVO / n, m * L_AVO, n * L_AVO * 10, (n * L_AVO) / 10];
+        hintFn = () => [
+          "Find the moles with `n = m / M`, then multiply by the Avogadro constant. Working in units of 10²³, that means multiplying by 6.02.",
+          mHint,
+          `Work out \`(${num(m)} / ${num(M)}) × 6.02\`, which gives the number in units of 10²³.${roundHint(o)}`,
+        ];
       } else {
         const el = rng.pick(Object.keys(counts));
         const k = counts[el];
@@ -357,11 +410,17 @@ function genMoles(d, rng) {
         intro = `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit (${k}).`;
         lines = [...mLines, nLine, step("_n_" + el, `_n * ${k}`, final(exact, o, unit))];
         candidates = [n, m / A[el], (m * k) / A[el], n / k, n * k * 2];
+        hintFn = () => [
+          `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit.`,
+          mHint,
+          `One formula unit of ${P} has ${k} ${el} atom${k === 1 ? "" : "s"}, so work out \`(${num(m)} / ${num(M)}) × ${k}\`.${roundHint(o)}`,
+        ];
       }
     }
   }
 
   const base = { prompt, explanation: explain(intro, lines), params: { kind: `moles-${kind}`, values } };
+  base.hints = hintFn(calcFor(base.prompt, base.explanation));
   return finish(base, exact, o, candidates, rng);
 }
 
@@ -377,7 +436,8 @@ function genConcentration(d, rng) {
   checkDifficulty(d);
   const [name, f] = rng.pick(SOLUTES);
   const what = `${name} (${pretty(f)})`;
-  let kind, prompt, exact, unit, intro, lines, candidates, values, o;
+  let kind, prompt, exact, unit, intro, lines, candidates, values, o, hintFn;
+  const P = pretty(f);
 
   if (d === "easy") {
     kind = rng.pick(["c", "n", "V"]);
@@ -393,6 +453,10 @@ function genConcentration(d, rng) {
       intro = "Use `c = n / V` (concentration = moles ÷ volume in dm³).";
       lines = [given("_n", n, "mol"), given("_V", V, "dm³"), step("_c", "_n / _V", final(exact, o, unit))];
       candidates = [n * V, V / n, n];
+      hintFn = (calc) => [
+        "Use `c = n / V` (concentration = moles ÷ volume in dm³).",
+        `Substitute: \`c = ${num(n)} / ${num(V)}\`${calc("_n / _V")}.`,
+      ];
     } else if (kind === "n") {
       exact = n;
       unit = "mol";
@@ -401,6 +465,10 @@ function genConcentration(d, rng) {
       intro = "Rearrange `c = n / V` to `n = c × V`.";
       lines = [given("_c", c, "mol/dm³"), given("_V", V, "dm³"), step("_n", "_c * _V", final(exact, o, unit))];
       candidates = [c / V, V / c, c + V];
+      hintFn = (calc) => [
+        "Rearrange `c = n / V` to `n = c × V` (moles = concentration × volume in dm³).",
+        `Substitute: \`n = ${num(c)} × ${num(V)}\`${calc("_c * _V")}.`,
+      ];
     } else {
       exact = V;
       unit = "dm³";
@@ -409,6 +477,10 @@ function genConcentration(d, rng) {
       intro = "Rearrange `c = n / V` to `V = n / c`.";
       lines = [given("_n", n, "mol"), given("_c", c, "mol/dm³"), step("_V", "_n / _c", final(exact, o, unit))];
       candidates = [n * c, c / n, V * 1000];
+      hintFn = (calc) => [
+        "Rearrange `c = n / V` to `V = n / c` (volume = moles ÷ concentration).",
+        `Substitute: \`V = ${num(n)} / ${num(c)}\`${calc("_n / _c")}.`,
+      ];
     }
   } else if (d === "medium") {
     kind = rng.pick(["c-cm3", "n-cm3", "V-cm3", "dil-c2", "dil-V2", "dil-V1"]);
@@ -428,6 +500,10 @@ function genConcentration(d, rng) {
         prompt = `${num(V1)} cm³ of a ${num(c1)} mol/dm³ solution of ${what} is diluted with water to a total volume of ${num(V2)} cm³. What is the new concentration, in mol/dm³?${EXACT}`;
         lines = [given("_c1", c1), given("_V1", V1, "cm³"), given("_V2", V2, "cm³"), step("_c2", "_c1 * _V1 / _V2", final(exact, o, unit))];
         candidates = [(c1 * V2) / V1, c1 - c2, (c1 * V1) / (V2 - V1), c1 / 2];
+        hintFn = (calc) => [
+          "Diluting keeps the moles the same, so `c1 × V1 = c2 × V2`. Both volumes can stay in cm³.",
+          `Rearrange for the new concentration and substitute: \`c2 = ${num(c1)} × ${num(V1)} / ${num(V2)}\`${calc("_c1 * _V1 / _V2")}.`,
+        ];
       } else if (kind === "dil-V2") {
         exact = V2;
         unit = "cm³";
@@ -435,6 +511,10 @@ function genConcentration(d, rng) {
         prompt = `${num(V1)} cm³ of a ${num(c1)} mol/dm³ solution of ${what} is diluted to ${num(c2)} mol/dm³. What is the final total volume, in cm³?${EXACT}`;
         lines = [given("_c1", c1), given("_V1", V1, "cm³"), given("_c2", c2), step("_V2", "_c1 * _V1 / _c2", final(exact, o, unit))];
         candidates = [V2 - V1, (c2 * V1) / c1, V2 / 1000, V1 * 2];
+        hintFn = (calc) => [
+          "Diluting keeps the moles the same, so `c1 × V1 = c2 × V2`. Both volumes can stay in cm³.",
+          `Rearrange for the final volume and substitute: \`V2 = ${num(c1)} × ${num(V1)} / ${num(c2)}\`${calc("_c1 * _V1 / _c2")}.`,
+        ];
       } else {
         exact = V1;
         unit = "cm³";
@@ -442,6 +522,10 @@ function genConcentration(d, rng) {
         prompt = `What volume of a ${num(c1)} mol/dm³ stock solution of ${what} is needed to make ${num(V2)} cm³ of a ${num(c2)} mol/dm³ solution, in cm³?${EXACT}`;
         lines = [given("_c1", c1), given("_c2", c2), given("_V2", V2, "cm³"), step("_V1", "_c2 * _V2 / _c1", final(exact, o, unit))];
         candidates = [(c1 * V2) / c2, V2 - V1, V1 / 1000, V1 * 2];
+        hintFn = (calc) => [
+          "The moles you take from the stock end up in the new solution, so `c1 × V1 = c2 × V2`. Both volumes can stay in cm³.",
+          `Rearrange for the stock volume and substitute: \`V1 = ${num(c2)} × ${num(V2)} / ${num(c1)}\`${calc("_c2 * _V2 / _c1")}.`,
+        ];
       }
     } else {
       const c = rng.pick(NICE_C);
@@ -456,6 +540,10 @@ function genConcentration(d, rng) {
         intro = `Convert the volume to dm³, then use \`c = n / V\`. ${CONV}`;
         lines = [given("_n", n, "mol"), given("_V_cm3", Vc), step("_V", `_V_cm3 / 1000`, `${num(Vc / 1000)} dm³`), step("_c", "_n / _V", final(exact, o, unit))];
         candidates = [n / Vc, n * Vc, c * 1000, c / 10];
+        hintFn = (calc) => [
+          `Convert the volume to dm³ first: ${num(Vc)} cm³ ÷ 1000. Then use \`c = n / V\`.`,
+          `Substitute: \`c = ${num(n)} / (${num(Vc)} / 1000)\`${calc("_n / (_V_cm3 / 1000)")}.`,
+        ];
       } else if (kind === "n-cm3") {
         exact = n;
         unit = "mol";
@@ -464,6 +552,10 @@ function genConcentration(d, rng) {
         intro = `Convert the volume to dm³, then use \`n = c × V\`. ${CONV}`;
         lines = [given("_c", c, "mol/dm³"), given("_V_cm3", Vc), step("_V", `_V_cm3 / 1000`, `${num(Vc / 1000)} dm³`), step("_n", "_c * _V", final(exact, o, unit))];
         candidates = [c * Vc, c / Vc, n * 10, n / 10];
+        hintFn = (calc) => [
+          `Convert the volume to dm³ first: ${num(Vc)} cm³ ÷ 1000. Then use \`n = c × V\`.`,
+          `Substitute: \`n = ${num(c)} × (${num(Vc)} / 1000)\`${calc("_c * _V_cm3 / 1000")}.`,
+        ];
       } else {
         exact = Vc;
         unit = "cm³";
@@ -472,6 +564,10 @@ function genConcentration(d, rng) {
         intro = `Use \`V = n / c\` to get dm³, then multiply by 1000 for cm³. ${CONV}`;
         lines = [given("_n", n, "mol"), given("_c", c, "mol/dm³"), step("_V_dm3", "_n / _c", `${num(n / c)} dm³`), step("_V", "_V_dm3 * 1000", final(exact, o, unit))];
         candidates = [Vc / 1000, n * c * 1000, Vc * 10, Vc / 10];
+        hintFn = (calc) => [
+          "`V = n / c` gives the volume in dm³. The question wants cm³, so multiply by 1000 at the end.",
+          `Substitute: \`V = ${num(n)} / ${num(c)}\` in dm³${calc("_n / _c")}, then convert to cm³.`,
+        ];
       }
     }
   } else {
@@ -491,6 +587,11 @@ function genConcentration(d, rng) {
         intro = `Find the moles with \`n = m / M\`, convert the volume to dm³, then use \`c = n / V\`. ${CONV}`;
         lines = [given("_mass", m, "g"), Mline, step("_n", "_mass / _M", `${num4(m / M)} mol`), given("_V_cm3", Vc), step("_V", `_V_cm3 / 1000`, `${num(Vc / 1000)} dm³`), step("_c", "_n / _V", final(exact, o, unit))];
         candidates = [m / M / Vc, m / (Vc / 1000), exact * 10, (m * M) / (Vc / 1000)];
+        hintFn = () => [
+          "Find the moles with `n = m / M`, convert the volume to dm³ (÷ 1000), then use `c = n / V`.",
+          `Molar mass of ${P}: \`${times(massExpr(f))}\` = ${num(M)} g/mol, so \`n = ${num(m)} / ${num(M)}\`.`,
+          `Volume: ${num(Vc)} cm³ = ${num(Vc / 1000)} dm³, so work out \`c = (${num(m)} / ${num(M)}) / ${num(Vc / 1000)}\`.${roundHint(o)}`,
+        ];
       } else {
         const c = rng.int(5, 200) / 100;
         o = { dp: 2, rounded: true };
@@ -501,6 +602,11 @@ function genConcentration(d, rng) {
         intro = `Find the moles needed with \`n = c × V\` (V in dm³), then the mass with \`m = n × M\`. ${CONV}`;
         lines = [given("_c", c, "mol/dm³"), given("_V_cm3", Vc), step("_V", `_V_cm3 / 1000`, `${num(Vc / 1000)} dm³`), step("_n", "_c * _V", `${num4(c * Vc / 1000)} mol`), Mline, step("_mass", "_n * _M", final(exact, o, unit))];
         candidates = [c * Vc * M, (c * Vc) / 1000, (c * (Vc / 1000)) / M, exact * 10];
+        hintFn = () => [
+          "Find the moles needed with `n = c × V` (V in dm³), then the mass with `m = n × M`.",
+          `Volume: ${num(Vc)} cm³ = ${num(Vc / 1000)} dm³. Molar mass of ${P}: \`${times(massExpr(f))}\` = ${num(M)} g/mol.`,
+          `Work out \`m = ${num(c)} × ${num(Vc / 1000)} × ${num(M)}\`.${roundHint(o)}`,
+        ];
       }
     } else if (kind === "water-add") {
       const c1 = rng.int(20, 200) / 100;
@@ -516,6 +622,11 @@ function genConcentration(d, rng) {
       intro = "The moles stay the same, so `c1 × V1 = c2 × V2` gives the final volume. The water to add is the final volume minus the starting volume.";
       lines = [given("_c1", c1), given("_V1", V1, "cm³"), given("_c2", c2), step("_V2", "_c1 * _V1 / _c2", `${num4(V2)} cm³`), step("_water", "_V2 - _V1", final(exact, o, unit))];
       candidates = [V2, (c2 * V1) / c1, V1 * (c1 - c2), exact / 1000];
+      hintFn = (calc) => [
+          "The moles stay the same, so `c1 × V1 = c2 × V2` gives the final volume. The water to add is the final volume minus the volume you started with.",
+          `Final volume: \`V2 = ${num(c1)} × ${num(V1)} / ${num(c2)}\`${calc("_c1 * _V1 / _c2")}.`,
+          `Water to add: \`V2 - ${num(V1)}\`.${roundHint(o)}`,
+        ];
     } else {
       const c1 = rng.int(10, 300) / 100;
       const V1 = rng.int(2, 100) * 5;
@@ -528,10 +639,15 @@ function genConcentration(d, rng) {
       intro = "The moles stay the same, so `c1 × V1 = c2 × V2` and `c2 = c1 × V1 / V2`.";
       lines = [given("_c1", c1), given("_V1", V1, "cm³"), given("_V2", V2, "cm³"), step("_c2", "_c1 * _V1 / _V2", final(exact, o, unit))];
       candidates = [(c1 * V2) / V1, (c1 * V1) / (V2 - V1), c1 - exact, c1 / 2];
+      hintFn = (calc) => [
+          "Diluting keeps the moles the same, so `c1 × V1 = c2 × V2`. Both volumes can stay in cm³.",
+          `Rearrange for the new concentration: \`c2 = ${num(c1)} × ${num(V1)} / ${num(V2)}\`${calc("_c1 * _V1 / _V2")}.${roundHint(o)}`,
+        ];
     }
   }
 
   const base = { prompt, explanation: explain(intro, lines), params: { kind: `conc-${kind}`, values } };
+  base.hints = hintFn(calcFor(base.prompt, base.explanation));
   return finish(base, exact, o, candidates, rng);
 }
 
@@ -699,6 +815,12 @@ function genBalancing(d, rng) {
     prompt,
     explanation: explain(intro, lines, outro),
     params: { kind: "balance", values: { equation: text, miss } },
+    hints: [
+      `Pick one element that is in the missing species and count its atoms on both sides. ${pretty(terms[miss].f)} contains **${el}**, so count ${el}.`,
+      `${el} atoms on the other side: \`${times(exprFor(other, null))}\` = ${otherTotal}. ` +
+        `${el} atoms already on the same side (without the missing term): ${sameKnown === 0 ? "none" : `\`${times(exprFor(same, terms[miss]))}\` = ${sameKnown}`}.`,
+      `Each ${pretty(terms[miss].f)} has ${k} ${el} atom${k === 1 ? "" : "s"}, so solve \`? × ${k}${sameKnown ? ` + ${sameKnown}` : ""} = ${otherTotal}\`.`,
+    ],
   };
   return finish(base, x, o, candidates, rng);
 }
@@ -812,7 +934,10 @@ function genComposition(d, rng) {
     const Mline = step("_M", massExpr(f), `${num(M)} g/mol`);
     const elLine = step(`_${el}_mass`, k === 1 ? `${A[el]}` : `${k}*${A[el]}`, `${num(k * A[el])} g of ${el} per mole`);
     const atoms = Object.values(counts).reduce((s, c) => s + c, 0);
-    let prompt, exact, unit, intro, lines, candidates, values, o;
+    let prompt, exact, unit, intro, lines, candidates, values, o, hintFn;
+    const elMass = num(k * A[el]);
+    const massHint = `Molar mass of ${pretty(f)}: \`${times(massExpr(f))}\` = ${num(M)} g/mol. ` +
+      `Mass of ${el} in one formula unit: ${k === 1 ? `${elMass} g` : `\`${k} × ${A[el]}\` = ${elMass} g`}.`;
     if (kind === "percent") {
       o = { dp: 1, rounded: true };
       exact = (100 * k * A[el]) / M;
@@ -830,6 +955,11 @@ function genComposition(d, rng) {
         step("_pct", `_${el}_mass / _M * 100`, final(exact, o, unit)),
       ];
       candidates = [(100 * A[el]) / M, (100 * k) / atoms, 100 - exact, (100 * k * A[el]) / (M - k * A[el])];
+      hintFn = (calc) => [
+        `Percentage by mass = (mass of ${el} in one formula unit ÷ molar mass) × 100.`,
+        massHint,
+        `Substitute: \`${elMass} / ${num(M)} × 100\`${calc(`${term(el)} / (${els.map(term).join(" + ")}) * 100`)}.${roundHint(o)}`,
+      ];
     } else if (kind === "mass-el") {
       const m = rng.int(10, 500) / 10;
       o = { dp: 2, rounded: true };
@@ -840,6 +970,11 @@ function genComposition(d, rng) {
       intro = `The fraction of the mass that is ${el} is (mass of ${el} per formula unit) ÷ (molar mass). Multiply the sample mass by that fraction.`;
       lines = [given("_mass", m, "g"), Mline, elLine, step(`_m_${el}`, `_mass * _${el}_mass / _M`, final(exact, o, unit))];
       candidates = [(m * A[el]) / M, m - exact, (m * M) / (k * A[el]), (m * k) / atoms];
+      hintFn = () => [
+        `Find what fraction of the mass is ${el}: (mass of ${el} per formula unit) ÷ (molar mass). Then multiply the sample mass by it.`,
+        massHint,
+        `Work out \`${num(m)} × ${elMass} / ${num(M)}\`.${roundHint(o)}`,
+      ];
     } else {
       const mel = rng.int(10, 300) / 10;
       o = { dp: 2, rounded: true };
@@ -850,8 +985,14 @@ function genComposition(d, rng) {
       intro = `Only part of each formula unit's mass is ${el}. Divide the mass of ${el} by that fraction (mass of ${el} per formula unit ÷ molar mass).`;
       lines = [given(`_m_${el}`, mel, "g"), Mline, elLine, step("_mass", `_m_${el} * _M / _${el}_mass`, final(exact, o, unit))];
       candidates = [(mel * k * A[el]) / M, (mel * M) / A[el], mel + M, (mel * M) / (k * A[el] * 10)];
+      hintFn = () => [
+        `Only part of the compound's mass is ${el}. Divide the mass of ${el} by that fraction, (mass of ${el} per formula unit) ÷ (molar mass).`,
+        massHint,
+        `Work out \`${num(mel)} × ${num(M)} / ${elMass}\`.${roundHint(o)}`,
+      ];
     }
     const base = { prompt, explanation: explain(intro, lines), params: { kind: `comp-${kind}`, values } };
+    base.hints = hintFn(calcFor(base.prompt, base.explanation));
     return finish(base, exact, o, candidates, rng);
   }
 
@@ -876,6 +1017,11 @@ function genComposition(d, rng) {
       explanation: explain(intro, lines, outro),
       params: { kind: "comp-molecular", values: { emp, Mm } },
       askNumber: (el) => `How many ${EL_NAME[el]} atoms (${el}) are in one molecule?`,
+      hints: [
+        "Find how many empirical-formula units fit into the molar mass, then multiply every subscript by that number.",
+        `Empirical formula mass of ${pretty(emp)}: \`${times(massExpr(emp))}\` = ${num(Me)} g/mol.`,
+        `Number of units: \`${num(Mm)} / ${num(Me)}\`. Multiply each subscript in ${pretty(emp)} by that whole number.`,
+      ],
     };
     const formulaCands = [mult(n + 1), ce, mult(n * 2), mult(n + 2), Object.fromEntries(order.map((el, i) => [el, cm[order[(i + 1) % order.length]]]))];
     const numberCands = [ce[askEl], n, cm[askEl] + n, cm[askEl] * 2, Math.round(Mm / A[askEl])];
@@ -926,6 +1072,11 @@ function genComposition(d, rng) {
     explanation: explain(intro, lines, outro),
     params: { kind: "comp-empirical", values: { data, order } },
     askNumber: (el) => `What is the subscript of ${el} in the empirical formula? (Write 1 if ${el} has no subscript.)`,
+    hints: [
+      `${useMass ? "" : "Treat the percentages as grams in a 100 g sample. "}Divide each mass by its atomic mass to get moles, then divide every result by the smallest.`,
+      `Moles: ${order.map((el) => `${el} \`${num(data[el])} / ${A[el]}\` ≈ ${num4(data[el] / A[el])}`).join("; ")}.`,
+      `Divide each by the smallest (${minEl}, ≈ ${num4(data[minEl] / A[minEl])} mol). If a ratio comes out near .5, .33 or .25, multiply them all by 2, 3 or 4 to get whole numbers.`,
+    ],
   };
   const swapped = Object.fromEntries(order.map((el, i) => [el, ce[order[order.length - 1 - i]]]));
   const unscaled = Object.fromEntries(order.map((el) => [el, Math.max(1, Math.round(sr.ratio[el]))]));

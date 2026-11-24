@@ -63,7 +63,7 @@ const slope = (u) => (u === "F" ? 5 / 9 : U[u].temp ? 1 : U[u].base);
 // Chain steps: each turns the previous row into a new unit.
 const mul = (to, k) => ({ to, expr: (fv) => `${fv} * ${k}`, fn: (x) => x * k });
 const div = (to, k) => ({ to, expr: (fv) => `${fv} / ${k}`, fn: (x) => x / k });
-const same = (to) => ({ to, expr: (fv) => fv, fn: (x) => x });
+const same = (to) => ({ to, expr: (fv) => fv, fn: (x) => x, same: true });
 const C2F = { to: "F", expr: (fv) => `${fv} * 9 / 5 + 32`, fn: (x) => (x * 9) / 5 + 32 };
 const F2C = { to: "C", expr: (fv) => `(${fv} - 32) * 5 / 9`, fn: (x) => ((x - 32) * 5) / 9 };
 const C2K = { to: "K", expr: (fv) => `${fv} + 273.15`, fn: (x) => x + 273.15 };
@@ -115,6 +115,37 @@ function finish(base, exact, fmt, candidates, rng) {
   return { ...q, answer: fmt === "2dp" ? round2(exact) : clean(exact), answerType: "number", choices: undefined };
 }
 
+// Guided-mode hints. A calculator expression with this question's numbers, shown with × for "*".
+const shownExpr = (e) => e.replace(/ \* /g, " × ");
+const ROUND_NOTE = " Then round to 2 decimal places.";
+// Unit names that read better spelled out in a sentence ("to get inches", not "to get in").
+const LONG = { in: "inches", ft: "feet", s: "seconds", min: "minutes", h: "hours" };
+const longName = (u) => LONG[u] || U[u].name;
+
+// Hints for a conversion chain: the method, then each step with the real numbers, stopping before the
+// last result. Trailing "same number" steps (mL -> cm³) are left out, since they would repeat it.
+function chainHints(value, chain, fmt, intro) {
+  let end = chain.length;
+  while (end > 0 && chain[end - 1].same) end--;
+  if (end === 0) return [intro];
+  const tail = chain.slice(end).map((st) => U[st.to].name);
+  const steps = [];
+  let cur = value;
+  for (let i = 0; i < end; i++) {
+    const st = chain[i];
+    const e = `\`${shownExpr(st.expr(show(cur)))}\``;
+    const unit = U[st.to].name;
+    if (i < end - 1) {
+      steps.push(`Step ${i + 1}: ${e} = ${show(st.fn(cur))} ${unit}.`);
+    } else {
+      const also = tail.length ? `, and that is the same number of ${tail[tail.length - 1]}` : "";
+      steps.push(`${end > 1 ? `Step ${i + 1}: work out ` : "Work out "}${e} to get the value in ${longName(st.to)}${also}.${fmt === "2dp" ? ROUND_NOTE : ""}`);
+    }
+    cur = st.fn(cur);
+  }
+  return [intro, steps.join(" ")];
+}
+
 // A plain "convert value from one unit to another" question built from a chain of steps.
 function convertQ(rng, { value, from, chain, fmt, prompt, intro, candidates }) {
   let cur = value;
@@ -133,6 +164,7 @@ function convertQ(rng, { value, from, chain, fmt, prompt, intro, candidates }) {
     prompt: (prompt.endsWith(".") ? prompt : `${prompt}.`) + (fmt === "2dp" ? DP2 : EXACT),
     explanation: `${intro}\n\n${lines.join("\n")}`,
     params: { kind: "convert", value, from, to, fmt },
+    hints: chainHints(value, chain, fmt, intro),
   };
   return finish(base, cur, fmt, candidates, rng);
 }
@@ -249,6 +281,25 @@ function genLength(difficulty, rng) {
 // ---------------------------------------------------------------------------------------------
 // Mass and volume
 
+// Hints for a mixed-unit sum: the method, each part converted to the target unit, then the sum to do.
+function sumHints(parts, to, fmt, intro, expr) {
+  const name = U[to].name;
+  const convLines = [];
+  const terms = parts.map(([v, u]) => {
+    if (u === to || U[u].base === U[to].base) return show(v);
+    const r = U[u].base / U[to].base;
+    const e = r >= 1 ? `${show(v)} × ${show(r)}` : `${show(v)} / ${show(1 / r)}`;
+    const out = toBase(v, u) / U[to].base;
+    convLines.push(`${show(v)} ${U[u].name} = \`${e}\` = ${show(out)} ${name}`);
+    return show(out);
+  });
+  return [
+    intro,
+    `Convert to ${name}: ${convLines.join("; ")}.${parts.some(([, u]) => u === "cm3") ? " (1 cm³ = 1 mL.)" : ""}`,
+    `Add them: \`${terms.join(" + ")}\` (in the calculator: \`${expr}\`).${fmt === "2dp" ? ROUND_NOTE : ""}`,
+  ];
+}
+
 // A sum of mixed-unit quantities given in one target unit.
 function sumQ(rng, { parts, labels, to, expr, fmt, prompt, intro, candidates }) {
   const exact = parts.reduce((s, [v, u]) => s + toBase(v, u), 0) / U[to].base;
@@ -258,6 +309,7 @@ function sumQ(rng, { parts, labels, to, expr, fmt, prompt, intro, candidates }) 
     explanation: `${intro}\n\n${lines.join("\n")}`,
     params: { kind: "sum", parts, to, fmt },
     given: parts.map(([value], i) => ({ label: labels[i], value })), // the stated quantities, as in the explanation
+    hints: sumHints(parts, to, fmt, intro, expr),
   };
   return finish(base, exact, fmt, candidates, rng);
 }
@@ -433,6 +485,11 @@ function genTimeSpeed(difficulty, rng) {
       explanation: `Speed = distance ÷ time, with the time in hours.\n\n${lines.join("\n")}`,
       params: { kind: "rate", dist: [km, "km"], time: [mins, "min"], to: "kmh", fmt },
       given: [{ label: "_km", value: km }, { label: "_min", value: mins }],
+      hints: [
+        "Speed = distance ÷ time. Put the time in hours, so the speed comes out in km/h.",
+        `Convert the time: \`${mins} / 60\` = ${show(Math.round(h * 10000) / 10000)} h (in the calculator: \`_min / 60\`).`,
+        `Divide: \`${show(km)} / (${mins} / 60)\` (in the calculator: \`_km / (_min / 60)\`).${ROUND_NOTE}`,
+      ],
     };
     return finish(base, exact, fmt, [km / mins, (km * mins) / 60, km / (mins / 100)], rng);
   }
@@ -446,6 +503,11 @@ function genTimeSpeed(difficulty, rng) {
     explanation: `Find the speed in m/s first, then convert: 1 m/s = 3.6 km/h.\n\n${lines.join("\n")}`,
     params: { kind: "rate", dist: [m, "m"], time: [s, "s"], to: "kmh", fmt },
     given: [{ label: "_m", value: m }, { label: "_s", value: s }],
+    hints: [
+      "Find the speed in m/s first (distance ÷ time), then convert: 1 m/s = 3.6 km/h.",
+      `Speed in m/s: \`${m} / ${s}\` ≈ ${show(Math.round((m / s) * 10000) / 10000)} m/s.`,
+      `Convert: \`${m} / ${s} × 3.6\` (in the calculator: \`_m / _s * 3.6\`).${ROUND_NOTE}`,
+    ],
   };
   return finish(base, exact, fmt, [m / s, m / s / 3.6, (m / s) * 60], rng);
 }

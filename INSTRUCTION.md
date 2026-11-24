@@ -125,7 +125,7 @@ Every question has a hidden seed, so StudyBlock can rebuild exactly the same que
 ### Guided mode
 
 On a subject's page, switch **Practice | Guided** to **Guided** to practise step by step. It works for every topic and difficulty, including **All**.
-- **Hint** (or the **H** key) reveals the next step, and each part of a multi-part question can have its own hint. A **How to solve** card above the question gives the method for that topic, where the subject has one.
+- **Hint** (or the **H** key) reveals the next step, and each part of a multi-part question can have its own hint. Hints use the question's own numbers and stop one step before the answer. A **How to solve** card above the question gives the method for that topic.
 - **Try as often as you like.** A wrong choice is crossed out, and parts you've got right lock in place.
 - **Show solution** reveals the answer and the full working.
 - **Nothing is scored or saved.** The end screen counts what you solved first try, solved with help, or looked up. **Practice for real** starts a normal quiz on the same topic.

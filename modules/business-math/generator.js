@@ -380,7 +380,103 @@ function generateRaw(subtopic, difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
-  return withGiven(generateRaw(subtopic, difficulty, rng));
+  return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+}
+
+// Guided-mode hints: built from params after the question is made (never touches the rng). They use
+// the same `_labels` as the given values and stop at the substituted expression, never its value.
+// An intermediate number is left out when it happens to equal the answer (e.g. a $25 change on $100).
+function hintsFor(kind, k, rounded) {
+  const fin = rounded ? " Round to 2 decimal places." : " The answer is a whole number.";
+  const same = (a, b) => Math.abs(a - b) < 1e-9;
+  switch (kind) {
+    case "of":
+      return [
+        `Percent means "out of 100", so ${num(k.p)}% is ${num(k.p)} / 100 = ${num(k.p / 100)} as a decimal.`,
+        `Multiply the decimal by the amount: \`_percent / 100 * _amount\` = ${num(k.p)} / 100 × ${num(k.N)}.${fin}`,
+      ];
+    case "change": {
+      const d = k.B - k.A;
+      const ans = ((k.B - k.A) * 100) / k.A;
+      return [
+        "Percent change = (new - old) / old × 100. A fall gives a negative answer.",
+        `The change in dollars is \`_new - _old\` = ${num(k.B)} - ${num(k.A)}${same(d, ans) ? "" : ` = ${num(d)}`}.`,
+        `Divide by the **old** price (not the new one) and multiply by 100: \`(_new - _old) / _old * 100\`.${fin}`,
+      ];
+    }
+    case "original": {
+      const up = k.p > 0;
+      const p = Math.abs(k.p);
+      const f = 1 + k.p / 100;
+      return [
+        `A ${num(p)}% ${up ? "increase" : "decrease"} means the new price is ${num(100 + k.p)}% of the original, so new = original × ${num(f)}.`,
+        `Undo that by dividing, not by ${up ? "taking" : "adding"} ${num(p)}% of the new price: \`_new_price / (1 ${up ? "+" : "-"} _percent / 100)\` = ${num(k.B)} / ${num(f)}.${fin}`,
+      ];
+    }
+    case "simple-interest":
+      return [
+        `Simple interest is \`I = P × r × t\`, with the rate as a decimal: ${num(k.r)}% = ${num(k.r / 100)}.`,
+        `Multiply all three: \`_principal * _rate / 100 * _years\` = ${num(k.P)} × ${num(k.r / 100)} × ${k.t}.${fin}`,
+      ];
+    case "simple-total": {
+      const I = (k.P * k.r * k.t) / 100;
+      return [
+        "Find the interest with `I = P × r × t` (rate as a decimal), then add it to the principal.",
+        `Interest: \`_principal * _rate / 100 * _years\` = ${num(k.P)} × ${num(k.r / 100)} × ${k.t} = ${num(I)}.`,
+        `Total = \`_principal\` + interest = ${num(k.P)} + ${num(I)}.${fin}`,
+      ];
+    }
+    case "simple-rate":
+      return [
+        "Rearrange `I = P × r × t` to `r = I / (P × t)`, then multiply by 100 for a percent.",
+        `\`_principal * _years\` = ${num(k.P)} × ${k.t} = ${num(k.P * k.t)}.`,
+        `Now \`_interest / (_principal * _years) * 100\` = ${num(k.I)} / ${num(k.P * k.t)} × 100.${fin}`,
+      ];
+    case "compound-total":
+      return [
+        `Compound interest multiplies by (1 + r) every year: here 1 + ${num(k.r / 100)} = ${num(1 + k.r / 100)}. Don't use simple interest P × r × t.`,
+        `Over ${years(k.t)}: \`_principal * (1 + _rate / 100)^_years\` = ${num(k.P)} × ${num(1 + k.r / 100)}^${k.t}.${fin}`,
+      ];
+    case "compound-interest": {
+      const A = k.P * Math.pow(1 + k.r / 100, k.t);
+      return [
+        `First find the final amount with compound growth: multiply by ${num(1 + k.r / 100)} each year, for ${years(k.t)}.`,
+        `\`_principal * (1 + _rate / 100)^_years\` = ${num(k.P)} × ${num(1 + k.r / 100)}^${k.t} ≈ ${A.toFixed(4)}.`,
+        `The interest is that final amount minus the \`_principal\` (${num(k.P)}).${fin}`,
+      ];
+    }
+    case "price":
+      return [
+        `A markup is added on top of the cost: price = cost × (1 + markup). Here 1 + ${num(k.m / 100)} = ${num(1 + k.m / 100)}.`,
+        `\`_cost * (1 + _markup / 100)\` = ${num(k.C)} × ${num(1 + k.m / 100)}.${fin}`,
+      ];
+    case "markup":
+    case "margin": {
+      const markup = kind === "markup";
+      const d = k.S - k.C;
+      const ans = (d * 100) / (markup ? k.C : k.S);
+      return [
+        markup
+          ? "Markup is the profit as a percent of the **cost**: markup = profit / cost × 100."
+          : "Margin is the profit as a percent of the **selling price**: margin = profit / price × 100.",
+        `Profit = \`_price - _cost\` = ${num(k.S)} - ${num(k.C)}${same(d, ans) ? "" : ` = ${num(d)}`}.`,
+        `Now \`(_price - _cost) / ${markup ? "_cost" : "_price"} * 100\`, dividing by ${num(markup ? k.C : k.S)}.${fin}`,
+      ];
+    }
+    case "target":
+      return [
+        `Margin is measured on the selling price, so the cost is the other ${100 - k.g}% of the price: cost = price × ${num(1 - k.g / 100)}.`,
+        `Divide to undo it (don't add ${k.g}% to the cost, that is a markup): \`_cost / (1 - _margin / 100)\` = ${num(k.C)} / ${num(1 - k.g / 100)}.${fin}`,
+      ];
+    default:
+      return null;
+  }
+}
+
+function withHints(q) {
+  const p = q.params || {};
+  const hints = hintsFor(p.kind, p.values || {}, p.rounded);
+  return hints && hints.length ? { ...q, hints } : q;
 }
 
 // Independent check: work backwards from the answer (reverse the percent, re-apply the rate,

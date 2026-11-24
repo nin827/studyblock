@@ -155,26 +155,28 @@ function whyWrong(m, opt, spec, lang, show) {
 }
 const fmtVal = v => (typeof v === 'string' ? `"${v}"` : String(v));
 
-function numberQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, prompt, explanation, lang }) {
+function numberQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, prompt, explanation, lang, hints }) {
   const part = { kind: 'blank', spec, smallest, floor };
   checkBlank(m, part, solution, lo, hi);
   return {
     prompt, answer: solution, answerType: 'number', tolerance: 0, explanation, lang,
     meta: { t: m.t, p: m.p, solution, lang, main: part },
+    ...(hints ? { hints } : {}),
   };
 }
 
-function choiceQ({ rng, m, correct, pool, spec, renderOpt, prompt, explain, lang }) {
+function choiceQ({ rng, m, correct, pool, spec, renderOpt, prompt, explain, lang, hints }) {
   const { opts, correctIndex } = pickOptions(rng, m, correct, pool, spec, renderOpt);
   const choices = opts.map(o => tk(renderOpt(o, lang)));
   return {
     prompt, answer: choices[correctIndex], answerType: 'choice', choices, explanation: explain(opts, correctIndex), lang,
     meta: { t: m.t, p: m.p, lang, correctIndex, main: { kind: 'choice', spec, opts } },
+    ...(hints ? { hints } : {}),
   };
 }
 
 // Two-part question: a number blank plus "what does line k print?".
-function blankOutputQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, outLine, outAnswer, prompt, askBlank, askOut, explanation, lang }) {
+function blankOutputQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, outLine, outAnswer, prompt, askBlank, askOut, explanation, lang, hintBlank, hintOut }) {
   const blankPart = { kind: 'blank', spec: { ...spec, prefix: !!spec.out }, smallest, floor };
   checkBlank(m, blankPart, solution, lo, hi);
   const outPart = { kind: 'output', line: outLine };
@@ -182,8 +184,8 @@ function blankOutputQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, 
   return {
     prompt, answerType: 'multi', explanation, lang,
     parts: [
-      { id: 'blank', label: 'Blank', ask: askBlank, answerType: 'number', answer: solution, tolerance: 0 },
-      { id: 'output', label: 'Output', ask: askOut, answerType: 'number', answer: outAnswer, tolerance: 0 },
+      { id: 'blank', label: 'Blank', ask: askBlank, answerType: 'number', answer: solution, tolerance: 0, ...(hintBlank ? { hint: hintBlank } : {}) },
+      { id: 'output', label: 'Output', ask: askOut, answerType: 'number', answer: outAnswer, tolerance: 0, ...(hintOut ? { hint: hintOut } : {}) },
     ],
     meta: { t: m.t, p: m.p, solution, lang, parts: { blank: blankPart, output: outPart } },
   };
@@ -243,7 +245,14 @@ function exprBlankEasy(rng, lang) {
   const m = { t: 'exprBlank', p };
   return numberQ({ m, solution: ans, lo: -60, hi: 200, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(MAKE.exprBlank(p, bl()), lang)}`,
-    explanation: `${tk(vn(r, lang))} is ${tk(`${vn(a, lang)} ${op} ${vn(b, lang)}`)}, so ${A} ${op} ${tk(BLANK)} must be ${out}: ${A} ${op} ${ans} = ${out}. The blank is **${ans}**.` });
+    explanation: `${tk(vn(r, lang))} is ${tk(`${vn(a, lang)} ${op} ${vn(b, lang)}`)}, so ${A} ${op} ${tk(BLANK)} must be ${out}: ${A} ${op} ${ans} = ${out}. The blank is **${ans}**.`,
+    hints: [
+      `The blank is the value of ${tk(vn(b, lang))}. The program prints ${tk(vn(r, lang))}, which is ${tk(`${vn(a, lang)} ${op} ${vn(b, lang)}`)}, and ${tk(vn(a, lang))} is ${A}.`,
+      `So ${A} ${op === '*' ? '×' : op === '-' ? '−' : '+'} ${tk(BLANK)} = ${out}. ` +
+        (op === '+' ? `Which number added to ${A} gives ${out}? Undo the addition: ${out} − ${A}.`
+          : op === '-' ? `What do you take away from ${A} to land on ${out}? Work out ${A} − ${out}.`
+            : `What do you multiply ${A} by to get ${out}? Work out ${out} ÷ ${A}.`),
+    ] });
 }
 
 // Two operators: precedence matters. Shapes: a + b * X, (a + X) * b, a * X - b
@@ -262,7 +271,13 @@ function exprPrec(rng, lang) {
   const rule = shape === 1 ? 'The brackets are worked out first' : 'Multiplication happens before addition and subtraction';
   return numberQ({ m, solution: ans, lo: -60, hi: 200, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(MAKE.exprPrec(p, bl()), lang)}`,
-    explanation: `${rule}. With ${tk(vn(a, lang))} = ${A} and ${tk(vn(b, lang))} = ${B}, ${tk(line)} gives ${out}, so the blank is **${ans}**.` });
+    explanation: `${rule}. With ${tk(vn(a, lang))} = ${A} and ${tk(vn(b, lang))} = ${B}, ${tk(line)} gives ${out}, so the blank is **${ans}**.`,
+    hints: [
+      `Put in the values: ${tk(vn(a, lang))} = ${A} and ${tk(vn(b, lang))} = ${B}. ${rule}.`,
+      shape === 0 ? `${A} + ${B} × ${tk(BLANK)} = ${out}. Take ${A} off first: ${B} × ${tk(BLANK)} must be ${out - A}. Then divide by ${B}.`
+        : shape === 1 ? `(${A} + ${tk(BLANK)}) × ${B} = ${out}. Undo the × ${B} first: ${A} + ${tk(BLANK)} must be ${out / B}. Then take ${A} away.`
+          : `${A} × ${tk(BLANK)} − ${B} = ${out}. Add ${B} back first: ${A} × ${tk(BLANK)} must be ${out + B}. Then divide by ${A}.`,
+    ] });
 }
 
 // print((X) / d) or print(a + X / d): smallest value
@@ -281,7 +296,13 @@ function exprDiv(rng, lang) {
   const m = { t: 'exprDivA', p };
   return numberQ({ m, solution: ans, smallest: true, floor: 0, spec: { out: [String(out)] }, lang,
     prompt: `What is the **smallest** whole number (0 or more) that can fill the blank ${tk(BLANK)} so that this program prints ${tk(out)}?\n\n${code(make(p, bl()), lang)}`,
-    explanation: `${intDivNote(lang)} ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} must be ${q}, and the smallest number that gives ${q} when divided by ${D} is ${q} × ${D} = **${ans}** (values up to ${ans + D - 1} give ${q} too).` });
+    explanation: `${intDivNote(lang)} ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} must be ${q}, and the smallest number that gives ${q} when divided by ${D} is ${q} × ${D} = **${ans}** (values up to ${ans + D - 1} give ${q} too).`,
+    hints: [
+      intDivNote(lang),
+      shape === 0 ? `The program prints ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} with ${tk(vn(d, lang))} = ${D}, so ${tk(BLANK)} divided by ${D}, rounded down, must be ${q}.`
+        : `${tk(vn(a, lang))} is ${A}, so ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} must be ${out} − ${A} = ${q}, with ${tk(vn(d, lang))} = ${D}.`,
+      `Several numbers give ${q} when divided by ${D} and rounded down. You want the lowest one: the first number that ${D} goes into exactly ${q} times.`,
+    ] });
 }
 
 // x = A; y = B; print(___)  → choose the operator
@@ -300,7 +321,12 @@ function exprOpChoice(rng, lang, difficulty) {
   return choiceQ({ rng, m, lang, correct: mk(op), pool: ops.filter(o => o !== op).map(mk), spec: { out: [String(val)] }, renderOpt,
     prompt: `Which expression fills the blank ${tk(BLANK)} so that this program prints ${tk(val)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${tk(renderOpt(opts[ci], lang))} with ${A} and ${B} gives ${val}.${op === '/' || op === '%' ? ' ' + intDivNote(lang) : ''} ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { out: [String(val)] }, lang)}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { out: [String(val)] }, lang)}.`).join(' '),
+    hints: [
+      `Put the values into each option: ${tk(vn(x, lang))} is ${A} and ${tk(vn(y, lang))} is ${B}. Only one option gives ${val}.`,
+      difficulty === 'easy' ? 'Work out each one in turn: add, subtract, multiply… and compare with the number the program should print.'
+        : `${intDivNote(lang)} Work out both for ${A} and ${B}: how many whole times does ${B} go into ${A}, and what is left over?`,
+    ] });
 }
 
 // a, b, c; print(___) → which compound expression (precedence)
@@ -324,7 +350,11 @@ function exprCompound(rng, lang) {
   return choiceQ({ rng, m, lang, correct: shapes[k], pool: shapes.filter((_, i) => i !== k), spec, renderOpt,
     prompt: `Which expression fills the blank ${tk(BLANK)} so that this program prints ${tk(js[k])}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `Brackets first, then ${tk('*')}, ${tk(langNotes(lang).intDiv)} and ${tk('%')}, then ${tk('+')} and ${tk('-')}, left to right. ` +
-      `${tk(renderOpt(opts[ci], lang))} gives ${js[k]}. ` + opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, spec, lang)}.`).join(' ') });
+      `${tk(renderOpt(opts[ci], lang))} gives ${js[k]}. ` + opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, spec, lang)}.`).join(' '),
+    hints: [
+      `Put the values into each option: ${tk(vn(a, lang))} = ${A}, ${tk(vn(b, lang))} = ${B}, ${tk(vn(c, lang))} = ${C}. Only one gives ${js[k]}.`,
+      `Order matters: brackets first, then ${tk('*')}, ${tk(langNotes(lang).intDiv)} and ${tk('%')}, then ${tk('+')} and ${tk('-')}. ${intDivNote(lang)}`,
+    ] });
 }
 
 // Two-part: total = A; total += ___; print(total); <update>; print(total)
@@ -347,7 +377,13 @@ function exprMulti(rng, lang) {
     prompt: `The first line this program prints is ${tk(t1)}.\n\n${code(prog, lang)}`,
     askBlank: `Which whole number fills the blank ${tk(BLANK)}?`,
     askOut: 'What does the second line print?',
-    explanation: `${A} ${sign} **${ans}** = ${t1}, so the first line is ${t1}. Then ${tk(updLine)} makes it **${t2}**. ${intDivNote(lang)}` });
+    explanation: `${A} ${sign} **${ans}** = ${t1}, so the first line is ${t1}. Then ${tk(updLine)} makes it **${t2}**. ${intDivNote(lang)}`,
+    hintBlank: `${tk(vn(t, lang))} starts at ${A}, and the blank is ${sign === '+' ? 'added to' : 'taken away from'} it before the first print. ` +
+      `So ${A} ${sign === '+' ? '+' : '−'} ${tk(BLANK)} = ${t1}: ${sign === '+' ? `work out ${t1} − ${A}` : `work out ${A} − ${t1}`}.`,
+    hintOut: `Start from ${t1} (the first line) and apply ${tk(updLine)}: ` +
+      (upd === 0 ? `multiply by ${K}, then take the remainder after dividing by ${M}.`
+        : upd === 1 ? `divide by ${K} and drop the remainder.`
+          : `take the remainder after dividing by ${M}, then add ${K}.`) + ` ${intDivNote(lang)}` });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -380,7 +416,11 @@ function condCmpChoice(rng, lang) {
     prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${P} is ${CMP_WORDS[op]} ${K}, and ${tk(`"${no}"`)} otherwise. ` +
       `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `"${CMP_WORDS[op]} ${K}" is ${tk(renderOpt(opts[ci], lang))}. ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `The condition must be true exactly when the function should return ${tk(`"${yes}"`)}. Test each option with the three examples: ${P} = ${K - 1}, ${K} and ${K + 1}.`,
+      `The deciding case is ${P} = ${K} itself: the examples say it returns ${tk(`"${tests[1].expect}"`)}. ${tk('>=')} and ${tk('<=')} include the number; ${tk('>')} and ${tk('<')} do not.`,
+    ] });
 }
 
 // def f(par): if par OP ___: return A; return B   → threshold number
@@ -405,7 +445,12 @@ function condThreshold(rng, lang, difficulty) {
   const line = renderExpr(E.bin(op, V(th.par), ans), lang, { program: prog, fn });
   return numberQ({ m, solution: ans, lo: K - 30, hi: K + 30, spec: { tests }, lang,
     prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${P} is ${CMP_WORDS[word]} ${K}, and ${tk(`"${no}"`)} otherwise. Which whole number fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
-    explanation: `"${CMP_WORDS[word]} ${K}" means the ${up ? 'first' : 'last'} ${tk(`"${yes}"`)} value is ${edge}. Reading the code's ${tk(op)}, ${tk(line)} is true for exactly those values, so the blank is **${ans}**. Watch the difference between ${tk(op.length === 2 ? op : op + '=')} (includes the number) and ${tk(op[0])} (does not).` });
+    explanation: `"${CMP_WORDS[word]} ${K}" means the ${up ? 'first' : 'last'} ${tk(`"${yes}"`)} value is ${edge}. Reading the code's ${tk(op)}, ${tk(line)} is true for exactly those values, so the blank is **${ans}**. Watch the difference between ${tk(op.length === 2 ? op : op + '=')} (includes the number) and ${tk(op[0])} (does not).`,
+    hints: [
+      `"${CMP_WORDS[word]} ${K}" decides which values of ${P} return ${tk(`"${yes}"`)}. Check ${K} itself, then the numbers just below and just above it.`,
+      `Find the ${up ? 'first (smallest)' : 'last (largest)'} value of ${P} that should return ${tk(`"${yes}"`)}.`,
+      `The code tests ${tk(renderExpr(E.bin(op, V(th.par), bl()), lang, { program: prog, fn }))}. ${op.length === 2 ? `${tk(op)} includes the number in the blank, so the blank is that value itself.` : `${tk(op)} does not include the number in the blank, so the blank must be one step ${up ? 'below' : 'above'} that value.`}`,
+    ] });
 }
 
 function condRangeChoice(rng, lang) {
@@ -428,7 +473,11 @@ function condRangeChoice(rng, lang) {
     prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${Pn} is ${want}, and ${tk(`"${no}"`)} otherwise. ` +
       `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${inside ? `Both checks must hold, so join them with ${tk(notes.and)}` : `Either check is enough, so join them with ${tk(notes.or)}`}: ${tk(renderOpt(opts[ci], lang))}. ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `Decide how the two checks combine. ${tk(notes.and)} needs both to be true (inside a range); ${tk(notes.or)} needs only one (outside it).`,
+      `Then check the edges, where most options go wrong: ${Pn} = ${L - 1}, ${L}, ${H} and ${H + 1} should give ${tests.map(t => tk(`"${t.expect}"`)).join(', ')}.`,
+    ] });
 }
 
 function condDivChoice(rng, lang) {
@@ -450,7 +499,11 @@ function condDivChoice(rng, lang) {
     prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${tk(vn(par, lang))} is ${spec}, and ${tk(`"${no}"`)} otherwise. ` +
       `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `A number is ${spec} when dividing it by ${k} leaves remainder 0: ${tk(renderOpt(opts[ci], lang))}. ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `A number is ${spec} when ${k} goes into it exactly, with nothing left over. ${intDivNote(lang)}`,
+      `Test each option on the examples, e.g. ${tk(vn(par, lang))} = ${xs[0]} should give ${tk(`"${tests[0].expect}"`)} and ${tk(vn(par, lang))} = ${xs[xs.length - 1]} should give ${tk(`"${tests[tests.length - 1].expect}"`)}.`,
+    ] });
 }
 
 function condHardChoice(rng, lang) {
@@ -482,7 +535,12 @@ function condHardChoice(rng, lang) {
     prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${tk(vn(th.par, lang))} is ${want}, and ${tk(`"${no}"`)} otherwise. ` +
       `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${tk(renderOpt(opts[ci], lang))} matches every example. ${tk(notes.and)} is checked before ${tk(notes.or)}, so brackets change the meaning. ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      kind === 0 ? `There are two separate ways to get ${tk(`"${yes}"`)}, so the checks are joined with ${tk(notes.or)}. Look at each edge: is ${L} included? Is ${H}?`
+        : `Three things must all be true: at least ${L}, at most ${H}, and not ${M}. Things that must all hold are joined with ${tk(notes.and)}.`,
+      `${tk(notes.and)} is worked out before ${tk(notes.or)}, so brackets can change the meaning. Test each option on the examples: ${tests.map(t => `${t.args[0]} → ${tk(`"${t.expect}"`)}`).join(', ')}.`,
+    ] });
 }
 
 // Two-part: if/elif/else points, blank threshold + total output.
@@ -511,7 +569,10 @@ function condElif(rng, lang) {
     askBlank: `Which whole number fills the blank ${tk(BLANK)}?`,
     askOut: 'With the blank filled in correctly, what does the program print?',
     explanation: `The ${tk(langNotes(lang).elseIf)} branch must start at ${B}; with ${tk(op)} that is ${tk(renderExpr(E.bin(op, V(th.par), ans), lang, { program: prog, fn }))}, so the blank is **${ans}**. ` +
-      `The calls give ${vals.map(pts).join(' + ')} = **${total}**.` });
+      `The calls give ${vals.map(pts).join(' + ')} = **${total}**.`,
+    hintBlank: `The first check already handles ${A} and more. The ${tk(langNotes(lang).elseIf)} line must be true from ${B} upward but false for anything below ${B}. ` +
+      (op === '>=' ? `${tk('>=')} includes the number in the blank, so the blank is where 2 points start.` : `${tk('>')} does not include the number in the blank, so the blank sits one below where 2 points start.`),
+    hintOut: `Score each call with the rule (3 for ${A} or more, 2 for ${B} to ${A - 1}, 1 below ${B}): ${vals.map(v => tk(callText(prog, fn, [v], lang))).join(', ')}. Then add the three results.` });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -536,7 +597,17 @@ function loopRange(rng, lang) {
   return numberQ({ m, solution: ans, lo, hi, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(prog, lang)}`,
     explanation: `A range loop stops before its end value: ${rangeText(lang)}. ` +
-      `With the blank as **${ans}**, ${tk(vn(i, lang))} takes ${len} values from ${St} to ${En - 1}, and ${addI ? `${St} + … + ${En - 1}` : `${len} × ${K}`} = ${out}.` });
+      `With the blank as **${ans}**, ${tk(vn(i, lang))} takes ${len} values from ${St} to ${En - 1}, and ${addI ? `${St} + … + ${En - 1}` : `${len} × ${K}`} = ${out}.`,
+    hints: [
+      `The blank is the loop's ${blankEnd ? 'end' : 'start'} value. Remember: ${rangeText(lang)}.`,
+      addI
+        ? (blankEnd ? `Each pass adds ${tk(vn(i, lang))} to ${tk(vn(t, lang))}. Add ${St} + ${St + 1} + ${St + 2} + … and stop when the total reaches ${out}.`
+          : `Each pass adds ${tk(vn(i, lang))} to ${tk(vn(t, lang))}, and the last value is ${En - 1}. Add ${En - 1} + ${En - 2} + … backwards until the total reaches ${out}.`)
+        : `Each pass adds ${K}, so the loop must run ${out} ÷ ${K} times.`,
+      blankEnd ? `The end value is one more than the last value of ${tk(vn(i, lang))} that was used, because the range stops before its end.`
+        : addI ? `The start is the first value of ${tk(vn(i, lang))} that is used: the last (smallest) number you added.`
+          : `The start is the first value of ${tk(vn(i, lang))} that is used: ${En} minus the number of passes.`,
+    ] });
 }
 
 // n = S; count = 0; while n < LIM: n += ___; count += 1; print(count); print(n)
@@ -556,7 +627,11 @@ function whileStep(rng, lang) {
   return numberQ({ m, solution: step, lo: -10, hi: 60, spec: { out: [String(T), String(final)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(T)} and then ${tk(final)}.\n\n${code(prog, lang)}`,
     explanation: `The loop ran ${T} times and ${tk(vn(n, lang))} went from ${St} to ${final}, so each pass added (${final} − ${St}) ÷ ${T} = **${step}**. ` +
-      `After ${T - 1} passes it was ${St + (T - 1) * step}, still below ${LIM}, so the loop ran once more.` });
+      `After ${T - 1} passes it was ${St + (T - 1) * step}, still below ${LIM}, so the loop ran once more.`,
+    hints: [
+      `The first line is ${tk(vn(c, lang))}: the loop body ran ${T} times. The second is the final ${tk(vn(n, lang))}.`,
+      `${tk(vn(n, lang))} went from ${St} to ${final} in ${T} equal steps, so each step adds (${final} − ${St}) ÷ ${T}.`,
+    ] });
 }
 
 // count multiples: for i in range(1, N): if i % ___ == 0: count += 1
@@ -576,7 +651,12 @@ function loopMultiples(rng, lang) {
   return numberQ({ m, solution: k, lo: -5, hi: N + 5, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(prog, lang)}`,
     explanation: `${tk(vn(i, lang))} runs from 1 to ${N - 1} (${rangeText(lang)}). The multiples of **${k}** in that range are ${mult.join(', ')}, ` +
-      `${add ? `which add up to ${out}` : `which is ${cnt} of them`}. No other divisor gives ${out}.` });
+      `${add ? `which add up to ${out}` : `which is ${cnt} of them`}. No other divisor gives ${out}.`,
+    hints: [
+      `${tk(vn(i, lang))} runs from 1 to ${N - 1} (${rangeText(lang)}). ${tk(`${vn(i, lang)} % ${BLANK} == 0`)} is true when ${tk(vn(i, lang))} is a multiple of the blank.`,
+      add ? `The program adds up every multiple of the blank below ${N} and gets ${out}. Try small numbers: what do the multiples of 2 below ${N} add up to? Of 3?`
+        : `The program counts the multiples of the blank below ${N} and gets ${out}. For a number d, there are ${N - 1} ÷ d of them (rounded down). Try d = 2, 3, 4, …`,
+    ] });
 }
 
 // for i in range(S, ___, K): total += i   → smallest end
@@ -592,7 +672,11 @@ function loopStepEnd(rng, lang) {
   const m = { t: 'loopStepEnd', p };
   return numberQ({ m, solution: ans, smallest: true, floor: 0, spec: { out: [String(out)] }, lang,
     prompt: `What is the **smallest** whole number (0 or more) that can fill the blank ${tk(BLANK)} so that this program prints ${tk(out)}?\n\n${code(MAKE.loopStepEnd(p, bl()), lang)}`,
-    explanation: `${tk(vn(i, lang))} counts up by ${K}: ${vals.join(', ')} add up to ${out}. The range stops before its end (${rangeText(lang)}), so the end must be more than ${last}; the smallest is **${ans}**.` });
+    explanation: `${tk(vn(i, lang))} counts up by ${K}: ${vals.join(', ')} add up to ${out}. The range stops before its end (${rangeText(lang)}), so the end must be more than ${last}; the smallest is **${ans}**.`,
+    hints: [
+      `${tk(vn(i, lang))} starts at ${St} and goes up by ${K} each pass: ${St}, ${St + K}, ${St + 2 * K}, … Add them up until the total is ${out}.`,
+      `The loop must stop right after the last value you added. ${rangeText(lang)}, so the end must be bigger than that value. Which is the smallest such end?`,
+    ] });
 }
 
 // Two-part: while n < ___: n = n * F (or n += F); steps += 1; print(steps); print(n)
@@ -615,7 +699,10 @@ function whileLimit(rng, lang) {
     askBlank: `What is the smallest whole number (0 or more) that can fill the blank ${tk(BLANK)}?`,
     askOut: 'What does the second line print?',
     explanation: `${tk(vn(n, lang))} goes ${seq.join(' → ')}. For exactly ${T} passes the loop must still run at ${seq[T - 1]} and stop at ${final}, ` +
-      `so the limit must be more than ${seq[T - 1]}: the smallest is **${ans}**. The second line prints **${final}**.` });
+      `so the limit must be more than ${seq[T - 1]}: the smallest is **${ans}**. The second line prints **${final}**.`,
+    hintBlank: `The first line says the loop body ran ${T} times. ${tk(vn(n, lang))} starts at ${St} and each pass ${mul ? `multiplies it by ${F}` : `adds ${F}`}: ` +
+      `${seq.slice(0, T).join(' → ')} → … The condition ${tk(`${vn(n, lang)} < ${BLANK}`)} must still be true when ${tk(vn(n, lang))} is ${seq[T - 1]}, and false after the next pass.`,
+    hintOut: `The second line prints ${tk(vn(n, lang))} after the loop. Before the last pass it was ${seq[T - 1]}; apply one more pass (${mul ? `× ${F}` : `+ ${F}`}).` });
 }
 
 // nested loops count
@@ -645,7 +732,13 @@ function nested(rng, lang) {
   const m = { t: 'nested', p };
   return numberQ({ m, solution: ans, lo: -5, hi: 60, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(MAKE.nested(p, bl()), lang)}`,
-    explanation: `${how} (${rangeText(lang)}.)` });
+    explanation: `${how} (${rangeText(lang)}.)`,
+    hints: [
+      `Count how many times ${tk(`${vn(c, lang)} += 1`)} runs in total: that is ${out}. Remember: ${rangeText(lang)}.`,
+      shape === 0 ? `The outer loop runs ${A} times (${tk(vn(i, lang))} = 0 to ${A - 1}), and the inner loop runs the same number of times on every pass. So ${A} × (inner passes) = ${out}.`
+        : shape === 1 ? `The outer loop runs ${A} times (${tk(vn(i, lang))} = 0 to ${A - 1}). The inner loop starts at ${tk(vn(i, lang))}, so it runs one time fewer on each pass. For an end E it runs E + (E − 1) + … (${A} terms); try values of E until the sum is ${out}.`
+          : `The inner loop runs ${tk(vn(i, lang))} times on each pass: 0, then 1, then 2, … Add 0 + 1 + 2 + 3 + … and count how many passes it takes to reach ${out}.`,
+    ] });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -681,7 +774,12 @@ function indexPick(rng, lang) {
   const m = { t: 'indexPick', p };
   return numberQ({ m, solution: ans, lo: -10, hi: 30, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(MAKE.indexPick(p, bl()), lang)}`,
-    explanation: `Positions (indexes) start at 0, not 1. ${extra}` });
+    explanation: `Positions (indexes) start at 0, not 1. ${extra}`,
+    hints: [
+      `Positions (indexes) start at 0: the first ${word ? 'letter' : 'item'} is at position 0, the second at 1, and so on.`,
+      word ? `Find ${tk(out)} in ${tk(`"${p.word}"`)} and count how many letters come before it. That count is its position.`
+        : `Find ${out} in the list and count how many items come before it. That count is its position.`,
+    ] });
 }
 
 // def f(xs: list) -> int: return ___
@@ -714,7 +812,11 @@ function listFnChoice(rng, lang) {
         const pr = buildWith(m, o), bad = tests.find(t => { const r = exec(pr, t); return !r.ok || r.returned !== t.expect; });
         const r = exec(pr, bad);
         return `${tk(renderOpt(o, lang))} ${r.ok ? `gives ${r.returned}` : 'goes past the end'} for ${show(bad)}.`;
-      }).join(' ') });
+      }).join(' '),
+    hints: [
+      `Indexes run from 0 to length − 1, so the first item is at 0 and the last is at length − 1. In this language the length of a list is written like ${tk(langNotes(lang).len.split(' (')[0].replace('xs', 'list'))}.`,
+      `The answer must work for lists of any length, so test each option on both examples: ${lists[0].length} items (${lists[0].join(', ')}) and ${lists[1].length} items (${lists[1].join(', ')}). An option that only fits one length is wrong.`,
+    ] });
 }
 
 // xs = []; for i in range(1, N+1): <blank append>; for x in xs: print(x)
@@ -742,7 +844,11 @@ function appendLine(rng, lang) {
   return choiceQ({ rng, m, lang, correct: mk(fams[g].e), pool: fams.filter((_, j) => j !== g).map(f => mk(f.e)), spec, renderOpt,
     prompt: `This program should print ${out.join(', ')} (one per line). Which line fills the blank ${tk(BLANK)}?\n\n${codeLineBlank(full, lang, 'fill')}`,
     explain: (opts, ci) => `${tk(vn(i, lang))} takes the values 1 to ${N} (${rangeText(lang)}), and ${tk(renderOpt(opts[ci], lang))} adds ${out.join(', ')}. ` +
-      opts.filter((_, j) => j !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, spec, lang)}.`).join(' ') });
+      opts.filter((_, j) => j !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, spec, lang)}.`).join(' '),
+    hints: [
+      `${tk(vn(i, lang))} takes the values 1 to ${N} (${rangeText(lang)}), and each pass adds one number to ${tk(vn(xs, lang))}.`,
+      `When ${tk(vn(i, lang))} is 1 the line must add ${out[0]}; when it is 2, ${out[1]}; when it is 3, ${out[2]}. Put those values into each option.`,
+    ] });
 }
 
 // Two-part: total/count over range(___, len(xs))
@@ -762,7 +868,10 @@ function suffixSum(rng, lang) {
     prompt: `The first line this program prints is ${tk(total)}.\n\n${code(MAKE.suffixSum(p, bl()), lang)}`,
     askBlank: `Which whole number fills the blank ${tk(BLANK)}?`,
     askOut: 'What does the second line print?',
-    explanation: `Starting at position **${ans}** adds ${used.join(' + ')} = ${total} (positions start at 0, and the loop stops before ${tk(renderExpr(E.len(xs), lang, { program: MAKE.suffixSum(p, bl()) }))}). That is ${used.length} items, so the second line is **${used.length}**.` });
+    explanation: `Starting at position **${ans}** adds ${used.join(' + ')} = ${total} (positions start at 0, and the loop stops before ${tk(renderExpr(E.len(xs), lang, { program: MAKE.suffixSum(p, bl()) }))}). That is ${used.length} items, so the second line is **${used.length}**.`,
+    hintBlank: `The loop adds every item from position ${tk(BLANK)} up to the end of ${tk(vn(xs, lang))} (positions start at 0, and ${rangeText(lang)}). ` +
+      `Add the items from the end backwards: ${items[items.length - 1]} + ${items[items.length - 2]} + … until the total is ${total}. The blank is the position of the last item you added.`,
+    hintOut: `${tk(vn(c, lang))} goes up by 1 for each item the loop adds. The list has ${items.length} items; count the positions from the blank up to the last one.` });
 }
 
 // def count_of(word: str) -> int: count letters, choose the condition
@@ -793,7 +902,11 @@ function countLetter(rng, lang) {
     prompt: `${tk(fnName(fn, lang))} should return how many times the letter ${tk(ch)} appears in ${tk(vn(w, lang))}. ` +
       `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `The loop visits every position ${tk(vn(i, lang))}, so the check must look at the letter at that position: ${tk(renderOpt(opts[ci], lang))}. ` +
-      opts.filter((_, j) => j !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, j) => j !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `The loop visits every position ${tk(vn(i, lang))} of ${tk(vn(w, lang))}, from 0 to length − 1. The condition decides whether that pass counts.`,
+      `${tk(`"${ws[0]}"`)} has the letter ${tk(ch)} ${tests[0].expect} times. For each option, ask which positions of that word it is true at, and count them.`,
+    ] });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
@@ -813,7 +926,12 @@ function fnConst(rng, lang, difficulty) {
   const prog = MAKE.fnConst(p, bl());
   return numberQ({ m, solution: ans, lo: -60, hi: 200, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(prog, lang)}`,
-    explanation: `The call passes ${A} as ${tk(vn(par, lang))}. ${med ? `${A} × ${tk(BLANK)} + ${fee} = ${out}, so ${A} × ${tk(BLANK)} = ${out - fee}` : `${A} ${op === '*' ? '×' : '+'} ${tk(BLANK)} = ${out}`}, and the blank is **${ans}**.` });
+    explanation: `The call passes ${A} as ${tk(vn(par, lang))}. ${med ? `${A} × ${tk(BLANK)} + ${fee} = ${out}, so ${A} × ${tk(BLANK)} = ${out - fee}` : `${A} ${op === '*' ? '×' : '+'} ${tk(BLANK)} = ${out}`}, and the blank is **${ans}**.`,
+    hints: [
+      `The program prints ${tk(callText(prog, fn, [A], lang))}, so inside the function ${tk(vn(par, lang))} is ${A}.`,
+      med ? `So ${A} × ${tk(BLANK)} + ${fee} = ${out}. Take away the ${fee} first: ${A} × ${tk(BLANK)} must be ${out - fee}. Then divide by ${A}.`
+        : op === '*' ? `So ${A} × ${tk(BLANK)} = ${out}. Work out ${out} ÷ ${A}.` : `So ${A} + ${tk(BLANK)} = ${out}. Work out ${out} − ${A}.`,
+    ] });
 }
 
 // def f(n): total = 0; for i in range(0, n): total += ___; return total; print(f(A))
@@ -828,7 +946,11 @@ function fnLoopConst(rng, lang) {
   const m = { t: 'fnLoopConst', p };
   return numberQ({ m, solution: ans, lo: -60, hi: 200, spec: { out: [String(out)] }, lang,
     prompt: `Fill in the blank ${tk(BLANK)} with a whole number so that this program prints ${tk(out)}.\n\n${code(MAKE.fnLoopConst(p, bl()), lang)}`,
-    explanation: `The loop body runs ${A} times (once for each value from 0 to ${A - 1}). ${start} + ${A} × ${tk(BLANK)} = ${out}, so the blank is **${ans}**.` });
+    explanation: `The loop body runs ${A} times (once for each value from 0 to ${A - 1}). ${start} + ${A} × ${tk(BLANK)} = ${out}, so the blank is **${ans}**.`,
+    hints: [
+      `The call passes ${A} as ${tk(vn(par, lang))}, so the loop runs ${A} times (${rangeText(lang)}). ${tk(vn(t, lang))} starts at ${start}.`,
+      `So ${start} + ${A} × ${tk(BLANK)} = ${out}.${start ? ` Take away the ${start} first: ${A} × ${tk(BLANK)} must be ${out - start}.` : ''} Then divide by ${A}.`,
+    ] });
 }
 
 // def f(par) -> int: return ___  (one parameter)
@@ -856,7 +978,11 @@ function fnReturnChoice(rng, lang) {
   return choiceQ({ rng, m, lang, correct: goal.e, pool: [...fams.filter((_, i) => i !== g).map(f => f.e), ...extra], spec: { tests }, renderOpt,
     prompt: `${tk(fnName(goal.fn, lang))} should return ${words}. For example: ${examplesText(prog, goal.fn, tests, lang)}. Which expression fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${tk(renderOpt(opts[ci], lang))} gives ${tests.map(t => t.expect).join(' and ')}.${goal.fn === 'half' || goal.fn === 'parity' ? ' ' + intDivNote(lang) : ''} ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, goal.fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, goal.fn, lang))}.`).join(' '),
+    hints: [
+      `Put each example into every option: with ${tk(vn(par, lang))} = ${a} the function must return ${tests[0].expect}, and with ${tk(vn(par, lang))} = ${b} it must return ${tests[1].expect}.`,
+      `An option has to match both examples, not just one. ${intDivNote(lang)}`,
+    ] });
 }
 
 // Two parameters
@@ -883,7 +1009,11 @@ function fn2Choice(rng, lang) {
   return choiceQ({ rng, m, lang, correct, pool: all.filter((_, i) => i !== kind), spec: { tests }, renderOpt,
     prompt: `${tk(fnName(fn, lang))} should return ${w}. For example: ${examplesText(prog, fn, tests, lang)}. Which expression fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${tk(renderOpt(opts[ci], lang))} gives ${tests.map(t => t.expect).join(' and ')}. Remember: brackets first, then ${tk('*')} and ${tk(langNotes(lang).intDiv)}, then ${tk('+')} and ${tk('-')}. ` +
-      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') });
+      opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `Say the rule in words first, then look for the option that does the same steps in the same order. Brackets come first, then ${tk('*')} and ${tk(langNotes(lang).intDiv)}, then ${tk('+')} and ${tk('-')}.`,
+      `Check each option with the first example: ${tk(vn(a, lang))} = ${pairs[0][0]} and ${tk(vn(b, lang))} = ${pairs[0][1]} must give ${tests[0].expect}. Then confirm with the second example.`,
+    ] });
 }
 
 // Two-part: def scale(n): return n * K; def score(n): return scale(n) + ___; print(score(A)); print(score(B))
@@ -903,7 +1033,10 @@ function fnChain(rng, lang) {
     askBlank: `Which whole number fills the blank ${tk(BLANK)}?`,
     askOut: 'What does the second line print?',
     explanation: `${tk(callText(prog, f1, [A], lang))} returns ${A * K}, and ${A * K} ${op} **${ans}** = ${t1}. ` +
-      `Then ${tk(callText(prog, f2, [B], lang))} is ${B * K} ${op} ${ans} = **${t2}**.` });
+      `Then ${tk(callText(prog, f2, [B], lang))} is ${B * K} ${op} ${ans} = **${t2}**.`,
+    hintBlank: `Follow the first call, ${tk(callText(prog, f2, [A], lang))}: it calls ${tk(callText(prog, f1, [A], lang))}, which returns ${A} × ${K} = ${A * K}. ` +
+      `Then ${A * K} ${op === '+' ? '+' : '−'} ${tk(BLANK)} = ${t1}.`,
+    hintOut: `The second call is ${tk(callText(prog, f2, [B], lang))}: ${tk(callText(prog, f1, [B], lang))} returns ${B} × ${K} = ${B * K}. Then ${op === '+' ? 'add' : 'subtract'} the same blank value as before.` });
 }
 
 // def f(n): total = INIT; for i in range(1, n + 1): ____; return total
@@ -931,7 +1064,11 @@ function fnBodyLine(rng, lang) {
   return choiceQ({ rng, m, lang, correct: goal.st, pool, spec: { tests }, renderOpt,
     prompt: `${tk(fnName(goal.fn, lang))} should return ${words}. For example: ${examplesText(full, goal.fn, tests, lang)}. Which line fills the blank ${tk(BLANK)}?\n\n${codeLineBlank(full, lang, 'fill')}`,
     explain: (opts, ci) => `${tk(vn(i, lang))} runs from 1 to ${tk(vn(par, lang))} (the end is ${tk(vn(par, lang))} + 1 because ${rangeText(lang)}), and ${tk(vn(t, lang))} starts at ${goal.init}. ${tk(renderOpt(opts[ci], lang))} builds the right result. ` +
-      opts.filter((_, k) => k !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(full, goal.fn, lang))}.`).join(' ') });
+      opts.filter((_, k) => k !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(full, goal.fn, lang))}.`).join(' '),
+    hints: [
+      `${tk(vn(i, lang))} runs from 1 to ${tk(vn(par, lang))} (the end is ${tk(vn(par, lang))} + 1 because ${rangeText(lang)}), and ${tk(vn(t, lang))} starts at ${goal.init}.`,
+      `Trace ${tk(callText(full, goal.fn, [a], lang))}, which should return ${tests[0].expect}: for each option, write down ${tk(vn(t, lang))} after ${tk(vn(i, lang))} = 1, 2, 3, … and see which one ends on ${tests[0].expect}.`,
+    ] });
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════

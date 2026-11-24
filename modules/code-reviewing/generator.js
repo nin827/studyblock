@@ -659,13 +659,14 @@ function presentBug(p, sub, diff, L) {
   };
   const base = { lang: L, explanation: expl };
   let meta = { mode: 'bug', ...p };
+  const H = bugHints(p, w, L);
 
   if (diff === 'hard') {
     const ids = sub === 'find-the-bug' ? ['line', finite ? 'actual' : 'type']
       : sub === 'fix-the-bug' ? ['line', 'fix', ...(finite ? ['actual'] : [])]
       : ['type', finite ? 'actual' : 'line'];
     meta = { ...meta, ask: 'multi', parts: ids };
-    return { ...base, prompt: `${spec}\n\n${codeBlock}\n\nThis version has one bug. Answer each part.`, answerType: 'multi', parts: ids.map(id => part[id]()), meta };
+    return { ...base, prompt: `${spec}\n\n${codeBlock}\n\nThis version has one bug. Answer each part.`, answerType: 'multi', parts: ids.map(id => ({ ...part[id](), hint: H.part[id] })), meta };
   }
   let ask, q;
   if (sub === 'find-the-bug') { ask = 'line'; q = `${spec}\n\n${codeBlock}\n\nOne line has a bug. Which line is it?`; }
@@ -678,7 +679,108 @@ function presentBug(p, sub, diff, L) {
   else { ask = 'type'; q = `${spec}\n\n${codeBlock}\n\nThis version has a bug. What kind of bug is it?`; }
   meta = { ...meta, ask };
   const one = part[ask]();
-  return { ...base, prompt: q, answerType: one.answerType, answer: one.answer, choices: one.choices, tolerance: one.tolerance, meta };
+  const hints = ask === 'fix' && diff === 'easy' ? H.fixGiven : H[ask];
+  return { ...base, prompt: q, answerType: one.answerType, answer: one.answer, choices: one.choices, tolerance: one.tolerance, meta, hints };
+}
+
+// ---- guided-mode hints (built from the plan and its rendering; never draw from rng) ----
+
+// Variables worth writing down while tracing each template.
+function trackNames(tplId, c) {
+  switch (tplId) {
+    case 'sum-to': case 'power': case 'sum-while': case 'increases': return [c.acc, c.i];
+    case 'sum-list': return [c.acc, c.indexed ? c.i : c.x];
+    case 'count-if': return c.style === 'while' ? [c.acc, c.i] : [c.acc, c.x];
+    case 'min-max': return [c.best, c.style === 'index' ? c.i : c.x];
+    case 'digit-sum': return [c.acc, c.n];
+    case 'find-index': return [c.i];
+    default: return [];
+  }
+}
+const nameList = (ns, L) => ns.map(n => code(n, L)).join(' and ');
+// A loop reminder that fits the function's loop, whatever the bug is.
+function loopNote(fnBody, L) {
+  if (fnBody.some(s => s.k === 'forRange')) return ` Remember: ${rangeText(L)}.`;
+  if (fnBody.some(s => s.k === 'while')) return ' A `while` loop checks its condition before every pass, so check it on the last pass too.';
+  return '';
+}
+const CHECKLIST = 'Ask what is different from correct code: a starting value, how far the loop runs, a comparison, ' +
+  'an arithmetic operator, `=` where it should add on, which list position is read, where the `return` sits, ' +
+  'or whether the loop variable ever moves.';
+
+function bugHints(p, w, L) {
+  const { tpl, c } = w;
+  const body = w.bad.fns[0].body;
+  const ex = exampleText(tpl, c, p.ex, L);
+  const specH = `Read the spec first: ${sig(tpl, c, L)} should return ${tpl.desc(c, L)}. For the example, ${ex}, that is **${p.want}** (${tpl.work(c, p.ex)}).`;
+  const vars = trackNames(p.tpl, c);
+  const traceH = `Trace the code with the example input, line by line. Write down ${nameList(vars, L)} after every line that changes them.${loopNote(body, L)}`;
+  const findH = 'The first line where your trace stops matching what the spec needs is the bug. Check the starting values, the first and last pass of the loop, the condition and the update line.';
+  const tryFix = `Put each replacement in place of the buggy line and rerun the example: the right one returns ${p.want}, and it must also work for any other input, not just this one.`;
+  const runH = `Run the code exactly as it is written, bug included, not as it should work. Trace ${ex}, writing down ${nameList(vars, L)} as they change, until it returns.${loopNote(body, L)}`;
+  return {
+    line: [specH, traceH, findH],
+    fix: [specH, traceH, `Once you have found the wrong line, compare it with what the spec needs. ${tryFix}`],
+    fixGiven: [specH, `Line ${w.bugLine} is \`${lineAt(w.R, p.slot)}\`. Work out what it does on each pass and compare that with what the spec needs.`, tryFix],
+    actual: [specH, runH],
+    type: [specH, `${traceH} Find the line where it goes wrong first.`, CHECKLIST],
+    part: {
+      line: `${traceH} The first line where your trace stops matching what the spec needs is the bug.`,
+      fix: `${tryFix}`,
+      actual: runH,
+      type: `Find the wrong line first, then name the mistake. ${CHECKLIST}`,
+    },
+  };
+}
+
+function predictHints(m, L) {
+  if (m.form === 'call') {
+    const tpl = T[m.tpl], c = m.c;
+    const body = fnProg(tpl, c).fns[0].body;
+    const vars = trackNames(m.tpl, c);
+    const callH = (a, j = 0) => `Trace ${exampleText(tpl, c, a, L)}${a.some(Array.isArray) ? ` (the program passes ${code(m.listNames[j], L)})` : ''}: write down ${nameList(vars, L)} after every line that changes them.${loopNote(body, L)}`;
+    const what = `${sig(tpl, c, L)} works out ${tpl.desc(c, L)}. The program prints what the call returns.`;
+    if (m.ask === 'two') return { part: { first: `${callH(m.calls[0])} The first line printed is what this call returns.`, second: `${callH(m.calls[1], 1)} The second line printed is what this call returns.` } };
+    return { hints: [what, callH(m.calls[0])] };
+  }
+  const c = m.c;
+  if (m.form === 'loop') {
+    const i = code(c.i, L);
+    const range = c.down ? `${i} starts at ${c.b} and counts down by ${c.s}, stopping before it reaches ${c.a}.`
+      : `${i} starts at ${c.a} and counts up by ${c.s}, stopping before ${c.b}. Remember: ${rangeText(L)}.`;
+    const each = `Each pass prints ${i}${c.m === 1 ? '' : ` × ${c.m}`}${c.add ? ` + ${c.add}` : ''}.`;
+    if (m.ask === 'count-last') {
+      return { part: {
+        count: `${range} List the values of ${i} and count them: one line is printed per value.`,
+        last: `${each} Use the last value of ${i} from your list.`,
+      } };
+    }
+    return { hints: [range, `List the values of ${i} first. ${each}`,
+      m.ask === 'total' ? 'Work out every printed number, then add them all up.' : 'The last line comes from the last value of ' + i + '.'] };
+  }
+  if (m.form === 'arith') {
+    return { hints: [`Track ${code(c.a, L)} and ${code(c.b, L)} line by line. Each line changes only the variable on its left.`,
+      `They start at ${code(c.a, L)} = ${c.va} and ${code(c.b, L)} = ${c.vb}. A line that uses both reads their current values, not the starting ones. At the end, print shows ${code(c.out === 'a' ? c.a : c.b, L)}.`] };
+  }
+  if (m.form === 'grow') {
+    const x = code(c.x, L), i = code(c.i, L);
+    return { hints: [`${x} starts at ${c.x0}. The loop runs ${c.k} times, with ${i} = 0, 1, …, ${c.k - 1} (${rangeText(L)}).`,
+      `Each pass sets ${x} to ${x} × ${c.m} + ${i}, using the current ${x}. First pass: ${c.x0} × ${c.m} + 0 = ${c.x0 * c.m}. Keep going for the other passes.`] };
+  }
+  if (m.form === 'collatz') {
+    const n = code(c.n, L);
+    return { part: {
+      first: `Start at ${n} = ${c.v}. Even: halve it. Odd: 3 × ${n} + 1. Write each new value until you reach 1, then count the moves (not the values).`,
+      second: `${code(c.peak, L)} keeps the highest value seen, starting with ${c.v} itself. Look for the biggest number in your list of values.`,
+    } };
+  }
+  // nested
+  const i = code(c.i, L), j = code(c.j, L);
+  const pairs = `${i} takes the values 1 to ${c.a}; for each ${i}, ${j} takes ${i} up to ${c.b} (the loop ends are one past these, because ${rangeText(L)}). List every pair (${i}, ${j}).`;
+  return { part: {
+    first: `${pairs} Count the pairs where (${i} + ${j}) % ${c.k} is 0.`,
+    second: `Use the same pairs and add up ${i} × ${j} for every one of them.`,
+  } };
 }
 
 // ---- predict-output plans (no lang) ----
@@ -895,7 +997,8 @@ function presentPredict(m, L) {
     expl = `The inner loop runs over the pairs ${P.nested.ref(m.c).pairs.map(([i, j]) => `(${i}, ${j})`).join(', ')}. **${lines[0]}** of them have a sum divisible by ${m.c.k}, and the products add up to **${lines[1]}**.`;
   }
   const meta = { mode: 'predict', ...m };
-  const num = (id, label, ask, answer) => ({ id, label, ask, answerType: 'number', answer, tolerance: 0 });
+  const H = predictHints(m, L);
+  const num = (id, label, ask, answer) => ({ id, label, ask, answerType: 'number', answer, tolerance: 0, hint: H.part[id] });
   if (m.ask === 'two') {
     return { lang: L, prompt: `${codeBlock}\n\nThis program prints two lines. What are they?`, answerType: 'multi',
       parts: [num('first', 'First output', 'What is the first line printed?', ans.first), num('second', 'Second output', 'What is the second line printed?', ans.second)],
@@ -907,7 +1010,7 @@ function presentPredict(m, L) {
       explanation: expl, meta };
   }
   const q = m.ask === 'last' ? 'What is the last line this program prints?' : m.ask === 'total' ? 'What is the total of all the numbers this program prints?' : 'What does this program print?';
-  return { lang: L, prompt: `${codeBlock}\n\n${q}`, answerType: 'number', answer: ans.one, tolerance: 0, explanation: expl, meta };
+  return { lang: L, prompt: `${codeBlock}\n\n${q}`, answerType: 'number', answer: ans.one, tolerance: 0, explanation: expl, meta, hints: H.hints };
 }
 
 // ---- generate ----

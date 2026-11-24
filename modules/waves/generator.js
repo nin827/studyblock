@@ -831,9 +831,80 @@ export function generate({ subtopic, difficulty, rng }) {
   if (!gen) throw new Error(`Unknown subtopic: ${subtopic}`);
   for (let i = 0; i < 80; i++) {
     const q = gen(difficulty, rng);
-    if (q) return q;
+    if (q) return withHints(q);
   }
   throw new Error(`Waves: could not generate ${subtopic}/${difficulty}`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Guided-mode hints, read from the explanation's calculator rows after the question is built (so
+// they never touch the rng and use the same `_labels` as the given values):
+//   1. the method, plus a "watch out" for the classic mistake;
+//   2. the values from the question as calculator rows;
+//   3. any intermediate rows with their values;
+//   4. the final row's expression only, without its value.
+// When the final row is only a unit conversion (e.g. `_T_ms = _T * 1000`), the row before it is the
+// answer in other units, so its value is hidden too and both expressions go in the last hint.
+
+const TIPS = {
+  weq: "Watch out: multiply for speed, divide for frequency or wavelength, and work in Hz and m.",
+  "period-T": "Watch out: period and frequency are reciprocals, not the same number.",
+  "period-f": "Watch out: period and frequency are reciprocals, and the period must be in seconds.",
+  "period-count": "Frequency is waves per second, so multiply by the time.",
+  "period-f-count": "Watch out: divide the number of waves by the time, not the other way round.",
+  "period-scope": "Watch out: the time per division is in milliseconds, so convert the period to seconds first.",
+  "period-speed-T": "The time between one crest and the next is one period.",
+  "period-count-T": "Watch out: time ÷ number of waves is the period; number of waves ÷ time would be the frequency.",
+  "refr-n-from-v": "A refractive index is always more than 1, because light is slowest in the material.",
+  "refr-v-from-n": "Light is slower in the material than in air, so the answer is less than 3.",
+  "refr-snell": "Measure angles from the normal and keep the calculator in degrees (it already is).",
+  "refr-critical": "At the critical angle the refracted ray skims along the boundary, at 90°.",
+  "refr-v-from-critical": "It takes two steps: the index from the critical angle, then the speed from the index.",
+  "lens-v": "Watch out: work with reciprocals and flip the result at the end. Don't just add or subtract the distances.",
+  "lens-f": "Watch out: work with reciprocals and flip the result at the end. Don't just add the distances.",
+  "lens-u": "Watch out: work with reciprocals and flip the result at the end. Don't just subtract the distances.",
+  "lens-mag": "Magnification is |v| ÷ u, so you need the image distance first.",
+  "lens-height": "The image is |v| ÷ u times the size of the object.",
+  "lens-power": "Watch out: the focal length must be in metres, and a diverging lens has a negative power.",
+};
+
+const ROW = /^- `(_[A-Za-z0-9_]+) = ([^`]+)`(.*)$/;
+const UNIT_STEP = /^(_[A-Za-z0-9_]+) [*/] (?:1e-?\d+|\d+)$/;
+
+function rowHints(explanation, tip, finishNote, answer, tol) {
+  const blocks = String(explanation || "").split("\n\n");
+  const intro = blocks[0];
+  const rows = [];
+  for (const line of blocks.slice(1).join("\n").split("\n")) {
+    const m = line.match(ROW);
+    if (!m) continue;
+    const rest = m[3].trim();
+    rows.push(rest.startsWith("→") ? { label: m[1], expr: m[2], shown: rest.slice(1).trim() } : { label: m[1], text: line.slice(2) });
+  }
+  const last = rows[rows.length - 1];
+  if (!last || last.expr === undefined) return null;
+  const givens = rows.filter((r) => r.expr === undefined);
+  let mids = rows.slice(0, -1).filter((r) => r.expr !== undefined);
+  const conv = last.expr.match(UNIT_STEP);
+  const prev = conv && mids.length && mids[mids.length - 1].label === conv[1] ? mids[mids.length - 1] : null;
+  if (prev) mids = mids.slice(0, -1);
+  const out = [`${intro}${tip ? ` ${tip}` : ""}`];
+  if (givens.length) out.push(`Put the values from the question into calculator rows:\n\n${givens.map((r) => `- ${r.text}`).join("\n")}`);
+  // An intermediate value that happens to match the answer is listed without its value.
+  const leaks = (s) => Number.isFinite(answer) && (String(s).match(/-?\d+(?:\.\d+)?/g) || []).some((x) => Math.abs(Number(x) - answer) <= tol + 1e-9);
+  if (mids.length) out.push(`Then work out:\n\n${mids.map((r) => `- \`${r.label} = ${r.expr}\`${leaks(r.shown) ? "" : ` → ${r.shown}`}`).join("\n")}`);
+  out.push(
+    prev
+      ? `Work out \`${prev.label} = ${prev.expr}\`, then convert the unit: \`${last.label} = ${last.expr}\`.${finishNote}`
+      : `Finally work out \`${last.label} = ${last.expr}\`.${finishNote}`
+  );
+  return out;
+}
+
+function withHints(q) {
+  const p = q.params || {};
+  const hints = rowHints(q.explanation, TIPS[p.kind], p.rounded ? roundNote(p.dp) : EXACT, Number(q.answer), q.tolerance || 0);
+  return hints && hints.length ? { ...q, hints } : q;
 }
 
 // ---------------------------------------------------------------------------------------------

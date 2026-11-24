@@ -234,7 +234,8 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 - They never call `saveAttempt` and never touch stats, History or best scores; only the last-module/difficulty cookies update. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
 - **Generator hints (optional):** `hints: [markdown]` (1–4 progressive steps that never state the final answer) and/or `parts[i].hint` on multi-part questions. The engine keeps non-empty strings ≤ 600 chars, max 4, dropping others with one console.warn per module. Never stored.
 - **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
-- **`modules/<id>/guide.md` (optional):** `## General` plus `## <Subtopic title>` sections (case-insensitive; text before the first `##` ignored). Loaded with `loadGuide` and shown as a collapsible "How to solve" card for the current question's subtopic.
+- **`modules/<id>/guide.md` (optional):** `## General` plus `## <Subtopic title>` sections (case-insensitive; text before the first `##` ignored). Loaded with `loadGuide` and shown as a collapsible "How to solve" card for the current question's subtopic. Every module has one. Keep tables and sub-lists after a numbered list, not inside it: markdown.js can't nest them.
+- **Every generator returns `hints`** (multi-part: a `hint` on each part), built only from values already drawn: no rng calls in hint code, so adding or editing hints never changes a question. When changing hints, fingerprint each cell's questions (hints stripped) before and after, and check that no hint states the answer.
 - Open choices are in ticket 011.
 
 ## Storage

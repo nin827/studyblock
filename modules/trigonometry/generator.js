@@ -37,6 +37,7 @@ const atanD = (x) => Math.atan(x) / RAD;
 const ROUND = " Round to 2 decimal places.";
 const DEG = " Answer in degrees, as a number without the ° sign.";
 const UNROUNDED = " Keep unrounded values in your working.";
+const LATE = " Round to 2 decimal places only at the end."; // guided-mode hints
 
 // Prompt numbers collected while a question is built, offered to the calculator as `given` rows.
 // `given()` rows are numbers stated in the prompt; `fact()` rows (derived values) are shown but not offered.
@@ -203,7 +204,14 @@ function genExact(difficulty, rng) {
       cos: "In the 30-60-90 triangle with sides 1, √3, 2 and the 45-45-90 triangle with sides 1, 1, √2: cos = adjacent / hypotenuse.",
       tan: "In the 30-60-90 triangle with sides 1, √3, 2 and the 45-45-90 triangle with sides 1, 1, √2: tan = opposite / adjacent.",
     }[f];
+    const ratioWords = { sin: "opposite / hypotenuse", cos: "adjacent / hypotenuse", tan: "opposite / adjacent" }[f];
+    const tri = angle === 45 ? "the half-square triangle with sides 1, 1, √2" : angle === 0 || angle === 90 ? "a point on the unit circle at that angle: cos is its x-coordinate and sin its y-coordinate" : "the half-equilateral triangle with sides 1, √3, 2 (the shortest side is opposite the smallest angle)";
     return {
+      hints: [
+        `${f} = ${ratioWords}.`,
+        `Picture ${tri}, and read off ${f}(${angle}°) from it.`,
+        `Rule out choices that can't be right: sin and cos are never more than 1, and from 0° to 90° sin and tan get bigger as the angle grows while cos gets smaller.`,
+      ],
       prompt: `What is the exact value of ${f}(${angle}°)?`,
       explanation: `${why}\n\nSo \`${f}(${angle}°) = ${answer}\` (about ${mid(v)}); the answer is **${answer}**. Check it with the calculator: \`${f}(${angle})\` → ${mid(v)}.`,
       answer,
@@ -221,6 +229,11 @@ function genExact(difficulty, rng) {
     const inv = { sin: "asin", cos: "acos", tan: "atan" }[f];
     const valCalc = val.replace(/√(\d)/g, "sqrt($1)");
     return {
+      hints: [
+        `${val} is one of the exact values, so θ is one of the special angles: 0°, 30°, 45°, 60° or 90°.`,
+        `Think of the half-square triangle (sides 1, 1, √2) and the half-equilateral triangle (sides 1, √3, 2), where ${f} = ${{ sin: "opposite / hypotenuse", cos: "adjacent / hypotenuse", tan: "opposite / adjacent" }[f]}. Which angle gives ${f} = ${val}?`,
+        `You can check with the calculator: \`${inv}(${valCalc})\`.`,
+      ],
       prompt: `Find the angle θ, with 0° ≤ θ ≤ 90°, for which \`${f}(θ) = ${val}\`.${DEG} Give a whole number.`,
       explanation: `This is one of the exact values: \`${f}(${angle}°) = ${val}\`, so θ = **${angle}**.\n\nCheck with the calculator: \`${inv}(${valCalc})\` → ${angle}.`,
       answer: angle,
@@ -245,6 +258,11 @@ function genExact(difficulty, rng) {
   const coC = (k) => (k === 1 ? "" : `${k} * `);
   const op = sign > 0 ? "+" : "-";
   return {
+    hints: [
+      `Replace each trig part with its exact value from the table, then do the arithmetic.${t1[0].endsWith("²") || t2[0].endsWith("²") ? " A squared term like sin(45°)² means square the value." : ""}`,
+      `\`${t1[0]} = ${show(t1[2])}\` and \`${t2[0]} = ${show(t2[2])}\`.`,
+      `Now work out \`${k1} × ${show(t1[2])} ${op} ${k2} × ${show(t2[2])}\`, multiplying before you ${sign > 0 ? "add" : "subtract"}.`,
+    ],
     prompt: `Using exact values, work out \`${co(k1)}${t1[0]} ${op} ${co(k2)}${t2[0]}\`. Give the exact answer as a whole number or decimal.`,
     explanation: [
       `Replace each part with its exact value: \`${t1[0]} = ${show(t1[2])}\` and \`${t2[0]} = ${show(t2[2])}\`.`,
@@ -319,6 +337,11 @@ function genRightSides(difficulty, rng) {
       [given("_angle", theta), given(`_${have}`, g), row(`_${want}`, st.expr, final(exact, "2dp", "cm"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "side", have, g, theta, want },
+    hints: [
+      `Label the sides from the ${show(theta)}° angle: you know the ${SIDE_NAME[have]} (${show(g)} cm) and want the ${SIDE_NAME[want]}.`,
+      `The ${SIDE_NAME[have]} and ${SIDE_NAME[want]} go together in ${st.word}.`,
+      `Rearrange it for the side you want: \`_${want} = ${st.expr}\`. ${st.expr.includes(" / ") ? "The unknown is on the bottom of the ratio, so you divide." : "The unknown is on the top of the ratio, so you multiply."}${LATE}`,
+    ],
   };
   return finish(base, exact, "2dp", sideMistakes(have, g, theta, want), rng);
 }
@@ -337,6 +360,13 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_hyp", L), row(up ? "_opp" : "_adj", up ? "_hyp * sin(_angle)" : "_hyp * cos(_angle)", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "side", have: "hyp", g: L, theta, want: up ? "opp" : "adj" },
+      hints: [
+        `Sketch it: the ladder is the hypotenuse, ${show(L)} m, and the ${show(theta)}° angle is at the ground.`,
+        up
+          ? `The height up the wall is opposite that angle, so use SOH: sin = opposite / hypotenuse.`
+          : `The distance from the wall is adjacent to that angle, so use CAH: cos = adjacent / hypotenuse.`,
+        `Multiply: \`_hyp * ${up ? "sin" : "cos"}(_angle)\` = ${show(L)} × ${up ? "sin" : "cos"}(${show(theta)}).${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", sideMistakes("hyp", L, theta, up ? "opp" : "adj"), rng);
   }
@@ -352,6 +382,11 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_adj", d), given("_eye", eye), row("_opp", "_adj * tan(_angle)", mid(d * tanD(theta))), row("_height", "_opp + _eye", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "elevation", d, theta, eye },
+      hints: [
+        `The right-angled triangle starts at your eyes, not the ground: the ${d} m is adjacent to the ${show(theta)}° angle, and the opposite side is the part of the tower above eye level.`,
+        `Opposite and adjacent go with TOA: \`_opp = _adj * tan(_angle)\` = ${d} × tan(${show(theta)}).`,
+        `Don't forget your eyes are ${show(eye)} m above the ground: add that to the opposite side.${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [d * tanD(theta), d * sinD(theta) + eye, d / tanD(theta) + eye, d * Math.abs(Math.tan(theta)) + eye, d * tanD(theta) - eye], rng);
   }
@@ -366,6 +401,11 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_opp", H), row("_adj", "_opp / tan(_angle)", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "side", have: "opp", g: H, theta, want: "adj" },
+      hints: [
+        `The angle of depression from the cliff top equals the angle of elevation from the boat (alternate angles), so the angle at the boat is ${show(theta)}°.`,
+        `From that angle, the cliff (${H} m) is opposite and the distance you want is adjacent: use TOA, tan = opposite / adjacent.`,
+        `The unknown is on the bottom, so divide: \`_opp / tan(_angle)\` = ${H} ÷ tan(${show(theta)}).${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", sideMistakes("opp", H, theta, "adj"), rng);
   }
@@ -383,6 +423,11 @@ function genRightSideWord(rng) {
       [given("_h", h), given("_a1", a1), given("_a2", a2), row("_far", "_h / tan(_a1)", mid(far)), row("_near", "_h / tan(_a2)", mid(near)), row("_PQ", "_far - _near", final(exact, "2dp", "m"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "two-angles", h, a1, a2 },
+    hints: [
+      `Each point makes its own right-angled triangle with the tower: the height ${h} m is opposite the angle, and the distance to the foot is adjacent.`,
+      `The smaller angle, ${show(a1)}°, belongs to the point further away. Its distance is \`_far = _h / tan(_a1)\`; the nearer one is \`_near = _h / tan(_a2)\`.`,
+      `The distance PQ is the difference of those two distances: \`_far - _near\`. Keep both unrounded.${LATE}`,
+    ],
   };
   return finish(base, exact, "2dp", [far, near, h * tanD(a2) - h * tanD(a1), far + near, h / tanD(a2 - a1)], rng);
 }
@@ -410,6 +455,22 @@ function angleMistakes(sides, exact) {
   out.push(atanD(ratio), Math.atan(ratio), Math.asin(Math.min(1, ratio))); // the last two: calculator left in radians
   if (sides.o !== undefined && sides.a !== undefined) out.push(atanD(sides.a / sides.o));
   return out;
+}
+
+// Guided-mode hints for an angle from two sides (no rng; never the angle itself).
+function angleHints(sides, lead) {
+  const st = angleRow(sides);
+  const known = [];
+  if (sides.o !== undefined) known.push(`opposite = ${show(sides.o)}`);
+  if (sides.a !== undefined) known.push(`adjacent = ${show(sides.a)}`);
+  if (sides.h !== undefined) known.push(`hypotenuse = ${show(sides.h)}`);
+  const inv = st.expr.slice(0, 4);
+  const frac = sides.h !== undefined ? `${show(sides.o ?? sides.a)} / ${show(sides.h)}` : `${show(sides.o)} / ${show(sides.a)}`;
+  return [
+    lead || `Label the sides from θ: you know the ${known.map((k) => k.split(" =")[0]).join(" and the ")}.`,
+    `With ${known.join(" and ")}, use ${st.word}.`,
+    `Work out the ratio ${frac}, then use the inverse function ${inv} to turn it into an angle: \`${st.expr}\`. Make sure you get degrees.${LATE}`,
+  ];
 }
 
 function sideLines(sides, halfBase = false) {
@@ -445,6 +506,7 @@ function genRightAngles(difficulty, rng) {
     prompt: `In a right-angled triangle, ${desc.join(" and ")}. Find the acute angle θ.${DEG}${ROUND}`,
     explanation: [`Use ${st.word}, then the inverse function.`, [...sideLines(sides), row("_theta", st.expr, final(exact, "2dp", "°"))].join("\n")].join("\n\n"),
     params: { kind: "angle", ...sides },
+    hints: angleHints(sides),
   };
   return finish(base, exact, "2dp", angleMistakes(sides, exact), rng, { max: 90 });
 }
@@ -495,6 +557,7 @@ function genRightAngleWord(rng) {
     prompt: `${prompt}${DEG}${ROUND}`,
     explanation: [`${intro} Use ${st.word}.`, [...sideLines(sides, kind === "isosceles"),row("_theta", st.expr, final(exact, "2dp", "°"))].join("\n")].join("\n\n"),
     params: { kind: "angle", ...sides, unit },
+    hints: angleHints(sides, intro),
   };
   return finish(base, exact, "2dp", angleMistakes(sides, exact), rng, { max: 180 });
 }
@@ -524,6 +587,11 @@ function genNonRight(difficulty, rng) {
           [given("_angA", A), given("_angB", B), given("_a", a), row("_b", "_a * sin(_angB) / sin(_angA)", final(exact, "2dp", "cm"))].join("\n"),
         ].join("\n\n"),
         params: { kind: "sine-side", A, B, a },
+        hints: [
+          `You have two angles and a side opposite one of them, so use the sine rule. Side a is opposite angle A, and b is opposite B.`,
+          `Write \`a / sin(A) = b / sin(B)\` and rearrange: \`b = a × sin(B) / sin(A)\`.`,
+          `Substitute: ${show(a)} × sin(${show(B)}) ÷ sin(${show(A)}).${LATE}`,
+        ],
       };
       return finish(base, exact, "2dp", [(a * sinD(A)) / sinD(B), a * sinD(B), (a * sinD(C)) / sinD(A), (a * Math.abs(Math.sin(B))) / Math.abs(Math.sin(A)), (a * B) / A], rng);
     }
@@ -536,6 +604,11 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_angB", B), given("_c", c), row("_angC", "180 - _angA - _angB", show(C)), row("_a", "_c * sin(_angA) / sin(_angC)", final(exact, "2dp", "cm"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "sine-asa", A, B, c },
+      hints: [
+        `Side c is opposite angle C, which you don't know yet. Angles in a triangle add up to 180°.`,
+        `C = 180 - ${show(A)} - ${show(B)} = ${show(C)}°.`,
+        `Now use the sine rule \`a / sin(A) = c / sin(C)\`: a = ${show(c)} × sin(${show(A)}) ÷ sin(${show(C)}).${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [(c * sinD(A)) / sinD(B), (c * sinD(C)) / sinD(A), (c * sinD(B)) / sinD(C), c * sinD(A)], rng);
   }
@@ -556,6 +629,11 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_a", a), given("_b", b), row("_sinB", "_b * sin(_angA) / _a", mid(s)), row("_angB", "asin(_sinB)", final(exact, "2dp", "°"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "sine-angle", A, a, b },
+      hints: [
+        `You know a side-and-angle pair (a and A) and side b, so use the sine rule with the sines on top: \`sin(B) / b = sin(A) / a\`.`,
+        `Rearrange: \`sin(B) = b × sin(A) / a\` = ${show(b)} × sin(${show(A)}) ÷ ${show(a)}. Keep it unrounded (\`_sinB\`).`,
+        `Turn the sine back into an angle with asin: \`asin(_sinB)\`. B is acute, so that's the one you want.${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [180 - exact, asinD(Math.min(1, (a * sinD(A)) / b) || 0.5), acosD(s), (b * A) / a, 180 - A - exact], rng, { max: 180 });
   }
@@ -573,6 +651,11 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_b", b), given("_c", c), row("_a", "sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))", final(exact, "2dp", "cm"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "cos-side", A, b, c },
+      hints: [
+        `You have two sides and the angle between them, so use the cosine rule: \`a² = b² + c² - 2bc × cos(A)\`.`,
+        `Substitute: a² = ${show(b)}² + ${show(c)}² - 2 × ${show(b)} × ${show(c)} × cos(${show(A)}).${A > 90 ? " cos of an obtuse angle is negative, so this term adds on." : ""}`,
+        `That gives a², not a: take the square root, \`sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))\`.${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [a2, Math.sqrt(b * b + c * c + 2 * b * c * cosD(A)), Math.sqrt(b * b + c * c), Math.sqrt(Math.abs(b * b + c * c - 2 * b * c * Math.cos(A))), Math.sqrt(Math.abs(b * b + c * c - b * c * cosD(A)))], rng);
   }
@@ -606,6 +689,11 @@ function genNonRight(difficulty, rng) {
         [given(`_${L}`, opp), given(`_${others[0]}`, s1), given(`_${others[1]}`, s2), row(`_cos${lab}`, `(_${others[0]}^2 + _${others[1]}^2 - _${L}^2) / (2 * _${others[0]} * _${others[1]})`, mid(cosX)), row(`_ang${lab}`, `acos(_cos${lab})`, final(exact, "2dp", "°"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "cos-angle", a, b, c, lab },
+      hints: [
+        `Three sides and no angles: use the cosine rule rearranged for an angle. ${which === "largest" ? `The largest angle is opposite the longest side, ${L} = ${opp} cm.` : `Angle A is opposite side a = ${a} cm.`}`,
+        `\`cos(${lab}) = (${others[0]}² + ${others[1]}² - ${L}²) / (2${others[0]}${others[1]})\`: the side opposite ${lab} is the one you subtract.`,
+        `Substitute: cos(${lab}) = (${s1}² + ${s2}² - ${opp}²) ÷ (2 × ${s1} × ${s2}). Then use acos to get the angle.${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [180 - exact, 90 - exact, acosD(-cosX), acosD((s1 * s1 + s2 * s2 + opp * opp) / (2 * s1 * s2)), asinD(Math.min(1, Math.abs(cosX)))], rng, { max: 180 });
   }
@@ -622,6 +710,10 @@ function genNonRight(difficulty, rng) {
         [given("_a", a), given("_b", b), given("_angC", C), row("_area", "0.5 * _a * _b * sin(_angC)", final(exact, "2dp", "cm²"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "area", a, b, C },
+      hints: [
+        `With two sides and the angle between them, use area = ½ × a × b × sin(C), not ½ × base × height.`,
+        `Substitute: 0.5 × ${a} × ${b} × sin(${C}).${C > 90 ? ` sin of an obtuse angle is still positive.` : ""}${LATE}`,
+      ],
     };
     return finish(base, exact, "2dp", [a * b * sinD(C), 0.5 * a * b * cosD(C), 0.5 * a * b, 0.5 * a * b * Math.abs(Math.sin(C))], rng);
   }
@@ -643,6 +735,11 @@ function genNonRight(difficulty, rng) {
       [given("_a", a), given("_b", b), given("_c", c), row("_angC", "acos((_a^2 + _b^2 - _c^2) / (2 * _a * _b))", mid(C)), row("_area", "0.5 * _a * _b * sin(_angC)", final(exact, "2dp", "cm²"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "area-sss", a, b, c },
+    hints: [
+      `Area = ½ × a × b × sin(C) needs an angle, so find one first with the cosine rule.`,
+      `Call the sides a = ${a}, b = ${b}, c = ${c}. Angle C is opposite c: \`cos(C) = (a² + b² - c²) / (2ab)\` = (${a}² + ${b}² - ${c}²) ÷ (2 × ${a} × ${b}). Use acos and keep C unrounded (\`_angC\`).`,
+      `Now \`0.5 * _a * _b * sin(_angC)\`.${LATE}`,
+    ],
   };
   return finish(base, exact, "2dp", [a * b * sinD(C), 0.5 * a * b * cosC, 0.5 * a * b, 0.5 * a * c * sinD(C), (a * b * c) / 4 / 10], rng);
 }

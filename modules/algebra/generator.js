@@ -65,6 +65,39 @@ function buildChoices(correct, candidates, rng) {
   return { answer: correctStr, choices: rng.shuffle([correctStr, ...out]) };
 }
 
+// ---- Guided-mode hints: this question's numbers, never the final value of x ----
+
+function linearHints(a, b, c, rounded) {
+  const ax = coefX(a);
+  const hints = [];
+  if (b !== 0) {
+    hints.push(`Get the x term on its own first: ${b > 0 ? `subtract ${b} from` : `add ${-b} to`} both sides of \`${linearText(a, b, c)}\`.`);
+    hints.push(`That leaves \`${ax} = ${c - b}\`.`);
+  } else {
+    hints.push(`There is no number added to the x term, so \`${ax}\` is already on its own.`);
+  }
+  let last = `Now divide both sides by ${a}${a < 0 ? " (a negative divided by a negative is positive, and vice versa)" : ""}.`;
+  if (rounded) last += ` In the calculator: \`${b !== 0 ? "(_c - _b)" : "_c"} / _a\`, then round to 2 decimal places.`;
+  hints.push(last);
+  return hints;
+}
+
+function quadraticHints(p, q) {
+  if (q === 0) {
+    return [
+      `There is no number term, so take x out as a common factor: \`x(x${signedTerm(p)}) = 0\`.`,
+      `A product is zero when either factor is zero, so solve \`x = 0\` and \`x${signedTerm(p)} = 0\`, then compare the two roots and give the **larger** one.`,
+    ];
+  }
+  const labels = p !== 0 ? " (they are `_c` and `_b` in the calculator)" : "";
+  const hints = [`Find two numbers that **multiply to ${q}** and **add to ${p}**${labels}.`];
+  if (p === 0) hints.push(`They add to 0, so they are opposites (the same size, different signs): look for a number whose square is ${-q}.`);
+  else if (q > 0) hints.push(`The product is positive, so both numbers have the same sign; the sum is ${p > 0 ? "positive, so both are positive" : "negative, so both are negative"}. Try the factor pairs of ${q}.`);
+  else hints.push(`The product is negative, so one number is positive and one is negative. The sum is ${p > 0 ? "positive" : "negative"}, so the bigger one (ignoring signs) is ${p > 0 ? "positive" : "negative"}. Try the factor pairs of ${-q}.`);
+  hints.push(`If the numbers are m and n, the equation factors as \`(x + m)(x + n) = 0\`, so the roots are x = -m and x = -n (flip the signs). Give the **larger** root.`);
+  return hints;
+}
+
 function genLinear(difficulty, rng) {
   let a, b, c;
   if (difficulty === "easy") {
@@ -118,6 +151,7 @@ function genLinear(difficulty, rng) {
   };
   // Calculator rows only where a calculator helps (hard: non-whole answers); easy/medium are by hand.
   if (rounded) base.given = givenRows([["_a", a], ["_b", b], ["_c", c]].filter(([label]) => label !== "_b" || b !== 0));
+  base.hints = linearHints(a, b, c, rounded);
 
   // Multiple choice only for whole-number answers (easy/medium).
   if (!rounded && rng.next() < 0.35) {
@@ -171,6 +205,7 @@ function genQuadratic(difficulty, rng) {
   };
   // b and c of x² + bx + c = 0 (a = 1 is implied); only when both terms appear in the equation.
   if (p !== 0 && q !== 0) base.given = givenRows([["_b", p], ["_c", q]]);
+  base.hints = quadraticHints(p, q);
 
   if (rng.next() < 0.4) {
     const { answer, choices } = buildChoices(

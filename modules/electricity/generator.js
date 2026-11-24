@@ -114,7 +114,8 @@ function genOhm(difficulty, rng) {
   const end = rounded ? DP2 : "";
   const toA = (x) => (milli ? x / 1000 : x); // mA -> A
   const toOhm = (x) => (milli ? x * 1000 : x); // kΩ -> Ω
-  let prompt, exact, unit, intro, lines, candidates, gv;
+  let prompt, exact, unit, intro, lines, candidates, gv, hints;
+  const thenRound = rounded ? " Then round to 2 decimal places." : "";
   // Medium states mA and kΩ; the explanation's _I/_R rows hold amps and ohms, so those get their own labels.
   const gI = milli ? "_mA" : "_I";
   const gR = milli ? "_kOhm" : "_R";
@@ -126,6 +127,16 @@ function genOhm(difficulty, rng) {
     lines = [given("_I", toA(I)), given("_R", toOhm(R)), step("_V", "_I * _R", final(exact, rounded, unit))];
     gv = [[gI, I], [gR, R]];
     candidates = [I / R, R / I, I + R];
+    hints = milli
+      ? [
+          "Use Ohm's law: `V = I × R`, with the current in amps and the resistance in ohms.",
+          `Convert: ${num(I)} mA = ${num(toA(I))} A and ${num(R)} kΩ = ${num(toOhm(R))} Ω. (Handy shortcut: mA × kΩ comes out in volts.)`,
+          `Substitute: \`V = ${num(toA(I))} × ${num(toOhm(R))}\` (in the calculator: \`(_mA / 1000) * (_kOhm * 1000)\`).`,
+        ]
+      : [
+          "Use Ohm's law: `V = I × R`.",
+          `Substitute: \`V = ${num(I)} × ${num(R)}\` (in the calculator: \`_I * _R\`).${thenRound}`,
+        ];
   } else if (unknown === "I") {
     exact = V / R;
     unit = uI;
@@ -139,6 +150,16 @@ function genOhm(difficulty, rng) {
       lines.push(step("_I", "_V / _R", final(exact, rounded, unit)));
     }
     candidates = [V * R, R / V, V - R];
+    hints = milli
+      ? [
+          "Rearrange Ohm's law to `I = V / R`. Work in ohms, so the current comes out in amps.",
+          `Convert: ${num(R)} kΩ = ${num(toOhm(R))} Ω, so \`I = ${num(V)} / ${num(toOhm(R))}\` in amps (in the calculator: \`_V / (_kOhm * 1000)\`).`,
+          "The question wants milliamps, so multiply the amps by 1000.",
+        ]
+      : [
+          "Rearrange Ohm's law `V = I × R` to `I = V / R`.",
+          `Substitute: \`I = ${num(V)} / ${num(R)}\` (in the calculator: \`_V / _R\`).${thenRound}`,
+        ];
   } else {
     exact = V / I;
     unit = uR;
@@ -152,11 +173,21 @@ function genOhm(difficulty, rng) {
       lines.push(step("_R", "_V / _I", final(exact, rounded, unit)));
     }
     candidates = [V * I, I / V, V - I];
+    hints = milli
+      ? [
+          "Rearrange Ohm's law to `R = V / I`. Work in amps, so the resistance comes out in ohms.",
+          `Convert: ${num(I)} mA = ${num(toA(I))} A, so \`R = ${num(V)} / ${num(toA(I))}\` in ohms (in the calculator: \`_V / (_mA / 1000)\`).`,
+          "The question wants kilohms, so divide the ohms by 1000.",
+        ]
+      : [
+          "Rearrange Ohm's law `V = I × R` to `R = V / I`.",
+          `Substitute: \`R = ${num(V)} / ${num(I)}\` (in the calculator: \`_V / _I\`).${thenRound}`,
+        ];
   }
 
   const values = { V, I, R };
   delete values[unknown];
-  const base = { prompt, explanation: explain(intro, lines), params: { formula: "ohm", unknown, values, rounded }, given: givenRows(gv) };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula: "ohm", unknown, values, rounded }, given: givenRows(gv), hints };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -186,7 +217,8 @@ function genPower(difficulty, rng) {
   );
   const dev = rng.pick(DEVICES);
   const end = rounded ? DP2 : "";
-  let prompt, exact, unit, intro, lines, candidates, formula, unknown, values, gv;
+  let prompt, exact, unit, intro, lines, candidates, formula, unknown, values, gv, hints;
+  const thenRound = rounded ? " Then round to 2 decimal places." : "";
 
   if (kind === "vi-P" || kind === "vi-I" || kind === "vi-V") {
     formula = "vi";
@@ -205,6 +237,10 @@ function genPower(difficulty, rng) {
       lines = [given("_P", P), given("_V", V), step("_I", "_P / _V", final(exact, rounded, unit))];
       gv = [["_P", P], ["_V", V]];
       candidates = [P * V, V / P, P / (V * V), (P / V) * 10];
+      hints = [
+        "Power, voltage and current are linked by `P = V × I`. Rearrange it for the current: `I = P / V`.",
+        `Substitute: \`I = ${P} / ${V}\` (in the calculator: \`_P / _V\`).${thenRound}`,
+      ];
     } else {
       V = difficulty === "easy" ? rng.int(2, 24) : rng.int(6, 240);
       I = difficulty === "easy" ? rng.int(1, 10) : rng.int(2, 15);
@@ -219,6 +255,10 @@ function genPower(difficulty, rng) {
         lines = [given("_V", V), given("_I", I), step("_P", "_V * _I", final(exact, false, unit))];
         gv = [["_V", V], ["_I", I]];
         candidates = [V / I, I / V, V + I];
+        hints = [
+          "Power is voltage times current: `P = V × I`.",
+          `Substitute: \`P = ${V} × ${I}\` (in the calculator: \`_V * _I\`).`,
+        ];
       } else if (kind === "vi-I") {
         unknown = "I";
         exact = I;
@@ -229,6 +269,10 @@ function genPower(difficulty, rng) {
         lines = [given("_P", P), given("_V", V), step("_I", "_P / _V", final(exact, false, unit))];
         gv = [["_P", P], ["_V", V]];
         candidates = [P * V, V / P, P - V];
+        hints = [
+          "Start from `P = V × I` and rearrange for the current: `I = P / V`.",
+          `Substitute: \`I = ${P} / ${V}\` (in the calculator: \`_P / _V\`).`,
+        ];
       } else {
         unknown = "V";
         exact = V;
@@ -239,6 +283,10 @@ function genPower(difficulty, rng) {
         lines = [given("_P", P), given("_I", I), step("_V", "_P / _I", final(exact, false, unit))];
         gv = [["_P", P], ["_I", I]];
         candidates = [P * I, I / P, P - I];
+        hints = [
+          "Start from `P = V × I` and rearrange for the voltage: `V = P / I`.",
+          `Substitute: \`V = ${P} / ${I}\` (in the calculator: \`_P / _I\`).`,
+        ];
       }
     }
   } else if (kind === "i2r-P" || kind === "i2r-I") {
@@ -256,6 +304,10 @@ function genPower(difficulty, rng) {
       lines = [given("_I", I), given("_R", R), step("_P", "_I^2 * _R", final(exact, false, unit))];
       gv = [["_I", I], ["_R", R]];
       candidates = [I * R, 2 * I * R, I * R * R]; // forgot to square, doubled instead, squared R
+      hints = [
+        "You know the current and the resistance, so use `P = I² × R`.",
+        `Substitute: \`P = ${I}² × ${R}\` (in the calculator: \`_I^2 * _R\`). Square the current first, then multiply.`,
+      ];
     } else {
       unknown = "I";
       exact = I;
@@ -266,6 +318,10 @@ function genPower(difficulty, rng) {
       lines = [given("_P", P), given("_R", R), step("_I", "sqrt(_P / _R)", final(exact, false, unit))];
       gv = [["_P", P], ["_R", R]];
       candidates = [P / R, P * R, Math.sqrt(P * R)]; // forgot the root, multiplied, root of product
+      hints = [
+        "Start from `P = I² × R`. Divide by R to get I², then take the square root: `I = √(P / R)`.",
+        `Substitute: \`I = √(${P} / ${R})\` (in the calculator: \`sqrt(_P / _R)\`).`,
+      ];
     }
   } else if (kind === "v2r-P" || kind === "v2r-R") {
     formula = "v2r";
@@ -291,6 +347,10 @@ function genPower(difficulty, rng) {
       lines = [given("_V", V), given("_R", R), step("_P", "_V^2 / _R", final(exact, rounded, unit))];
       gv = [["_V", V], ["_R", R]];
       candidates = [V / R, V * V * R, (2 * V) / R]; // forgot to square, multiplied, doubled
+      hints = [
+        "You know the voltage and the resistance, so use `P = V² / R`.",
+        `Substitute: \`P = ${num(V)}² / ${num(R)}\` (in the calculator: \`_V^2 / _R\`). Square the voltage first.${thenRound}`,
+      ];
     } else {
       unknown = "R";
       exact = (V * V) / P;
@@ -301,6 +361,10 @@ function genPower(difficulty, rng) {
       lines = [given("_V", V), given("_P", P), step("_R", "_V^2 / _P", final(exact, rounded, unit))];
       gv = [["_V", V], ["_P", P]];
       candidates = [P / (V * V), V / P, P / V];
+      hints = [
+        "Start from `P = V² / R` and swap R and P: `R = V² / P`.",
+        `Substitute: \`R = ${num(V)}² / ${num(P)}\` (in the calculator: \`_V^2 / _P\`).${thenRound}`,
+      ];
     }
   } else {
     // Hard: energy in kWh, optionally its cost.
@@ -324,6 +388,11 @@ function genPower(difficulty, rng) {
       intro = "Energy = power × time. Convert watts to kilowatts (÷ 1000) and add up the hours, so the answer comes out in kWh.";
       lines.push(step("_E", "_P_kW * _hours", final(exact, rounded, unit)));
       candidates = [P * hours * days, (P * hours) / 1000, (P * hours * days) / 100];
+      hints = [
+        "Energy = power × time. Use the power in kilowatts and the time in hours, so the answer comes out in kWh.",
+        `Convert: ${P} W = ${num(P / 1000)} kW. Total time: ${num(hours)} h × ${days} days = ${num(hours * days)} h.`,
+        `Multiply: \`E = ${num(P / 1000)} × ${num(hours * days)}\` (in the calculator: \`_P_W / 1000 * _h_per_day * _days\`).${thenRound}`,
+      ];
     } else {
       formula = "cost";
       unknown = "C";
@@ -336,10 +405,15 @@ function genPower(difficulty, rng) {
       gv.push(["_price", price]);
       lines.push(given("_price", price), step("_E", "_P_kW * _hours", `${num(E)} kWh`), step("_cost", "_E * _price", final(exact, rounded, unit)));
       candidates = [P * hours * days * price, ((P * hours) / 1000) * price, E / price];
+      hints = [
+        "Find the energy used in kWh first (power in kW × total hours), then multiply by the price per kWh.",
+        `Convert: ${P} W = ${num(P / 1000)} kW, and ${num(hours)} h × ${days} days = ${num(hours * days)} h, so \`E = ${num(P / 1000)} × ${num(hours * days)}\` kWh.`,
+        `Cost = energy × price: \`${num(E)} × ${price}\` (in the calculator: \`_P_W / 1000 * _h_per_day * _days * _price\`).${thenRound}`,
+      ];
     }
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { formula, unknown, values, rounded }, given: givenRows(gv) };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula, unknown, values, rounded }, given: givenRows(gv), hints };
   return finish(base, exact, rounded, candidates, rng);
 }
 
@@ -360,7 +434,7 @@ function genCircuit(difficulty, rng) {
   checkDifficulty(difficulty);
   const rounded = difficulty === "hard";
   const end = rounded ? DP2 : "";
-  let prompt, exact, intro, lines, candidates, kind, values, gv;
+  let prompt, exact, intro, lines, candidates, kind, values, gv, hints;
   const unit = "Ω";
 
   if (difficulty === "easy") {
@@ -378,6 +452,10 @@ function genCircuit(difficulty, rng) {
       lines = [...rs.map((r, i) => given(labels[i], r)), step("_R_total", labels.join(" + "), final(exact, false, unit))];
       gv = rs.map((r, i) => [labels[i], r]);
       candidates = [total - rs[0], Math.max(...rs), total + rs[n - 1]];
+      hints = [
+        "In series, resistances simply add: `R_total = R1 + R2 + …`.",
+        `Add them up: \`${rs.join(" + ")}\` (in the calculator: \`${labels.join(" + ")}\`).`,
+      ];
     } else {
       const known = rs.slice(0, -1);
       exact = rs[n - 1];
@@ -392,6 +470,10 @@ function genCircuit(difficulty, rng) {
       gv = [["_R_total", total], ...known.map((r, i) => [kl[i], r])];
       lines = [given("_R_total", total), ...known.map((r, i) => given(kl[i], r)), step("_R_x", `_R_total - ${kl.join(" - ")}`, final(exact, false, unit))];
       candidates = [total + known.reduce((s, r) => s + r, 0), total, total - known[0] + 1];
+      hints = [
+        "In series, all the resistances add up to the total. So the missing one is the total minus the ones you know.",
+        `Subtract: \`${total} - ${known.join(" - ")}\` (in the calculator: \`_R_total - ${kl.join(" - ")}\`).`,
+      ];
     }
   } else if (difficulty === "medium") {
     kind = "parallel";
@@ -403,6 +485,10 @@ function genCircuit(difficulty, rng) {
     gv = [["_R1", a], ["_R2", b]];
     lines = [given("_R1", a), given("_R2", b), step("_R_total", "(_R1 * _R2) / (_R1 + _R2)", final(exact, false, unit))];
     candidates = [a + b, (a + b) / 2, a * b, Math.abs(a - b)];
+    hints = [
+      "For two resistors in parallel, use product over sum: `R = (R1 × R2) / (R1 + R2)`. The result is smaller than either resistor.",
+      `Substitute: \`R = (${a} × ${b}) / (${a} + ${b}) = ${a * b} / ${a + b}\` (in the calculator: \`(_R1 * _R2) / (_R1 + _R2)\`).`,
+    ];
   } else {
     kind = rng.pick(["s+p", "p-of-s"]);
     const pickR = () => rng.int(1, 47) * rng.pick([1, 10]);
@@ -426,6 +512,11 @@ function genCircuit(difficulty, rng) {
         step("_R_total", "_R1 + _R_par", final(exact, true, unit)),
       ];
       candidates = [r1 + r2 + r3, (r1 * (r2 + r3)) / (r1 + r2 + r3), r1 + 1 / r2 + 1 / r3, p];
+      hints = [
+        "Work from the inside out: combine the parallel pair first, then add the series resistor.",
+        `Parallel pair (product over sum): \`R_par = (${r2} × ${r3}) / (${r2} + ${r3})\` (in the calculator: \`(_R2 * _R3) / (_R2 + _R3)\`).`,
+        `Now add the series resistor: \`R_total = ${r1} + R_par\`, with R_par ≈ ${num(p)} Ω. Then round to 2 decimal places.`,
+      ];
     } else {
       const s = r1 + r2;
       exact = (s * r3) / (s + r3);
@@ -441,10 +532,15 @@ function genCircuit(difficulty, rng) {
         step("_R_total", "(_R_ser * _R3) / (_R_ser + _R3)", final(exact, true, unit)),
       ];
       candidates = [r1 + r2 + r3, r1 + (r2 * r3) / (r2 + r3), 1 / s + 1 / r3, (s + r3) / 2];
+      hints = [
+        "Work from the inside out: add the series pair first, then combine that total in parallel with the third resistor.",
+        `Series pair: \`${r1} + ${r2} = ${s}\` Ω.`,
+        `Parallel with ${r3} Ω (product over sum): \`R = (${s} × ${r3}) / (${s} + ${r3})\` (in the calculator: \`((_R1 + _R2) * _R3) / (_R1 + _R2 + _R3)\`). Then round to 2 decimal places.`,
+      ];
     }
   }
 
-  const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded }, given: givenRows(gv) };
+  const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded }, given: givenRows(gv), hints };
   return finish(base, exact, rounded, candidates, rng);
 }
 

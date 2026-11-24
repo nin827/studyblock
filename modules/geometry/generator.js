@@ -84,7 +84,7 @@ function genPerimArea(difficulty, rng) {
   }[difficulty];
   const kind = rng.pick(kinds);
   const hard = difficulty === "hard";
-  let prompt, exact, rounded, unit, explanation, candidates, values, gv;
+  let prompt, exact, rounded, unit, explanation, candidates, values, gv, hints;
 
   if (kind === "rect-area" || kind === "rect-perim") {
     let l, w;
@@ -107,12 +107,21 @@ function genPerimArea(difficulty, rng) {
       prompt = `A rectangle is ${num(l)} cm long and ${num(w)} cm wide. What is its area, in cm²?${end}`;
       explanation = `Area of a rectangle = length × width.\n\n\`${num(l)} × ${num(w)}\` ${result(exact, rounded, unit)}`;
       candidates = [2 * (l + w), l + w, 2 * l * w]; // perimeter instead, added, doubled
+      hints = [
+        "Area of a rectangle = length × width.",
+        `Multiply \`_l × _w\`: \`${num(l)} × ${num(w)}\`.${rounded ? " Then round to 2 decimal places." : ""}`,
+      ];
     } else {
       exact = 2 * (l + w);
       unit = "cm";
       prompt = `A rectangle is ${num(l)} cm long and ${num(w)} cm wide. What is its perimeter, in cm?${end}`;
       explanation = `Perimeter of a rectangle = 2 × (length + width).\n\n\`2 × (${num(l)} + ${num(w)}) = 2 × ${num(l + w)}\` ${result(exact, rounded, unit)}`;
       candidates = [l * w, l + w, 2 * l + w]; // area instead, forgot to double, doubled one side only
+      hints = [
+        "The perimeter is the distance all the way round: 2 × (length + width), because there are two of each side.",
+        `Add one length and one width first: \`_l + _w = ${num(l)} + ${num(w)} = ${num(l + w)}\`.`,
+        `Now double it.${rounded ? " Round to 2 decimal places if needed." : ""}`,
+      ];
     }
   } else if (kind === "tri-area") {
     let b, h;
@@ -134,6 +143,11 @@ function genPerimArea(difficulty, rng) {
     prompt = `A triangle has a base of ${num(b)} cm and a perpendicular height of ${num(h)} cm. What is its area, in cm²?${rounded ? ROUND : WHOLE}`;
     explanation = `Area of a triangle = ½ × base × height.\n\n\`½ × ${num(b)} × ${num(h)} = ½ × ${num(b * h)}\` ${result(exact, rounded, unit)}`;
     candidates = [b * h, b + h, (b + h) / 2]; // forgot the half, added, averaged
+    hints = [
+      "Area of a triangle = ½ × base × perpendicular height (half of the rectangle around it).",
+      `Multiply \`_b × _h = ${num(b)} × ${num(h)} = ${num(b * h)}\`.`,
+      `Now halve it.${rounded ? " Round to 2 decimal places." : ""}`,
+    ];
   } else if (kind === "tri-perim") {
     // Three sides that satisfy the triangle inequality.
     let a, b, c;
@@ -150,6 +164,10 @@ function genPerimArea(difficulty, rng) {
     prompt = `A triangle has sides of ${a} cm, ${b} cm and ${c} cm. What is its perimeter, in cm?${WHOLE}`;
     explanation = `The perimeter is the sum of the sides.\n\n\`${a} + ${b} + ${c}\` ${result(exact, false, unit)}`;
     candidates = [a + b, a * b, 2 * (a + b)];
+    hints = [
+      "The perimeter of a triangle is its three sides added together.",
+      `Add two first: \`_a + _b = ${a} + ${b} = ${a + b}\`. Then add \`_c\` (${c}).`,
+    ];
   } else {
     // Circles: always π and 2 decimals.
     rounded = true;
@@ -164,6 +182,7 @@ function genPerimArea(difficulty, rng) {
     const d = 2 * r;
     const given = byDiameter ? `a diameter of ${num(d)} cm` : `a radius of ${num(r)} cm`;
     const toR = byDiameter ? `The radius is half the diameter: \`r = ${num(d)} / 2 = ${num(r)}\`.\n\n` : "";
+    const radiusHint = `You are given the diameter, ${num(d)} cm. The radius is half of it: \`r = ${num(d)} / 2 = ${num(r)}\`.`;
     if (kind === "circle-area") {
       values = { r };
       exact = Math.PI * r * r;
@@ -171,6 +190,12 @@ function genPerimArea(difficulty, rng) {
       prompt = `A circle has ${given}. What is its area, in cm²?${PI_ROUND}`;
       explanation = `${toR}Area of a circle = π × r².\n\n\`π × ${num(r)}² = π × ${num(r * r)}\` ${result(exact, true, unit)}`;
       candidates = [Math.PI * d * d, 2 * Math.PI * r, 3.14 * r * r]; // used the diameter, gave the circumference, used 3.14
+      hints = [
+        ...(byDiameter ? [radiusHint] : []),
+        "Area of a circle = π × r²: square the radius, then multiply by π.",
+        `Square the radius: \`${num(r)}² = ${num(r * r)}\`.`,
+        "Multiply by π (type `pi` in the calculator, not 3.14), then round to 2 decimal places.",
+      ];
     } else if (kind === "circle-circ") {
       values = { r };
       exact = 2 * Math.PI * r;
@@ -178,6 +203,13 @@ function genPerimArea(difficulty, rng) {
       prompt = `A circle has ${given}. What is its circumference, in cm?${PI_ROUND}`;
       explanation = `${toR}Circumference = 2 × π × r (or π × d).\n\n\`2 × π × ${num(r)}\` ${result(exact, true, unit)}`;
       candidates = [Math.PI * r, Math.PI * r * r, 3.14 * d]; // forgot the 2, gave the area, used 3.14
+      hints = [
+        "Circumference = π × diameter, which is the same as 2 × π × r.",
+        byDiameter
+          ? `The diameter is ${num(d)} cm, so work out \`pi * ${num(d)}\`.`
+          : `The diameter is \`2 × ${num(r)} = ${num(d)}\` cm, so work out \`pi * ${num(d)}\`.`,
+        "Use π itself (type `pi`), not 3.14, and round to 2 decimal places.",
+      ];
     } else {
       // circle-radius (hard): area given, rounded to 2 decimals, find the radius.
       const A = round2(Math.PI * r * r);
@@ -187,11 +219,16 @@ function genPerimArea(difficulty, rng) {
       prompt = `A circle has an area of ${A.toFixed(2)} cm². What is its radius, in cm?${PI_ROUND}`;
       explanation = `Rearrange \`A = π × r²\` to \`r = √(A / π)\`.\n\n\`√(${A.toFixed(2)} / π) = √${(A / Math.PI).toFixed(4)}\` ${result(exact, true, unit)}`;
       candidates = [A / Math.PI, 2 * exact, Math.sqrt(A)]; // forgot the square root, gave the diameter, forgot π
+      hints = [
+        "Work backwards from A = π × r²: divide by π to get r², then take the square root.",
+        `\`${A.toFixed(2)} ÷ π ≈ ${(A / Math.PI).toFixed(4)}\`: that is r².`,
+        "Now take the square root (`sqrt(...)` in the calculator) and round to 2 decimal places.",
+      ];
     }
   }
 
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
 function genAngles(difficulty, rng) {
@@ -204,7 +241,7 @@ function genAngles(difficulty, rng) {
   const kind = rng.pick(kinds);
   const NAMES = { 3: "triangle", 4: "quadrilateral", 5: "pentagon", 6: "hexagon", 7: "heptagon", 8: "octagon", 9: "nonagon", 10: "decagon", 12: "dodecagon" };
   const shape = (n) => (NAMES[n] ? `${NAMES[n]} (${n} sides)` : `${n}-sided polygon`);
-  let prompt, exact, rounded = false, explanation, candidates, values, gv;
+  let prompt, exact, rounded = false, explanation, candidates, values, gv, hints;
 
   if (kind === "triangle") {
     let a, b;
@@ -218,6 +255,11 @@ function genAngles(difficulty, rng) {
     prompt = `Two angles of a triangle are ${a}° and ${b}°. What is the third angle?${DEG}`;
     explanation = `The angles in a triangle add up to 180°.\n\n\`180 - ${a} - ${b}\` ${result(exact, false, "°")}`;
     candidates = [a + b, 360 - a - b, 90 - Math.abs(a - b)];
+    hints = [
+      "The three angles in a triangle add up to 180°.",
+      `Add the two you know: \`_a + _b = ${a} + ${b} = ${a + b}\`.`,
+      "Take that away from 180.",
+    ];
   } else if (kind === "supplementary" || kind === "complementary") {
     const total = kind === "supplementary" ? 180 : 90;
     const a = rng.int(5, total - 5);
@@ -226,6 +268,12 @@ function genAngles(difficulty, rng) {
     prompt = `Two angles are ${kind}. One of them is ${a}°. What is the other?${DEG}`;
     explanation = `${kind === "supplementary" ? "Supplementary angles add up to 180°" : "Complementary angles add up to 90°"}.\n\n\`${total} - ${a}\` ${result(exact, false, "°")}`;
     candidates = [270 - total - a, 360 - a, total + a]; // mixed up 90 and 180, used 360, added
+    hints = [
+      kind === "supplementary"
+        ? "Supplementary angles add up to 180°, a straight line (**s**upplementary, **s**traight)."
+        : "Complementary angles add up to 90°, a right angle (**c**omplementary, **c**orner).",
+      `So take ${a} away from ${total}.`,
+    ];
   } else if (kind === "isosceles") {
     // Apex angle given; the two base angles are equal.
     const apex = difficulty === "medium" ? 2 * rng.int(10, 80) : rng.int(20, 160);
@@ -235,6 +283,11 @@ function genAngles(difficulty, rng) {
     prompt = `An isosceles triangle has an angle of ${apex}° between its two equal sides. What is each of the other two angles?${DEG}${rounded ? ROUND : WHOLE}`;
     explanation = `The two base angles are equal and all three add up to 180°.\n\n\`(180 - ${apex}) / 2 = ${180 - apex} / 2\` ${result(exact, rounded, "°")}`;
     candidates = [180 - apex, apex, (180 - apex) / 3]; // forgot to halve, copied the apex, split three ways
+    hints = [
+      "In an isosceles triangle the two base angles are equal, and all three angles add up to 180°.",
+      `Take the given angle away from 180: \`180 - ${apex} = ${180 - apex}\`. The two equal angles share that.`,
+      `Split ${180 - apex} equally between the two base angles.${rounded ? " Round to 2 decimal places." : ""}`,
+    ];
   } else if (kind === "polygon-sum") {
     const n = rng.int(4, 12);
     values = { n };
@@ -242,6 +295,10 @@ function genAngles(difficulty, rng) {
     prompt = `What is the sum of the interior angles of a ${shape(n)}?${DEG}`;
     explanation = `Sum of interior angles = (n - 2) × 180°.\n\n\`(${n} - 2) × 180 = ${n - 2} × 180\` ${result(exact, false, "°")}`;
     candidates = [n * 180, (n - 1) * 180, 360]; // forgot the -2, off by one, used the exterior sum
+    hints = [
+      "Sum of the interior angles = (n - 2) × 180°, because lines from one corner split the polygon into n - 2 triangles.",
+      `This shape has ${n} sides, so it splits into \`${n} - 2 = ${n - 2}\` triangles. Multiply that by 180.`,
+    ];
   } else if (kind === "regular-each") {
     let n;
     if (difficulty === "medium") {
@@ -257,6 +314,11 @@ function genAngles(difficulty, rng) {
       `Sum of interior angles = (n - 2) × 180° = \`${n - 2} × 180 = ${(n - 2) * 180}\`.\n\n` +
       `A regular polygon has equal angles, so divide by ${n}: \`${(n - 2) * 180} / ${n}\` ${result(exact, rounded, "°")}`;
     candidates = [360 / n, (n - 2) * 180, ((n - 1) * 180) / n]; // exterior angle, the sum, used (n - 1)
+    hints = [
+      "First find the sum of all the interior angles: (n - 2) × 180°.",
+      `With ${n} sides: \`(${n} - 2) × 180 = ${(n - 2) * 180}\`.`,
+      `A regular polygon has ${n} equal angles, so share ${(n - 2) * 180} equally between them.${rounded ? " Round to 2 decimal places." : ""}`,
+    ];
   } else if (kind === "regular-sides") {
     // Each interior angle given (a whole number); find how many sides.
     const n = rng.pick([5, 6, 8, 9, 10, 12, 15, 18, 20, 24, 30, 36, 40, 45, 60]);
@@ -268,6 +330,11 @@ function genAngles(difficulty, rng) {
       `Each exterior angle is \`180 - ${angle} = ${180 - angle}°\`, and the exterior angles add up to 360°.\n\n` +
       `Number of sides = \`360 / ${180 - angle}\` ${result(exact, false, "sides")}`;
     candidates = [360 / angle, 180 / (180 - angle), n + 2]; // divided by the interior angle, used 180, off by two
+    hints = [
+      "Use the exterior angles: each interior angle and its exterior angle make a straight line (180°), and the exterior angles of any polygon add up to 360°.",
+      `Each exterior angle is \`180 - ${angle} = ${180 - angle}\`°.`,
+      `How many angles of ${180 - angle}° fit into 360°? Divide.`,
+    ];
   } else {
     // polygon-missing (hard): all but one interior angle of an irregular polygon are given.
     const n = rng.int(5, 8);
@@ -288,10 +355,15 @@ function genAngles(difficulty, rng) {
       `Sum of interior angles = \`(${n} - 2) × 180 = ${sum}°\`. The known angles add up to ${known}°.\n\n` +
       `\`${sum} - ${known}\` ${result(exact, false, "°")}`;
     candidates = [n * 180 - known, (n - 1) * 180 - known, 360 - (known % 360)];
+    hints = [
+      "First find what all the interior angles add up to: (n - 2) × 180°.",
+      `This shape has \`_n\` = ${n} sides: \`(${n} - 2) × 180 = ${sum}\`.`,
+      `The known angles (\`_a1\` to \`_a${n - 1}\`) add up to ${known}. The missing angle is whatever is left of ${sum}.`,
+    ];
   }
 
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
 const TRIPLES = [
@@ -321,7 +393,7 @@ function genPythagoras(difficulty, rng) {
   }
   const rounded = difficulty === "hard";
   const end = rounded ? ROUND : WHOLE;
-  let prompt, exact, explanation, candidates, values, gv;
+  let prompt, exact, explanation, candidates, values, gv, hints;
   if (find === "hyp") {
     values = { a, b };
     gv = [["_a", a], ["_b", b]];
@@ -332,6 +404,11 @@ function genPythagoras(difficulty, rng) {
       `\`c² = ${num(a)}² + ${num(b)}² = ${num(a * a)} + ${num(b * b)} = ${num(a * a + b * b)}\`\n\n` +
       `\`c = √${num(a * a + b * b)}\` ${result(exact, rounded, "cm")}`;
     candidates = [a + b, a * a + b * b, Math.sqrt(Math.abs(a * a - b * b))]; // added the sides, forgot the root, subtracted
+    hints = [
+      "The hypotenuse is the longest side, opposite the right angle. Pythagoras: `c² = a² + b²`.",
+      `Square both legs and add: \`_a² + _b² = ${num(a * a)} + ${num(b * b)} = ${num(a * a + b * b)}\`. That is c².`,
+      `Take the square root of ${num(a * a + b * b)}.${rounded ? " Round to 2 decimal places." : " It comes out as a whole number."}`,
+    ];
   } else {
     values = { a, c };
     gv = [["_c", c], ["_a", a]];
@@ -342,16 +419,21 @@ function genPythagoras(difficulty, rng) {
       `\`b² = ${num(c)}² - ${num(a)}² = ${num(c * c)} - ${num(a * a)} = ${num(c * c - a * a)}\`\n\n` +
       `\`b = √${num(c * c - a * a)}\` ${result(exact, rounded, "cm")}`;
     candidates = [Math.sqrt(c * c + a * a), c - a, c * c - a * a]; // added the squares, subtracted the sides, forgot the root
+    hints = [
+      "You know the hypotenuse, so rearrange Pythagoras: `b² = c² - a²` (subtract the squares, don't add them).",
+      `\`_c² - _a² = ${num(c * c)} - ${num(a * a)} = ${num(c * c - a * a)}\`. That is b².`,
+      `Take the square root of ${num(c * c - a * a)}.${rounded ? " Round to 2 decimal places." : " It comes out as a whole number."}`,
+    ];
   }
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind: find, values, rounded }, ...givenRows(gv) };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
 function genVolume(difficulty, rng) {
   if (difficulty !== "medium" && difficulty !== "hard") throw new Error(`volume has no "${difficulty}" level`);
   const hard = difficulty === "hard";
   const kind = rng.pick(["cuboid", "cylinder", "sphere"]);
-  let prompt, exact, rounded, explanation, candidates, values, gv;
+  let prompt, exact, rounded, explanation, candidates, values, gv, hints;
 
   if (kind === "cuboid") {
     let l, w, h;
@@ -371,6 +453,11 @@ function genVolume(difficulty, rng) {
     prompt = `A cuboid is ${num(l)} cm long, ${num(w)} cm wide and ${num(h)} cm high. What is its volume, in cm³?${rounded ? ROUND : WHOLE}`;
     explanation = `Volume of a cuboid = length × width × height.\n\n\`${num(l)} × ${num(w)} × ${num(h)}\` ${result(exact, rounded, "cm³")}`;
     candidates = [2 * (l * w + w * h + l * h), l * w + w * h + l * h, l + w + h]; // surface area, half of it, added
+    hints = [
+      "Volume of a cuboid = length × width × height.",
+      `Multiply two of them first: \`_l × _w = ${num(l)} × ${num(w)} = ${num(l * w)}\` (the area of the base).`,
+      `Now multiply by the height, \`_h\` = ${num(h)}.${rounded ? " Round to 2 decimal places." : ""}`,
+    ];
   } else {
     rounded = true;
     let r, h, byDiameter;
@@ -393,16 +480,28 @@ function genVolume(difficulty, rng) {
       prompt = `A cylinder has ${given} and a height of ${num(h)} cm. What is its volume, in cm³?${PI_ROUND}`;
       explanation = `${toR}Volume of a cylinder = π × r² × h.\n\n\`π × ${num(r)}² × ${num(h)} = π × ${num(r * r * h)}\` ${result(exact, true, "cm³")}`;
       candidates = [Math.PI * d * d * h, 2 * Math.PI * r * h, 3.14 * r * r * h]; // used the diameter, curved surface, used 3.14
+      hints = [
+        "Volume of a cylinder = area of the circle × height = π × r² × h.",
+        ...(byDiameter ? [`You are given the diameter (\`_d\` = ${num(d)}), so halve it: r = ${num(r)}.`] : []),
+        `\`${num(r)}² × ${num(h)} = ${num(r * r)} × ${num(h)} = ${num(r * r * h)}\`.`,
+        "Multiply by π (type `pi`, not 3.14), then round to 2 decimal places.",
+      ];
     } else {
       values = { r };
       exact = (4 / 3) * Math.PI * r ** 3;
       prompt = `A sphere has ${given}. What is its volume, in cm³?${PI_ROUND}`;
       explanation = `${toR}Volume of a sphere = 4/3 × π × r³.\n\n\`4/3 × π × ${num(r)}³ = 4/3 × π × ${num(r ** 3)}\` ${result(exact, true, "cm³")}`;
       candidates = [4 * Math.PI * r * r, Math.PI * r ** 3, (4 / 3) * 3.14 * r ** 3]; // surface area, forgot 4/3, used 3.14
+      hints = [
+        "Volume of a sphere = 4/3 × π × r³.",
+        ...(byDiameter ? [`You are given the diameter, ${num(d)} cm, so halve it: r = ${num(r)}.`] : []),
+        `Cube the radius: \`${num(r)}³ = ${num(r)} × ${num(r)} × ${num(r)} = ${num(r ** 3)}\`.`,
+        "Multiply by 4/3 and by π (for example `4/3 * pi * ...` in the calculator), then round to 2 decimal places.",
+      ];
     }
   }
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
 export function generate({ subtopic, difficulty, rng }) {

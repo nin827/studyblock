@@ -572,7 +572,65 @@ function generateRaw(subtopic, difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
-  return withGiven(generateRaw(subtopic, difficulty, rng));
+  return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Guided-mode hints, read from the explanation's calculator rows after the question is built (so
+// they never touch the rng and use the same `_labels` as the given values):
+//   1. the method, plus a "watch out" for the classic mistake;
+//   2. the values from the question as calculator rows;
+//   3. any intermediate rows with their values;
+//   4. the final row's expression only, without its value.
+
+const TIPS = {
+  "sl-charge": "Watch out: take the salvage value off the cost before dividing by the life.",
+  "sl-book": "Watch out: the book value is what is left, not the depreciation charged so far.",
+  "rb-book": "Watch out: the rate applies to the shrinking book value each year, not to the original cost.",
+  "rb-charge": "Watch out: this year's charge uses the book value at the start of the year, so the power is one less than the year number.",
+  "rb-rate": "Watch out: the total fall divided by the years is a straight-line rate, which is wrong here.",
+  payment: "Watch out: use the monthly rate (÷ 12) and the number of months, not years.",
+  "interest-given": "No payment formula needed: everything paid back minus what was borrowed.",
+  "total-interest": "Watch out: round the payment to the cent before you multiply it by the number of payments.",
+  balance: "Watch out: use the rounded payment, and remember interest keeps building, so payments don't come straight off the loan.",
+  fv: "Deposits are made at the end of each period, so the last deposit earns no interest.",
+  pv: "Watch out: each payment is discounted back to today, so the answer is less than payment × number of payments.",
+  "years-to-goal": "Watch out: round up, because the balance only grows at each year end.",
+  "deposit-for-goal": "Watch out: the interest does part of the work, so the deposit is less than goal ÷ months.",
+  "fv-lump": "Grow the opening balance and the monthly deposits separately, then add them.",
+};
+
+const ROW = /^- `(_[A-Za-z0-9_]+) = ([^`]+)`(.*)$/;
+
+function rowHints(explanation, tip, finishNote, answer, tol) {
+  const blocks = String(explanation || "").split("\n\n");
+  const intro = blocks[0];
+  const rows = [];
+  for (const line of blocks.slice(1).join("\n").split("\n")) {
+    const m = line.match(ROW);
+    if (!m) continue;
+    const rest = m[3].trim();
+    rows.push(rest.startsWith("→") ? { label: m[1], expr: m[2], shown: rest.slice(1).trim() } : { label: m[1], text: line.slice(2) });
+  }
+  const last = rows[rows.length - 1];
+  if (!last || last.expr === undefined) return null;
+  const givens = rows.filter((r) => r.expr === undefined);
+  const mids = rows.slice(0, -1).filter((r) => r.expr !== undefined);
+  const out = [`${intro}${tip ? ` ${tip}` : ""}`];
+  if (givens.length) out.push(`Put the values from the question into calculator rows:\n\n${givens.map((r) => `- ${r.text}`).join("\n")}`);
+  // An intermediate value that matches the answer (e.g. charge = book value when the salvage is $0
+  // and one year is left) is listed without its value.
+  const leaks = (s) => Number.isFinite(answer) && (String(s).match(/-?\d+(?:\.\d+)?/g) || []).some((x) => Math.abs(Number(x) - answer) <= tol + 1e-9);
+  if (mids.length) out.push(`Then work out:\n\n${mids.map((r) => `- \`${r.label} = ${r.expr}\`${leaks(r.shown) ? "" : ` → ${r.shown}`}`).join("\n")}`);
+  out.push(`Finally work out \`${last.label} = ${last.expr}\`.${finishNote}`);
+  return out;
+}
+
+function withHints(q) {
+  const p = q.params || {};
+  const note = p.fmt === "2dp" ? " Round to 2 decimal places." : p.kind === "years-to-goal" ? " The answer is a whole number of years." : " The answer is a whole number of dollars.";
+  const hints = rowHints(q.explanation, TIPS[p.kind], note, Number(q.answer), q.tolerance || 0);
+  return hints && hints.length ? { ...q, hints } : q;
 }
 
 // ---------------------------------------------------------------------------------------------

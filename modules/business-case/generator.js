@@ -1711,8 +1711,175 @@ function generateRaw(subtopic, difficulty, rng) {
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Guided-mode hints. Built after the question is finished, from its explanation rows and params,
+// so they never touch the rng and never change anything else on the question. Hints show each
+// formula with this question's given numbers filled in, but never a computed result, and a
+// Recommendation hint says what to compare, never which choice wins.
+
+const HINT_STEP_ROW = /^- `(_[A-Za-z0-9_]{1,23}) = ([^`]+)` → /;
+const HINT_GIVEN_ROW = /^- `(_[A-Za-z0-9_]{1,23}) = (-?\d+(?:\.\d+)?)`$/;
+const LABEL_TOKEN = /_[A-Za-z0-9_]+/g;
+
+// Given values (label -> text as shown) and calculation steps (label -> formula), in order.
+function readRows(explanation) {
+  const given = new Map();
+  const steps = new Map();
+  for (const line of String(explanation || "").split("\n")) {
+    let m = HINT_GIVEN_ROW.exec(line);
+    if (m) {
+      if (!given.has(m[1])) given.set(m[1], m[2]);
+      continue;
+    }
+    m = HINT_STEP_ROW.exec(line);
+    if (m && !steps.has(m[1])) steps.set(m[1], m[2]);
+  }
+  return { given, steps };
+}
+
+// Steps needed to compute `label`, in explanation order, leaving out those in `done`.
+function stepsFor(label, rows, done) {
+  const need = new Set();
+  (function walk(l) {
+    if (need.has(l) || done.has(l) || !rows.steps.has(l)) return;
+    need.add(l);
+    for (const t of rows.steps.get(l).match(LABEL_TOKEN) || []) walk(t);
+  })(label);
+  return [...rows.steps.keys()].filter((l) => need.has(l));
+}
+
+// "Work out `_margin = _price - _unit_cost`, here `4.50 - 1.20`." (no result shown)
+function stepSentence(label, rows) {
+  const expr = rows.steps.get(label);
+  const filled = expr.replace(LABEL_TOKEN, (t) => (rows.given.has(t) ? rows.given.get(t) : t));
+  let s = `Work out \`${label} = ${expr}\`${filled !== expr ? `, here \`${filled}\`` : ""}.`;
+  if (expr.includes("ceil(")) s += " Round up to a whole number.";
+  else if (expr.includes("round(")) s += " Round to the nearest whole number.";
+  return s;
+}
+
+// Up to `k` hints from the step sentences: the last step stays on its own.
+function groupSteps(sentences, k) {
+  if (sentences.length <= k) return sentences.slice();
+  const head = sentences.slice(0, -1);
+  const out = [];
+  const size = Math.ceil(head.length / (k - 1));
+  for (let i = 0; i < head.length; i += size) out.push(head.slice(i, i + size).join(" "));
+  return [...out, sentences[sentences.length - 1]];
+}
+
+// The calculator row each multi-part answer ends on.
+function partTarget(id, rows) {
+  const map = {
+    units: "_units", ltv: "_ltv", ratio: "_ratio", "max-cac": "_max_cac", roi: "_roi", payback: "_payback",
+    npv: "_npv", calc: "_diff", rop: "_rop", ordering: "_ordering", holding: "_holding_total", eoq: "_eoq",
+    net: "_net", months: "_payback",
+  };
+  if (id === "revenue") return rows.steps.has("_revenue") ? "_revenue" : "_be_revenue";
+  if (id === "cost") return rows.steps.has("_cost_eoq") ? "_cost_eoq" : "_cost";
+  return map[id];
+}
+
+const money = (s) => (s === undefined ? "" : `$${s}`);
+
+// What a Recommendation compares, by params.parts[].rec. `ans(id)` names an earlier part's answer.
+function recSentence(rec, q, rows, ans) {
+  const g = (l) => rows.given.get(l);
+  const kind = q.params.kind;
+  switch (rec) {
+    case "demand-units":
+      return `Compare \`_demand\` (${g("_demand")}) with ${ans("units")}: demand is enough only if it is at least that many.`;
+    case "demand-revenue":
+      return `Compare \`_expected\` (${money(g("_expected"))}) with ${ans("revenue")}: sales are enough only if they are at least that much.`;
+    case "health":
+      return `Compare ${ans("ratio")} with \`_healthy_min\` (${g("_healthy_min")}): the rule asks for a ratio of at least ${g("_healthy_min")}:1.`;
+    case "invest-npv":
+      return `Look at the sign of ${ans("npv")}: the owner invests only if it is above zero.`;
+    case "invest-roi":
+      return `Compare ${ans("roi")} with \`_hurdle\` (${g("_hurdle")}%): the owner needs the ROI to be at least that.`;
+    case "invest-payback":
+      return `Compare ${ans("payback")} with \`_max_years\` (${g("_max_years")}): the cost must be earned back in at most that many years.`;
+    case "pricing": {
+      const [a, b] = (rows.steps.get("_diff") || "").match(LABEL_TOKEN) || [];
+      const isCost = kind === "make-buy" || kind === "suppliers";
+      return isCost
+        ? `Revenue is the same either way, so compare the totals \`${a}\` and \`${b}\`: the lower cost gives the higher profit. If the two totals are equal, the options tie.`
+        : `Fixed costs cancel out, so compare \`${a}\` and \`${b}\`: the higher contribution is the better option. If the two totals are equal, the options tie.`;
+    }
+    case "reorder-now":
+      return `Compare \`_on_hand\` (${g("_on_hand")}) with ${ans("rop")}: it orders as soon as stock is at or below that level.`;
+    case "batch-size":
+      return `Compare ${ans("holding")} with ${ans("ordering")}, then apply the rule in the scenario: the direction depends on which of the two is higher.`;
+    case "eoq-keep":
+      return `Compare \`_gap\` with the 10% line in the rule: is \`_current\` (${g("_current")}) within 10% of the EOQ?`;
+    case "eoq-switch":
+      return `Compare \`_saving\` with \`_min_saving\` (${money(g("_min_saving"))}): it switches only if the saving is at least that.`;
+    case "hire":
+      if (kind === "hire-cost") {
+        return `Compare \`_extra_profit\` (${money(g("_extra_profit"))}) with ${ans("cost")}: the extra profit must be at least the full monthly cost.`;
+      }
+      if (kind === "hire-net") return `Look at the sign of ${ans("net")}: the owner needs a gain above zero.`;
+      return `Compare ${ans("months")} with \`_max_months\` (${g("_max_months")}): the up-front cost must be paid back within that many months.`;
+    default:
+      return "";
+  }
+}
+
+function withHints(q) {
+  const p = q && q.params;
+  if (!p) return q;
+  const rows = readRows(q.explanation);
+  const intro = String(q.explanation || "").split("\n\n")[0].trim();
+
+  if (q.answerType !== "multi") {
+    const sentences = [...rows.steps.keys()].map((l) => stepSentence(l, rows));
+    let compare = "";
+    if (p.mode === "which") {
+      const isCost = p.kind === "make-buy" || p.kind === "suppliers";
+      const [a, b] = [...rows.steps.keys()].slice(-2);
+      compare = isCost
+        ? `Revenue is the same either way, so compare \`${a}\` and \`${b}\`: the lower total cost gives the higher profit. Equal totals mean neither option wins.`
+        : `Fixed costs cancel out, so compare \`${a}\` and \`${b}\`: the higher contribution gives the higher profit. Equal totals mean neither option wins.`;
+    }
+    const grouped = groupSteps(sentences, compare ? 2 : 3);
+    if (q.answerType === "number" && q.tolerance > 0 && grouped.length) grouped[grouped.length - 1] += " Round the result to 2 decimal places.";
+    const hints = [intro, ...grouped, ...(compare ? [compare] : [])].filter(Boolean);
+    return hints.length ? { ...q, hints } : q;
+  }
+
+  // Multi-part: the shared idea as a question hint, then each part's own formulas or comparison.
+  const done = new Set();
+  const labelOf = {};
+  const parts = q.parts.map((part) => {
+    const ans = (id) => (labelOf[id] ? `your *${labelOf[id].label}* answer (\`${labelOf[id].row}\`)` : "the value above");
+    // "`_units` is your *Break-even units* answer." for earlier answers these steps build on.
+    const notes = (ls) =>
+      Object.values(labelOf)
+        .filter((x) => ls.some((l) => (rows.steps.get(l).match(LABEL_TOKEN) || []).includes(x.row)))
+        .map((x) => `\`${x.row}\` is your *${x.label}* answer.`);
+    let hint;
+    if (part.answerType === "choice") {
+      const spec = (p.parts || []).find((s) => s.id === part.id) || {};
+      const ls = [...rows.steps.keys()].filter((l) => !done.has(l));
+      hint = [...ls.map((l) => stepSentence(l, rows)), ...notes(ls), recSentence(spec.rec, q, rows, ans)].filter(Boolean).join(" ");
+    } else {
+      const target = partTarget(part.id, rows);
+      const ls = target ? stepsFor(target, rows, done) : [];
+      hint = [...ls.map((l) => stepSentence(l, rows)), ...notes(ls)].join(" ");
+      if (part.tolerance > 0) hint += " Round to 2 decimal places.";
+      ls.forEach((l) => done.add(l));
+      if (target) {
+        done.add(target);
+        labelOf[part.id] = { label: part.label, row: target };
+      }
+    }
+    return hint ? { ...part, hint } : part;
+  });
+  return { ...q, ...(intro ? { hints: [intro] } : {}), parts };
+}
+
 export function generate({ subtopic, difficulty, rng }) {
-  return withGiven(generateRaw(subtopic, difficulty, rng));
+  return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
 }
 
 // ---------------------------------------------------------------------------------------------

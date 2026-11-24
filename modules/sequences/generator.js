@@ -170,6 +170,11 @@ function genArithmetic(difficulty, rng) {
       prompt: `What is the next term of the arithmetic sequence ${listTerms(terms)}?`,
       explanation: `The terms go up by the same amount each time.\n\n${[given("_u1", terms[0]), given("_u2", terms[1]), given("_last", terms[k - 1]), row("_d", "_u2 - _u1", d), row("_next", "_last + _d", final(exact, "whole"))].join("\n")}`,
       params: { kind: "term", a, d, n: k + 1 },
+      hints: [
+        `In an arithmetic sequence you add the same amount, the common difference d, every time.`,
+        `d = ${par(terms[1])} - ${par(terms[0])} = ${d}. Check it works between the other terms too.`,
+        `Add d to the last term shown: ${par(terms[k - 1])} + ${par(d)}.`,
+      ],
     };
     return finish(base, exact, "whole", [terms[k - 1] - d, exact + d, terms[k - 1] + 2 * d, terms[k - 1] * 2 - terms[0]], rng);
   }
@@ -186,6 +191,11 @@ function genArithmetic(difficulty, rng) {
       prompt: `In the arithmetic sequence ${listTerms(terms)}, what is the ${ordinal(n)} term?`,
       explanation: `Use \`u(n) = a + (n - 1) × d\`.\n\n${[given("_a", a), given("_u2", terms[1]), given("_n", n), row("_d", "_u2 - _a", show(d)), row(`_u${n}`, "_a + (_n - 1) * _d", final(exact, fmt))].join("\n")}`,
       params: { kind: "term", a, d, n },
+      hints: [
+        `Use \`u(n) = a + (n - 1) × d\`: the first term a = ${show(a)}, and d is the common difference.`,
+        `d = ${par(terms[1])} - ${par(terms[0])} = ${show(d)}.`,
+        `For the ${ordinal(n)} term, add d ${n - 1} times (n - 1, not n): \`_a + (_n - 1) * _d\` = ${show(a)} + ${n - 1} × ${par(d)}.`,
+      ],
     };
     return finish(base, exact, fmt, [a + n * d, n * d, a + (n - 2) * d, a * n + d], rng, { step: dec ? Math.abs(d) : 1 });
   }
@@ -200,6 +210,10 @@ function genArithmetic(difficulty, rng) {
       prompt: `The nth term of a sequence is \`${formula}\`. What is the ${ordinal(n)} term?`,
       explanation: `Substitute n = ${n}.\n\n${row(`_u${n}`, `${p} * ${n} + ${par(q)}`, final(exact, "whole"))}`,
       params: { kind: "term", a: p + q, d: p, n },
+      hints: [
+        `The nth term formula gives any term directly: replace n with ${n}.`,
+        `Work out ${p} × ${n} first (multiplication before addition), then ${q < 0 ? `subtract ${-q}` : q === 0 ? "there is nothing to add" : `add ${q}`}.`,
+      ],
     };
     return finish(base, exact, "whole", [p * (n + q), p + n + q, p * n - q, p * (n - 1) + q], rng);
   }
@@ -214,6 +228,16 @@ function genArithmetic(difficulty, rng) {
       prompt: `The nth term of ${listTerms(terms)} can be written as \`pn + q\`. What is the value of ${askD ? "p" : "q"}?`,
       explanation: `p is the common difference; q is the "zeroth term", one difference before the first term.\n\n${[given("_a", a), given("_u2", terms[1]), row("_p", "_u2 - _a", d), row("_q", "_a - _p", a - d)].join("\n")}\n\nSo the nth term is \`${d}n ${a - d < 0 ? "-" : "+"} ${Math.abs(a - d)}\`; the answer is ${final(exact, "whole")}.`,
       params: { kind: askD ? "pn-p" : "pn-q", a, d },
+      hints: askD
+        ? [
+            `In \`pn + q\`, p is the common difference: the amount added each time.`,
+            `Subtract any term from the one after it, for example ${par(terms[1])} - ${par(terms[0])}.`,
+          ]
+        : [
+            `In \`pn + q\`, p is the common difference and q is the "zeroth term": one step before the first term.`,
+            `The common difference is ${par(terms[1])} - ${par(terms[0])} = ${d}.`,
+            `Step back once from the first term: ${par(a)} - ${par(d)}.`,
+          ],
     };
     return finish(base, exact, "whole", askD ? [-d, a, a - d, terms[1]] : [a, a + d, d - a, -(a - d)], rng);
   }
@@ -228,6 +252,11 @@ function genArithmetic(difficulty, rng) {
       prompt: `In the arithmetic sequence ${listTerms(terms)}, the nth term is ${target}. What is n?`,
       explanation: `Solve \`a + (n - 1) × d = ${target}\` for n.\n\n${[given("_a", a), given("_u2", terms[1]), given("_target", target), row("_d", "_u2 - _a", d), row("_n", "(_target - _a) / _d + 1", final(n, "whole"))].join("\n")}`,
       params: { kind: "find-n", a, d, target },
+      hints: [
+        `Set the nth term formula equal to ${target}: \`a + (n - 1) × d = ${target}\`, then solve for n.`,
+        `Here a = ${a} and d = ${par(terms[1])} - ${par(a)} = ${d}.`,
+        `n - 1 = (${target} - ${par(a)}) ÷ ${par(d)}. Remember to add 1 at the end.`,
+      ],
     };
     return finish(base, n, "whole", [n - 1, n + 1, target / d, (target - a) / d + 2], rng, { positive: true });
   }
@@ -253,6 +282,16 @@ function genArithmetic(difficulty, rng) {
         : `In an arithmetic sequence, the ${ordinal(p)} term is ${show(up)} and the ${ordinal(q)} term is ${show(uq)}. What is the ${ordinal(r)} term?`,
       explanation: `The gap from term ${p} to term ${q} is ${q - p} differences.\n\n${lines.join("\n")}${askD ? `\n\nThe common difference is ${final(exact, "exact")}.` : ""}`,
       params: askD ? { kind: "two-d", p, up, q, uq } : { kind: "two-term", p, up, q, uq, r },
+      hints: askD
+        ? [
+            `From the ${ordinal(p)} term to the ${ordinal(q)} term you add d ${q - p} times (${q} - ${p}).`,
+            `Divide the change in value by the number of steps: (${par(uq)} - ${par(up)}) ÷ ${q - p}.`,
+          ]
+        : [
+            `From the ${ordinal(p)} term to the ${ordinal(q)} term you add d ${q - p} times, so find d first.`,
+            `d = (${par(uq)} - ${par(up)}) ÷ ${q - p} = ${show(d)}.`,
+            `From the ${ordinal(q)} term to the ${ordinal(r)} term is ${r - q} more steps: \`_u${q} + (${r} - ${q}) * _d\`.`,
+          ],
     };
     const cands = askD ? [(uq - up) / (q - p + 1), uq - up, -d, (uq - up) / (q - p - 1)] : [uq + (r - q + 1) * d, uq + (r - q - 1) * d, up + (r - 1) * d, a + r * d];
     return finish(base, exact, "exact", cands, rng, { step: askD ? 0.5 : Math.abs(d) });
@@ -273,6 +312,11 @@ function genArithmetic(difficulty, rng) {
       `n must be a whole number above that, so n = ${final(exact, "whole")} (check: \`u(${exact}) = ${arithTerm(a, d, exact)}\`, \`u(${exact - 1}) = ${arithTerm(a, d, exact - 1)}\`).`,
     ].join("\n\n"),
     params: { kind: "first-over", a, d, bound },
+    hints: [
+      `Solve \`a + (n - 1) × d > ${bound}\` as if it were an equation, then round up to the next whole number.`,
+      `Here a = ${a} and d = ${d}, so n - 1 > (${bound} - ${par(a)}) ÷ ${d}.`,
+      `Work out \`(_bound - _a) / _d + 1\`; it won't be whole, so take the next whole number above it. Check that term really is above ${bound} and the one before isn't.`,
+    ],
   };
   return finish(base, exact, "whole", [exact - 1, exact + 1, Math.round(bound / d), arithTerm(a, d, exact)], rng, { positive: true });
 }
@@ -305,6 +349,11 @@ function genGeometric(difficulty, rng) {
       prompt: `What is the next term of the geometric sequence ${listTerms(terms)}?`,
       explanation: `Each term is the previous one times the common ratio.\n\n${[given("_u1", terms[0]), given("_u2", terms[1]), given("_last", terms[3]), row("_r", "_u2 / _u1", show(r)), row("_next", "_last * _r", final(exact, fmt))].join("\n")}`,
       params: { kind: "term", a, r, n: k + 1 },
+      hints: [
+        `In a geometric sequence you multiply by the same number, the common ratio r, every time.`,
+        `r = ${par(terms[1])} ÷ ${par(terms[0])} = ${show(r)}.${r < 0 ? " A negative ratio makes the signs alternate." : ""}`,
+        `Multiply the last term shown by r: ${par(terms[3])} × ${par(r)}.`,
+      ],
     };
     return finish(base, exact, fmt, [terms[3] + (terms[3] - terms[2]), terms[3] * r * r, -exact, terms[3] + r], rng);
   }
@@ -319,6 +368,10 @@ function genGeometric(difficulty, rng) {
       prompt: `What is the common ratio of the geometric sequence ${listTerms(terms)}?`,
       explanation: `Divide any term by the one before it.\n\n${[given("_u1", terms[0]), given("_u2", terms[1]), row("_r", "_u2 / _u1", final(r, fmt))].join("\n")}`,
       params: { kind: "ratio", terms },
+      hints: [
+        `The common ratio is what you multiply by each time, so divide, don't subtract.`,
+        `Divide a term by the one before it, for example ${par(terms[1])} ÷ ${par(terms[0])}. Check it gives the same for the next pair.`,
+      ],
     };
     return finish(base, r, fmt, [terms[1] - terms[0], 1 / r, -r, terms[0] / terms[2]], rng, { step: fmt === "whole" ? 1 : 0.5 });
   }
@@ -336,6 +389,11 @@ function genGeometric(difficulty, rng) {
       prompt: `In the geometric sequence ${listTerms(terms)}, what is the ${ordinal(n)} term?`,
       explanation: `Use \`u(n) = a × r^(n - 1)\`.\n\n${[given("_a", a), given("_u2", terms[1]), given("_n", n), row("_r", "_u2 / _a", show(r)), row(`_u${n}`, "_a * _r^(_n - 1)", final(exact, fmt))].join("\n")}`,
       params: { kind: "term", a, r, n },
+      hints: [
+        `Use \`u(n) = a × r^(n - 1)\`: the first term a = ${a}, and r is the common ratio.`,
+        `r = ${par(terms[1])} ÷ ${par(terms[0])} = ${show(r)}.`,
+        `For the ${ordinal(n)} term the power is n - 1 = ${n - 1}: \`_a * _r^(_n - 1)\` = ${a} × ${par(r)}^${n - 1}.`,
+      ],
     };
     return finish(base, exact, fmt, [a * r ** n, a * r ** (n - 2), a * r * (n - 1), a + (n - 1) * r], rng);
   }
@@ -350,6 +408,11 @@ function genGeometric(difficulty, rng) {
       prompt: `In the geometric sequence ${listTerms(terms)}, the nth term is ${target}. What is n?`,
       explanation: `Divide by the first term to see which power of the ratio you need.\n\n${[given("_a", a), given("_u2", terms[1]), given("_target", target), row("_r", "_u2 / _a", show(r)), row("_power", "_target / _a", `${target / a} = ${r}^${n - 1}`)].join("\n")}\n\nSo n - 1 = ${n - 1} and n = ${final(n, "whole")}.`,
       params: { kind: "geo-find-n", a, r, target },
+      hints: [
+        `Set \`a × r^(n - 1) = ${target}\` and find which power of r you need.`,
+        `a = ${a} and r = ${terms[1]} ÷ ${a} = ${r}. Divide: ${target} ÷ ${a} = ${target / a}.`,
+        `Write ${target / a} as a power of ${r} (keep multiplying by ${r} and count). That power is n - 1, so add 1.`,
+      ],
     };
     return finish(base, n, "whole", [n - 1, n + 1, target / (a * r), Math.round(target / a / r)], rng, { positive: true });
   }
@@ -383,6 +446,13 @@ function genGeometric(difficulty, rng) {
         : `In a geometric sequence, the ${ordinal(p)} term is ${show(up)} and the ${ordinal(q)} term is ${show(uq)}.${pos} What is the common ratio?`,
       explanation: `Going from term ${p} to term ${q} multiplies by the ratio ${gap} time${gap === 1 ? "" : "s"}, so \`r^${gap} = u${q} / u${p}\`.\n\n${lines.join("\n")}${askA ? "" : `\n\nThe common ratio is ${final(r, "exact")}.`}`,
       params: askA ? { kind: "geo-two-a", p, up, q, uq } : { kind: "geo-two-r", p, up, q, uq },
+      hints: [
+        `From the ${ordinal(p)} term to the ${ordinal(q)} term you multiply by r ${gap} time${gap === 1 ? "" : "s"}, so \`r^${gap} = u${q} / u${p}\`.`,
+        gap === 1
+          ? `Divide: ${par(uq)} ÷ ${par(up)}.${askA ? " That is r." : ""}`
+          : `Work out ${par(uq)} ÷ ${par(up)}, then take the ${gap === 2 ? "square" : "cube"} root${statePos ? " (r is positive)" : " (a cube root keeps the sign)"}.`,
+        ...(askA ? [`Step back from the ${ordinal(p)} term to the 1st: divide by r ${p - 1} time${p - 1 === 1 ? "" : "s"}, \`_u${p} / _r^(${p} - 1)\`.`] : []),
+      ],
     };
     if (askA && p === 1) return null; // the first term would be given
     const cands = askA ? [up / r ** p, up * r, a * r, -a] : [uq / up, (uq - up) / gap, -r, 1 / r];
@@ -401,6 +471,10 @@ function genGeometric(difficulty, rng) {
       prompt: `A geometric sequence has first term ${a} and common ratio ${show(r)} (it begins ${listTerms(terms.map((t) => Math.round(t * 10000) / 10000))}). What is its ${ordinal(n)} term?`,
       explanation: `Use \`u(n) = a × r^(n - 1)\`.\n\n${[given("_a", a), given("_r", r), row(`_u${n}`, `_a * _r^(${n} - 1)`, final(exact, "2dp"))].join("\n")}`,
       params: { kind: "term", a, r, n },
+      hints: [
+        `Use \`u(n) = a × r^(n - 1)\` with a = ${a} and r = ${show(r)}.`,
+        `For the ${ordinal(n)} term the power is ${n} - 1 = ${n - 1}: \`_a * _r^(${n} - 1)\` = ${a} × ${show(r)}^${n - 1}. Round to 2 decimal places only at the end.`,
+      ],
     };
     return finish(base, exact, "2dp", [a * r ** n, a * r ** (n - 2), a * (1 + (r - 1) * (n - 1)), a * r * n], rng);
   }
@@ -421,6 +495,11 @@ function genGeometric(difficulty, rng) {
       `So n = ${final(n, "whole")} (check: \`u(${n}) ≈ ${show(Math.round(geoTerm(a, r, n) * 100) / 100)}\`, \`u(${n - 1}) ≈ ${show(Math.round(geoTerm(a, r, n - 1) * 100) / 100)}\`).`,
     ].join("\n\n"),
     params: { kind: "geo-first-over", a, r, bound },
+    hints: [
+      `Solve \`a × r^(n - 1) > ${bound}\`. Logs bring the power down, or you can keep multiplying by r and count.`,
+      `Here a = ${a} and r = ${show(terms[1])} ÷ ${a} = ${show(r)}.`,
+      `Work out \`log(_bound / _a) / log(_r) + 1\`, then take the next whole number above it. Check that term is above ${bound} and the one before isn't.`,
+    ],
   };
   return finish(base, n, "whole", [n - 1, n + 1, Math.round(bound / a / r), n + 2], rng, { positive: true });
 }
@@ -453,6 +532,17 @@ function genSeries(difficulty, rng) {
         ? `First find how many terms there are, then use \`S = n × (first + last) / 2\`.\n\n${[given("_a", a), given("_u2", terms[1]), given("_l", l), row("_d", "_u2 - _a", d), row("_n", "(_l - _a) / _d + 1", n), row("_S", "_n * (_a + _l) / 2", final(exact, "whole"))].join("\n")}`
         : `Use \`S(n) = n / 2 × (2a + (n - 1) × d)\`.\n\n${[given("_a", a), given("_u2", terms[1]), given("_n", n), row("_d", "_u2 - _a", d), row("_S", "_n / 2 * (2 * _a + (_n - 1) * _d)", final(exact, "whole"))].join("\n")}`,
       params: withLast ? { kind: "arith-sum-last", a, d, l } : { kind: "arith-sum", a, d, n },
+      hints: withLast
+        ? [
+            `First count the terms, then use \`S = n × (first + last) / 2\`.`,
+            `d = ${par(terms[1])} - ${par(a)} = ${d}. The number of terms is (last - first) ÷ d + 1 = (${par(l)} - ${par(a)}) ÷ ${par(d)} + 1 = ${n}.`,
+            `Now \`_n * (_a + _l) / 2\` = ${n} × (${par(a)} + ${par(l)}) ÷ 2.`,
+          ]
+        : [
+            `Use \`S(n) = n / 2 × (2a + (n - 1) × d)\`, with a = ${a} and n = ${n}.`,
+            `d = ${par(terms[1])} - ${par(a)} = ${d}.`,
+            `Substitute: ${n} / 2 × (2 × ${par(a)} + ${n - 1} × ${par(d)}). Work out the brackets first.`,
+          ],
     };
     return finish(base, exact, "whole", [n * (a + l), l, (n * (a + l + d)) / 2, ((n - 1) * (a + l - d)) / 2, n * a + n * d], rng);
   }
@@ -466,6 +556,11 @@ function genSeries(difficulty, rng) {
       prompt: `What is the sum of all the whole numbers from ${lo} to ${hi}, inclusive?`,
       explanation: `This is an arithmetic series with difference 1.\n\n${[given("_first", lo), given("_last", hi), row("_n", "_last - _first + 1", n), row("_S", "_n * (_first + _last) / 2", final(exact, "whole"))].join("\n")}`,
       params: { kind: "arith-sum", a: lo, d: 1, n },
+      hints: [
+        `This is an arithmetic series with first term ${lo}, last term ${hi} and difference 1.`,
+        `Count the numbers: ${hi} - ${lo} + 1 = ${n} (don't forget the +1, both ends are included).`,
+        `Use \`S = n × (first + last) / 2\` = ${n} × (${lo} + ${hi}) ÷ 2.`,
+      ],
     };
     return finish(base, exact, "whole", [(hi * (hi + 1)) / 2, n * (lo + hi), ((n - 1) * (lo + hi)) / 2, (hi * (lo + hi)) / 2], rng);
   }
@@ -494,6 +589,11 @@ function genSeries(difficulty, rng) {
       prompt: `The geometric sequence ${listTerms(terms)} continues. Find the sum of its first ${n} terms.`,
       explanation: `Use \`S(n) = a × (r^n - 1) / (r - 1)\`.\n\n${[given("_a", a), given("_u2", terms[1]), given("_n", n), row("_r", "_u2 / _a", show(r)), row("_S", "_a * (_r^_n - 1) / (_r - 1)", final(exact, fmt))].join("\n")}`,
       params: { kind: "geo-sum", a, r, n },
+      hints: [
+        `Use \`S(n) = a × (r^n - 1) / (r - 1)\`, with a = ${a} and n = ${n}.`,
+        `r = ${par(terms[1])} ÷ ${a} = ${show(r)}.`,
+        `Substitute: ${a} × (${par(r)}^${n} - 1) ÷ (${par(r)} - 1). The power is n = ${n} here, not n - 1.${fmt === "2dp" ? " Round to 2 decimal places only at the end." : ""}`,
+      ],
     };
     return finish(base, exact, fmt, [(a * (r ** (n - 1) - 1)) / (r - 1), (a * (r ** (n + 1) - 1)) / (r - 1), geoTerm(a, r, n), a * r ** n, n * a * r], rng);
   }
@@ -512,6 +612,11 @@ function genSeries(difficulty, rng) {
       prompt: `In an arithmetic sequence, the ${ordinal(p)} term is ${up} and the ${ordinal(q)} term is ${uq}. What is the sum of the first ${n} terms?`,
       explanation: `Find d and a first, then use \`S(n) = n / 2 × (2a + (n - 1) × d)\`.\n\n${[given(`_u${p}`, up), given(`_u${q}`, uq), row("_d", `(_u${q} - _u${p}) / (${q} - ${p})`, d), row("_a", `_u${p} - (${p} - 1) * _d`, a), given("_n", n), row("_S", "_n / 2 * (2 * _a + (_n - 1) * _d)", final(exact, "whole"))].join("\n")}`,
       params: { kind: "arith-sum-two", p, up, q, uq, n },
+      hints: [
+        `Find d and the first term a, then use \`S(n) = n / 2 × (2a + (n - 1) × d)\`.`,
+        `d = (${par(uq)} - ${par(up)}) ÷ (${q} - ${p}) = ${d}. Step back from the ${ordinal(p)} term: a = ${par(up)} - ${p - 1} × ${par(d)} = ${a}.`,
+        `Substitute n = ${n}: ${n} / 2 × (2 × ${par(a)} + ${n - 1} × ${par(d)}).`,
+      ],
     };
     return finish(base, exact, "whole", [n * (a + arithTerm(a, d, n)), (n * (up + arithTerm(a, d, n))) / 2, ((n - 1) * (2 * a + (n - 2) * d)) / 2, (n * (2 * a + n * d)) / 2], rng);
   }
@@ -533,6 +638,11 @@ function genSeries(difficulty, rng) {
       prompt: `An infinite geometric series has first term ${a} and sum to infinity ${show(S)}. What is its common ratio?`,
       explanation: `From \`S = a / (1 - r)\`, \`r = 1 - a / S\`.\n\n${[given("_a", a), given("_S", S), row("_r", "1 - _a / _S", final(exact, "2dp"))].join("\n")}`,
       params: { kind: "inf-r", a, S },
+      hints: [
+        `Start from the sum to infinity: \`S = a / (1 - r)\`.`,
+        `Rearrange for r: 1 - r = a / S, so \`r = 1 - a / S\`.`,
+        `Substitute a = ${a} and S = ${show(S)}: 1 - ${a} ÷ ${par(S)}.`,
+      ],
     };
     return finish(base, exact, "2dp", [a / S, 1 + a / S, S / a, -r], rng, { step: 0.05 });
   }
@@ -544,6 +654,10 @@ function genSeries(difficulty, rng) {
       prompt: `An infinite geometric series has first term ${a} and common ratio ${rn}/${rd}. What is its sum to infinity?`,
       explanation: `Because |r| < 1, the sum converges to \`S = a / (1 - r)\`.\n\n${[given("_a", a), row("_r", `${rn} / ${rd}`, show(Math.round(r * 10000) / 10000)), row("_S", "_a / (1 - _r)", final(S, fmt))].join("\n")}`,
       params: { kind: "inf-sum", a, rn, rd },
+      hints: [
+        `Because the ratio is between -1 and 1, the terms shrink and the sum converges to \`S = a / (1 - r)\`.`,
+        `Substitute a = ${a} and r = ${rn}/${rd}: ${a} ÷ (1 - ${rn < 0 ? `(${rn}/${rd})` : `${rn}/${rd}`}). Keep r as a fraction or full decimal.${fmt === "2dp" ? " Round to 2 decimal places only at the end." : ""}`,
+      ],
     };
     return finish(base, S, fmt, [a / (1 + r), (a * r) / (1 - r), a / r, a * (1 - r), a + a * r], rng, { step: fmt === "exact" ? 0.5 : 1 });
   }
@@ -551,6 +665,11 @@ function genSeries(difficulty, rng) {
     prompt: `Find the sum to infinity of the geometric series ${shownTerms.join(" + ")} + …`,
     explanation: `The ratio is ${rn}/${rd}; because |r| < 1, the sum converges to \`S = a / (1 - r)\`.\n\n${[given("_a", a), given("_u2", terms[1]), row("_r", "_u2 / _a", show(Math.round(r * 10000) / 10000)), row("_S", "_a / (1 - _r)", final(S, fmt))].join("\n")}`,
     params: { kind: "inf-sum", a, rn, rd },
+    hints: [
+      `Find the common ratio: r = ${par(terms[1])} ÷ ${par(a)} = ${rn}/${rd}.`,
+      `Since -1 < r < 1, the sum to infinity exists: \`S = a / (1 - r)\`.`,
+      `Substitute a = ${a}: ${a} ÷ (1 - ${rn < 0 ? `(${rn}/${rd})` : `${rn}/${rd}`}).${fmt === "2dp" ? " Round to 2 decimal places only at the end." : ""}`,
+    ],
   };
   return finish(base, S, fmt, [a / (1 + r), (a * r) / (1 - r), a / r, a * (1 - r), a + a * r], rng, { step: fmt === "exact" ? 0.5 : 1 });
 }

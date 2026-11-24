@@ -61,6 +61,78 @@ function buildNumChoices(correct, candidates, rng, lo, hi) {
   return { answer, choices: rng.shuffle([answer, ...out.map(String)]) };
 }
 
+// ---- guided-mode hints (built from values already drawn; never call rng here) ----
+
+// The question each gate's rule boils down to, for "what is the output" hints.
+const GATE_ASK = {
+  AND: "Are all of them 1?",
+  OR: "Is at least one of them 1?",
+  XOR: "Is the number of 1s odd?",
+  NAND: "Are all of them 1? NAND gives the opposite of AND.",
+  NOR: "Is any of them 1? NOR gives the opposite of OR.",
+  XNOR: "Are they the same? XNOR gives the opposite of XOR.",
+};
+
+function gateHints(name, names, vals) {
+  if (name === "NOT") return [GATE_RULE.NOT, `The input is ${fmtInputs(names, vals)}. Flip it.`];
+  const ones = vals.filter(Boolean).length;
+  return [
+    GATE_RULE[name],
+    `The inputs are ${fmtInputs(names, vals)}, so ${ones} of the ${names.length} ${ones === 1 ? "is" : "are"} 1. ${GATE_ASK[name]}`,
+  ];
+}
+
+function whichGateHints(g, rows, choices) {
+  const shown = rows.map((r) => fmtRow(["A", "B"], r)).join(" and ");
+  const out = gate(g, rows[0]);
+  const wrong = choices.find((h) => h !== g && gate(h, rows[0]) !== out) || choices.find((h) => h !== g);
+  const r = rows.find((x) => gate(wrong, x) !== gate(g, x)) || rows[0];
+  return [
+    `Test each option on ${rows.length === 1 ? "the given row" : "both given rows"} (${shown}): what would that gate output?`,
+    `Rule out options that disagree. For example, ${wrong} gives ${gate(wrong, r)} for ${fmtRow(["A", "B"], r)}, which does not match, so it is out.`,
+    "Check the remaining options the same way: only one of them matches every given row.",
+  ];
+}
+
+// Evaluate the inner parts step by step, then stop at the outer operation without its result.
+function evalHints(tree, names, vals) {
+  const env = Object.fromEntries(names.map((n, i) => [n, vals[i]]));
+  const steps = [];
+  evalSteps(tree, env, steps);
+  const inner = steps.slice(0, -1);
+  const a = evalTree(tree.l, env);
+  const b = evalTree(tree.r, env);
+  const hints = [`Substitute ${fmtInputs(names, vals)} and work from the innermost brackets outwards. A NOT applies only to the letter or bracket right after it.`];
+  if (inner.length > 2) hints.push(inner.slice(0, inner.length - 1).join("; "), inner[inner.length - 1]);
+  else inner.forEach((s) => hints.push(s));
+  hints.push(`Finally, the outer ${tree.o}: work out ${a} ${tree.o} ${b}. ${GATE_RULE[tree.o]}`);
+  return hints.slice(0, 4);
+}
+
+function whichRowHints(tree, names, expr, target, answer, choices) {
+  const wrong = choices.find((c) => c !== answer);
+  const env = Object.fromEntries(wrong.split(", ").map((kv) => kv.split("=")).map(([k, x]) => [k, Number(x)]));
+  return [
+    `Try each option: substitute its values into \`${expr}\` and work from the innermost brackets outwards. You want the one that gives ${target}.`,
+    `The outer operation is ${tree.o}. ${GATE_RULE[tree.o]} Think about what its two sides must be for a result of ${target}.`,
+    `For example, ${wrong} gives ${evalTree(tree, env)}, so that option is out. Check the others the same way.`,
+  ];
+}
+
+function countHints(tree, names, expr) {
+  const total = 2 ** names.length;
+  const rows = allRows(names.length).slice(0, 2);
+  const first = rows
+    .map((r) => `${fmtRow(names, r)} gives ${evalTree(tree, Object.fromEntries(names.map((n, i) => [n, r[i]])))}`)
+    .join("; ");
+  const outer = tree.t === "op" ? `The outer operation is ${tree.o}. ${GATE_RULE[tree.o]}` : "";
+  return [
+    `With ${names.length} inputs there are 2^${names.length} = ${total} rows. List them in counting order, starting from all 0s.`,
+    ...(outer ? [outer] : []),
+    `Evaluate \`${expr}\` for each row and tally the 1s. The first rows: ${first}. Carry on through all ${total} rows.`,
+  ];
+}
+
 // ---- gates ----
 
 function genGates(difficulty, rng) {
@@ -84,7 +156,7 @@ function genGates(difficulty, rng) {
       ...[g, ...others].map((h) => `- ${h}: ${rows.map((r) => `${fmtRow(["A", "B"], r)} → ${gate(h, r)}`).join("; ")}`),
       `Only **${g}** matches. ${GATE_RULE[g]}`,
     ];
-    return {
+    const q = {
       prompt,
       answer: g,
       answerType: "choice",
@@ -92,6 +164,7 @@ function genGates(difficulty, rng) {
       explanation: `Check each option:\n\n${lines.join("\n\n")}`,
       params: { kind: "which-gate", rows, outputs: rows.map((r) => gate(g, r)) },
     };
+    return { ...q, hints: whichGateHints(g, rows, q.choices) };
   }
 
   let name, n;
@@ -121,6 +194,7 @@ function genGates(difficulty, rng) {
     choices: undefined,
     explanation: lines.join("\n\n"),
     params: { kind: "gate", gate: name, inputs: vals },
+    hints: gateHints(name, names, vals),
   };
 }
 
@@ -241,7 +315,7 @@ function genExpressions(difficulty, rng) {
         `The other options give ${1 - target}: ${bad.map((b) => fmtRow(names, b.r)).join("; ")}.`,
         `So the answer is **${answer}**.`,
       ];
-      return {
+      const q = {
         prompt: `Which input makes \`${expr}\` equal to ${target}?`,
         answer,
         answerType: "choice",
@@ -249,6 +323,7 @@ function genExpressions(difficulty, rng) {
         explanation: lines.join("\n\n"),
         params: { kind: "which-row", expr, names, target },
       };
+      return { ...q, hints: whichRowHints(tree, names, expr, target, answer, q.choices) };
     }
   }
 
@@ -264,6 +339,7 @@ function genExpressions(difficulty, rng) {
     choices: undefined,
     explanation: `Work from the innermost part outwards:\n\n${steps.map((s) => `- ${s}`).join("\n")}\n\nSo the value is **${out}**.`,
     params: { kind: "eval", expr, names, inputs: vals },
+    hints: evalHints(tree, names, vals),
   };
 }
 
@@ -282,11 +358,15 @@ function genTruthTables(difficulty, rng) {
     const prompt = `A truth table lists every combination of ${n} input${n === 1 ? "" : "s"}. How many rows does it have, not counting the header?`;
     const explanation = `Each input can be 0 or 1, so every extra input doubles the number of combinations: 2${n === 1 ? "" : ` × 2`.repeat(n - 1)} = 2^${n} = **${rows}**.`;
     const params = { kind: "rows", n };
+    const hints = [
+      "Each input can be 0 or 1, so every extra input doubles the number of combinations.",
+      `Start from 1 row and double it once for each of the ${n} input${n === 1 ? "" : "s"}: that is 2^${n}.`,
+    ];
     if (asChoice) {
       const c = buildNumChoices(rows, [2 * n, n * n, rows - 1, rows * 2, rows / 2, n], rng, 1, Infinity);
-      if (c) return { prompt, ...c, answerType: "choice", explanation, params };
+      if (c) return { prompt, ...c, answerType: "choice", explanation, params, hints };
     }
-    return { prompt, answer: rows, answerType: "number", tolerance: 0, choices: undefined, explanation, params };
+    return { prompt, answer: rows, answerType: "number", tolerance: 0, choices: undefined, explanation, params, hints };
   }
 
   let tree, names, expr;
@@ -321,11 +401,12 @@ function genTruthTables(difficulty, rng) {
   const explanation = `There are ${names.length} inputs (${names.join(", ")}), so 2^${names.length} = ${total} rows. Evaluate each one:\n\n${table}\n\nCount the 1s: **${count}**.`;
   const prompt = `In the truth table of \`${expr}\` (inputs ${names.join(", ")}; ${total} rows), how many rows give 1?`;
   const params = { kind: "count-true", expr, names };
+  const hints = countHints(tree, names, expr);
   if (asChoice) {
     const c = buildNumChoices(count, [total - count, total, count + 1, count - 1, count * 2], rng, 0, total);
-    if (c) return { prompt, ...c, answerType: "choice", explanation, params };
+    if (c) return { prompt, ...c, answerType: "choice", explanation, params, hints };
   }
-  return { prompt, answer: count, answerType: "number", tolerance: 0, choices: undefined, explanation, params };
+  return { prompt, answer: count, answerType: "number", tolerance: 0, choices: undefined, explanation, params, hints };
 }
 
 export function generate({ subtopic, difficulty, rng }) {

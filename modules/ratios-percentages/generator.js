@@ -76,6 +76,9 @@ function attachGiven(q) {
 }
 const row = (label, expr, shown) => `- \`${label} = ${expr}\` → ${shown}`;
 
+// Guided-mode hints: built only from values already drawn (never from rng), and never the answer.
+const RND = (fmt) => (fmt === "2dp" ? " Round to 2 decimal places only at the end." : "");
+
 // The value shown on the last row: "**48 kg**" or "12.3456, which rounds to **12.35 kg**".
 function final(exact, fmt, unit = "") {
   const shown = fmtAns(exact, fmt);
@@ -236,6 +239,10 @@ function genRatios(difficulty, rng) {
         `So \`${x}:${y} = ${a}:${b}\`; the answer is **${a}:${b}**.`,
       ].join("\n\n"),
       params: { kind: "simplify", parts: [x, y] },
+      hints: [
+        `Find the greatest common factor of ${x} and ${y}: the biggest number that divides both exactly.`,
+        `The greatest common factor is ${k}. Divide both parts by it: \`_x / ${k}\` and \`_y / ${k}\`, then write the results with a colon.`,
+      ],
     };
     const cands = [`${b}:${a}`, f ? `${x / f}:${y / f}` : `${a}:${a + b}`, `${a}:${a + b}`, `${a + 1}:${b}`];
     return finishRatio(base, `${a}:${b}`, cands, rng);
@@ -258,6 +265,11 @@ function genRatios(difficulty, rng) {
           `So the ratio is \`${small}:${y} = ${a}:${b}\`; the answer is **${a}:${b}**.`,
         ].join("\n\n"),
         params: { kind: "simplify", parts: [small, y] },
+        hints: [
+          `A ratio needs both amounts in the same unit. Change ${big} ${U.big} into ${U.small} (1 ${U.big.replace(/s$/, "")} = ${U.f} ${U.small}).`,
+          `${big} ${U.big} = ${big} × ${U.f} = ${y} ${U.small}, so the ratio is \`${small}:${y}\`.`,
+          `Now simplify \`${small}:${y}\`: divide both parts by their greatest common factor, ${gcd(small, y)}.`,
+        ],
       };
       const [c, d] = reduced([small, big]);
       return finishRatio(base, `${a}:${b}`, [`${c}:${d}`, `${b}:${a}`, `${small}:${big}`, `${a}:${a + b}`], rng);
@@ -279,6 +291,10 @@ function genRatios(difficulty, rng) {
         `Both are multiples of ${k}, so \`${a * k}:${b * k} = ${a}:${b}\`; the answer is **${a}:${b}**.`,
       ].join("\n\n"),
       params: { kind: "simplify", parts: [x, y] },
+      hints: [
+        `Clear the decimals first: multiply both parts by 10, which keeps the ratio the same.`,
+        `\`${show(x)}:${show(y)}\` becomes \`${a * k}:${b * k}\`. Both numbers are multiples of ${k}: divide both by ${k}.`,
+      ],
     };
     return finishRatio(base, `${a}:${b}`, [`${a * k}:${b * k}`, `${b}:${a}`, `${a}:${a + b}`, `${a + 1}:${b}`], rng);
   }
@@ -298,6 +314,11 @@ function genRatios(difficulty, rng) {
         `So a:b:c = \`${p * r}:${q * r}:${q * s}\`, which simplifies to **${A}:${B}:${C}**.`,
       ].join("\n\n"),
       params: { kind: "combine", p, q, r, s },
+      hints: [
+        `b appears in both ratios. Scale them so b is the same number in each.`,
+        `b is ${q} in the first ratio and ${r} in the second. Multiply the first ratio by ${r} and the second by ${q}, so b = ${q * r} in both.`,
+        `Now a = ${p} × ${r}, b = ${q * r} and c = ${q} × ${s}. Write them as a:b:c and simplify if all three share a factor.`,
+      ],
     };
     return finishRatio(base, `${A}:${B}:${C}`, [`${p}:${q}:${s}`, `${p}:${q * r}:${s}`, `${C}:${B}:${A}`, `${p * r}:${q * s}:${q * r}`].map((t) => ratioStr(reduced(t.split(":").map(Number)))), rng);
   }
@@ -322,6 +343,13 @@ function genRatios(difficulty, rng) {
         [given("_total", total), ...parts.map((x, i) => given(`_p${i + 1}`, x)), row("_parts", parts.map((_, i) => `_p${i + 1}`).join(" + "), P), row("_one", "_total / _parts", unit), row("_share", `_one * _p${parts.indexOf(pick) + 1}`, final(exact, "whole"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "share", parts, total, pick },
+      hints: [
+        `Add up the parts of the ratio: ${parts.join(" + ")} = ${P} parts in total.`,
+        pick === 1
+          ? `Find the value of one part: \`_one = _total / _parts\`, that is ${total} ÷ ${P}.`
+          : `One part is worth ${total} ÷ ${P} = ${unit} (\`_one = _total / _parts\`).`,
+        `The ${want} share is ${pick} part${pick === 1 ? "" : "s"}: multiply \`_one\` by ${pick}.`,
+      ],
     };
     const other = want === "largest" ? Math.min(...parts) : Math.max(...parts);
     return finish(base, exact, "whole", [unit, total - exact, unit * other, total / parts.length, total * pick / 10], rng);
@@ -341,6 +369,15 @@ function genRatios(difficulty, rng) {
         [given("_a", a), given("_b", b), given("_known", known), row("_one", "_known / _a", unit), askTotal ? row("_total", "_one * (_a + _b)", final(exact, "whole")) : row("_other", "_one * _b", final(exact, "whole"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "part", a, b, known, askTotal },
+      hints: [
+        `The ${x} are ${a} part${a === 1 ? "" : "s"} of the ratio, and there are ${known} of them. Find what one part is worth.`,
+        exact === unit
+          ? `One part: \`_one = _known / _a\`, that is ${known} ÷ ${a}.`
+          : `One part is ${known} ÷ ${a} = ${unit} (\`_one = _known / _a\`).`,
+        askTotal
+          ? `Altogether there are ${a} + ${b} = ${a + b} parts: multiply one part by ${a + b}.`
+          : `The ${y} are ${b} part${b === 1 ? "" : "s"}: multiply one part by ${b}.`,
+      ],
     };
     return finish(base, exact, "whole", askTotal ? [known + b, unit * b, known * b, known + unit * b + unit] : [known * b, known + b, (known * a) / b, unit * (a + b)], rng);
   }
@@ -360,6 +397,15 @@ function genRatios(difficulty, rng) {
         [given("_lo", lo), given("_hi", hi), given("_diff", diff), row("_one", "_diff / (_hi - _lo)", unit), askTotal ? row("_sum", "_one * (_lo + _hi)", final(exact, "whole")) : row("_small", "_one * _lo", final(exact, "whole"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "share-diff", lo, hi, diff, askTotal },
+      hints: [
+        `The difference between the numbers is ${hi} - ${lo} = ${hi - lo} part${hi - lo === 1 ? "" : "s"} of the ratio, and that is worth ${diff}.`,
+        exact === unit
+          ? `One part: \`_one = _diff / (_hi - _lo)\`, that is ${diff} ÷ ${hi - lo}.`
+          : `One part is ${diff} ÷ ${hi - lo} = ${unit} (\`_one = _diff / (_hi - _lo)\`).`,
+        askTotal
+          ? `The sum is ${lo} + ${hi} = ${lo + hi} parts: multiply one part by ${lo + hi}.`
+          : `The smaller number is ${lo} part${lo === 1 ? "" : "s"}: multiply one part by ${lo}.`,
+      ],
     };
     return finish(base, exact, "whole", [diff * lo, diff * (lo + hi), unit * hi, diff / (lo + hi) * lo, unit * (hi - lo)], rng);
   }
@@ -377,6 +423,11 @@ function genRatios(difficulty, rng) {
           [given("_scale", scale), given("_map_cm", cm), row("_real_cm", "_map_cm * _scale", show(cm * scale)), row("_km", "_real_cm / 100000", final(exact, "exact", "km"))].join("\n"),
         ].join("\n\n"),
         params: { kind: "map", scale, cm, toReal },
+        hints: [
+          `A scale of \`1:${scale}\` means 1 cm on the map is ${scale} cm in real life.`,
+          `Real distance in cm: \`_real_cm = _map_cm * _scale\` = ${show(cm)} × ${scale} = ${show(cm * scale)} cm.`,
+          `Change cm to km by dividing by 100 000 (100 cm in a metre, 1000 m in a km).`,
+        ],
       };
       return finish(base, exact, "exact", [exact * 10, exact / 10, (cm * scale) / 1000, (cm * scale) / 100], rng);
     }
@@ -390,6 +441,11 @@ function genRatios(difficulty, rng) {
         [given("_scale", scale), given("_km", km), row("_real_cm", "_km * 100000", show(km * 100000)), row("_map_cm", "_real_cm / _scale", final(exact, "exact", "cm"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "map", scale, km, toReal },
+      hints: [
+        `Work in centimetres: a scale of \`1:${scale}\` means 1 cm on the map is ${scale} cm in real life.`,
+        `${show(km)} km × 100 000 = ${show(km * 100000)} cm in real life (\`_real_cm = _km * 100000\`).`,
+        `Divide the real distance in cm by the scale, ${scale}.`,
+      ],
     };
     return finish(base, exact, "exact", [exact * 10, exact / 10, km * scale / 100000, exact * 100], rng);
   }
@@ -410,6 +466,9 @@ function genRatios(difficulty, rng) {
         ? `Divide both parts by ${b}, the second part.\n\n${[given("_a", a), given("_b", b), row("_n", "_a / _b", final(exact, "2dp"))].join("\n")}`
         : `Divide both parts by ${a}, the first part.\n\n${[given("_a", a), given("_b", b), row("_n", "_b / _a", final(exact, "2dp"))].join("\n")}`,
       params: { kind: "one-to-n", a, b, flip },
+      hints: flip
+        ? [`In \`n:1\` the second part is 1, so divide both parts by the second part, ${b}.`, `n = ${a} ÷ ${b} (\`_a / _b\`).${RND("2dp")}`]
+        : [`In \`1:n\` the first part is 1, so divide both parts by the first part, ${a}.`, `n = ${b} ÷ ${a} (\`_b / _a\`).${RND("2dp")}`],
     };
     return finish(base, exact, "2dp", [1 / exact, b - a, exact + 1, a / (a + b), b / (a + b)], rng);
   }
@@ -434,6 +493,11 @@ function genRatios(difficulty, rng) {
       [given("_lo", lo), given("_hi", hi), given("_known", up ? smallQ : bigQ), row("_k", `(${up ? "_hi / _lo" : "_lo / _hi"})^${p}`, show(up ? (hi / lo) ** p : (lo / hi) ** p)), row("_answer", "_known * _k", final(exact, "whole", unit))].join("\n"),
     ].join("\n\n"),
     params: { kind: "similar", lo, hi, p, known: up ? smallQ : bigQ, up },
+    hints: [
+      `Lengths scale by ${hi}/${lo}. ${vol ? "Volumes scale by the length factor cubed" : "Areas scale by the length factor squared"}, not by the length factor itself.`,
+      `Going from the ${up ? "smaller" : "larger"} solid to the ${up ? "larger" : "smaller"} one, the ${what} factor is \`(${up ? `${hi}/${lo}` : `${lo}/${hi}`})^${p}\` = ${show(up ? (hi / lo) ** p : (lo / hi) ** p)}.`,
+      `Multiply the known ${what === "area" ? "surface area" : "volume"}, ${up ? smallQ : bigQ} ${unit}, by that factor.`,
+    ],
   };
   const k1 = up ? hi / lo : lo / hi;
   const known = up ? smallQ : bigQ;
@@ -490,6 +554,11 @@ function genProportion(difficulty, rng) {
         [given("_n1", n1), given("_v1", v1), given("_n2", n2), row("_one", "_v1 / _n1", show(Math.round((v1 / n1) * 10000) / 10000)), row("_answer", "_one * _n2", final(exact, fmt, C.unit === "pages" ? "" : C.unit))].join("\n"),
       ].join("\n\n"),
       params: { kind: "direct", n1, v1, n2 },
+      hints: [
+        `This is direct proportion: twice as many means twice as much. Find the amount for one first.`,
+        `For one: \`_one = _v1 / _n1\` = ${v1} ÷ ${n1} (${C.per}). Keep the unrounded value.`,
+        `Multiply the amount for one by ${n2}.${RND(fmt)}`,
+      ],
     };
     return finish(base, exact, fmt, [(v1 * n1) / n2, v1 + n2 - n1, v1 * n2, v1 / n1], rng);
   }
@@ -503,6 +572,10 @@ function genProportion(difficulty, rng) {
       prompt: `${C.q(n, v)} ${C.ask}${NOTE[fmt]}`,
       explanation: `A rate is "per one": divide the amount by the number of units.\n\n${[given("_amount", v), given("_units", n), row("_rate", "_amount / _units", final(exact, fmt, C.unit))].join("\n")}`,
       params: { kind: "rate", n, v },
+      hints: [
+        `A rate is an amount "per one" unit, so divide the amount by the number of units (not the other way round).`,
+        `Work out ${v} ÷ ${n} (\`_amount / _units\`).${RND(fmt)}`,
+      ],
     };
     return finish(base, exact, fmt, [n / v, v * n, v - n, v / (n + 1)], rng);
   }
@@ -531,6 +604,11 @@ function genProportion(difficulty, rng) {
         [given("_n1", n1), given("_t1", t1), given("_n2", n2), row("_work", "_n1 * _t1", n1 * t1), row("_t2", "_work / _n2", final(exact, fmt, C.unit))].join("\n"),
       ].join("\n\n"),
       params: { kind: "inverse", n1, t1, n2 },
+      hints: [
+        `This is inverse proportion: more ${C.q(1, 1).startsWith("At") ? "speed" : "of them"} means less time, so the product stays the same.`,
+        `Total "work": \`_work = _n1 * _t1\` = ${n1} × ${t1} = ${n1 * t1}.`,
+        `Share that between ${n2}: divide ${n1 * t1} by ${n2}.${RND(fmt)}`,
+      ],
     };
     return finish(base, exact, fmt, [(t1 * n2) / n1, t1 + n1 - n2, n1 * t1, t1], rng);
   }
@@ -574,6 +652,11 @@ function genProportion(difficulty, rng) {
           [given("_x1", x1), given("_y1", y1), given("_y2", y2), row("_k", "_y1 / _x1^2", show(k)), row("_x", "sqrt(_y2 / _k)", final(exact, "2dp"))].join("\n"),
         ].join("\n\n"),
         params: { kind: "power-x", p, x1, y1, y2 },
+        hints: [
+          `Write y = k·x² and use the known pair to find k.`,
+          `k = y ÷ x² = ${show(y1)} ÷ ${x1}² = ${show(k)}.`,
+          `Rearrange to x = √(y / k) and put in y = ${y2}: \`sqrt(_y2 / _k)\`.${RND("2dp")}`,
+        ],
       };
       return finish(base, exact, "2dp", [y2 / k, y2 / x1, Math.sqrt(y2 / x1), (y2 * x1) / y1], rng);
     }
@@ -587,6 +670,15 @@ function genProportion(difficulty, rng) {
         [given("_x1", x1), given("_y1", y1), given("_x2", x2), row("_k", p < 0 ? `_y1 * ${pw}` : `_y1 / ${pw}`, show(k)), row("_y", p < 0 ? `_k / ${pw2}` : `_k * ${pw2}`, final(exact, "2dp"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "power", p, x1, y1, x2 },
+      hints: [
+        p < 0
+          ? `Write y = k / x${p === -2 ? "²" : ""} and use the known pair to find k.`
+          : `Write y = k·x${p === 2 ? "²" : p === 3 ? "³" : "^0.5 (that is, k·√x)"} and use the known pair to find k.`,
+        p < 0
+          ? `k = y × x${p === -2 ? "²" : ""} = ${show(y1)} × ${x1}${p === -2 ? "²" : ""} = ${show(k)}.`
+          : `k = y ÷ ${p === 0.5 ? "√x" : `x${p === 2 ? "²" : "³"}`} = ${show(y1)} ÷ ${p === 0.5 ? `√${x1}` : `${x1}${p === 2 ? "²" : "³"}`} = ${show(k)}.`,
+        `Substitute x = ${x2}: \`${p < 0 ? `_k / ${pw2}` : `_k * ${pw2}`}\`.${RND("2dp")}`,
+      ],
     };
     return finish(base, exact, "2dp", [(y1 * x2) / x1, (y1 * x1) / x2, k * x2 ** -p, y1 * (x2 / x1) ** (p * 2), k * x2], rng);
   }
@@ -609,6 +701,11 @@ function genProportion(difficulty, rng) {
       [given("_pct", pct), row("_m", "1 + _pct / 100", show(1 + pct / 100)), row("_factor", `_m^${law.p < 0 ? `(${law.p})` : law.p}`, show(Math.round(factor * 1e6) / 1e6)), row("_change", factor > 1 ? "(_factor - 1) * 100" : "(1 - _factor) * 100", final(exact, "2dp", "%"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "power-pct", p: law.p, pct },
+    hints: [
+      `Work with multipliers, not with the percentage itself: x is multiplied by 1 + ${pct}/100 = ${show(1 + pct / 100)}.`,
+      `y is ${law.words.replace(/ to x.*$/, "")} to x${law.p === 2 || law.p === -2 ? "²" : law.p === 3 ? "³" : ""}, so y is multiplied by \`${show(1 + pct / 100)}^${law.p < 0 ? `(${law.p})` : law.p}\`.`,
+      `The percentage change is the gap between that factor and 1, times 100: \`${factor > 1 ? "(_factor - 1) * 100" : "(1 - _factor) * 100"}\`.${RND("2dp")}`,
+    ],
   };
   return finish(base, exact, "2dp", [pct * Math.abs(law.p), pct, factor * 100, Math.abs((1 + pct / 100) ** -law.p - 1) * 100], rng);
 }
@@ -641,6 +738,10 @@ function genPercentages(difficulty, rng) {
       prompt: `What is ${show(p)}% of ${N}?${NOTE[fmt]}`,
       explanation: `Divide the percentage by 100 and multiply.\n\n${[given("_p", p), given("_n", N), row("_answer", "_p / 100 * _n", final(exact, fmt))].join("\n")}`,
       params: { kind: "of", p, N },
+      hints: [
+        `"Percent" means "out of 100": turn ${show(p)}% into a decimal by dividing by 100, which gives ${show(p / 100)}.`,
+        `Multiply ${show(p / 100)} by ${N} (\`_p / 100 * _n\`).${RND(fmt)}`,
+      ],
     };
     return finish(base, exact, fmt, [p * N / 10, N / p, N - exact, exact * 10, N + exact], rng);
   }
@@ -655,6 +756,10 @@ function genPercentages(difficulty, rng) {
       prompt: `${C.q(v)} It ${up ? "increases" : "decreases"} by ${p}%. What is the new ${C.noun}${C.unit ? `, in ${C.unit}` : ""}?${NOTE.whole}`,
       explanation: `Multiply by ${up ? `1 + ${p}/100` : `1 - ${p}/100`}.\n\n${[given("_v", v), given("_p", p), row("_m", `1 ${up ? "+" : "-"} _p / 100`, show(1 + ((up ? 1 : -1) * p) / 100)), row("_new", "_v * _m", final(exact, "whole", C.unit))].join("\n")}`,
       params: { kind: "apply", v, p, up },
+      hints: [
+        `Use a multiplier: ${up ? "an increase" : "a decrease"} of ${p}% leaves ${up ? 100 + p : 100 - p}% of the original.`,
+        `The multiplier is \`1 ${up ? "+" : "-"} ${p} / 100\` = ${show(1 + ((up ? 1 : -1) * p) / 100)}. Multiply ${v} by it.`,
+      ],
     };
     return finish(base, exact, "whole", [(v * p) / 100, v * (1 - ((up ? 1 : -1) * p) / 100), v + (up ? p : -p), v * p], rng);
   }
@@ -681,6 +786,10 @@ function genPercentages(difficulty, rng) {
       prompt: `What is ${A} as a percentage of ${B}?${PCT}${NOTE[fmt]}`,
       explanation: `Divide the part by the whole, then multiply by 100.\n\n${[given("_part", A), given("_whole", B), row("_pct", "_part / _whole * 100", final(exact, fmt, "%"))].join("\n")}`,
       params: { kind: "as-pct", A, B },
+      hints: [
+        `Write it as a fraction, part over whole: ${A} / ${B}.`,
+        `Divide ${A} by ${B}, then multiply by 100 (\`_part / _whole * 100\`).${RND(fmt)}`,
+      ],
     };
     return finish(base, exact, fmt, [(100 * B) / A, A / B, 100 - exact, (A / B) * 10], rng);
   }
@@ -697,6 +806,11 @@ function genPercentages(difficulty, rng) {
       prompt: `${C.q(v1)} Later the ${C.noun} is ${v2}${C.unit ? ` ${C.unit}` : ""}. What is the percentage change?${SIGNED}${PCT}${NOTE["2dp"]}`,
       explanation: `Percentage change = (new - old) ÷ old × 100.\n\n${[given("_old", v1), given("_new", v2), row("_change", "(_new - _old) / _old * 100", final(exact, "2dp", "%"))].join("\n")}`,
       params: { kind: "change", v1, v2 },
+      hints: [
+        `Percentage change = (new - old) ÷ old × 100. Always divide by the old value.`,
+        `new - old = ${v2} - ${v1} = ${v2 - v1}.${v2 < v1 ? " It is negative, so this is a decrease." : ""}`,
+        `Divide ${v2 - v1} by the old value, ${v1}, then multiply by 100.${RND("2dp")}`,
+      ],
     };
     return finish(base, exact, "2dp", [((v2 - v1) / v2) * 100, -exact, v2 - v1, (v2 / v1) * 100], rng, { allowNeg: true });
   }
@@ -709,6 +823,10 @@ function genPercentages(difficulty, rng) {
       prompt: `What single number do you multiply a quantity by to ${up ? "increase" : "decrease"} it by ${show(p)}%? Give the exact decimal, like 1.2.`,
       explanation: `${up ? "Increasing" : "Decreasing"} by ${show(p)}% leaves ${up ? "100 + " : "100 - "}${show(p)} = ${show(exact * 100)}% of the original.\n\n${row("_m", `1 ${up ? "+" : "-"} ${show(p)} / 100`, final(exact, "exact"))}`,
       params: { kind: "multiplier", p, up },
+      hints: [
+        `Start from 100% of the quantity and ${up ? "add" : "take away"} ${show(p)}%.`,
+        `Turn the resulting percentage into a decimal by dividing it by 100 (100% is 1).`,
+      ],
     };
     return finish(base, exact, "exact", [1 - ((up ? 1 : -1) * p) / 100, p / 100, 1 + ((up ? 1 : -1) * p) / 10, p, (up ? 1 : -1) * p / 100 + 10], rng, { step: 0.01 });
   }
@@ -729,6 +847,11 @@ function genPercentages(difficulty, rng) {
         [given("_new", B), given("_p", p), row("_m", `1 ${up ? "+" : "-"} _p / 100`, show((100 + (up ? p : -p)) / 100)), row("_old", "_new / _m", final(O, "whole", C.unit))].join("\n"),
       ].join("\n\n"),
       params: { kind: "reverse", B, p, up },
+      hints: [
+        `${B} is the value *after* the change, so it is ${up ? 100 + p : 100 - p}% of the original. Don't take ${p}% of ${B}.`,
+        `The multiplier was \`_m = 1 ${up ? "+" : "-"} _p / 100\` = ${show((100 + (up ? p : -p)) / 100)}.`,
+        `Undo the multiplier: divide ${B} by ${show((100 + (up ? p : -p)) / 100)}.`,
+      ],
     };
     return finish(base, O, "whole", [B * (1 - ((up ? 1 : -1) * p) / 100), B * (1 + ((up ? 1 : -1) * p) / 100), B - (up ? p : -p), (B * 100) / p], rng);
   }
@@ -749,6 +872,11 @@ function genPercentages(difficulty, rng) {
         [given("_p1", p), given("_p2", q), row("_m1", `1 ${s1 > 0 ? "+" : "-"} _p1 / 100`, show(1 + (s1 * p) / 100)), row("_m2", `1 ${s2 > 0 ? "+" : "-"} _p2 / 100`, show(1 + (s2 * q) / 100)), row("_change", "(_m1 * _m2 - 1) * 100", final(exact, "2dp", "%"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "successive", p: s1 * p, q: s2 * q },
+      hints: [
+        `Don't add the percentages. Turn each change into a multiplier and multiply them.`,
+        `\`_m1\` = 1 ${s1 > 0 ? "+" : "-"} ${p}/100 = ${show(1 + (s1 * p) / 100)} and \`_m2\` = 1 ${s2 > 0 ? "+" : "-"} ${q}/100 = ${show(1 + (s2 * q) / 100)}.`,
+        `Overall change = (\`_m1 * _m2\` - 1) × 100. A negative result is a decrease.${RND("2dp")}`,
+      ],
     };
     return finish(base, exact, "2dp", [s1 * p + s2 * q, m * 100, -exact, s1 * p * s2 * q / 100], rng, { allowNeg: true });
   }
@@ -769,6 +897,11 @@ function genPercentages(difficulty, rng) {
         [given("_start", v), given("_p", p), given("_n", n), row("_m", `1 ${grow ? "+" : "-"} _p / 100`, show(m)), row("_end", "_start * _m^_n", final(exact, "2dp", grow ? "mm²" : "g"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "repeated", v, p: grow ? p : -p, n },
+      hints: [
+        `Each ${grow ? "day" : "hour"} the amount is multiplied by the same number, so use a power rather than adding ${p}% ${n} times.`,
+        `The multiplier is \`_m = 1 ${grow ? "+" : "-"} _p / 100\` = ${show(m)}.`,
+        `After ${n} ${grow ? "days" : "hours"}: \`_start * _m^_n\` = ${v} × ${show(m)}^${n}.${RND("2dp")}`,
+      ],
     };
     return finish(base, exact, "2dp", [v * (1 + ((grow ? 1 : -1) * p * n) / 100), v * m ** (n - 1), v * m ** (n + 1), v * m * n], rng);
   }
@@ -786,6 +919,11 @@ function genPercentages(difficulty, rng) {
       [given("_p", p), row("_new", up ? "100 + _p" : "100 - _p", up ? 100 + p : 100 - p), row("_undo", "_p / _new * 100", final(exact, "2dp", "%"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "undo", p, up },
+    hints: [
+      `The change back is the same amount, but it is a percentage of the *new* value, so it isn't ${p}%.`,
+      `Pretend the original is 100. After the change it is ${up ? 100 + p : 100 - p}, and you need to change it by ${p} to get back.`,
+      `Write ${p} as a percentage of ${up ? 100 + p : 100 - p}: \`_p / _new * 100\`.${RND("2dp")}`,
+    ],
   };
   return finish(base, exact, "2dp", [p, p / 2, 100 - p, (p / 100) * (100 - p)], rng);
 }

@@ -94,6 +94,8 @@ function checkDifficulty(difficulty) {
 // [[label, value], ...] -> { given: [{ label, value }, ...] }, or {} when there is nothing to pre-fill.
 const givenRows = (pairs) => (pairs && pairs.length >= 2 && pairs.length <= 8 ? { given: pairs.map(([label, value]) => ({ label, value })) } : {});
 
+// 1 -> "1st", 2 -> "2nd", 11 -> "11th" (positions in a sorted list, for hints).
+const ord = (k) => `${k}${k % 100 >= 11 && k % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][k % 10] || "th"}`;
 const sorted = (arr) => arr.slice().sort((a, b) => a - b);
 const sum = (arr) => arr.reduce((s, x) => s + x, 0);
 const list = (arr) => arr.join(", ");
@@ -155,13 +157,18 @@ function genCentral(difficulty, rng) {
   const end = rounded ? ROUND_IF : WHOLE;
   const intro = `Here are ${data.length} values${easy ? " (already in order)" : ""}: ${list(shown)}.`;
   const N = data.length;
-  let prompt, exact, explanation, candidates;
+  let prompt, exact, explanation, candidates, hints;
 
   if (kind === "mean") {
     exact = sum(data) / N;
     prompt = `${intro} What is the mean?${end}`;
     explanation = `Mean = sum ÷ count.\n\nSum: \`${list(data).replace(/, /g, " + ").replace(/\+ -/g, "- ")} = ${sum(data)}\`.\n\n\`${sum(data)} / ${N}\` ${result(exact, rounded)}`;
     candidates = [medianOf(s), sum(data) / (N - 1), sum(data) / (N + 1), sum(data)];
+    hints = [
+      `Mean = sum of the values ÷ how many there are. There are ${N} values.`,
+      `Add them all up${data.some((v) => v < 0) ? " (the negative values take away)" : ""}: the total is ${sum(data)}.`,
+      `Divide ${sum(data)} by ${N}.${rounded ? " Round to 2 decimal places if it is not a whole number." : ""}`,
+    ];
   } else if (kind === "median") {
     exact = medianOf(s);
     prompt = `${intro} What is the median?${end}`;
@@ -172,6 +179,14 @@ function genCentral(difficulty, rng) {
         ? `There are ${N} values, so the median is the middle one, value number ${(N + 1) / 2}: **${num(exact)}**.`
         : `There are ${N} values, so the median is halfway between values ${N / 2} and ${N / 2 + 1}: \`(${s[N / 2 - 1]} + ${s[N / 2]}) / 2\` ${result(exact, rounded)}.`);
     candidates = [data[Math.floor(N / 2)], sum(data) / N, s[Math.floor(N / 2)] + 1, (s[0] + s[N - 1]) / 2]; // middle of the unsorted list, the mean, slip, midrange
+    hints = [
+      easy
+        ? "The median is the middle value of the sorted list. This list is already in order."
+        : `The median is the middle value once the list is sorted. Sort all ${N} values from smallest to largest first (the smallest is ${s[0]}, the largest is ${s[N - 1]}).`,
+      N % 2
+        ? `There are ${N} values (odd), so the median is the ${ord((N + 1) / 2)} value: the one with ${(N - 1) / 2} values on each side.`
+        : `There are ${N} values (even), so there is no single middle value: take the two middle ones, the ${ord(N / 2)} and ${ord(N / 2 + 1)} values, and go halfway between them (add and halve).`,
+    ];
   } else {
     const counts = new Map();
     data.forEach((v) => counts.set(v, (counts.get(v) || 0) + 1));
@@ -187,11 +202,19 @@ function genCentral(difficulty, rng) {
     prompt = `${intro} What is the mode?${WHOLE}`;
     explanation = `The mode is the value that appears most often. ${num(mode)} appears ${best} times, more than any other value, so the mode is **${num(mode)}**.`;
     candidates = [best, medianOf(s), s[N - 1], s[0]]; // gave the count, the median, the largest, the smallest
+    const repeats = [...counts.values()].filter((c) => c >= 2).length;
+    hints = [
+      "The mode is the value that appears most often (not how many times it appears).",
+      `Tally the values: go through the list and count how many times each one appears. Sorting first makes repeats sit next to each other.`,
+      repeats > 1
+        ? `More than one value repeats, so compare the counts: the mode appears ${best === 3 ? "three" : "two"} times.`
+        : `Only one value appears more than once.`,
+    ];
     const base = { prompt, tolerance: 0, explanation, params: { kind, values: { data }, rounded: false } };
-    return finish(base, exact, false, candidates, rng);
+    return { ...finish(base, exact, false, candidates, rng), hints };
   }
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values: { data }, rounded } };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
 // Quartiles by the "median of each half, excluding the median for odd n" method.
@@ -220,6 +243,15 @@ function genSpread(difficulty, rng) {
     `${n % 2 ? `There are ${n} values, so leave out the middle one (${s[(n - 1) / 2]}).` : `There are ${n} values, so split them into two halves of ${n / 2}.`} ` +
     `Lower half: ${list(lower)}. Upper half: ${list(upper)}.`;
   let prompt, exact, rounded, explanation, candidates;
+  const sortHint = hard
+    ? `Sort the ${n} values from smallest to largest first (watch the negatives: the more negative a number, the smaller it is).`
+    : `The ${n} values are already sorted.`;
+  const halfPos = (h) => (h % 2 ? `its ${ord((h + 1) / 2)} value` : `halfway between its ${ord(h / 2)} and ${ord(h / 2 + 1)} values`);
+  const halvesHint =
+    n % 2
+      ? `There are ${n} values (odd), so leave out the middle one (the ${ord((n + 1) / 2)} value). That leaves a lower half of ${half} and an upper half of ${half}.`
+      : `There are ${n} values (even), so split them into a lower half of ${half} and an upper half of ${half}.`;
+  let hints;
 
   if (kind === "range") {
     rounded = false;
@@ -227,6 +259,12 @@ function genSpread(difficulty, rng) {
     prompt = `${intro} What is the range?${WHOLE}`;
     explanation = `${sortStep}Range = largest - smallest.\n\n\`${s[n - 1]} - ${s[0]}\` ${result(exact, false)}`;
     candidates = [data[n - 1] - data[0], s[n - 1], q3 - q1, s[n - 1] + s[0]];
+    hints = [
+      "Range = largest value - smallest value.",
+      hard
+        ? `The list is not sorted, so scan it for the largest and smallest values (not the first and last).${s[0] < 0 ? " The smallest is negative, and subtracting a negative adds." : ""}`
+        : `The list is sorted, so the smallest is the first value (${s[0]}) and the largest is the last (${s[n - 1]}).`,
+    ];
   } else {
     rounded = true;
     const qText = { q1: "lower quartile (Q1)", q3: "upper quartile (Q3)", iqr: "interquartile range (IQR)" }[kind];
@@ -239,18 +277,26 @@ function genSpread(difficulty, rng) {
       exact = q1;
       explanation = `${sortStep}${halves}\n\nQ1 is the median of the lower half ${result(q1, rounded)}.`;
       candidates = [incl.q1, medianOf(s), q3, s[Math.floor(n / 4)]];
+      hints = [sortHint, halvesHint, `Q1 is the median of the lower half (the ${half} smallest values): ${halfPos(half)}.`];
     } else if (kind === "q3") {
       exact = q3;
       explanation = `${sortStep}${halves}\n\nQ3 is the median of the upper half ${result(q3, rounded)}.`;
       candidates = [incl.q3, medianOf(s), q1, s[Math.floor((3 * n) / 4)]];
+      hints = [sortHint, halvesHint, `Q3 is the median of the upper half (the ${half} largest values): ${halfPos(half)}.`];
     } else {
       exact = q3 - q1;
       explanation = `${sortStep}${halves}\n\n${q1Line}\n\n${q3Line}\n\nIQR = Q3 - Q1: \`${num(q3)} - ${num(q1)}\` ${result(exact, rounded)}`;
       candidates = [incl.q3 - incl.q1, s[n - 1] - s[0], q3 + q1, (q3 - q1) / 2]; // other method, the range, added, halved
+      hints = [
+        sortHint,
+        halvesHint,
+        `Q1 is the median of the lower half and Q3 the median of the upper half: in each half that is ${halfPos(half)}.`,
+        "IQR = Q3 - Q1 (upper quartile minus lower quartile).",
+      ];
     }
   }
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values: { data }, rounded } };
-  return finish(base, exact, rounded, candidates, rng, { lo: kind === "range" || kind === "iqr" ? 0 : -Infinity, step: 0.5 });
+  return { ...finish(base, exact, rounded, candidates, rng, { lo: kind === "range" || kind === "iqr" ? 0 : -Infinity, step: 0.5 }), hints };
 }
 
 // Fraction choices in (0, 1), deduped by value.
@@ -281,7 +327,7 @@ const COLOURS = ["red", "blue", "green", "yellow", "white", "black"];
 function genProbability(difficulty, rng) {
   checkDifficulty(difficulty);
   // Exact probability is always N/D with whole numbers; params carry the raw counts.
-  let kind, values, prompt, N, D, steps, fracCands, decCands, gv;
+  let kind, values, prompt, N, D, steps, fracCands, decCands, gv, hints;
 
   const bag = (k) => {
     const cols = rng.shuffle(COLOURS).slice(0, k);
@@ -301,6 +347,10 @@ function genProbability(difficulty, rng) {
       gv = b.cols.map((c, j) => [`_${c}`, b.counts[j]]); // marbles of each colour
       prompt = `A bag holds ${bagText(b)} marbles. One marble is picked at random. What is the probability that it is ${b.cols[i]}?`;
       steps = [`There are ${b.total} marbles and ${f} of them are ${b.cols[i]}.`, `P = \`${f}/${b.total}\``];
+      hints = [
+        "Probability = favourable outcomes ÷ all outcomes (every marble is equally likely).",
+        `Total marbles: \`${b.cols.map((c) => `_${c}`).join(" + ")} = ${b.counts.join(" + ")} = ${b.total}\`. ${f} of them are ${b.cols[i]}.`,
+      ];
     } else {
       const sides = rng.pick([6, 6, 8, 10, 12]);
       const label = rng.pick([
@@ -329,6 +379,10 @@ function genProbability(difficulty, rng) {
       values = { f: outcomes.length, t: sides };
       prompt = `A fair ${sides}-sided die numbered 1 to ${sides} is rolled once. What is the probability of rolling ${label}?`;
       steps = [`The favourable outcomes are ${list(outcomes)}: ${outcomes.length} out of ${sides}.`, `P = \`${outcomes.length}/${sides}\``];
+      hints = [
+        `Probability = favourable outcomes ÷ all outcomes. The die has ${sides} equally likely outcomes, 1 to ${sides}.`,
+        `List the numbers from 1 to ${sides} that are ${label}${label === "a prime number" ? " (remember 1 is not prime)" : ""}, and count them.`,
+      ];
     }
     kind = "single";
     N = values.f;
@@ -370,6 +424,10 @@ function genProbability(difficulty, rng) {
     }
     kind = "both";
     values = { f1, t1, f2, t2 };
+    hints = [
+      "The two events are independent (one doesn't affect the other), so P(both) = P(first) × P(second).",
+      `P(first) = ${f1} out of ${t1}, and P(second) = ${f2} out of ${t2}.${gv && gv[0][0] !== "_k1" ? " The marble is put back, so the second pick is just like the first." : ""}`,
+    ];
     prompt = story;
     N = f1 * f2;
     D = t1 * t2;
@@ -400,6 +458,12 @@ function genProbability(difficulty, rng) {
     }
     kind = "atleast";
     values = { f, t, n };
+    const pNone = t === 6 ? `${t - f}/6` : `1 - _pct/100 = ${num((t - f) / t)}`;
+    hints = [
+      `"At least one" is the opposite of "none", so P(at least one) = 1 - P(none).`,
+      `P(none on one ${t === 6 ? "roll" : "day"}) = \`${pNone}\`.`,
+      `The ${t === 6 ? "rolls" : "days"} are independent, so P(none in all ${n}) is that raised to the power ${n}${gv ? " (`_days`)" : ""}. Then subtract it from 1 and round to 2 decimal places.`,
+    ];
     prompt = story;
     N = t ** n - (t - f) ** n;
     D = t ** n;
@@ -415,6 +479,8 @@ function genProbability(difficulty, rng) {
   // Answer format: easy = fraction; medium = fraction or decimal; hard = decimal for "at least one".
   const asDecimal = kind === "atleast" || (difficulty !== "easy" && rng.next() < 0.4);
   const exact = N / D;
+  if (kind === "single") hints.push(asDecimal ? "Divide the favourable count by the total, then round to 2 decimal places." : "Write the favourable count over the total, then simplify the fraction if you can.");
+  else if (kind === "both") hints.push(asDecimal ? "Multiply the two probabilities, then round to 2 decimal places." : "Multiply the tops together and the bottoms together, then simplify.");
   if (asDecimal) {
     const shown = fmtAns(exact, true);
     if (shown === "0.00" || shown === "1.00") return genProbability(difficulty, rng); // too close to 0 or 1 to be useful
@@ -427,7 +493,7 @@ function genProbability(difficulty, rng) {
       ...givenRows(gv),
     };
     const cands = decCands || (fracCands || []).map(([a, b]) => a / b);
-    return finish(base, exact, true, cands, rng, { lo: 0.01, hi: 0.99, step: 0.01 });
+    return { ...finish(base, exact, true, cands, rng, { lo: 0.01, hi: 0.99, step: 0.01 }), hints };
   }
   const answer = fracStr(N, D);
   const [rn, rd] = reduce(N, D);
@@ -436,9 +502,9 @@ function genProbability(difficulty, rng) {
   if (rd === 1 || rn === 0) return genProbability(difficulty, rng);
   if (rng.next() < 0.35) {
     const { answer: a, choices } = fracChoices(N, D, fracCands, rng);
-    return { ...base, prompt: prompt + " Choose the answer in simplest form.", answer: a, answerType: "choice", choices };
+    return { ...base, prompt: prompt + " Choose the answer in simplest form.", answer: a, answerType: "choice", choices, hints };
   }
-  return { ...base, prompt: prompt + FRAC_NOTE, answer, answerType: "text", choices: undefined };
+  return { ...base, prompt: prompt + FRAC_NOTE, answer, answerType: "text", choices: undefined, hints };
 }
 
 function genWeighted(difficulty, rng) {
@@ -446,7 +512,7 @@ function genWeighted(difficulty, rng) {
   const hard = difficulty === "hard";
   const kind = hard ? rng.pick(["percent", "credits", "required"]) : rng.pick(["percent", "credits"]);
   const rounded = true;
-  let prompt, exact, explanation, candidates, values, gv;
+  let prompt, exact, explanation, candidates, values, gv, hints;
 
   if (kind === "percent" || kind === "required") {
     const names = rng.shuffle(["Homework", "Quizzes", "Project", "Midterm", "Lab work", "Essay"]);
@@ -489,8 +555,13 @@ function genWeighted(difficulty, rng) {
         `\`${parts.map((_, i) => `${weights[i]} × ${scores[i]}`).join(" + ")} + ${wf} × x = 100 × ${T}\`\n\n` +
         `\`${partial} + ${wf}x = ${100 * T}\`, so \`x = (${100 * T} - ${partial}) / ${wf} = ${100 * T - partial} / ${wf}\` ${result(exact, rounded)}`;
       candidates = [T, k * T - sum(scores), (100 * T - partial) / 100, 2 * T - sum(scores) / (k - 1)]; // the target itself, weights ignored, forgot to divide by the weight, averaged
+      hints = [
+        `Call the final exam score x. Overall = (sum of weight × score) ÷ 100, and you want that to equal \`_target\` = ${T}.`,
+        `The parts you know: \`${parts.map((_, i) => `_w${i + 1} × _s${i + 1}`).join(" + ")} = ${partial}\`. The target total is \`100 × _target = ${100 * T}\`.`,
+        `So \`${partial} + ${wf}x = ${100 * T}\`: take ${partial} from both sides, then divide by \`_w${k}\` (${wf}). Round to 2 decimal places if needed.`,
+      ];
       const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-      return finish(base, exact, rounded, candidates, rng, { lo: 0, hi: 100, step: 1 });
+      return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, hi: 100, step: 1 }), hints };
     }
     const parts = names.slice(0, k);
     const scores = parts.map(() => rng.int(40, 100));
@@ -503,6 +574,11 @@ function genWeighted(difficulty, rng) {
       `Weighted average = sum of (weight × score) / sum of weights.\n\n` +
       `\`(${parts.map((_, i) => `${weights[i]} × ${scores[i]}`).join(" + ")}) / 100 = ${total} / 100\` ${result(exact, rounded)}`;
     candidates = [sum(scores) / k, total, sum(scores.map((s, i) => s * weights[k - 1 - i])) / 100]; // plain mean, forgot /100, weights mismatched
+    hints = [
+      "Weighted average = (sum of weight × score) ÷ (sum of the weights). The percentage weights add up to 100.",
+      `Multiply each score by its weight: ${parts.map((_, i) => `\`_w${i + 1} × _s${i + 1} = ${weights[i]} × ${scores[i]} = ${weights[i] * scores[i]}\``).join(", ")}.`,
+      "Add those products, then divide by 100. Round to 2 decimal places if needed.",
+    ];
   } else {
     // Credits: weights don't add up to 100, so divide by the total credits.
     const k = hard ? rng.int(4, 5) : 3;
@@ -519,9 +595,15 @@ function genWeighted(difficulty, rng) {
       `Weighted average = sum of (credits × grade) / total credits.\n\n` +
       `\`(${courses.map((_, i) => `${credits[i]} × ${num(grades[i])}`).join(" + ")}) / (${credits.join(" + ")}) = ${num(total)} / ${cr}\` ${result(exact, rounded)}`;
     candidates = [sum(grades) / k, total / k, total];
+    const lab = gv.length <= 8; // the calculator only gets the rows when there are at most 8
+    hints = [
+      "Credit-weighted GPA = (sum of credits × grade) ÷ (total credits). Divide by the credits, not by the number of courses.",
+      `Multiply each grade by its credits: ${courses.map((_, i) => `\`${lab ? `_c${i + 1} × _g${i + 1} = ` : ""}${credits[i]} × ${num(grades[i])} = ${num(credits[i] * grades[i])}\``).join(", ")}.`,
+      `Add those products, then divide by the total credits, \`${credits.join(" + ")} = ${cr}\`. Round to 2 decimal places if needed.`,
+    ];
   }
   const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-  return finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 });
+  return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 }), hints };
 }
 
 export function generate({ subtopic, difficulty, rng }) {
