@@ -1,0 +1,17 @@
+{
+  "id": "code-writing",
+  "title": "Code Writing",
+  "description": "Complete short programs: fill in a value, or pick the expression, condition or line that makes the code do its job.",
+  "icon": "code",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
+  "subtopics": [
+    { "id": "expressions", "title": "Expressions", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "conditionals", "title": "Conditionals", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "loops", "title": "Loops", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "lists-strings", "title": "Lists and strings", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "functions", "title": "Functions", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -41,11 +41,15 @@ js/lib/rng.js           seeded PRNG (mulberry32) + helpers
 js/lib/storage.js       localStorage store, cookie cache, import/export
 js/lib/engine.js        loads modules, generates + verifies questions, checks answers
 js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
+js/lib/languages.js     code languages list (python, csharp, cpp, gdscript, rust)
+js/lib/codelang.js      language-neutral code AST, 5 renderers, interpreter
+js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
 modules/<id>/intro.md   optional markdown shown on the module page
+modules/<id>/guide.md   optional "How to solve" notes for Guided mode
 modules/<id>/generator.js   (type "generator")
 modules/<id>/questions.csv  (type "csv")
 ```
@@ -57,7 +61,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
 
 ## Registry — `modules/index.json`
 
@@ -169,6 +173,16 @@ export function verify(question, answer) { ... }
 
 The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
 
+### Code languages (Code Writing, Code Reviewing)
+
+- `module.json` may list `"languages"` (a subset of `js/lib/languages.js` ids, in display order; unknown ids dropped with a warning; generator modules only). Empty or absent = not language-aware.
+- The effective language is the `sb_codeLang` preference if the module lists it, else its first listed language. It's picked on the module page or in Settings → Code language.
+- Language-aware generators are called as `generate({ subtopic, difficulty, rng, lang })`; other modules never get `lang`, so their questions are unchanged. The engine keeps `lang` across verify retries and puts it on the question. `verify` doesn't receive `lang`: generators put it (and a `meta` with template + params) on the returned question.
+- Generators draw **all** rng values before rendering, so one seed is the same logic in every language. Snippets are built once with `js/lib/codelang.js` (its header documents the AST, `check` rules, `render`/`lineOf`, `run`) and shown in a fence tagged `LANGUAGES[].fence`. Code choices are wrapped in backticks (choices go through `renderInline`), and the stored answer is the same string.
+- `verify` rebuilds the program from `meta`, substitutes the candidate answer and `run()`s it against plain-JS references. Number blanks are unique in a scanned range or worded "smallest (0 or more)"; exactly one choice passes all tests.
+- A stored question may carry `lang` (checked with `isLang` on save and import); `regenerate(module, subtopic, difficulty, seed, lang)` rebuilds the same snippet.
+- Code renders without ligatures (`font-variant-ligatures: none`), so `<=` never shows as ≤. Snippets aren't compiled in tests; see ticket 010.
+
 ### CSV modules — `questions.csv`
 
 Header: `subtopic,difficulty,prompt,answer,choices,explanation`
@@ -213,6 +227,16 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 - **Storage:** on the stored question, `answer` and `userAnswer` become objects keyed by part id, and `parts: [{id, label, correct}]` is added. These fields are optional on import.
 - **CSV modules:** not supported; multi-part is generator-only.
 
+## Guided mode
+
+- Module page: a **Practice | Guided** switch (sessionStorage `studyblock:quizMode`; opening `#/q` or `#/g` sets it). In Guided mode grid links go to `#/g/…` and cells show "Guided" instead of scores.
+- Guided runs reuse `runQuiz` with `opts.guided`: a "Guided · not scored" pill, hints in an aria-live list (**Hint n of N** or the H key), unlimited tries (a wrong choice is disabled; correct multi-part parts lock), and **Show solution** always available.
+- They never call `saveAttempt` and never touch stats, History or best scores; only the last-module/difficulty cookies update. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
+- **Generator hints (optional):** `hints: [markdown]` (1–4 progressive steps that never state the final answer) and/or `parts[i].hint` on multi-part questions. The engine keeps non-empty strings ≤ 600 chars, max 4, dropping others with one console.warn per module. Never stored.
+- **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
+- **`modules/<id>/guide.md` (optional):** `## General` plus `## <Subtopic title>` sections (case-insensitive; text before the first `##` ignored). Loaded with `loadGuide` and shown as a collapsible "How to solve" card for the current question's subtopic.
+- Open choices are in ticket 011.
+
 ## Storage
 
 **localStorage** (`studyblock:data`) is the source of truth:
@@ -233,7 +257,7 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 ```
 Scores per module/subtopic/difficulty are derived from attempts. On import, `credit` is optional and clamped to 0–1; `score` may be a decimal ≥ 0 and ≤ total.
 
-**Cookies** are a small cache only (≤ ~1KB): last module, last difficulty, theme. `SameSite=Lax; path=/`. Never store history in cookies.
+**Cookies** are a small cache only (≤ ~1KB): last module, last difficulty, theme, code language (`sb_codeLang`, default `python`). `SameSite=Lax; path=/`. Never store history in cookies.
 
 **Export** downloads the full JSON via Blob. **Import** reads a file, validates `version` + shape, and asks merge (dedupe by attempt id) or replace.
 
@@ -242,7 +266,7 @@ Scores per module/subtopic/difficulty are derived from attempts. On import, `cre
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**

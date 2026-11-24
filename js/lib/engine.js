@@ -3,6 +3,8 @@
 import { createRng, randomSeed } from './rng.js';
 import { parseCSV } from './csv.js';
 import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
+import { LANG_IDS, isLang } from './languages.js';
+import { getCodeLang } from './storage.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -100,7 +102,46 @@ export async function loadModule(id) {
     subtopics,
     // Quiz calculator panel; a module opts out with "calculator": false.
     calculator: m.calculator !== false,
+    // Code languages the module can show its snippets in ([] = not language-aware).
+    languages: parseLanguages(m, id),
   };
+}
+
+// ---- code languages (Code Writing / Code Reviewing; see js/lib/languages.js) ----
+
+const langWarned = new Set();
+function warnLangOnce(id, msg) {
+  if (langWarned.has(id)) return;
+  langWarned.add(id);
+  console.warn(`StudyBlock: module ${id}: ${msg}`);
+}
+
+// module.json "languages": a subset of LANG_IDS in the module's own order. Unknown ids and
+// duplicates are dropped (one console.warn per module). Generator modules only.
+function parseLanguages(m, id) {
+  if (m.languages === undefined || m.languages === null) return [];
+  if (!Array.isArray(m.languages)) { warnLangOnce(id, '"languages" must be a list; ignoring it'); return []; }
+  if (m.type === 'csv') {
+    if (m.languages.length) warnLangOnce(id, '"languages" is only supported for generator modules; ignoring it');
+    return [];
+  }
+  const out = [];
+  const bad = [];
+  for (const l of m.languages) {
+    if (isLang(l)) { if (!out.includes(l)) out.push(l); } else bad.push(l);
+  }
+  if (bad.length) warnLangOnce(id, `ignoring unknown language id(s) ${JSON.stringify(bad)} (known: ${LANG_IDS.join(', ')})`);
+  return out;
+}
+
+// True when the module shows code in a language the user picks.
+export const isLangModule = mod => Array.isArray(mod?.languages) && mod.languages.length > 0;
+
+// The language a module's questions are generated in: the user's preference if the module
+// lists it, else the module's first listed language. null for modules that aren't language-aware.
+export function effectiveLang(mod, pref = getCodeLang()) {
+  if (!isLangModule(mod)) return null;
+  return mod.languages.includes(pref) ? pref : mod.languages[0];
 }
 
 export async function loadAllModules() {
@@ -117,6 +158,16 @@ export async function loadIntro(id) {
   await assertListed(id);
   try {
     return await loadText(`modules/${id}/intro.md`);
+  } catch {
+    return null;
+  }
+}
+
+// Guided-mode "How to solve" notes (modules/<id>/guide.md), or null if missing.
+export async function loadGuide(id) {
+  await assertListed(id);
+  try {
+    return await loadText(`modules/${id}/guide.md`);
   } catch {
     return null;
   }
@@ -168,8 +219,10 @@ export const MULTI_MIN_PARTS = 2;
 export const MULTI_MAX_PARTS = 4;
 
 // One part of a multi-part question, normalised like a single question.
-function normalizePart(p) {
+// `hint` (guided mode, optional): one markdown string, sanitised like `hints`.
+function normalizePart(p, warnKey) {
   const answerType = PART_TYPES.includes(p?.answerType) ? p.answerType : 'text';
+  const hint = p && p.hint !== undefined && p.hint !== null ? sanitizeHints([p.hint], warnKey, p.hint)?.[0] : undefined;
   return {
     id: String(p?.id ?? ''),
     label: String(p?.label ?? ''),
@@ -178,6 +231,7 @@ function normalizePart(p) {
     answer: p?.answer,
     choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
     tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
+    ...(hint ? { hint } : {}),
   };
 }
 
@@ -237,11 +291,36 @@ export function sanitizeGiven(raw, warnKey) {
   return out.length ? out : undefined;
 }
 
-function normalizeGenerated(q, seed, warnKey) {
+// Guided-mode hints: [markdown] shown one at a time; they lead toward the method without stating
+// the final answer. Strings only, trimmed, non-empty, each ≤ HINT_MAX_LEN chars, at most HINTS_MAX.
+// Bad entries are dropped (one console.warn per generator module). Never stored in attempts.
+export const HINTS_MAX = 4;
+export const HINT_MAX_LEN = 600;
+const hintsWarned = new WeakSet();
+
+export function sanitizeHints(raw, warnKey, shown = raw) {
+  if (raw === undefined || raw === null) return undefined;
+  const out = [];
+  let bad = !Array.isArray(raw);
+  for (const h of Array.isArray(raw) ? raw : []) {
+    const t = typeof h === 'string' ? h.trim() : '';
+    if (out.length >= HINTS_MAX || !t || t.length > HINT_MAX_LEN) { bad = true; continue; }
+    out.push(t);
+  }
+  if (bad && warnKey && typeof warnKey === 'object' && !hintsWarned.has(warnKey)) {
+    hintsWarned.add(warnKey);
+    console.warn('StudyBlock: a generator returned invalid "hints" entries; they were dropped', shown);
+  }
+  return out.length ? out : undefined;
+}
+
+function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
-  const extra = given ? { given } : {};
+  const hints = sanitizeHints(q?.hints, warnKey);
+  // `lang` only on questions from language-aware modules.
+  const extra = { ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}) };
   if (q.answerType === 'multi') {
-    const parts = (Array.isArray(q.parts) ? q.parts : []).map(normalizePart);
+    const parts = (Array.isArray(q.parts) ? q.parts : []).map(p => normalizePart(p, warnKey));
     return {
       seed,
       prompt: String(q.prompt ?? ''),
@@ -267,13 +346,19 @@ function normalizeGenerated(q, seed, warnKey) {
   };
 }
 
+// Arguments for generate(): language-aware modules also get `lang`; every other module is called
+// exactly as before (no `lang` key at all), so existing generators are unaffected.
+const genArgs = (subtopic, difficulty, seed, lang) =>
+  (lang ? { subtopic, difficulty, rng: createRng(seed), lang } : { subtopic, difficulty, rng: createRng(seed) });
+
 // Generate one verified question from a generator module. Returns null on failure.
-function generateVerified(gen, subtopic, difficulty, seed, maxTries = 20) {
+// `lang` (or null) stays the same across retries.
+function generateVerified(gen, subtopic, difficulty, seed, lang = null, maxTries = 20) {
   let s = seed;
   for (let t = 0; t < maxTries; t++) {
     try {
-      const raw = gen.generate({ subtopic, difficulty, rng: createRng(s) });
-      const q = normalizeGenerated(raw, s, gen);
+      const raw = gen.generate(genArgs(subtopic, difficulty, s, lang));
+      const q = normalizeGenerated(raw, s, gen, lang);
       let shapeOk, own;
       if (raw.answerType === 'multi') {
         shapeOk = multiShapeOk(raw);
@@ -365,13 +450,14 @@ async function buildAllQuiz(mod, subtopic, difficulty) {
     }
   } else {
     const gen = await loadGenerator(mod.id);
+    const lang = effectiveLang(mod);
     const n = mod.questionsPerQuiz;
     let failures = 0;
     let dupTries = 0;
     while (questions.length < n && failures < n) {
       const c = rng.pick(cells);
       const d = rng.pick(c.diffs);
-      const q = generateVerified(gen, c.st.id, d, nextSeed());
+      const q = generateVerified(gen, c.st.id, d, nextSeed(), lang);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -407,10 +493,11 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
     }
   } else {
     const gen = await loadGenerator(moduleId);
+    const lang = effectiveLang(mod);
     let failures = 0;
     let dupTries = 0;
     while (questions.length < n && failures < n) {
-      const q = generateVerified(gen, subtopic, difficulty, randomSeed());
+      const q = generateVerified(gen, subtopic, difficulty, randomSeed(), lang);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -421,16 +508,18 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
   return questions;
 }
 
-// Rebuild a stored question from its seed.
-export async function regenerate(moduleId, subtopic, difficulty, seed) {
+// Rebuild a stored question from its seed. `lang` is the stored question's language: for a
+// language-aware module it is used if the module still lists it, else the effective language.
+export async function regenerate(moduleId, subtopic, difficulty, seed, lang) {
   const mod = await loadModule(moduleId);
   if (mod.type === 'csv') {
     const pool = csvPool(await loadCsvRows(moduleId), subtopic, difficulty);
     return pool.length ? csvQuestion(pool, seed) : null;
   }
   const gen = await loadGenerator(moduleId);
-  const raw = gen.generate({ subtopic, difficulty, rng: createRng(seed) });
-  return normalizeGenerated(raw, seed, gen);
+  const l = isLangModule(mod) ? (isLang(lang) && mod.languages.includes(lang) ? lang : effectiveLang(mod)) : null;
+  const raw = gen.generate(genArgs(subtopic, difficulty, seed, l));
+  return normalizeGenerated(raw, seed, gen, l);
 }
 
 // ---- multi-domain mix ----
@@ -610,7 +699,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
       const mod = await loadModule(mid);
       if (!mod.subtopics.length) return;
       if (mod.type === 'csv') sources.set(mid, { mod, rows: await loadCsvRows(mid) });
-      else sources.set(mid, { mod, gen: await loadGenerator(mid) });
+      else sources.set(mid, { mod, gen: await loadGenerator(mid), lang: effectiveLang(mod) });
     } catch (e) {
       console.warn(`StudyBlock: skipping module ${mid} in mix`, e);
     }
@@ -636,7 +725,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
     const dId = weightedPick(rng, domainIds, id => pool.reduce((s, r) => s + (r.domain === id ? r.share : 0), 0));
     const pick = dId && weightedPick(rng, pool.filter(r => r.domain === dId), r => r.share);
     if (!pick) break;
-    const { mod, gen, rows } = sources.get(pick.module);
+    const { mod, gen, rows, lang } = sources.get(pick.module);
     const st = rng.pick(mod.subtopics);
     const difficulty = resolveDifficulty(rng, st, cfg.difficulty);
     const qSeed = Math.floor(rng.next() * 0x100000000) >>> 0;
@@ -645,7 +734,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
       const p = csvPool(rows, st.id, difficulty);
       if (p.length) q = csvQuestion(p, qSeed);
     } else {
-      q = generateVerified(gen, st.id, difficulty, qSeed);
+      q = generateVerified(gen, st.id, difficulty, qSeed, lang);
     }
     if (!q) {
       const f = (failures.get(mod.id) || 0) + 1;

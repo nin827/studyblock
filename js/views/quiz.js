@@ -1,9 +1,11 @@
-import { loadModule, domainOf, checkAnswer, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
+import { loadModule, loadGuide, domainOf, checkAnswer, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
+import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
 import { saveAttempt, setCookie, getCookie, cleanWork, creditOf, roundScore } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 import { mountCalculator } from './calculator.js';
+import { isLang, langTitle } from '../lib/languages.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
 // address it was opened on, may restore it from sessionStorage. Every other run starts empty.
@@ -27,13 +29,25 @@ export function renderPrompt(src) {
 // All parts are optional (older stored attempts have none). `q.domain` (id) picks the tint.
 export function questionTag(q) {
   if (!q || typeof q.module !== 'string') return '';
-  return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty)}</p>`;
+  return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty, q.lang)}</p>`;
 }
 
 // "Subtopic · Difficulty" tag only (whole-module quizzes, where the module is already known).
 export function cellTag(q) {
-  if (!q || (typeof q.subtopic !== 'string' && typeof q.difficulty !== 'string')) return '';
-  return `<p class="q-tag tag-row">${originTags(null, null, null, q.subtopicTitle ?? q.subtopic, q.difficulty)}</p>`;
+  if (!q || (typeof q.subtopic !== 'string' && typeof q.difficulty !== 'string')) return langRow(q);
+  return `<p class="q-tag tag-row">${originTags(null, null, null, q.subtopicTitle ?? q.subtopic, q.difficulty, q.lang)}</p>`;
+}
+
+// Code language pill ("Python", "C#", …) for questions from language-aware modules; '' otherwise.
+export function langTag(q) {
+  const l = q && isLang(q.lang) ? q.lang : null;
+  return l ? `<span class="tag tag-lang" title="Code language">${icon('code')}<span class="sr-only">Code language: </span>${esc(langTitle(l))}</span>` : '';
+}
+
+// A tag row holding only the language pill (where no other origin tags are shown).
+function langRow(q) {
+  const t = langTag(q);
+  return t ? `<p class="q-tag tag-row">${t}</p>` : '';
 }
 
 // Result state of a question from its credit: full, partial (multi-part only) or none.
@@ -43,10 +57,10 @@ export function creditState(credit) {
 const SEG_CLASS = { correct: 'is-correct', partial: 'is-partial', wrong: 'is-wrong' };
 
 // Plain-text parts; tag() escapes them.
-function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty) {
+function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty, lang) {
   const where = [domainTitle, moduleTitle].filter(Boolean).join(' › ');
   const rest = [subtopicTitle, difficulty ? cap(difficulty) : null].filter(Boolean).join(' · ');
-  return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '');
+  return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '') + langTag({ lang });
 }
 
 /*
@@ -61,12 +75,19 @@ function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficult
  *   breakdown        show the per-module breakdown on the results screen (default: showTags)
  *   cardTags         optional HTML (already escaped) shown above every prompt when showTags is off
  *   toAttempt(results)  -> attempt fields (module/subtopic/difficulty/questions/score/total)
+ *   guided           optional { guideFor(q) -> HTML } — guided mode: hints, unlimited tries, never
+ *                    saved (toAttempt is not called). `practiceHref` links the end screen to #/q/….
  */
 export async function runQuiz(root, ctx, opts) {
   let questions = [];
   let idx = 0;
   let phase = 'loading'; // loading | answer | feedback | done
   let results = [];
+  // ---- guided mode state ----
+  const guided = !!opts.guided;
+  let gs = null;          // current question: { tries, hintsShown, partHints, hints, source }
+  let gResults = [];      // [{ q, outcome: 'first'|'assisted'|'solution', tries, hints }]
+  let guideOpen = false;  // "How to solve" card stays open/closed across questions
 
   // ---- calculator panel (desktop side panel ≥900px, bottom sheet below) ----
   let calc = null;
@@ -243,21 +264,30 @@ export async function runQuiz(root, ctx, opts) {
     questions = built;
     idx = 0;
     results = [];
+    gResults = [];
     mountShell(restore);
     showQuestion();
   }
 
   // Running score = sum of credits (multi-part questions can earn part of a point).
   const correctCount = () => fmtScore(results.reduce((s, r) => s + r.credit, 0));
-  const progressText = () => `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${correctCount()} correct`;
+  const progressText = () => guided
+    ? `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, guided, not scored`
+    : `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${correctCount()} correct`;
 
   // Segmented progress: one segment per question, coloured correct / wrong / current.
+  // Guided: neutral "done" segments (nothing is scored).
   function header() {
     const n = questions.length;
     const segs = questions.map((_, i) => {
-      const cls = i < results.length ? SEG_CLASS[creditState(results[i].credit)] : (i === idx ? 'is-current' : '');
+      const cls = guided
+        ? (i < gResults.length ? 'is-done' : (i === idx ? 'is-current' : ''))
+        : i < results.length ? SEG_CLASS[creditState(results[i].credit)] : (i === idx ? 'is-current' : '');
       return `<span class="${cls}"></span>`;
     }).join('');
+    const pill = guided
+      ? `<span class="quiz-score guided-pill">${icon('compass')}<span>Guided · not scored</span></span>`
+      : `<span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> correct</span></span>`;
     return `${opts.crumbs}
       <div class="quiz-top">
         <div class="quiz-bar">
@@ -266,7 +296,7 @@ export async function runQuiz(root, ctx, opts) {
             <h1 class="quiz-title">${opts.title}</h1>
             <p class="quiz-meta">Question <strong>${Math.min(idx + 1, n)}</strong> of ${n}</p>
           </div>
-          <span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> correct</span></span>
+          ${pill}
         </div>
         <div class="seg-progress ${n > 20 ? 'is-dense' : ''}" id="seg-progress" role="progressbar" aria-label="Quiz progress"
           aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${idx}" aria-valuetext="${esc(progressText())}">${segs}</div>
@@ -279,6 +309,15 @@ export async function runQuiz(root, ctx, opts) {
   const isMulti = q => q?.answerType === 'multi';
   let lastPart = null; // part id that last had focus (the calculator's Use fills it)
 
+  // Guided: a part's own hint (button + aria-live box under the part).
+  function partHintHtml(p) {
+    if (!guided || typeof p.hint !== 'string' || !p.hint) return '';
+    return `<div class="part-hint-row">
+        <button type="button" class="btn btn-soft part-hint-btn" data-part-hint="${esc(p.id)}" aria-controls="part-${esc(p.id)}-hint">${icon('lightbulb')}<span>Hint for this part</span></button>
+      </div>
+      <div class="part-hint-box" id="part-${esc(p.id)}-hint" aria-live="polite"></div>`;
+  }
+
   function partHtml(p, i, n) {
     const last = i === n - 1;
     const head = `<p class="part-head"><span class="part-num" aria-hidden="true">${i + 1}</span><span class="part-label">${esc(p.label)}</span></p>`;
@@ -288,6 +327,7 @@ export async function runQuiz(root, ctx, opts) {
         <p class="part-ask" id="part-${esc(p.id)}-ask">${renderInline(p.ask || p.label)}</p>
         <div class="choices part-choices" role="group" aria-labelledby="part-${esc(p.id)}-ask" data-part="${esc(p.id)}">${(p.choices || []).map((c, j) =>
           `<button type="button" class="btn choice part-choice" data-part="${esc(p.id)}" data-i="${j}" aria-pressed="false"><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>
+        ${partHintHtml(p)}
       </div>`;
     }
     const num = p.answerType === 'number';
@@ -297,6 +337,7 @@ export async function runQuiz(root, ctx, opts) {
       <input id="part-${esc(p.id)}" class="answer-input part-input" data-part="${esc(p.id)}" type="text" ${num ? 'inputmode="decimal"' : ''}
         enterkeyhint="${last ? 'go' : 'next'}" autocapitalize="off" autocorrect="off" spellcheck="false"
         placeholder="${num ? 'Type a number' : 'Type your answer'}">
+      ${partHintHtml(p)}
     </div>`;
   }
 
@@ -418,20 +459,123 @@ export async function runQuiz(root, ctx, opts) {
       ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary">${icon('check')} Check</button>`;
   }
 
+  // ---- guided mode: guide card, hints, Show solution ----
+
+  function guideCardHtml(q) {
+    let body = '';
+    try { body = opts.guided.guideFor ? opts.guided.guideFor(q) : ''; } catch (e) { console.warn('StudyBlock: guide failed', e); }
+    if (!body) return '';
+    return `<details class="card guide-card" id="guide-card" ${guideOpen ? 'open' : ''}>
+        <summary>${icon('book-open')}<span>How to solve</span>${icon('chevron-down', 'guide-chev')}</summary>
+        <div class="prose guide-body">${body}</div>
+      </details>`;
+  }
+
+  const hintLabel = () => (gs.hintsShown < gs.hints.length
+    ? `Hint ${gs.hintsShown + 1} of ${gs.hints.length}`
+    : 'No more hints');
+
+  function guidedToolsHtml() {
+    const hintBtn = gs.hints.length
+      ? `<button type="button" class="btn btn-soft" id="hint-btn" aria-controls="hint-list">${icon('lightbulb')}<span class="hint-btn-label">${esc(hintLabel())}</span></button>`
+      : '';
+    const keyHint = gs.hints.length ? '<span class="guided-key desktop-only">Press <kbd>H</kbd> for a hint</span>' : '';
+    return `<div class="guided-tools" id="guided-tools">
+        ${hintBtn}
+        <button type="button" class="btn" id="show-solution">${icon('eye')}<span>Show solution</span></button>
+        ${keyHint}
+      </div>`;
+  }
+
+  const hintsUsed = () => (gs ? gs.hintsShown + gs.partHints : 0);
+
+  function revealHint() {
+    if (!guided || phase !== 'answer' || !gs || gs.hintsShown >= gs.hints.length) return false;
+    const list = root.querySelector('#hint-list');
+    if (!list) return false;
+    const i = gs.hintsShown++;
+    const li = document.createElement('li');
+    li.className = 'hint';
+    li.innerHTML = `<p class="hint-head">${icon('lightbulb')}<span>Hint ${i + 1} of ${gs.hints.length}</span></p>
+      <div class="prose hint-body">${renderMarkdown(gs.hints[i])}</div>`;
+    list.appendChild(li);
+    const btn = root.querySelector('#hint-btn');
+    if (btn) {
+      btn.querySelector('.hint-btn-label').textContent = hintLabel();
+      if (gs.hintsShown >= gs.hints.length) {
+        // Keep focus somewhere useful before disabling the focused button.
+        if (document.activeElement === btn) root.querySelector('#show-solution')?.focus();
+        btn.disabled = true;
+      }
+    }
+    icons();
+    return true;
+  }
+
+  function revealPartHint(id) {
+    if (!guided || phase !== 'answer' || !gs) return false;
+    const q = questions[idx];
+    const p = isMulti(q) ? partOf(q)(id) : null;
+    const box = p && root.querySelector(`#part-${CSS.escape(id)}-hint`);
+    const btn = p && root.querySelector(`.part-hint-btn[data-part-hint="${CSS.escape(id)}"]`);
+    if (!p || !box || !btn || btn.disabled || !p.hint) return false;
+    box.innerHTML = `<p class="hint-head">${icon('lightbulb')}<span>Hint · ${esc(p.label)}</span></p><div class="prose hint-body">${renderMarkdown(p.hint)}</div>`;
+    gs.partHints++;
+    btn.disabled = true;
+    btn.closest('.part-hint-row')?.setAttribute('hidden', '');
+    icons();
+    focusPart(id);
+    return true;
+  }
+
+  // H: the next question-level hint, else the hint of the part last used.
+  function hotkeyHint() {
+    if (revealHint()) return;
+    const q = questions[idx];
+    if (isMulti(q)) {
+      const ids = [lastPart, ...(q.parts || []).map(p => p.id)].filter(Boolean);
+      for (const id of ids) if (revealPartHint(id)) return;
+    }
+  }
+
+  function bindGuided(q) {
+    gs = { tries: 0, hintsShown: 0, partHints: 0, ...hintsFor(q) };
+    const tools = root.querySelector('#guided-tools-slot');
+    if (tools) tools.outerHTML = guidedToolsHtml();
+    root.querySelector('#hint-btn')?.addEventListener('click', () => revealHint());
+    root.querySelector('#show-solution')?.addEventListener('click', showSolution);
+    root.querySelectorAll('.part-hint-btn').forEach(b => b.addEventListener('click', () => revealPartHint(b.dataset.partHint)));
+    root.querySelector('#guide-card')?.addEventListener('toggle', e => { guideOpen = e.currentTarget.open; });
+    // A wrong mark clears as soon as the user changes that field.
+    const form = root.querySelector('#answer-form');
+    form?.addEventListener('input', e => {
+      e.target.classList?.remove('is-wrong');
+      e.target.closest?.('.part')?.classList.remove('is-wrong');
+    });
+    form?.addEventListener('click', e => {
+      const b = e.target.closest?.('.part-choice');
+      if (b && !b.disabled) b.closest('.part')?.classList.remove('is-wrong');
+    });
+  }
+
   function showQuestion() {
     phase = 'answer';
     const q = questions[idx];
     const main = root.querySelector('#quiz-main');
     if (!main) return;
     main.innerHTML = `${header()}
-      <section class="card question">
-        ${opts.tagsFor ? opts.tagsFor(q) : opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}</p>` : '')}
+      ${guided ? guideCardHtml(q) : ''}
+      <section class="card question${guided ? ' is-guided' : ''}">
+        ${opts.tagsFor ? opts.tagsFor(q) : opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}${langTag(q)}</p>` : langRow(q))}
         <div class="prompt prose">${renderPrompt(q.prompt)}</div>
+        ${guided ? '<div class="guided-hints" aria-live="polite"><ol class="hint-list" id="hint-list" aria-label="Hints"></ol></div>' : ''}
         ${inputHtml(q)}
-        <div id="feedback"></div>
+        ${guided ? '<div id="guided-tools-slot"></div>' : ''}
+        <div id="feedback"${guided ? ' aria-live="polite"' : ''}></div>
         <div class="action-bar" id="action-bar">${actionBar(q)}</div>
       </section>`;
     if (isMulti(q)) lastPart = q.parts?.[0]?.id ?? null;
+    if (guided) bindGuided(q);
     // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
     calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
     applyCalc(q);
@@ -446,7 +590,205 @@ export async function runQuiz(root, ctx, opts) {
       b.addEventListener('click', () => submit(q.choices[+b.dataset.i], +b.dataset.i)));
   }
 
+  // ---- guided checking: unlimited tries; right parts lock, wrong ones stay editable ----
+
+  const markHtml = ok => `${icon(ok ? 'circle-check' : 'circle-x')}<span class="sr-only">${ok ? 'Correct' : 'Not correct'}</span>`;
+
+  function lockPart(p, el) {
+    if (el.classList.contains('is-locked')) return;
+    el.classList.remove('is-wrong');
+    el.classList.add('is-correct', 'is-locked');
+    if (p.answerType === 'choice') {
+      el.querySelector('.part-choices')?.classList.add('is-answered');
+      el.querySelectorAll('.part-choice').forEach(b => {
+        if (b.getAttribute('aria-pressed') === 'true') {
+          b.classList.add('is-correct');
+          const m = b.querySelector('.choice-mark');
+          if (m) m.innerHTML = markHtml(true);
+        }
+        b.disabled = true;
+      });
+    } else {
+      const input = el.querySelector('.part-input');
+      if (input) { input.classList.remove('is-wrong'); input.classList.add('is-correct'); input.disabled = true; }
+    }
+    const head = el.querySelector('.part-head');
+    if (head && !head.querySelector('.part-ok')) {
+      head.insertAdjacentHTML('beforeend', `<span class="part-ok">${icon('circle-check')}<span>Correct</span></span>`);
+    }
+    el.querySelector('.part-hint-row')?.setAttribute('hidden', '');
+  }
+
+  function markPartWrong(p, el) {
+    el.classList.add('is-wrong');
+    if (p.answerType === 'choice') {
+      const b = el.querySelector('.part-choice[aria-pressed="true"]');
+      if (b) {
+        b.setAttribute('aria-pressed', 'false');
+        b.classList.add('is-wrong');
+        const m = b.querySelector('.choice-mark');
+        if (m) m.innerHTML = markHtml(false);
+        b.disabled = true;
+      }
+    } else {
+      el.querySelector('.part-input')?.classList.add('is-wrong');
+    }
+  }
+
+  function guidedSubmit(value, choiceIndex) {
+    if (phase !== 'answer' || !gs) return;
+    const q = questions[idx];
+    const multi = isMulti(q);
+    if (multi) {
+      if (!value || typeof value !== 'object' || !Object.values(value).every(isFilled)) { enterMulti(q, lastPart); return; }
+    } else if (q.answerType === 'choice') {
+      const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
+      if (!b || b.disabled) return;
+    } else if (!String(value ?? '').trim()) {
+      root.querySelector('#answer')?.focus();
+      return;
+    }
+    const res = checkAnswer(q, value);
+    let firstWrong = null;
+    if (multi) {
+      for (const pr of res.parts) {
+        const p = partOf(q)(pr.id);
+        const el = partEl(pr.id);
+        if (!p || !el) continue;
+        if (pr.correct) lockPart(p, el);
+        else { markPartWrong(p, el); firstWrong = firstWrong || pr.id; }
+      }
+      if (res.correct) { solvedGuided(q, value, choiceIndex); return; }
+    } else if (res) {
+      solvedGuided(q, value, choiceIndex);
+      return;
+    } else if (q.answerType === 'choice') {
+      const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
+      b.classList.add('is-wrong');
+      const m = b.querySelector('.choice-mark');
+      if (m) m.innerHTML = markHtml(false);
+      b.disabled = true;
+    } else {
+      root.querySelector('#answer')?.classList.add('is-wrong');
+    }
+    gs.tries++;
+    const nRight = multi ? res.parts.filter(p => p.correct).length : 0;
+    root.querySelector('#feedback').innerHTML = `<div class="feedback bad guided-retry">
+        <p class="feedback-title">${icon('circle-x')}<span>Not quite, try again</span></p>
+        <p class="feedback-sub">${multi ? `${nRight} of ${res.parts.length} parts right · ` : ''}Tries: ${gs.tries}</p>
+      </div>`;
+    icons();
+    if (multi) {
+      updateCheck(q);
+      focusPart(firstWrong, true);
+    } else if (q.answerType === 'choice') {
+      root.querySelector('.choices .choice:not(:disabled)')?.focus();
+    } else {
+      const input = root.querySelector('#answer');
+      input?.focus();
+      input?.select();
+    }
+  }
+
+  function solvedGuided(q, value, choiceIndex) {
+    const multi = isMulti(q);
+    if (!multi && q.answerType === 'choice') {
+      const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
+      if (b) {
+        b.classList.add('is-correct');
+        const m = b.querySelector('.choice-mark');
+        if (m) m.innerHTML = markHtml(true);
+      }
+    } else if (!multi) {
+      root.querySelector('#answer')?.classList.remove('is-wrong');
+      root.querySelector('#answer')?.classList.add('is-correct');
+    }
+    endGuidedQuestion(q, gs.tries === 0 && hintsUsed() === 0 ? 'first' : 'assisted');
+  }
+
+  function showSolution() {
+    if (!guided || phase !== 'answer' || !gs) return;
+    const q = questions[idx];
+    if (isMulti(q)) {
+      // Reveal each unsolved part's answer in place.
+      for (const p of q.parts || []) {
+        const el = partEl(p.id);
+        if (!el || el.classList.contains('is-locked')) continue;
+        el.classList.remove('is-wrong');
+        el.classList.add('is-revealed');
+        if (p.answerType === 'choice') {
+          el.querySelector('.part-choices')?.classList.add('is-answered');
+          el.querySelectorAll('.part-choice').forEach(b => {
+            if (String(p.choices[+b.dataset.i]) === String(p.answer)) {
+              b.classList.add('is-correct');
+              const m = b.querySelector('.choice-mark');
+              if (m) m.innerHTML = `${icon('circle-check')}<span class="sr-only">Correct answer</span>`;
+            }
+          });
+        }
+      }
+    } else if (q.answerType === 'choice') {
+      root.querySelector('.choices')?.classList.add('is-answered');
+      root.querySelectorAll('.choices .choice').forEach(b => {
+        if (String(q.choices[+b.dataset.i]) === String(q.answer)) {
+          b.classList.add('is-correct');
+          const m = b.querySelector('.choice-mark');
+          if (m) m.innerHTML = `${icon('circle-check')}<span class="sr-only">Correct answer</span>`;
+        }
+      });
+    }
+    endGuidedQuestion(q, 'solution');
+  }
+
+  function endGuidedQuestion(q, outcome) {
+    phase = 'feedback';
+    const multi = isMulti(q);
+    gResults.push({ q, outcome, tries: gs.tries, hints: hintsUsed() });
+    applyCalc(q);
+    root.querySelectorAll('.answer-form input, .choice, #check, .part-hint-btn').forEach(el => { el.disabled = true; });
+    const tools = root.querySelector('#guided-tools');
+    if (tools) tools.hidden = true;
+
+    const seg = root.querySelector(`#seg-progress > span:nth-child(${idx + 1})`);
+    if (seg) { seg.classList.remove('is-current'); seg.classList.add('is-done'); }
+    root.querySelector('#seg-progress')?.setAttribute('aria-valuetext', progressText());
+
+    const last = idx === questions.length - 1;
+    const bits = [];
+    if (gs.tries) bits.push(`${gs.tries} wrong ${gs.tries === 1 ? 'try' : 'tries'}`);
+    if (hintsUsed()) bits.push(`${hintsUsed()} ${hintsUsed() === 1 ? 'hint' : 'hints'}`);
+    let box;
+    if (outcome === 'solution') {
+      const locked = id => !!partEl(id)?.classList.contains('is-locked');
+      const mine = multi ? Object.fromEntries(Object.entries(readParts(q)).filter(([id]) => locked(id))) : null;
+      const answers = multi
+        ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: locked(p.id) ? true : null })), mine, q.answer, 'feedback-parts')
+        : `<p>Answer: <strong>${renderInline(String(q.answer))}</strong></p>`;
+      box = `<div class="feedback info">
+        <p class="feedback-title">${icon('eye')}<span>Solved with solution</span></p>
+        ${answers}
+        ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
+      </div>`;
+    } else {
+      box = `<div class="feedback good">
+        <p class="feedback-title">${icon('circle-check')}<span>Correct</span>${outcome === 'first'
+          ? '<span class="feedback-sub">· first try</span>'
+          : `<span class="feedback-sub">· after ${esc(bits.join(', '))}</span>`}</p>
+        ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
+      </div>`;
+    }
+    root.querySelector('#feedback').innerHTML = box;
+    root.querySelector('#action-bar').innerHTML =
+      `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to continue</span></p>
+      ${calcButton(q)}<button type="button" class="btn btn-primary" id="next">${last ? `${icon('flag')} Finish` : `Next question ${icon('arrow-right')}`}</button>`;
+    icons();
+    const next = root.querySelector('#next');
+    next.addEventListener('click', advance);
+    next.focus();
+  }
+
   function submit(value, choiceIndex) {
+    if (guided) { guidedSubmit(value, choiceIndex); return; }
     if (phase !== 'answer') return;
     const q = questions[idx];
     const multi = isMulti(q);
@@ -549,7 +891,57 @@ export async function runQuiz(root, ctx, opts) {
     else finish();
   }
 
+  // Guided end screen: no score, nothing saved (no saveAttempt, no history, no stats).
+  function finishGuided() {
+    phase = 'done';
+    teardownCalc();
+    const count = k => gResults.filter(r => r.outcome === k).length;
+    const counts = ['first', 'assisted', 'solution'].map(k =>
+      `<li class="guided-count is-${OUTCOMES[k].cls}">${icon(OUTCOMES[k].icon)}<strong>${count(k)}</strong><span>${esc(OUTCOMES[k].label)}</span></li>`).join('');
+    root.innerHTML = `<div class="page-narrow">
+      ${opts.crumbs}
+      <section class="card result-summary guided-summary">
+        <p class="eyebrow">${icon('compass')} Guided set complete</p>
+        <h1 class="quiz-title">${opts.title}</h1>
+        <p class="muted guided-note">Not scored: nothing was added to your history or stats.</p>
+        <ul class="guided-counts">${counts}</ul>
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Another guided set</button>
+          ${opts.practiceHref ? `<a class="btn" href="${opts.practiceHref}">${icon('play')} Practice for real</a>` : ''}
+          <a class="btn" href="${opts.backHref}">${icon(opts.backIcon || 'layout-grid')} ${esc(opts.backLabel)}</a>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Questions</h2>
+        <ol class="review">${gResults.map(guidedReviewItem).join('')}</ol>
+      </section></div>`;
+    icons();
+    root.querySelector('#retry').addEventListener('click', start);
+  }
+
+  function guidedReviewItem(r) {
+    const q = r.q;
+    const o = OUTCOMES[r.outcome] || OUTCOMES.solution;
+    const extra = [];
+    if (r.tries) extra.push(`${r.tries} wrong ${r.tries === 1 ? 'try' : 'tries'}`);
+    if (r.hints) extra.push(`${r.hints} ${r.hints === 1 ? 'hint' : 'hints'}`);
+    const answers = isMulti(q)
+      ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts')
+      : `<p class="review-answers">Answer: <strong>${renderInline(String(q.answer ?? ''))}</strong></p>`;
+    return `<li class="review-item guided-item is-${o.cls}">
+      <div class="review-mark">${icon(o.icon)}</div>
+      <div class="review-body">
+        ${opts.tagsFor ? opts.tagsFor(q) : langRow(q)}
+        <p class="guided-outcome">${esc(o.label)}${extra.length ? ` <span class="muted">· ${esc(extra.join(', '))}</span>` : ''}</p>
+        <div class="prose">${renderPrompt(q.prompt)}</div>
+        ${answers}
+        ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
+      </div>
+    </li>`;
+  }
+
   function finish() {
+    if (guided) { finishGuided(); return; }
     phase = 'done';
     teardownCalc();
     const score = roundScore(results.reduce((s, r) => s + r.credit, 0));
@@ -587,6 +979,8 @@ export async function runQuiz(root, ctx, opts) {
     // Keys typed in the calculator never answer or advance the quiz.
     if (e.target && e.target.closest && e.target.closest('.calc-panel')) return;
     if (e.key === 'Enter' && !e.repeat && !e.isComposing) {
+      // Guided: the hint / solution buttons and the "How to solve" toggle keep their native Enter.
+      if (guided && e.target?.closest?.('#guided-tools, .part-hint-row, #guide-card')) return;
       if (phase === 'answer' && isMulti(questions[idx])) {
         const t = e.target;
         const btn = t?.closest?.('button');
@@ -605,7 +999,14 @@ export async function runQuiz(root, ctx, opts) {
     } else if (phase === 'answer' && questions[idx]?.answerType === 'choice' && /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const i = +e.key - 1;
       const q = questions[idx];
+      // Guided: a choice already ruled out (disabled) can't be picked again from the keyboard.
+      if (guided && root.querySelector(`.choices .choice[data-i="${i}"]`)?.disabled) { e.preventDefault(); return; }
       if (i < (q.choices || []).length) { e.preventDefault(); submit(q.choices[i], i); }
+    } else if (guided && phase === 'answer' && String(e.key).toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+      // H: next hint, unless the user is typing.
+      const t = e.target;
+      const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName || ''));
+      if (!typing) { e.preventDefault(); hotkeyHint(); }
     }
   }
   // Registered once per render (not per start) so Retry doesn't stack listeners.
@@ -625,6 +1026,8 @@ export function storedQuestion(r, withOrigin) {
     ...(Array.isArray(r.parts) ? { parts: r.parts.map(p => ({ id: p.id, label: p.label, correct: !!p.correct })) } : {}),
     ...(r.q.explanation ? { explanation: r.q.explanation } : {}),
     ...(withOrigin ? { module: r.q.module, subtopic: r.q.subtopic, difficulty: r.q.difficulty } : {}),
+    // Code language (language-aware modules), stored on every quiz kind so the seed regenerates it.
+    ...(isLang(r.q.lang) ? { lang: r.q.lang } : {}),
     ...(r.work && r.work.length ? { work: r.work.slice(0, 30) } : {}),
   };
 }
@@ -704,7 +1107,7 @@ export function reviewItem(r, showTag = false) {
   return `<li class="review-item ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
     <div class="review-mark">${icon(markIcon)}<span class="sr-only">${esc(markText)}</span></div>
     <div class="review-body">
-      ${typeof showTag === 'function' ? showTag(q) : showTag ? questionTag(q) : ''}
+      ${typeof showTag === 'function' ? showTag(q) : showTag ? questionTag(q) : langRow(q)}
       ${state === 'partial' ? `<p class="review-partial">${esc(partialText)}</p>` : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
       ${answers}
@@ -738,7 +1141,16 @@ export function crumbsHtml(parts) {
 
 // ---- single-module quiz: #/q/<module>/<subtopic>/<difficulty> ----
 
-export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
+export function render(root, params, ctx) {
+  return renderCell(root, params, ctx, false);
+}
+
+// ---- guided practice: #/g/<module>/<subtopic>/<difficulty> (same params and `all` handling) ----
+export function renderGuided(root, params, ctx) {
+  return renderCell(root, params, ctx, true);
+}
+
+async function renderCell(root, { moduleId, subtopic, difficulty }, ctx, guidedMode) {
   let mod, st, domain;
   // "all" in either position = a whole-module quiz; its questions carry their own subtopic/difficulty.
   const whole = subtopic === ALL || difficulty === ALL;
@@ -757,9 +1169,13 @@ export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
     if (ctx.alive()) root.innerHTML = errorBox('Quiz not found', 'That module, subtopic or difficulty does not exist.');
     return;
   }
+  // Guided: the optional "How to solve" notes (modules/<id>/guide.md).
+  const guide = guidedMode ? parseGuide(await loadGuide(mod.id).catch(() => null)) : null;
   if (!ctx.alive()) return;
   setCookie('lastModule', mod.id);
   setCookie('lastDifficulty', difficulty);
+  // The module page's Practice | Guided switch follows the last quiz kind opened in this tab.
+  setQuizMode(guidedMode ? GUIDED : PRACTICE);
 
   const moduleHref = `#/m/${hashPart(mod.id)}`;
   const modTitle = String(mod.title ?? mod.id);
@@ -782,6 +1198,11 @@ export async function render(root, { moduleId, subtopic, difficulty }, ctx) {
     backIcon: 'layout-grid',
     showTags: false,
     calculator: mod.calculator !== false,
+    ...(guidedMode ? {
+      // Per-question subtopic (whole-module quizzes) or the route's own one.
+      guided: { guideFor: q => guideHtml(guide, q.subtopicTitle ?? stTitle, q.subtopic ?? st.id) },
+      practiceHref: `#/q/${hashPart(mod.id)}/${hashPart(st.id)}/${hashPart(difficulty)}`,
+    } : {}),
     toAttempt: results => ({
       module: mod.id, subtopic: st.id, difficulty,
       questions: results.map(r => storedQuestion(r, whole)),

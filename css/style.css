@@ -203,7 +203,7 @@ h1 { font-size: 26px; font-weight: 750; letter-spacing: -0.03em; }
 h2 { font-size: 18px; font-weight: 700; }
 h3 { font-size: 15px; font-weight: 700; margin-top: 1.25em; letter-spacing: -0.01em; }
 p { margin: 0 0 0.75em; }
-code, kbd, pre { font-family: var(--mono); }
+code, kbd, pre { font-family: var(--mono); font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 
 .icon { width: 1.15em; height: 1.15em; vertical-align: -0.2em; flex-shrink: 0; }
 svg.icon, .icon svg { stroke-width: 2; }
@@ -1332,3 +1332,137 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
 .graph-win-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .graph-win-input[aria-invalid="true"] { border-color: var(--wrong); }
 .graph-win-err { margin: 6px 0 0; font-size: 13px; font-weight: 600; color: var(--wrong-fg); }
+
+/* ================= code languages (Code Writing / Code Reviewing) ================= */
+
+/* Language picker: module page (language-aware modules) and Settings. 44px targets, wraps at 360px. */
+.lang-picker { margin: 0 0 16px; }
+.lang-picker:last-child { margin-bottom: 0; }
+.lang-picker .field-label { display: flex; align-items: center; gap: 6px; }
+.lang-picker .field-label .icon { width: 16px; height: 16px; }
+.lang-picker-hint { margin: -4px 0 8px; }
+.seg-lang { display: flex; max-width: 100%; }
+.seg-lang .seg span { min-height: 44px; }
+
+/* Language pill next to the subtopic · difficulty tag (text, not colour only). */
+.tag-lang { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--mono); }
+.tag-lang .icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); }
+
+/* Fenced code blocks in quiz prompts and reviews: monospace, normal size and weight, and they
+   scroll sideways inside the block instead of wrapping or widening the page. */
+.prompt, .review-body { min-width: 0; }
+.prompt pre, .review-body .prose pre, .explanation pre {
+  max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; overflow-wrap: normal;
+  background: var(--sunken); color: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--r-control); padding: 12px 14px; margin: 0 0 0.75em;
+}
+.prompt pre code, .review-body .prose pre code, .explanation pre code {
+  display: block; width: max-content; min-width: 100%;
+  font-family: var(--mono); font-size: 15px; font-weight: 400; line-height: 1.55; letter-spacing: normal;
+  white-space: pre; overflow-wrap: normal; word-break: normal; tab-size: 4;
+  background: none; padding: 0; color: var(--ink);
+}
+
+/* ================= Code Writing: code in code-subject questions ================= */
+/* Scoped to question cards with a language tag (code subjects only); maths prompts are unchanged.
+   Inline code in these prompts names values, not equations: keep it at text size. Ligatures off so
+   operators show as typed (<=, ->, !=) rather than as single glyphs. */
+.question:has(.tag-lang) .prompt :not(pre) > code {
+  font-size: 0.92em; font-weight: 600; letter-spacing: normal;
+  background: var(--sunken); padding: 0.05em 0.3em; border-radius: 6px; white-space: normal; overflow-wrap: anywhere;
+}
+.question:has(.tag-lang) code { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+.question:has(.tag-lang) .choice-text code, .question:has(.tag-lang) .part-ask code { font-family: var(--mono); font-size: 0.95em; overflow-wrap: anywhere; }
+
+/* ================= Guided mode (js/views/guided.js, quiz.js with opts.guided, module.js switch) ================= */
+
+/* module page: Practice | Guided switch */
+.mode-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 14px; }
+.seg-mode .seg span { min-height: 44px; }
+.seg-mode .seg .icon { width: 16px; height: 16px; }
+.mode-note { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.mode-note .icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--accent-ink); }
+.practice .guided-only { display: none; }
+.practice.is-guided .guided-only { display: inline-flex; }
+.practice.is-guided .practice-only { display: none; }
+.practice.is-guided .cell-guided { display: block; color: var(--muted); font-weight: 600; }
+
+/* quiz header pill */
+.quiz-score.guided-pill { background: var(--accent-soft); color: var(--accent-ink); }
+.seg-progress > .is-done { background: var(--muted); }
+
+/* "How to solve" card above the question */
+.guide-card { margin: 0 0 12px; padding: 0; }
+.guide-card > summary {
+  display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 0 16px;
+  font-weight: 650; color: var(--accent-ink); list-style: none;
+}
+.guide-card > summary::-webkit-details-marker { display: none; }
+.guide-card > summary .icon { width: 18px; height: 18px; flex-shrink: 0; }
+.guide-card > summary .guide-chev { margin-left: auto; color: var(--muted); transition: transform 0.15s; }
+.guide-card[open] > summary .guide-chev { transform: rotate(180deg); }
+.guide-card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-card, 16px); }
+.guide-body { padding: 0 16px 14px; font-size: 15px; color: var(--ink); overflow-wrap: anywhere; }
+.guide-body h3 { font-size: 15px; margin: 12px 0 4px; }
+.guide-section + .guide-section { border-top: 1px solid var(--line); margin-top: 10px; }
+.guide-body pre { max-width: 100%; overflow-x: auto; }
+@media (min-width: 640px) { .guide-card > summary { padding: 0 20px; } .guide-body { padding: 0 20px 16px; } }
+
+/* hints (aria-live region below the prompt) */
+.guided-hints:has(.hint-list:empty) { display: none; }
+.hint-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.hint, .part-hint-box:not(:empty) {
+  background: var(--accent-soft); color: var(--ink); border-radius: var(--r-control); padding: 10px 14px;
+}
+.hint-head { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--accent-ink); }
+.hint-head .icon { width: 16px; height: 16px; flex-shrink: 0; }
+.hint-body { font-size: 15px; overflow-wrap: anywhere; }
+.hint-body p { margin: 0 0 0.4em; }
+.hint-body p:last-child { margin-bottom: 0; }
+.hint-body pre { max-width: 100%; overflow-x: auto; }
+
+/* hint / show-solution row (not in the sticky bar, so the phone bar stays Check-only) */
+.guided-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.guided-tools .btn { flex: 1 1 auto; }
+.guided-key { font-size: 13px; color: var(--muted); }
+.guided-key kbd {
+  font-family: inherit; font-size: 12px; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 6px; background: var(--paper); color: var(--text-2);
+}
+@media (min-width: 640px) { .guided-tools .btn { flex: 0 0 auto; } }
+
+/* multi-part: per-part hint and lock */
+.part-hint-row { display: flex; }
+.part-hint-btn { min-height: 44px; font-size: 14px; }
+.part-hint-btn .icon { width: 16px; height: 16px; }
+.part-ok { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700; color: var(--correct-fg); }
+.part-ok .icon { width: 16px; height: 16px; }
+.part.is-revealed { border-color: var(--accent); }
+
+/* feedback: "Not quite" (bad) and "Solved with solution" (info) */
+.feedback.info { background: var(--accent-soft); }
+.feedback.info .feedback-title { color: var(--accent-ink); }
+.question.is-guided .feedback-title { flex-wrap: wrap; column-gap: 6px; }
+
+/* end-of-set summary (no score) */
+.guided-summary .eyebrow { display: inline-flex; align-items: center; gap: 6px; }
+.guided-summary .eyebrow .icon { width: 16px; height: 16px; }
+.guided-note { margin: 6px 0 14px; font-size: 14px; }
+.guided-counts {
+  list-style: none; margin: 0 auto 16px; padding: 0; max-width: 520px;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
+.guided-count {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 12px 6px;
+  border-radius: var(--r-control); background: var(--sunken); font-size: 13px; color: var(--text-2); text-align: center;
+}
+.guided-count strong { font-size: 26px; font-weight: 750; color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.guided-count .icon { width: 18px; height: 18px; }
+.guided-count.is-good .icon { color: var(--correct-fg); }
+.guided-count.is-assisted .icon { color: var(--warn-fg); }
+.guided-count.is-info .icon { color: var(--accent-ink); }
+.guided-item.is-good .review-mark { color: var(--correct-fg); }
+.guided-item.is-assisted .review-mark { color: var(--warn-fg); }
+.guided-item.is-info .review-mark { color: var(--accent-ink); }
+.guided-outcome { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--ink); }
+/* ================= end Guided mode ================= */

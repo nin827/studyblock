@@ -1,4 +1,6 @@
-import { exportData, importData, clearData, getAttempts, getCookie, setCookie } from '../lib/storage.js';
+import { exportData, importData, clearData, getAttempts, getCookie, setCookie, getCodeLang } from '../lib/storage.js';
+import { LANG_IDS } from '../lib/languages.js';
+import { codeLangPickerHtml, bindCodeLangPicker } from './module.js';
 import { loadModule } from '../lib/source.js';
 import * as folder from '../lib/folder.js';
 import * as pwa from '../lib/pwa.js';
@@ -87,6 +89,14 @@ export async function render(root, params = {}, ctx = {}) {
       <div id="accent-picker">${accentHtml(themeMod)}</div>
     </section>
 
+    <section class="card">
+      <h2>${icon('code')} Code language</h2>
+      ${codeLangPickerHtml(LANG_IDS, getCodeLang(), {
+        id: 'settings-code-lang', label: 'Show code in', labelIcon: false,
+        hint: 'Applies to Code Writing and Code Reviewing. You can also change it on those subject pages.',
+      })}
+    </section>
+
     <section class="card" id="install-card" hidden></section>
 
     <section class="card">
@@ -122,6 +132,8 @@ export async function render(root, params = {}, ctx = {}) {
     setCookie('theme', r.value);
     applyTheme(r.value);
   }));
+
+  bindCodeLangPicker(root);
 
   const updateCount = () => {
     const n = getAttempts().length;

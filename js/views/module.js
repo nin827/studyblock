@@ -1,10 +1,35 @@
-import { loadModule, loadIntro, domainOf, ALL } from '../lib/engine.js';
+import { loadModule, loadIntro, domainOf, ALL, isLangModule, effectiveLang } from '../lib/engine.js';
 import { crumbsHtml } from './quiz.js';
-import { getModuleCellStats, getCookie, setCookie } from '../lib/storage.js';
+import { getModuleCellStats, getCookie, setCookie, setCodeLang } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
+import { isLang, langTitle } from '../lib/languages.js';
 import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle, difficultyLabel } from './ui.js';
+import { getQuizMode, setQuizMode, GUIDED, PRACTICE } from './guided.js';
 
 const ORDER = ['easy', 'medium', 'hard'];
+
+/*
+ * Code language picker (module page of a language-aware module, and Settings): a segmented radio
+ * group over `ids` (language ids from js/lib/languages.js) with `current` checked. Titles are escaped.
+ * `hint` is optional plain text shown under the label.
+ */
+export function codeLangPickerHtml(ids, current, { id = 'code-lang', label = 'Language', hint = '', labelIcon = true } = {}) {
+  const list = ids.filter(isLang);
+  return `<div class="lang-picker">
+    <p class="field-label" id="${esc(id)}-label">${labelIcon ? `${icon('code')} ` : ''}${esc(label)}</p>
+    ${hint ? `<p class="muted small lang-picker-hint" id="${esc(id)}-hint">${esc(hint)}</p>` : ''}
+    <div class="segmented seg-lang" role="radiogroup" aria-labelledby="${esc(id)}-label"${hint ? ` aria-describedby="${esc(id)}-hint"` : ''}>
+      ${list.map(l => `<label class="seg"><input type="radio" name="${esc(id)}" value="${esc(l)}" ${l === current ? 'checked' : ''}><span>${esc(langTitle(l))}</span></label>`).join('')}
+    </div>
+  </div>`;
+}
+
+// Saves the picked language (cookie sb_codeLang) whenever a radio inside `scope` changes.
+export function bindCodeLangPicker(scope, onChange) {
+  scope?.querySelectorAll('.seg-lang input[type="radio"]').forEach(r => r.addEventListener('change', () => {
+    if (r.checked && setCodeLang(r.value)) onChange?.(r.value);
+  }));
+}
 
 function difficultyColumns(subtopics) {
   const all = [];
@@ -39,14 +64,20 @@ export async function render(root, { moduleId }, ctx) {
   const preferred = cols.includes(cookieDiff) ? cookieDiff : cols[0];
   const colLabel = d => (d === ALL ? 'All' : cap(d));
 
+  // Practice | Guided switch (per tab). Guided cells link to #/g/… and show no best score.
+  let mode = getQuizMode();
+  const cellHref = (stId, d, m = mode) => `#/${m === GUIDED ? 'g' : 'q'}/${hashPart(mod.id)}/${hashPart(stId)}/${hashPart(d)}`;
+  const cellLabel = (stTitle, d, m = mode) => `Start ${m === GUIDED ? 'guided ' : ''}${stTitle}, ${difficultyLabel(d).toLowerCase()}`;
+
   const cell = (stId, stTitle, d) => {
     const s = stats[`${stId}|${d}`];
     const best = s ? s.best : null;
-    const href = `#/q/${hashPart(mod.id)}/${hashPart(stId)}/${hashPart(d)}`;
     return `<td class="${d === preferred ? 'preferred' : ''} ${d === ALL ? 'all-col' : ''}">
-        <a class="btn btn-small ${d === preferred ? 'btn-primary' : ''}" href="${href}" data-diff="${esc(d)}"
-           aria-label="Start ${esc(stTitle)}, ${esc(difficultyLabel(d).toLowerCase())}">${icon('play')} Start</a>
-        <div class="cell-score score ${scoreClass(best)}" title="${s ? `${s.attempts} attempt(s)` : 'Not attempted'}">Best ${fmtPct(best)}</div>
+        <a class="btn btn-small ${d === preferred ? 'btn-primary' : ''}" href="${cellHref(stId, d)}" data-diff="${esc(d)}"
+           data-st="${esc(stId)}" data-st-title="${esc(stTitle)}"
+           aria-label="${esc(cellLabel(stTitle, d))}">${icon('play')} Start</a>
+        <div class="cell-score score ${scoreClass(best)} practice-only" title="${s ? `${s.attempts} attempt(s)` : 'Not attempted'}">Best ${fmtPct(best)}</div>
+        <div class="cell-score cell-guided guided-only">Guided</div>
       </td>`;
   };
 
@@ -78,13 +109,21 @@ export async function render(root, { moduleId }, ctx) {
       ${mod.description ? `<p>${esc(mod.description)}</p>` : ''}
     </section>
     ${intro ? `<article class="card prose">${renderMarkdown(intro)}</article>` : ''}
-    <section class="card practice">
+    <section class="card practice ${mode === GUIDED ? 'is-guided' : ''}" id="practice-card">
       <div class="section-head">
-        <h2>Practice</h2>
+        <h2 id="practice-title">${mode === GUIDED ? 'Guided practice' : 'Practice'}</h2>
         <label class="inline-field">Difficulty
           <select id="diff-select">${cols.map(d => `<option value="${esc(d)}" ${d === preferred ? 'selected' : ''}>${esc(d === ALL ? 'All difficulties' : cap(d))}</option>`).join('')}</select>
         </label>
       </div>
+      <div class="mode-switch">
+        <div class="segmented seg-mode" role="radiogroup" aria-label="Quiz mode">
+          <label class="seg"><input type="radio" name="quiz-mode" value="${PRACTICE}" ${mode === GUIDED ? '' : 'checked'}><span>${icon('target')}Practice</span></label>
+          <label class="seg"><input type="radio" name="quiz-mode" value="${GUIDED}" ${mode === GUIDED ? 'checked' : ''}><span>${icon('compass')}Guided</span></label>
+        </div>
+        <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored.</p>
+      </div>
+      ${isLangModule(mod) ? codeLangPickerHtml(mod.languages, effectiveLang(mod), { id: 'code-lang', label: 'Language' }) : ''}
       ${mod.subtopics.length ? `<div class="table-wrap"><table class="matrix">
         <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}" ${d === ALL ? 'class="all-col" title="All difficulties"' : ''}>${esc(colLabel(d))}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
@@ -107,4 +146,21 @@ export async function render(root, { moduleId }, ctx) {
   });
   root.querySelectorAll('.matrix a[data-diff]').forEach(a =>
     a.addEventListener('click', () => setCookie('lastDifficulty', a.dataset.diff)));
+  // The next quiz started from this page uses the picked language.
+  bindCodeLangPicker(root);
+
+  // Practice | Guided: swap the cell links in place (no re-render, so the select/highlight stay).
+  const card = root.querySelector('#practice-card');
+  root.querySelectorAll('input[name="quiz-mode"]').forEach(r => r.addEventListener('change', () => {
+    if (!r.checked) return;
+    mode = r.value === GUIDED ? GUIDED : PRACTICE;
+    setQuizMode(mode);
+    card?.classList.toggle('is-guided', mode === GUIDED);
+    const h = root.querySelector('#practice-title');
+    if (h) h.textContent = mode === GUIDED ? 'Guided practice' : 'Practice';
+    root.querySelectorAll('.matrix a[data-diff]').forEach(a => {
+      a.href = cellHref(a.dataset.st, a.dataset.diff);
+      a.setAttribute('aria-label', cellLabel(a.dataset.stTitle, a.dataset.diff));
+    });
+  }));
 }

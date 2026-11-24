@@ -14,6 +14,7 @@ import * as folder from './lib/folder.js';
 import { registerPWA } from './lib/pwa.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
+const guidedView = { render: quiz.renderGuided };
 
 function decode(s) {
   try { return decodeURIComponent(s); } catch { return null; }
@@ -45,6 +46,10 @@ function match(hash) {
   }
   if (parts[0] === 'q' && parts.length === 4 && ID_RE.test(parts[1])) {
     return { view: quiz, nav: 'home', params: { moduleId: parts[1], subtopic: parts[2], difficulty: parts[3] } };
+  }
+  // Guided practice: same params and validation as #/q/…
+  if (parts[0] === 'g' && parts.length === 4 && ID_RE.test(parts[1])) {
+    return { view: guidedView, nav: 'home', params: { moduleId: parts[1], subtopic: parts[2], difficulty: parts[3] } };
   }
   if (parts[0] === 'results' && parts.length === 1) return { view: results, nav: 'results', params: {} };
   if (parts[0] === 'settings' && parts.length === 1) return { view: settings, nav: 'settings', params: {} };
@@ -173,7 +178,7 @@ folder.subscribe(f => {
   renderBanner(f);
   if (f.merged) {
     const r = match(location.hash);
-    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== mix) route();
+    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== guidedView && r.view !== mix) route();
   }
 });
 
@@ -193,7 +198,7 @@ function showUpdateToast(applyUpdate) {
     if (!b) return;
     if (b.dataset.act === 'reload') {
       // A quiz in progress would be lost on reload: ask first.
-      const inQuiz = /^#\/(q\/|mix\/play)/.test(location.hash);
+      const inQuiz = /^#\/(q\/|g\/|mix\/play)/.test(location.hash);
       if (inQuiz && !confirm('Reload now? The quiz in progress will be lost.')) return;
       applyUpdate();
     } else el.remove();

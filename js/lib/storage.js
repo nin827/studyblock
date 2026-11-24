@@ -1,6 +1,7 @@
 // localStorage store (source of truth), cookie cache, import/export.
 
 import { requestPersistentStorage } from './pwa.js';
+import { isLang, DEFAULT_LANG } from './languages.js';
 
 const KEY = 'studyblock:data';
 const VERSION = 1;
@@ -36,6 +37,7 @@ function load() {
     data.attempts = data.attempts.filter((a, i) => {
       try { validateAttempt(a, i); return true; } catch (e) { console.error('StudyBlock: skipping stored attempt', e); return false; }
     });
+    for (const a of data.attempts) for (const q of a.questions) dropBadLang(q);
     return data;
   } catch (e) {
     console.error('StudyBlock: could not read stored data', e);
@@ -164,6 +166,13 @@ function cleanAnswer(v) {
   return v === null || v === undefined ? '' : String(v);
 }
 
+// Optional code language of a stored question (language-aware modules only): kept only when it
+// is a known id from js/lib/languages.js, so regenerating the question uses the same language.
+function dropBadLang(q) {
+  if (q && typeof q === 'object' && 'lang' in q && !isLang(q.lang)) delete q.lang;
+  return q;
+}
+
 // ---- credit (partial credit for multi-part questions) ----
 
 // A question's credit, 0–1: the stored `credit` (clamped), else 1/0 from `correct` (older data).
@@ -180,6 +189,7 @@ export const roundScore = n => Math.round((Number(n) || 0) * 100) / 100;
 export function saveAttempt(attempt) {
   const data = load();
   const a = { id: uuid(), ts: Date.now(), ...attempt };
+  if (Array.isArray(a.questions)) a.questions = a.questions.map(q => dropBadLang({ ...q }));
   data.attempts.push(a);
   save(data);
   return a;
@@ -553,6 +563,21 @@ export function deleteCookie(name) {
   try { document.cookie = `sb_${name}=; max-age=0; path=${appDir()}; SameSite=Lax`; } catch { /* ignore */ }
 }
 
+// Code language for language-aware modules (Code Writing, Code Reviewing): cookie sb_codeLang.
+const CODE_LANG_COOKIE = 'codeLang';
+
+export function getCodeLang() {
+  const v = getCookie(CODE_LANG_COOKIE);
+  return isLang(v) ? v : DEFAULT_LANG;
+}
+
+// Returns true when `id` is a known language and was stored.
+export function setCodeLang(id) {
+  if (!isLang(id)) return false;
+  setCookie(CODE_LANG_COOKIE, id);
+  return true;
+}
+
 // ---- export / import / clear ----
 
 function today() {
@@ -622,6 +647,8 @@ function importObject(incoming, mode) {
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),
       ...(isStr(q.subtopic) ? { subtopic: q.subtopic } : {}),
       ...(isStr(q.difficulty) ? { difficulty: q.difficulty } : {}),
+      // Optional code language (language-aware modules); unknown ids are dropped.
+      ...(isLang(q.lang) ? { lang: q.lang } : {}),
       // Optional calculator working ("Your working"); validated and capped.
       ...(cleanWork(q.work) ? { work: cleanWork(q.work) } : {}),
     })),

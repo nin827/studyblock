@@ -35,11 +35,13 @@
       "id": "computing",
       "title": "Computing",
       "icon": "cpu",
-      "description": "Number bases, logic and how computers work.",
+      "description": "Number bases, logic, writing and reviewing code, and how computers work.",
       "modules": [
         "number-bases",
         "boolean-logic",
-        "computing-terms"
+        "computing-terms",
+        "code-writing",
+        "code-reviewing"
       ]
     },
     {

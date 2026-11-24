@@ -122,6 +122,21 @@ On phones the menu sits at the bottom of the screen.
 
 Every question has a hidden seed, so StudyBlock can rebuild exactly the same question later for review.
 
+### Guided mode
+
+On a subject's page, switch **Practice | Guided** to **Guided** to practise step by step. It works for every topic and difficulty, including **All**.
+- **Hint** (or the **H** key) reveals the next step, and each part of a multi-part question can have its own hint. A **How to solve** card above the question gives the method for that topic, where the subject has one.
+- **Try as often as you like.** A wrong choice is crossed out, and parts you've got right lock in place.
+- **Show solution** reveals the answer and the full working.
+- **Nothing is scored or saved.** The end screen counts what you solved first try, solved with help, or looked up. **Practice for real** starts a normal quiz on the same topic.
+
+### Code subjects
+
+**Code Writing** and **Code Reviewing** (in Computing) show short programs in the language you choose: **Python, C#, C++, GDScript or Rust**. Pick it on the subject page (**Language**) or in **Settings → Code language**. Both change the same setting, which applies to your next quiz. Each question shows its language as a tag, and answered questions keep the language they were asked in.
+- **Code Writing:** each program has a gap `___`. Type the number that fills it, or pick the expression, condition or line that makes the program do what's asked. Some hard questions also ask what the finished program prints. When a question asks for the *smallest* number, give the lowest that works (0 or more).
+- **Code Reviewing:** predict what a program prints, find the line with the bug, choose the line that fixes it, or name the kind of bug. Line numbers sit at the left, and brace-only lines count, so the same bug can be on a different line in C# than in Python. Hard questions have several parts.
+- You never type whole programs. There's no calculator in these subjects.
+
 ### Questions with several answers
 
 Some Business Case questions ask for more than one thing about the same scenario, for example a **Calculation** (the NPV) and a **Recommendation** (invest or not). Each part has its own numbered box:
@@ -133,7 +148,7 @@ Some Business Case questions ask for more than one thing about the same scenario
 
 ### The calculator
 
-Every subject has a calculator during quizzes, except those where working it out by hand is the point: Arithmetic, Fractions, Number Bases and the three Language subjects. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
+Every subject has a calculator during quizzes, except those where working it out by hand is the point: Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing and the three Language subjects. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
 
 It works like a tiny spreadsheet. Each row has a **name**, a **calculation** and a live **result**:
 
@@ -310,6 +325,8 @@ simplify,medium,Which equals 3/9?,1/3,1/3|1/6|3/1|2/3,Divide both by 3.
 
 ### Step 4: optional introduction (`intro.md`)
 Plain Markdown shown on the module page: headings, lists, tables, `code`, links.
+
+Optionally add `guide.md` for Guided mode: a `## General` section, then one `## <Subtopic title>` section per subtopic, using the exact titles from `module.json`. Generators can also return `hints: ["…", "…"]` (1–4 steps that never give the final answer). Without hints, Guided mode reveals the worked explanation step by step.
 
 ### Step 5: add it to a domain
 In `modules/index.json`, add the id to a domain's `modules` list, or add a new domain:
