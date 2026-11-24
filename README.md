@@ -40,6 +40,4 @@ Pick whichever suits you. Each option is explained step by step in the guide.
 
 ## Under the hood
 
-Plain HTML, CSS and JavaScript, with no build step, no frameworks and no third-party assets except [Lucide](https://lucide.dev) icons. Contributors and AI assistants should read [CLAUDE.md](CLAUDE.md) for the project's rules and file formats. Open questions and decisions live in [`ticket/`](ticket/).
-
-<sub>Built with Claude, under human supervision.</sub>
+Plain HTML, CSS and JavaScript, with no build step, no frameworks and no third-party assets except [Lucide](https://lucide.dev) icons. Built with Claude, under human supervision. For personal or non-serious uses, keep expectations low.
