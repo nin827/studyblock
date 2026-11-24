@@ -89,7 +89,9 @@ def main() -> None:
 
     if already:
         print()
-        print("  StudyBlock is already running at", url, "- opening it.")
+        print("  StudyBlock is already running at", url)
+        print("  It was started from another window. Close that window to stop it.")
+        print("  Opening it in your browser now.")
         if not args.no_browser:
             webbrowser.open(url)
         return

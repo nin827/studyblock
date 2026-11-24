@@ -244,9 +244,11 @@ Mobile is a first-class target: build mobile-first, so the layout works from 360
 The same code runs in three places.
 
 1. **Local server:** `launcher_win.bat`, `launcher_mac.command` (opens in Terminal on double-click) or `launcher_linux.sh`. All three run `tools/serve.py`.
-   - Standard library only. It binds 127.0.0.1, takes the first free port from 8000, sends `Cache-Control: no-cache` and opens the browser.
-   - Closing the console window stops it.
-   - Plain `py -m http.server 8000 --bind 127.0.0.1` also works.
+   - Standard library only. It binds 127.0.0.1 on port 8000, sends `Cache-Control: no-cache` and opens the browser.
+     - If StudyBlock is already running on 8000, it opens that instead.
+     - If another program holds 8000, it warns and uses the next free port.
+   - The launcher window stays open until the user closes it, and closing it stops the server.
+   - **Port 8000 belongs to the user's real data.** Agents test on **port 8100** via `.claude/launch.json` (`preview_start` "studyblock"). Never start a server on 8000, and never leave test data in the user's 8000 storage.
 2. **GitHub Pages / any static HTTPS host:** works as-is. Rules:
    - Every path is relative: no leading `/` in fetches, imports or links.
    - Add a `.nojekyll` file at the repo root.
