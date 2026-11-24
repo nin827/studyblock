@@ -1,14 +1,18 @@
-import { loadAllModules } from '../lib/engine.js';
-import { getAttempts, percent } from '../lib/storage.js';
+import { loadAllModules, loadDomains } from '../lib/engine.js';
+import { getAttempts, getModuleRecords, percent, MIX_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart } from './ui.js';
-import { reviewItem } from './quiz.js';
+import { reviewItem, moduleBreakdown } from './quiz.js';
 
 export async function render(root, params, ctx) {
   const attempts = getAttempts(); // newest first
   let modules = [];
+  let domains = [];
+  try { domains = await loadDomains(); } catch { /* grouped under "Other" */ }
   try { modules = await loadAllModules(); } catch { /* titles fall back to ids */ }
   if (!ctx.alive()) return;
   const byId = Object.fromEntries(modules.map(m => [m.id, m]));
+  const domainOfId = new Map();
+  for (const d of domains) for (const mid of d.modules) domainOfId.set(mid, d);
   const modTitle = id => byId[id]?.title ?? id;
   const subTitle = (mid, sid) => byId[mid]?.subtopics.find(s => s.id === sid)?.title ?? sid;
 
@@ -18,32 +22,67 @@ export async function render(root, params, ctx) {
     return;
   }
 
-  // Per-module summary
-  const groups = {};
-  for (const a of attempts) (groups[a.module] ||= []).push(a);
-  const summaryRows = Object.entries(groups).map(([mid, list]) => {
+  // ---- summary grouped by domain ----
+  // Every module that appears in a single attempt or in a mixed question.
+  const seenModules = new Set();
+  for (const a of attempts) {
+    if (a.module !== MIX_MODULE) seenModules.add(a.module);
+    else for (const q of a.questions) if (typeof q.module === 'string') seenModules.add(q.module);
+  }
+
+  const statRow = (label, list) => {
     const best = Math.max(...list.map(percent));
-    const last = percent(list[0]);
+    const newest = list.reduce((x, y) => (y.ts > x.ts ? y : x));
+    const last = percent(newest);
     const correct = list.reduce((s, a) => s + a.score, 0);
     const total = list.reduce((s, a) => s + a.total, 0);
     const avg = total ? Math.round((correct / total) * 100) : 0;
-    const link = byId[mid] ? `<a href="#/m/${hashPart(mid)}">${esc(modTitle(mid))}</a>` : esc(modTitle(mid));
-    return `<tr><th scope="row">${link}</th><td>${list.length}</td>
+    return `<tr><th scope="row">${label}</th><td>${list.length}</td>
       <td class="score ${scoreClass(best)}">${best}%</td>
       <td class="score ${scoreClass(last)}">${last}%</td>
       <td class="score ${scoreClass(avg)}">${avg}%</td></tr>`;
-  }).join('');
+  };
+  const moduleRow = mid => {
+    const list = getModuleRecords(mid); // single attempts + per-attempt mixed slices
+    if (!list.length) return '';
+    const label = byId[mid] ? `<a href="#/m/${hashPart(mid)}">${esc(modTitle(mid))}</a>` : esc(modTitle(mid));
+    return statRow(label, list);
+  };
+  const groupHead = (title, href) =>
+    `<tr class="group-row"><th scope="rowgroup" colspan="5">${href ? `<a href="${href}">${esc(title)}</a>` : esc(title)}</th></tr>`;
 
+  let summaryRows = '';
+  for (const d of domains) {
+    const rows = d.modules.filter(mid => seenModules.has(mid)).map(moduleRow).join('');
+    if (rows) summaryRows += groupHead(d.title, `#/d/${hashPart(d.id)}`) + rows;
+  }
+  const others = [...seenModules].filter(mid => !domainOfId.has(mid)).map(moduleRow).join('');
+  if (others) summaryRows += groupHead('Other') + others;
+  const mixed = attempts.filter(a => a.module === MIX_MODULE);
+  if (mixed.length) summaryRows += groupHead('Mixed') + statRow('<a href="#/mix">Mixed quizzes</a>', mixed);
+
+  // ---- attempt list ----
+  const titlesFor = mid => ({ module: modTitle(mid), domain: domainOfId.get(mid)?.title });
   const items = attempts.map(a => {
     const p = percent(a);
+    const isMix = a.module === MIX_MODULE;
+    const title = isMix
+      ? `<strong>Mixed quiz</strong> · ${esc(a.difficulty === 'any' ? 'Any difficulty' : cap(a.difficulty))}`
+      : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(cap(a.difficulty))}`;
+    const qs = isMix
+      ? a.questions.map(q => (typeof q.module === 'string'
+        ? { ...q, moduleTitle: modTitle(q.module), domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }
+        : q))
+      : a.questions;
     return `<li class="card attempt">
       <details>
         <summary>
-          <span class="attempt-title"><strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(cap(a.difficulty))}</span>
+          <span class="attempt-title">${isMix ? `${icon('shuffle')} ` : ''}${title}</span>
           <span class="attempt-meta"><span class="muted">${esc(fmtDate(a.ts))}</span>
           <span class="score ${scoreClass(p)}">${a.score}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
         </summary>
-        <ol class="review">${a.questions.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct })).join('')}</ol>
+        ${isMix ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}
+        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct }, isMix)).join('')}</ol>
       </details>
     </li>`;
   }).join('');
@@ -52,6 +91,7 @@ export async function render(root, params, ctx) {
     <section class="page-head"><h1>History</h1></section>
     <section class="card">
       <h2>By module</h2>
+      <p class="muted small">Module stats include questions answered inside mixed quizzes.</p>
       <div class="table-wrap"><table class="summary">
         <thead><tr><th scope="col">Module</th><th scope="col">Attempts</th><th scope="col">Best</th><th scope="col">Last</th><th scope="col">Overall</th></tr></thead>
         <tbody>${summaryRows}</tbody>

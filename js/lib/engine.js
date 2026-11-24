@@ -30,13 +30,64 @@ export function isValidId(id) {
   return typeof id === 'string' && ID_RE.test(id);
 }
 
-export async function loadIndex() {
+const strOr = (v, d) => (typeof v === 'string' ? v : d);
+
+// Parses modules/index.json -> [{ id, title, icon, description, modules: [moduleId] }].
+// Invalid / duplicate domain ids are dropped; a module id may belong to only one domain
+// (later duplicates are ignored). The legacy flat `{ modules: [...] }` shape is accepted
+// as a single "modules" domain.
+function parseRegistry(idx) {
+  let raw = Array.isArray(idx?.domains) ? idx.domains : null;
+  if (!raw && Array.isArray(idx?.modules)) raw = [{ id: 'modules', title: 'Modules', icon: 'layout-grid', modules: idx.modules }];
+  const domains = [];
+  const seenDomains = new Set();
+  const seenModules = new Set();
+  for (const d of raw || []) {
+    if (!d || typeof d !== 'object' || !isValidId(d.id)) { console.error(`StudyBlock: ignoring invalid domain ${JSON.stringify(d?.id)}`); continue; }
+    if (seenDomains.has(d.id)) { console.error(`StudyBlock: duplicate domain id ${d.id}`); continue; }
+    seenDomains.add(d.id);
+    const modules = [];
+    for (const id of Array.isArray(d.modules) ? d.modules : []) {
+      if (!isValidId(id)) { console.error(`StudyBlock: ignoring invalid module id ${JSON.stringify(id)}`); continue; }
+      if (seenModules.has(id)) { console.error(`StudyBlock: module ${id} is listed in more than one domain; keeping the first`); continue; }
+      seenModules.add(id);
+      modules.push(id);
+    }
+    domains.push({
+      id: d.id,
+      title: strOr(d.title, d.id),
+      icon: strOr(d.icon, 'folder'),
+      description: strOr(d.description, ''),
+      modules,
+    });
+  }
+  return domains;
+}
+
+export async function loadDomains() {
   const idx = await fetchCached('modules/index.json', 'json');
-  const list = Array.isArray(idx?.modules) ? idx.modules : [];
-  return list.filter(id => {
-    if (!isValidId(id)) { console.error(`StudyBlock: ignoring invalid module id ${JSON.stringify(id)}`); return false; }
-    return true;
-  });
+  return parseRegistry(idx);
+}
+
+// Flat list of every registered module id (all domains).
+export async function loadIndex() {
+  const domains = await loadDomains();
+  return domains.flatMap(d => d.modules);
+}
+
+// Domain object containing the module, or null.
+export async function domainOf(moduleId) {
+  const domains = await loadDomains();
+  return domains.find(d => d.modules.includes(moduleId)) || null;
+}
+
+// Loads the modules of one domain, silently skipping any that fail (e.g. not written yet).
+export async function loadModulesOf(domain) {
+  const results = await Promise.all(domain.modules.map(id => loadModule(id).catch(e => {
+    console.warn(`StudyBlock: module ${id} unavailable`, e);
+    return null;
+  })));
+  return results.filter(Boolean);
 }
 
 async function assertListed(id) {
@@ -138,7 +189,7 @@ function generateVerified(gen, subtopic, difficulty, seed, maxTries = 20) {
       const raw = gen.generate({ subtopic, difficulty, rng: createRng(s) });
       const q = normalizeGenerated(raw, s);
       const shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
-      const ok = shapeOk && typeof gen.verify === 'function' ? gen.verify(raw, raw.answer) === true : true;
+      const ok = shapeOk && (typeof gen.verify !== 'function' || gen.verify(raw, raw.answer) === true);
       if (ok) return q;
     } catch (e) {
       console.warn('StudyBlock: generator threw', e);
@@ -197,6 +248,250 @@ export async function regenerate(moduleId, subtopic, difficulty, seed) {
   const gen = await loadGenerator(moduleId);
   const raw = gen.generate({ subtopic, difficulty, rng: createRng(seed) });
   return normalizeGenerated(raw, seed);
+}
+
+// ---- multi-domain mix ----
+
+export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard'];
+export const MIX_MAX_COUNT = 50;
+const MAX_WEIGHT = 1000;
+
+// Non-negative finite number (capped), else `fallback`.
+export function sanitizeWeight(v, fallback = 1) {
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return Math.min(n, MAX_WEIGHT);
+}
+
+export function sanitizeCount(v, fallback = 10) {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(MIX_MAX_COUNT, Math.max(1, n));
+}
+
+// Fills a (possibly stale or partial) mix config against the available domains:
+// `available` = [{ id, modules: [moduleId] }]. Unknown domains/modules default to weight 1.
+export function normalizeMixConfig(raw, available) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const srcDomains = src.domains && typeof src.domains === 'object' ? src.domains : {};
+  const domains = {};
+  for (const d of available) {
+    const sd = Object.prototype.hasOwnProperty.call(srcDomains, d.id) && srcDomains[d.id] && typeof srcDomains[d.id] === 'object' ? srcDomains[d.id] : {};
+    const sm = sd.modules && typeof sd.modules === 'object' ? sd.modules : {};
+    const modules = {};
+    for (const mid of d.modules) {
+      modules[mid] = Object.prototype.hasOwnProperty.call(sm, mid) ? sanitizeWeight(sm[mid], 1) : 1;
+    }
+    domains[d.id] = { weight: sanitizeWeight(sd.weight, 1), modules };
+  }
+  const difficulty = ['any', ...DIFFICULTY_ORDER].includes(src.difficulty) ? src.difficulty : 'any';
+  return { domains, difficulty, count: sanitizeCount(src.count, 10) };
+}
+
+// Effective share of each (domain, module) under the sampling rule:
+// P(domain) ∝ domain weight (only domains whose module weights sum > 0),
+// P(module | domain) ∝ module weight. Returns [{ domain, module, share }] with share in [0,1].
+export function mixShares(config, available) {
+  const rows = [];
+  let domainTotal = 0;
+  const per = [];
+  for (const d of available) {
+    const dc = config.domains[d.id];
+    if (!dc) continue;
+    const mods = d.modules.map(mid => ({ mid, w: dc.modules[mid] || 0 })).filter(x => x.w > 0);
+    const mSum = mods.reduce((s, x) => s + x.w, 0);
+    const dw = mSum > 0 ? (dc.weight || 0) : 0;
+    if (dw <= 0) continue;
+    domainTotal += dw;
+    per.push({ d, dw, mods, mSum });
+  }
+  for (const { d, dw, mods, mSum } of per) {
+    for (const { mid, w } of mods) rows.push({ domain: d.id, module: mid, share: (dw / domainTotal) * (w / mSum) });
+  }
+  return rows;
+}
+
+// ---- official presets (presets/index.json + presets/<id>.json, read-only) ----
+
+export const OFFICIAL_PREFIX = 'official:';
+
+// Maps an official preset's compact config onto a full mix config over the registry:
+// missing domain -> excluded (weight 0); missing `modules` -> every module at weight 1;
+// listed `modules` -> unlisted modules excluded; unknown ids ignored with console.warn.
+export function officialToConfig(compact, domains, presetId = '?') {
+  const src = compact && typeof compact === 'object' ? compact : {};
+  const srcDomains = src.domains && typeof src.domains === 'object' && !Array.isArray(src.domains) ? src.domains : {};
+  const known = new Map(domains.map(d => [d.id, d]));
+  for (const id of Object.keys(srcDomains)) {
+    if (!known.has(id)) console.warn(`StudyBlock: official preset ${presetId} references unknown domain ${JSON.stringify(id)}`);
+  }
+  const out = {};
+  for (const d of domains) {
+    const has = Object.prototype.hasOwnProperty.call(srcDomains, d.id);
+    const sd = has && srcDomains[d.id] && typeof srcDomains[d.id] === 'object' ? srcDomains[d.id] : null;
+    const modules = {};
+    if (!sd) {
+      for (const mid of d.modules) modules[mid] = 1; // excluded domain; modules keep defaults if re-ticked
+      out[d.id] = { weight: 0, modules };
+      continue;
+    }
+    const sm = sd.modules && typeof sd.modules === 'object' && !Array.isArray(sd.modules) ? sd.modules : null;
+    if (sm) {
+      for (const mid of Object.keys(sm)) {
+        if (!d.modules.includes(mid)) console.warn(`StudyBlock: official preset ${presetId} references unknown module ${JSON.stringify(mid)} in ${d.id}`);
+      }
+    }
+    for (const mid of d.modules) {
+      modules[mid] = sm ? (Object.prototype.hasOwnProperty.call(sm, mid) ? sanitizeWeight(sm[mid], 1) : 0) : 1;
+    }
+    out[d.id] = { weight: sanitizeWeight(sd.weight, 1), modules };
+  }
+  const difficulty = ['any', ...DIFFICULTY_ORDER].includes(src.difficulty) ? src.difficulty : 'any';
+  return { domains: out, difficulty, count: sanitizeCount(src.count, 10) };
+}
+
+// -> [{ id: "official:<id>", officialId, name, description, config, official: true }].
+// A missing or broken presets folder (or file) yields fewer/no presets, never an error.
+export async function loadOfficialPresets() {
+  let ids = [];
+  try {
+    const idx = await fetchCached('presets/index.json', 'json');
+    ids = (Array.isArray(idx?.presets) ? idx.presets : []).filter(id => {
+      if (isValidId(id)) return true;
+      console.warn(`StudyBlock: ignoring invalid official preset id ${JSON.stringify(id)}`);
+      return false;
+    });
+  } catch (e) {
+    console.warn('StudyBlock: no official presets', e);
+    return [];
+  }
+  let domains = [];
+  try { domains = await loadDomains(); } catch { return []; }
+  const seen = new Set();
+  const list = await Promise.all(ids.filter(id => !seen.has(id) && seen.add(id)).map(async id => {
+    try {
+      const p = await fetchCached(`presets/${id}.json`, 'json');
+      if (!p || typeof p !== 'object') throw new Error('not an object');
+      const name = typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 60) : id;
+      return {
+        id: OFFICIAL_PREFIX + id, officialId: id, official: true, name,
+        description: typeof p.description === 'string' ? p.description : '',
+        config: officialToConfig(p.config, domains, id),
+      };
+    } catch (e) {
+      console.warn(`StudyBlock: could not load official preset ${id}`, e);
+      return null;
+    }
+  }));
+  return list.filter(Boolean);
+}
+
+function weightedPick(rng, items, weightOf) {
+  const total = items.reduce((s, x) => s + weightOf(x), 0);
+  if (!(total > 0)) return null;
+  let r = rng.next() * total;
+  for (const x of items) {
+    r -= weightOf(x);
+    if (r < 0) return x;
+  }
+  return items[items.length - 1];
+}
+
+// The chosen difficulty if supported, else the closest available (ties -> easier);
+// "any" = uniform over the subtopic's difficulties.
+function resolveDifficulty(rng, st, wanted) {
+  const list = Array.isArray(st.difficulties) && st.difficulties.length ? st.difficulties : null;
+  if (!list) return wanted === 'any' ? 'medium' : wanted;
+  if (wanted === 'any') return rng.pick(list);
+  if (list.includes(wanted)) return wanted;
+  const w = DIFFICULTY_ORDER.indexOf(wanted);
+  let best = list[0], bestDist = Infinity;
+  for (const d of list) {
+    const i = DIFFICULTY_ORDER.indexOf(d);
+    const dist = i < 0 ? 99 : Math.abs(i - w);
+    if (dist < bestDist || (dist === bestDist && i < DIFFICULTY_ORDER.indexOf(best))) { best = d; bestDist = dist; }
+  }
+  return best;
+}
+
+// Builds a mixed quiz. Each question is annotated with module/subtopic/difficulty and titles.
+export async function buildMixQuiz(config, seed = randomSeed()) {
+  const rng = createRng(seed);
+  const domains = await loadDomains();
+  const cfg = normalizeMixConfig(config, domains);
+
+  // Preload every selected module and its question source; drop anything that fails.
+  const sources = new Map(); // moduleId -> { mod, gen?, rows? }
+  await Promise.all(mixShares(cfg, domains).map(async ({ module: mid }) => {
+    try {
+      const mod = await loadModule(mid);
+      if (!mod.subtopics.length) return;
+      if (mod.type === 'csv') sources.set(mid, { mod, rows: await loadCsvRows(mid) });
+      else sources.set(mid, { mod, gen: await loadGenerator(mid) });
+    } catch (e) {
+      console.warn(`StudyBlock: skipping module ${mid} in mix`, e);
+    }
+  }));
+  const usable = domains
+    .map(d => ({ ...d, modules: d.modules.filter(mid => sources.has(mid)) }))
+    .filter(d => d.modules.length);
+  let pool = mixShares(cfg, usable);
+  if (!pool.length) throw new Error('None of the selected subdomains are available. Adjust the mix and try again.');
+
+  const titleOf = new Map(domains.map(d => [d.id, d.title]));
+  const n = cfg.count;
+  const questions = [];
+  const seen = new Set();
+  const failures = new Map(); // moduleId -> consecutive generation failures
+  let tries = 0;
+  const maxTries = n * 40;
+
+  while (questions.length < n && tries < maxTries && pool.length) {
+    tries++;
+    // Domain ∝ its weight (= sum of its rows' shares), then module within it ∝ module weight.
+    const domainIds = [...new Set(pool.map(r => r.domain))];
+    const dId = weightedPick(rng, domainIds, id => pool.reduce((s, r) => s + (r.domain === id ? r.share : 0), 0));
+    const pick = dId && weightedPick(rng, pool.filter(r => r.domain === dId), r => r.share);
+    if (!pick) break;
+    const { mod, gen, rows } = sources.get(pick.module);
+    const st = rng.pick(mod.subtopics);
+    const difficulty = resolveDifficulty(rng, st, cfg.difficulty);
+    const qSeed = Math.floor(rng.next() * 0x100000000) >>> 0;
+    let q = null;
+    if (rows) {
+      const p = csvPool(rows, st.id, difficulty);
+      if (p.length) q = csvQuestion(p, qSeed);
+    } else {
+      q = generateVerified(gen, st.id, difficulty, qSeed);
+    }
+    if (!q) {
+      const f = (failures.get(mod.id) || 0) + 1;
+      failures.set(mod.id, f);
+      if (f >= 25) { // persistently broken: drop it and renormalise
+        console.error(`StudyBlock: dropping module ${mod.id} from mix after repeated failures`);
+        sources.delete(mod.id);
+        pool = mixShares(cfg, usable.map(d => ({ ...d, modules: d.modules.filter(mid => sources.has(mid)) })));
+      }
+      continue;
+    }
+    failures.set(mod.id, 0);
+    const key = `${mod.id}|${q.prompt}`;
+    // Avoid duplicate prompts while there is retry budget left.
+    if (seen.has(key) && tries < maxTries * 0.75) continue;
+    seen.add(key);
+    questions.push({
+      ...q,
+      module: mod.id,
+      moduleTitle: String(mod.title ?? mod.id),
+      domain: pick.domain,
+      domainTitle: titleOf.get(pick.domain) ?? pick.domain,
+      subtopic: st.id,
+      subtopicTitle: String(st.title ?? st.id),
+      difficulty,
+    });
+  }
+  if (!questions.length) throw new Error('The mixed quiz could not generate any questions.');
+  return questions;
 }
 
 const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').toLowerCase();

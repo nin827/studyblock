@@ -1,0 +1,13 @@
+{
+  "id": "elements",
+  "title": "Chemical Elements",
+  "description": "Element symbols, atomic numbers and the families of the periodic table.",
+  "icon": "atom",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "symbols", "title": "Symbols", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "atomic-numbers", "title": "Atomic numbers", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "groups", "title": "Groups and families", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

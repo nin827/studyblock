@@ -1,0 +1,13 @@
+{
+  "id": "business-math",
+  "title": "Business Math",
+  "description": "Percentages, simple and compound interest, and profit margin versus markup.",
+  "icon": "chart-line",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "percentages", "title": "Percentages", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "interest", "title": "Interest", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "margins", "title": "Margins and markup", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

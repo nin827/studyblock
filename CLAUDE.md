@@ -45,16 +45,78 @@ modules/<id>/generator.js   (type "generator")
 modules/<id>/questions.csv  (type "csv")
 ```
 
+## Hierarchy
+
+**Domain** (Math, Science, Geography, Business, …) → **Subdomain** = a module (Arithmetic, Algebra, …) → **subtopic** → **difficulty**.
+Domains are just groupings in `modules/index.json`; module folders stay flat under `modules/`. A module id belongs to exactly one domain.
+
 ## Routes (hash router)
 
-`#/` home · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
+
+## Registry — `modules/index.json`
+
+```json
+{
+  "domains": [
+    { "id": "math", "title": "Math", "icon": "sigma", "description": "…", "modules": ["arithmetic", "algebra"] }
+  ]
+}
+```
+Domain ids follow the same `^[a-z0-9-]+$` rule. A domain with an empty `modules` list shows as "coming soon".
+
+## Multi-domain mix
+
+The `#/mix` builder lets the user:
+1. Tick domains to include (all ticked by default).
+2. Within each ticked domain, tick/untick subdomains (modules) — all ticked by default.
+3. Set a **weight** (number ≥ 0, default **1**) on every ticked domain and every ticked subdomain. 0 = excluded.
+4. Pick difficulty: `any` (default) or `easy`/`medium`/`hard`; and question count (default 10, 1–50).
+
+Sampling per question (seeded): pick a domain with probability ∝ domain weight, then a subdomain within it ∝ subdomain weight, then a subtopic uniformly from that module, then difficulty (the chosen one if the subtopic supports it, else the closest available; `any` = uniform over the subtopic's difficulties). Domains/subdomains whose effective weight is 0 are skipped. The builder shows each subdomain's resulting share as a percentage.
+
+Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficulty, count }`.
+
+**Draft and presets.** Both are stored in localStorage, never in cookies (too big).
+- **Draft** (`studyblock:mix`, shaped `{ config, presetId|null }`):
+  - The builder's current config, auto-saved on every change.
+  - It survives reloads until the user saves it as a preset or presses **Clear**, which resets it to the defaults (all ticked, weight 1, any, 10).
+  - `presetId` records which preset it was loaded from or saved to. The builder shows "Unsaved changes" when the draft differs from that preset.
+- **Presets** (`studyblock:mixPresets`, a list of `{ id, name, config, createdAt, updatedAt }`). The user can:
+  - **Save as new**: prompts for a name, 1–40 characters, trimmed. Names are unique, case-insensitive.
+  - **Update** the linked preset.
+  - **Load** a preset into the draft, rename it, or delete it (after confirming).
+- Loading a preset whose domains or modules no longer exist drops those entries silently. New domains or modules are added ticked, with weight 1.
+- Export/import includes `mixPresets` and the draft as optional fields; the version stays 1. On merge, presets dedupe by id. A preset name that clashes gets " (2)" appended.
+- Home shows saved presets as quick-start chips next to "Start last mix".
+
+**Official presets** are maintained by hand in the repo under `presets/`:
+- `presets/index.json` → `{ "presets": ["daily-warmup", "stem-focus"] }`. Ids match `^[a-z0-9-]+$` and are loaded only if listed here.
+- `presets/<id>.json` →
+  ```json
+  {
+    "id": "stem-focus",
+    "name": "STEM focus",
+    "description": "Math and Science, weighted toward algebra.",
+    "config": {
+      "domains": { "math": { "weight": 2, "modules": { "algebra": 2, "arithmetic": 1 } } },
+      "difficulty": "medium",
+      "count": 15
+    }
+  }
+  ```
+  - A domain left out of `domains` is excluded.
+  - A module left out of a listed domain's `modules` is excluded.
+  - Omitting `modules` entirely means every module in that domain, at weight 1.
+  - Unknown ids are ignored with a `console.warn`.
+- **Official presets are read-only.**
+  - They show first, in an "Official" group with a badge icon (`badge-check`).
+  - Loading one copies it into the draft. "Save as new" then creates a user preset; there is no Update for official ones.
+  - They are never exported or imported; they come from the repo.
+
+A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `difficulty: <chosen or "any">`, and **each question carries its own `module`, `subtopic`, `difficulty`** so stats can be attributed per module.
 
 ## Module contract
-
-`modules/index.json`:
-```json
-{ "modules": ["arithmetic", "capitals"] }
-```
 
 `modules/<id>/module.json`:
 ```json
@@ -129,8 +191,90 @@ Scores per module/subtopic/difficulty are derived from attempts.
 
 **Export** downloads the full JSON via Blob. **Import** reads a file, validates `version` + shape, and asks merge (dedupe by attempt id) or replace.
 
+## Visual design
+
+The reference design is the "StudyBlock Visual Refresh" design canvas: https://claude.ai/artifact/4PzANTrTiRc2zi3XnGDESV
+- Warm neutrals: paper `#F6F5F1`, surface `#FFF`, sunken `#EFEDE7`, line `#E3E0D8`, muted `#6B675E`, ink `#1B1A17`. System UI font stack, plus a monospace stack for equations. No web fonts.
+- **Accent:** the user picks one of 24 hues (0–345° in 15° steps) or grey. **Default is purple, 300°.**
+  - accent `oklch(0.50 0.16 H)`
+  - soft `oklch(0.95 0.035 H)`
+  - ink `oklch(0.40 0.14 H)`
+  - Grey uses chroma 0.
+  - Dark theme: the hue stays the same and lightness goes to about 0.72.
+  - The choice is stored in the `sb_accent` cookie (`0`–`345` or `grey`).
+- **Domain tints are fixed and independent of the accent.** Each domain has a tint (light background + dark text) and a solid colour:
+  | Domain | Tint | Solid |
+  |---|---|---|
+  | Math | `#E8E9FB` / `#3730A3` | `#5B54E8` |
+  | Science | `#DDF1EE` / `#0F5E56` | `#14857A` |
+  | Geography | `#FBEBD9` / `#8A4B0F` | `#C2671B` |
+  | Business | `#F3E6F1` / `#7A2E6B` | `#9C3D8C` |
+
+  A domain can override these with `color` in `index.json`.
+- Correct and incorrect states always show an icon and a label, not colour alone.
+- Radius is 12 on controls, 16 on cards and 20 on hero cards. Touch targets are at least 44px.
+
+## Mobile
+
+Mobile is a first-class target: build mobile-first, so the layout works from 360px wide upward.
+- **Page setup:**
+  - `<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">` and a `theme-color` meta.
+  - No horizontal page scroll.
+  - Respect `env(safe-area-inset-*)`.
+- **Navigation:**
+  - Below 640px, the top nav becomes a fixed **bottom tab bar** with four tabs: Home, Mix, History, Settings, each an icon over a label.
+  - The header shrinks to the logo plus the page title.
+  - Leave bottom padding on the content so the tab bar never covers it.
+- **Inputs:**
+  - Input text is at least 16px, so iOS doesn't zoom in on focus.
+  - Number answers use `inputmode="decimal"`, with `enterkeyhint="go"` or `"next"`.
+  - Never use hover-only affordances.
+  - Choice buttons sit in one column on phones and two columns from 640px.
+- **Quiz:** the Check/Next button sits in a sticky bottom action bar on phones, so it stays reachable when the keyboard is open.
+- **Mix builder on phones:**
+  - Preset chips scroll horizontally.
+  - The summary collapses into a sticky bottom bar (share bar + "Start · N questions"); tapping it expands the full summary sheet.
+- **Tables** (history, module grid): turn into stacked cards on phones, or sit in an `overflow-x: auto` box.
+- The mobile reference artboards are on the design canvas (Mobile — Home / Quiz / Mix).
+
+## Running modes
+
+The same code runs in three places.
+
+1. **Local server:** `py -m http.server 8000 --bind 127.0.0.1`. Used for development.
+2. **GitHub Pages / any static HTTPS host:** works as-is. Rules:
+   - Every path is relative: no leading `/` in fetches, imports or links.
+   - Add a `.nojekyll` file at the repo root.
+   - Cookies use `path=<the app's directory>`, not `/`. `username.github.io` is shared by every repo of that user, and keys are prefixed `sb_` / `studyblock:`.
+3. **Offline single file (no server):** `py tools/bundle.py` writes `dist/studyblock.html`, which opens by double-click.
+   - Browsers block external ES modules and `fetch()` on `file://`. So the bundle embeds every JS file, `modules/**` and `presets/**` as text, and loads code via an import map. Specifiers are rewritten to `sb:/<path>`, each mapped to a `data:` URL.
+   - All file access goes through `js/lib/source.js`:
+     - `loadText(path)` and `loadJSON(path)`: `fetch` normally, or read the embedded bundle.
+     - `loadModule(path)`: dynamic `import()` normally, or the mapped specifier.
+   - No other file may call `fetch` or `import()` on project paths.
+   - Lucide is inlined in the bundle only if it's vendored (ticket 001). Otherwise icons fall back to text labels offline.
+   - The bundler uses only the Python standard library and writes only inside `dist/`.
+
+## Data folder (optional; prompted on file://)
+
+Uses the File System Access API (`showDirectoryPicker`), which only Chromium browsers support.
+- **Connecting:** Settings → "Connect data folder". The user picks any folder, and the app reads and writes `studyblock-data.json` there. That file holds the same shape as an export: attempts, mix presets and the draft.
+- **Reconnecting:**
+  - The directory handle is kept in IndexedDB (`studyblock` db, `handles` store).
+  - On each visit the app calls `queryPermission`. If permission isn't granted, it shows a "Reconnect data folder" button, because `requestPermission` needs a click.
+- **Sync rule:**
+  - localStorage stays the working cache.
+  - Every save also writes the folder file (debounced about 1s, written to a temp name then renamed where supported, otherwise overwritten).
+  - On connect or reconnect, the folder file is merged into the cache: attempts and presets dedupe by id. Then the merged result is written back.
+- **Where it's shown:**
+  - On `file://`, a banner asks the user to connect a folder, because `file://` storage is easy to lose.
+  - Unsupported browsers (Firefox, Safari) hide the feature and point to export/import instead.
+- **Safety:**
+  - The app touches only `studyblock-data.json` in the chosen folder; it never lists, reads or deletes other files.
+  - The file's contents are validated the same way as an import.
+
 ## Adding a module
 
 1. Create `modules/<id>/` with `module.json` and either `generator.js` (+ `verify`) or `questions.csv`.
 2. Optionally add `intro.md`.
-3. Append the id to `modules/index.json`.
+3. Append the id to the right domain's `modules` list in `modules/index.json` (add a new domain entry if needed).

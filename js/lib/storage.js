@@ -94,30 +94,108 @@ export function getAttempts() {
 const pct = a => (a.total > 0 ? Math.round((a.score / a.total) * 100) : 0);
 
 function summarize(list) {
-  if (!list.length) return { attempts: 0, best: null, last: null };
-  let best = 0, lastA = list[0];
+  if (!list.length) return { attempts: 0, best: null, last: null, overall: null, correct: 0, total: 0 };
+  let best = 0, lastA = list[0], correct = 0, total = 0;
   for (const a of list) {
     best = Math.max(best, pct(a));
     if (a.ts > lastA.ts) lastA = a;
+    correct += a.score;
+    total += a.total;
   }
-  return { attempts: list.length, best, last: pct(lastA), lastTs: lastA.ts };
+  return {
+    attempts: list.length, best, last: pct(lastA), lastTs: lastA.ts,
+    overall: total ? Math.round((correct / total) * 100) : null, correct, total,
+  };
 }
 
-// Stats for any combination of module / subtopic / difficulty (omit to aggregate).
+export const MIX_MODULE = 'mix';
+
+/*
+ * Per-module attribution rule (kept deliberately simple):
+ * - A single-module attempt counts for its module as-is.
+ * - A mixed attempt (module "mix") is split into one "slice" per module (optionally narrowed
+ *   further to a subtopic/difficulty) using each question's own module/subtopic/difficulty.
+ *   A slice behaves like a small attempt: { ts, score = correct questions, total = questions }.
+ *   So it adds 1 to that module's attempt count and its percentage feeds Best/Last/Overall
+ *   (a 1-question slice answered correctly therefore counts as a 100% "best").
+ * - Mixed questions without a `module` field (shouldn't happen) are ignored for per-module stats.
+ */
+function mixSlices(attempts, match) {
+  const out = [];
+  for (const a of attempts) {
+    if (a.module !== MIX_MODULE) continue;
+    const groups = new Map();
+    for (const q of a.questions) {
+      if (typeof q.module !== 'string' || !match(q)) continue;
+      const key = `${q.module}|${q.subtopic ?? ''}|${q.difficulty ?? ''}`;
+      if (!groups.has(key)) groups.set(key, { ts: a.ts, module: q.module, subtopic: q.subtopic, difficulty: q.difficulty, score: 0, total: 0, fromMix: true, attemptId: a.id });
+      const g = groups.get(key);
+      g.total++;
+      if (q.correct) g.score++;
+    }
+    out.push(...groups.values());
+  }
+  return out;
+}
+
+// Merges the per-key slices of one mixed attempt back into one slice (for module-level stats).
+function mergeSlices(slices) {
+  const byAttempt = new Map();
+  for (const s of slices) {
+    const m = byAttempt.get(s.attemptId);
+    if (m) { m.score += s.score; m.total += s.total; } else byAttempt.set(s.attemptId, { ...s });
+  }
+  return [...byAttempt.values()];
+}
+
+const matches = (filter, x) =>
+  (filter.module === undefined || x.module === filter.module) &&
+  (filter.subtopic === undefined || x.subtopic === filter.subtopic) &&
+  (filter.difficulty === undefined || x.difficulty === filter.difficulty);
+
+// Attempt-like records for a module (single attempts + mixed slices), optionally narrowed.
+function recordsFor(attempts, filter) {
+  const single = attempts.filter(a => a.module !== MIX_MODULE && matches(filter, a));
+  const slices = mergeSlices(mixSlices(attempts, q => matches(filter, q)));
+  return single.concat(slices);
+}
+
+// Stats for any combination of module / subtopic / difficulty.
+// With a real module id, mixed-quiz questions for that module are included (see rule above).
+// With no module (or module "mix"), attempts are aggregated as stored.
 export function getStats({ module, subtopic, difficulty } = {}) {
-  const list = load().attempts.filter(a =>
-    (module === undefined || a.module === module) &&
-    (subtopic === undefined || a.subtopic === subtopic) &&
-    (difficulty === undefined || a.difficulty === difficulty));
-  return summarize(list);
+  const attempts = load().attempts;
+  if (module === undefined || module === MIX_MODULE) {
+    return summarize(attempts.filter(a => matches({ module, subtopic, difficulty }, a)));
+  }
+  return summarize(recordsFor(attempts, { module, subtopic, difficulty }));
 }
 
-// Map "subtopic|difficulty" -> stats for one module.
+// Stats over a set of modules (e.g. a domain): single attempts of those modules plus,
+// for each mixed attempt, one slice with its questions from those modules.
+export function getStatsForModules(ids) {
+  const set = new Set(ids);
+  const attempts = load().attempts;
+  const single = attempts.filter(a => a.module !== MIX_MODULE && set.has(a.module));
+  const slices = mixSlices(attempts, q => set.has(q.module)).map(s => ({ ...s, module: 'set' }));
+  return summarize(single.concat(mergeSlices(slices)));
+}
+
+// Attempt-like records (newest first) for one module, including mixed slices.
+export function getModuleRecords(module) {
+  return recordsFor(load().attempts, { module }).sort((a, b) => b.ts - a.ts);
+}
+
+// Map "subtopic|difficulty" -> stats for one module (mixed questions included).
 export function getModuleCellStats(module) {
+  const attempts = load().attempts;
   const groups = {};
-  for (const a of load().attempts) {
+  for (const a of attempts) {
     if (a.module !== module) continue;
     (groups[`${a.subtopic}|${a.difficulty}`] ||= []).push(a);
+  }
+  for (const s of mixSlices(attempts, q => q.module === module)) {
+    (groups[`${s.subtopic}|${s.difficulty}`] ||= []).push(s);
   }
   const out = {};
   for (const k in groups) out[k] = summarize(groups[k]);
@@ -125,6 +203,142 @@ export function getModuleCellStats(module) {
 }
 
 export function percent(a) { return pct(a); }
+
+// ---- mix draft + presets (localStorage only; configs are normalised by engine.normalizeMixConfig) ----
+
+const MIX_KEY = 'studyblock:mix';
+const PRESETS_KEY = 'studyblock:mixPresets';
+export const PRESET_NAME_MAX = 40;
+
+const isObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+
+function readJson(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.warn(`StudyBlock: could not read ${key}`, e);
+    return null;
+  }
+}
+
+function writeJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    console.warn(`StudyBlock: could not save ${key}`, e);
+    return false;
+  }
+}
+
+function cleanDraft(v) {
+  if (!isObj(v)) return null;
+  if (!isObj(v.config)) return null;
+  return { config: v.config, presetId: isStr(v.presetId) && v.presetId ? v.presetId : null };
+}
+
+// Draft: { config, presetId|null } or null when there is none.
+export function loadMixDraft() {
+  return cleanDraft(readJson(MIX_KEY));
+}
+
+export function saveMixDraft(draft) {
+  return writeJson(MIX_KEY, { config: draft.config, presetId: draft.presetId ?? null });
+}
+
+export function normalizePresetName(name) {
+  return String(name ?? '').trim().replace(/\s+/g, ' ');
+}
+
+function cleanPreset(p) {
+  // "official:" ids are reserved for repo presets, which are never stored/imported.
+  if (!isObj(p) || !isStr(p.id) || !p.id || p.id.length > 100 || p.id.startsWith('official:') || !isObj(p.config)) return null;
+  const name = normalizePresetName(p.name);
+  if (!name || name.length > PRESET_NAME_MAX) return null;
+  const now = Date.now();
+  return {
+    id: p.id, name, config: p.config,
+    createdAt: isNum(p.createdAt) ? p.createdAt : now,
+    updatedAt: isNum(p.updatedAt) ? p.updatedAt : (isNum(p.createdAt) ? p.createdAt : now),
+  };
+}
+
+function cleanPresetList(list) {
+  if (!Array.isArray(list)) return [];
+  const ids = new Set();
+  const out = [];
+  for (const raw of list) {
+    const p = cleanPreset(raw);
+    if (!p || ids.has(p.id)) continue;
+    ids.add(p.id);
+    out.push(p);
+  }
+  return out;
+}
+
+export function getPresets() {
+  return cleanPresetList(readJson(PRESETS_KEY));
+}
+
+function savePresets(list) {
+  if (!writeJson(PRESETS_KEY, list)) throw new Error('Could not write to local storage (full or blocked?).');
+}
+
+const nameTaken = (list, name, exceptId) =>
+  list.some(p => p.id !== exceptId && p.name.toLowerCase() === name.toLowerCase());
+
+function checkName(list, name, exceptId) {
+  const n = normalizePresetName(name);
+  if (!n) throw new Error('Name cannot be empty.');
+  if (n.length > PRESET_NAME_MAX) throw new Error(`Name must be at most ${PRESET_NAME_MAX} characters.`);
+  if (nameTaken(list, n, exceptId)) throw new Error(`A preset named "${n}" already exists.`);
+  return n;
+}
+
+export function createPreset(name, config) {
+  const list = getPresets();
+  const n = checkName(list, name);
+  const now = Date.now();
+  const p = { id: uuid(), name: n, config, createdAt: now, updatedAt: now };
+  list.push(p);
+  savePresets(list);
+  return p;
+}
+
+export function updatePreset(id, config) {
+  const list = getPresets();
+  const p = list.find(x => x.id === id);
+  if (!p) throw new Error('That preset no longer exists.');
+  p.config = config;
+  p.updatedAt = Date.now();
+  savePresets(list);
+  return p;
+}
+
+export function renamePreset(id, name) {
+  const list = getPresets();
+  const p = list.find(x => x.id === id);
+  if (!p) throw new Error('That preset no longer exists.');
+  p.name = checkName(list, name, id);
+  p.updatedAt = Date.now();
+  savePresets(list);
+  return p;
+}
+
+export function deletePreset(id) {
+  savePresets(getPresets().filter(p => p.id !== id));
+}
+
+// Appends " (2)", " (3)", … until the name is unique (case-insensitive) and fits the limit.
+function uniqueName(list, name) {
+  if (!nameTaken(list, name)) return name;
+  for (let i = 2; ; i++) {
+    const suffix = ` (${i})`;
+    const cand = name.slice(0, PRESET_NAME_MAX - suffix.length).trimEnd() + suffix;
+    if (!nameTaken(list, cand)) return cand;
+  }
+}
 
 // ---- cookies (small cache only) ----
 
@@ -154,7 +368,11 @@ function today() {
 }
 
 export function exportData() {
-  const blob = new Blob([JSON.stringify(load(), null, 2)], { type: 'application/json' });
+  // Optional extra fields (version stays 1): mixPresets + mixDraft.
+  const out = { ...load(), mixPresets: getPresets() };
+  const draft = loadMixDraft();
+  if (draft) out.mixDraft = draft;
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -188,13 +406,24 @@ export async function importData(file, mode) {
       userAnswer: isStr(q.userAnswer) ? q.userAnswer : String(q.userAnswer ?? ''),
       correct: q.correct,
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),
+      // Optional per-question attribution (mixed quizzes); older data has none.
+      ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),
+      ...(isStr(q.subtopic) ? { subtopic: q.subtopic } : {}),
+      ...(isStr(q.difficulty) ? { difficulty: q.difficulty } : {}),
     })),
   }));
+  // Optional mix fields: invalid presets are dropped individually; an invalid draft is ignored.
+  const hasPresets = Array.isArray(incoming.mixPresets);
+  const inPresets = cleanPresetList(incoming.mixPresets);
+  const inDraft = cleanDraft(incoming.mixDraft);
   let data;
   let added;
+  let presets;
+  let presetsAdded = 0;
   if (mode === 'replace') {
     data = { version: VERSION, attempts: clean };
     added = clean.length;
+    if (hasPresets) { presets = []; for (const p of inPresets) { presets.push({ ...p, name: uniqueName(presets, p.name) }); presetsAdded++; } }
   } else {
     data = load();
     const ids = new Set(data.attempts.map(a => a.id));
@@ -202,9 +431,22 @@ export async function importData(file, mode) {
     for (const a of clean) {
       if (!ids.has(a.id)) { data.attempts.push(a); ids.add(a.id); added++; }
     }
+    if (inPresets.length) {
+      presets = getPresets();
+      const pids = new Set(presets.map(p => p.id));
+      for (const p of inPresets) {
+        if (pids.has(p.id)) continue; // dedupe by id
+        presets.push({ ...p, name: uniqueName(presets, p.name) });
+        pids.add(p.id);
+        presetsAdded++;
+      }
+    }
   }
   if (!save(data)) throw new Error('Could not write to local storage (full or blocked?).');
-  return { added, total: data.attempts.length };
+  if (presets) savePresets(presets);
+  // Draft: replace takes the file's draft; merge only fills in when there is no local draft.
+  if (inDraft && (mode === 'replace' || !loadMixDraft())) saveMixDraft(inDraft);
+  return { added, total: data.attempts.length, presetsAdded };
 }
 
 export function clearData() {

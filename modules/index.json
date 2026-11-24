@@ -1,1 +1,32 @@
-{ "modules": ["arithmetic", "algebra", "capitals"] }
+{
+  "domains": [
+    {
+      "id": "math",
+      "title": "Math",
+      "icon": "sigma",
+      "description": "Arithmetic, algebra and beyond.",
+      "modules": ["arithmetic", "algebra"]
+    },
+    {
+      "id": "science",
+      "title": "Science",
+      "icon": "flask-conical",
+      "description": "Physics, chemistry and the natural world.",
+      "modules": ["kinematics", "elements"]
+    },
+    {
+      "id": "geography",
+      "title": "Geography",
+      "icon": "globe",
+      "description": "Countries, capitals and places.",
+      "modules": ["capitals"]
+    },
+    {
+      "id": "business",
+      "title": "Business",
+      "icon": "briefcase",
+      "description": "Percentages, interest, margins and more.",
+      "modules": ["business-math"]
+    }
+  ]
+}

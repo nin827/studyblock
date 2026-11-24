@@ -1,0 +1,13 @@
+{
+  "id": "world-and-money",
+  "name": "World & money",
+  "description": "Capitals and business math at any difficulty.",
+  "config": {
+    "domains": {
+      "geography": { "weight": 1 },
+      "business": { "weight": 1 }
+    },
+    "difficulty": "any",
+    "count": 12
+  }
+}

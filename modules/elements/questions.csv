@@ -1,0 +1,37 @@
+subtopic,difficulty,prompt,answer,choices,explanation
+symbols,easy,What is the chemical symbol for oxygen? (Capital letters don't matter.),O,,Oxygen has the one-letter symbol O.
+symbols,easy,What is the chemical symbol for carbon?,C,C|Ca|Co|Cr,"Carbon is C, while Ca is calcium, Co is cobalt and Cr is chromium."
+symbols,easy,Which element has the symbol H?,Hydrogen,Hydrogen|Helium|Hafnium|Holmium,"H is hydrogen, the lightest element."
+symbols,easy,What is the chemical symbol for nitrogen? (Capital letters don't matter.),N,,Nitrogen has the one-letter symbol N.
+symbols,medium,What is the chemical symbol for sodium?,Na,Na|So|Sd|S,"Na comes from the Latin name natrium. S on its own is sulfur."
+symbols,medium,What is the chemical symbol for iron? (Capital letters don't matter.),Fe,,Fe comes from the Latin name ferrum.
+symbols,medium,Which element has the symbol K?,Potassium,Potassium|Krypton|Calcium|Phosphorus,"K comes from kalium, the Neo-Latin name for potassium. Krypton is Kr."
+symbols,medium,What is the chemical symbol for silver?,Ag,Ag|Si|Sv|Au,"Ag comes from the Latin argentum. Si is silicon and Au is gold."
+symbols,hard,Which element has the symbol W?,Tungsten,Tungsten|Vanadium|Xenon|Titanium,"W comes from wolfram, an older name for tungsten."
+symbols,hard,What is the chemical symbol for antimony? (Capital letters don't matter.),Sb,,Sb comes from the Latin name stibium.
+symbols,hard,Which element has the symbol Hg?,Mercury,,"Hg comes from hydrargyrum, Latin for ""liquid silver""."
+symbols,hard,What is the chemical symbol for tin?,Sn,Sn|Ti|Tn|Si,"Sn comes from the Latin stannum. Ti is titanium and Si is silicon."
+atomic-numbers,easy,What is the atomic number of hydrogen?,1,,Hydrogen is the first element: one proton in its nucleus.
+atomic-numbers,easy,What is the atomic number of carbon?,6,6|12|8|4,"Carbon has 6 protons. 12 is the mass number of its most common isotope, carbon-12."
+atomic-numbers,easy,Which element has atomic number 2?,Helium,Helium|Hydrogen|Lithium|Neon,"Helium has 2 protons. Hydrogen is 1, lithium is 3 and neon is 10."
+atomic-numbers,easy,What is the atomic number of oxygen?,8,,Oxygen has 8 protons in its nucleus.
+atomic-numbers,medium,What is the atomic number of sodium?,11,11|23|12|10,"Sodium has 11 protons. 23 is its mass number, 12 is magnesium and 10 is neon."
+atomic-numbers,medium,Which element has atomic number 20?,Calcium,,Calcium has 20 protons and sits in group 2.
+atomic-numbers,medium,What is the atomic number of iron?,26,,Iron has 26 protons.
+atomic-numbers,medium,Which element has atomic number 17?,Chlorine,Chlorine|Fluorine|Argon|Sulfur,"Chlorine is 17. Fluorine is 9, sulfur is 16 and argon is 18."
+atomic-numbers,hard,What is the atomic number of gold?,79,79|47|80|82,"Gold is 79. Silver is 47, mercury is 80 and lead is 82."
+atomic-numbers,hard,What is the atomic number of uranium?,92,,Uranium has 92 protons in its nucleus.
+atomic-numbers,hard,Which element has atomic number 54?,Xenon,Xenon|Krypton|Iodine|Caesium,"Xenon is 54. Krypton is 36, iodine is 53 and caesium is 55."
+atomic-numbers,hard,What is the atomic number of silver?,47,,Silver has 47 protons.
+groups,easy,Which family of elements does neon belong to?,Noble gases,Noble gases|Halogens|Alkali metals|Alkaline earth metals,Neon is in group 18: the noble gases.
+groups,easy,Which family of elements does sodium belong to?,Alkali metals,Alkali metals|Alkaline earth metals|Halogens|Noble gases,Sodium is in group 1: the alkali metals.
+groups,easy,Which family of elements does chlorine belong to?,Halogens,Halogens|Noble gases|Alkali metals|Transition metals,Chlorine is in group 17: the halogens.
+groups,easy,Which of these elements is a noble gas?,Argon,Argon|Oxygen|Nitrogen|Chlorine,"Argon is in group 18. Oxygen, nitrogen and chlorine are reactive non-metals."
+groups,medium,Which family of elements does calcium belong to?,Alkaline earth metals,Alkaline earth metals|Alkali metals|Transition metals|Halogens,Calcium is in group 2: the alkaline earth metals.
+groups,medium,Which family of elements does iodine belong to?,Halogens,Halogens|Noble gases|Alkaline earth metals|Transition metals,Iodine is in group 17: the halogens.
+groups,medium,Which family of elements does potassium belong to?,Alkali metals,Alkali metals|Alkaline earth metals|Transition metals|Noble gases,Potassium is in group 1: the alkali metals.
+groups,medium,Which of these elements is a halogen?,Bromine,Bromine|Boron|Barium|Bismuth,"Bromine is in group 17. Boron is in group 13, barium in group 2 and bismuth in group 15."
+groups,hard,In which group (1-18) of the periodic table is krypton? Type the group number.,18,,Krypton is a noble gas: group 18.
+groups,hard,Which of these elements is an alkaline earth metal?,Strontium,Strontium|Rubidium|Scandium|Selenium,"Strontium is in group 2. Rubidium is an alkali metal, scandium a transition metal and selenium a non-metal."
+groups,hard,Which family of elements does caesium belong to?,Alkali metals,Alkali metals|Alkaline earth metals|Transition metals|Noble gases,"Caesium (spelled cesium in the US) is in group 1: the alkali metals."
+groups,hard,Which of these elements is a transition metal?,Cobalt,Cobalt|Calcium|Gallium|Germanium,"Cobalt is in group 9. Calcium is an alkaline earth metal, gallium a post-transition metal and germanium a metalloid."

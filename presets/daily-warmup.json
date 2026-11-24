@@ -1,0 +1,15 @@
+{
+  "id": "daily-warmup",
+  "name": "Daily warm-up",
+  "description": "A quick, easy mix across every domain.",
+  "config": {
+    "domains": {
+      "math": { "weight": 1 },
+      "science": { "weight": 1 },
+      "geography": { "weight": 1 },
+      "business": { "weight": 1 }
+    },
+    "difficulty": "easy",
+    "count": 10
+  }
+}

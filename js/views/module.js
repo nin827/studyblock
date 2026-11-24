@@ -1,4 +1,5 @@
-import { loadModule, loadIntro } from '../lib/engine.js';
+import { loadModule, loadIntro, domainOf } from '../lib/engine.js';
+import { crumbsHtml } from './quiz.js';
 import { getModuleCellStats, getCookie, setCookie } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
 import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart } from './ui.js';
@@ -25,6 +26,7 @@ export async function render(root, { moduleId }, ctx) {
   }
   setCookie('lastModule', mod.id);
   const intro = await loadIntro(mod.id);
+  const domain = await domainOf(mod.id).catch(() => null);
   if (!ctx.alive()) return;
   const stats = getModuleCellStats(mod.id);
   const cols = difficultyColumns(mod.subtopics);
@@ -47,7 +49,11 @@ export async function render(root, { moduleId }, ctx) {
   }).join('');
 
   root.innerHTML = `
-    <nav class="crumbs"><a href="#/">${icon('arrow-left')} All modules</a></nav>
+    ${crumbsHtml([
+      { href: '#/', label: 'Home' },
+      ...(domain ? [{ href: `#/d/${hashPart(domain.id)}`, label: domain.title }] : []),
+      { label: String(mod.title ?? mod.id) },
+    ])}
     <section class="page-head">
       <h1><span class="module-icon">${icon(mod.icon)}</span> ${esc(mod.title ?? mod.id)}</h1>
       <p class="muted">${esc(mod.description ?? '')}</p>

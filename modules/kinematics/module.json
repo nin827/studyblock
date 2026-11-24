@@ -1,0 +1,13 @@
+{
+  "id": "kinematics",
+  "title": "Kinematics",
+  "description": "Speed, acceleration and the equations of uniformly accelerated motion, with units in metres and seconds.",
+  "icon": "gauge",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "speed", "title": "Speed", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "acceleration", "title": "Acceleration", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "motion-equations", "title": "Equations of motion", "difficulties": ["medium", "hard"] }
+  ]
+}

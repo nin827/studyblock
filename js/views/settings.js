@@ -67,11 +67,12 @@ export async function render(root) {
     if (!f) return;
     if (mode === 'replace' && !confirm('Replace ALL existing history with the contents of this file? This cannot be undone.')) return;
     try {
-      const { added, total } = await importData(f, mode);
+      const { added, total, presetsAdded } = await importData(f, mode);
       msg.className = 'msg good';
-      msg.textContent = mode === 'merge'
+      const presetNote = presetsAdded ? ` ${presetsAdded} mix preset(s) imported.` : '';
+      msg.textContent = (mode === 'merge'
         ? `Merged: ${added} new attempt(s) added, ${total} total.`
-        : `Replaced: ${total} attempt(s) now stored.`;
+        : `Replaced: ${total} attempt(s) now stored.`) + presetNote;
       root.querySelector('#data-count').textContent = `${total} attempt${total === 1 ? '' : 's'} stored in this browser.`;
     } catch (e) {
       msg.className = 'msg bad';
