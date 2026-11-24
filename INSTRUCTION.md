@@ -21,7 +21,7 @@ This guide covers everything from opening StudyBlock for the first time to addin
 
 ### A. Install it as an app (recommended)
 
-StudyBlock can be hosted for free on GitHub Pages and installed from there like an app.
+StudyBlock is live at **https://nin827.github.io/studyblock/**. Open it and install it from there; nothing to set up. To host your own copy, publish it once as below.
 
 **Publish it once**
 1. Push the repository to GitHub.

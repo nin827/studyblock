@@ -30,7 +30,7 @@ Pick whichever suits you. Each option is explained step by step in the guide.
 
 | I want to… | Do this |
 |---|---|
-| Use it as an app on my phone or computer | Open the hosted site, then choose **Install StudyBlock** |
+| Use it as an app on my phone or computer | Open **[nin827.github.io/studyblock](https://nin827.github.io/studyblock/)**, then choose **Install StudyBlock** |
 | Open it from a file, with no setup | Double-click `dist/studyblock.html` (build it once with `py tools/bundle.py`) |
 | Run it from this folder | Double-click **`launcher_win.bat`** (Windows) or **`launcher_mac.command`** (Mac), or run **`./launcher_linux.sh`** (Linux). Close the window to stop. |
 
