@@ -2,6 +2,8 @@
 
 Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser, stores everything locally.
 
+> AI-coded with human supervision.
+
 ## Hard rules
 
 - **No build step, no npm.** Native ES modules only (`<script type="module">`). Node is not installed.
