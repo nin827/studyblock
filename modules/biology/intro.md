@@ -1,4 +1,4 @@
-# Biology
+# Biology Basics
 
 Core facts about living things: what cells are made of, how the human body works, how characteristics are inherited, and how energy moves through ecosystems.
 

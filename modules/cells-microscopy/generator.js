@@ -140,8 +140,11 @@ function genMagnification(difficulty, rng) {
       d = 2;
       I = (M * A) / 1e6;
     } else {
-      M = rng.pick([20000, 25000, 40000, 50000, 75000, 100000, 150000, 200000]);
-      I = rng.int(50, 1500) / 10;
+      // Keep the implied actual size within the specimen's real range.
+      const A0 = rng.int(spec.lo, spec.hi);
+      const ms = [20000, 25000, 40000, 50000, 75000, 100000, 150000, 200000].filter((m) => (m * A0) / 1e6 >= 3 && (m * A0) / 1e6 <= 200);
+      M = rng.pick(ms.length ? ms : [200000]);
+      I = Math.max(1, Math.round((M * A0) / 1e5)) / 10;
       d = 0;
       A = (I * 1e6) / M;
     }
@@ -175,8 +178,8 @@ function genMagnification(difficulty, rng) {
     exact = I;
     prompt = `${what} is ${num(A)} ${actualUnit} long. It is drawn or photographed at a magnification of ×${num(M)}. How long is the image, in mm?${round}${convNote}`;
     expl =
-      `Rearrange to \`image size = magnification × actual size\`.\n\n\`${num(M)} × ${num(A)}\` = ${num(M * A)} ${actualUnit}` +
-      (actualUnit === "mm" ? "" : `, and ${convTxt}, so the image is \`${num(M * A)} ÷ ${num(conv)}\``) +
+      `Rearrange to \`image size = magnification × actual size\`.\n\n\`${num(M)} × ${num(A)}\`` +
+      (actualUnit === "mm" ? "" : ` = ${num(M * A)} ${actualUnit}, and ${convTxt}, so the image is \`${num(M * A)} ÷ ${num(conv)}\``) +
       ` ${resultTxt(exact, d, " mm")}`;
     hints = [
       "Rearrange the magnification formula: `image size = magnification × actual size`.",
@@ -222,9 +225,15 @@ function resultTxt(exact, d, unit) {
 // Scale bar on a micrograph: bar length on the image (mm) and what it represents (µm).
 function scaleBar(kind, rng) {
   const spec = rng.pick(CELLS);
-  const barActual = rng.pick([1, 2, 5, 10, 20, 25, 50, 100]);
+  // The cell's implied actual size stays within its real range.
+  const actual0 = rng.int(spec.lo, spec.hi);
   const barImage = rng.int(10, 60);
-  const cellImage = rng.int(15, 120);
+  const bars = [1, 2, 5, 10, 20, 25, 50, 100];
+  const fits = bars.filter((b) => (actual0 * barImage) / b >= 12 && (actual0 * barImage) / b <= 200);
+  const barActual = fits.length
+    ? rng.pick(fits)
+    : bars.reduce((best, b) => (Math.abs((actual0 * barImage) / b - 80) < Math.abs((actual0 * barImage) / best - 80) ? b : best));
+  const cellImage = Math.max(1, Math.round((actual0 * barImage) / barActual));
   const M = (barImage * 1000) / barActual;
   const actual = (cellImage * barActual) / barImage;
   const intro = `A micrograph of ${spec.name} has a scale bar ${barImage} mm long, labelled ${barActual} µm. On the micrograph, the ${spec.name.replace(/^an? /, "")} is ${cellImage} mm long. (1 mm = 1000 µm.)`;

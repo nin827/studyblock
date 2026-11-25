@@ -1059,7 +1059,7 @@ const HW_EQ = "`p + q = 1` and `p² + 2pq + q² = 1`, where p is the dominant an
 
 function genPopulation(difficulty, rng) {
   const t = rng.pick(HW_TRAITS);
-  const traitIntro = `In a population of ${t.many}, ${t.rec} (the recessive phenotype) is caused by a recessive allele.`;
+  const traitIntro = `In a population of ${t.many}, the recessive phenotype (${t.rec}) is caused by a recessive allele.`;
 
   if (difficulty === "easy") {
     const kind = rng.pick(["p", "q2", "qFromQ2"]);
@@ -1191,7 +1191,7 @@ function genPopulation(difficulty, rng) {
   const conditions = [
     `In one population, an inherited recessive condition affects 1 in ${N} people.`,
     `A recessive inherited condition affects about 1 in ${N} newborns in a large population.`,
-    `In a large population of ${t.many}, 1 in ${N} have ${t.rec}, which is caused by a recessive allele.`,
+    `In a large population of ${t.many}, 1 in ${N} have ${t.rec}, a trait caused by a recessive allele.`,
   ];
   const kind = rng.pick(["carrierPct", "oneIn", "multi", "multi"]);
   // The town question only makes sense for the human conditions.

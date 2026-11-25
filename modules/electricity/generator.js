@@ -374,7 +374,7 @@ function genPower(difficulty, rng) {
     const days = rng.int(5, 31);
     const E = (P * hours * days) / 1000;
     const appl = `${a.name[0].toUpperCase()}${a.name.slice(1)}`;
-    const setup = `${appl} rated ${P} W runs for ${num(hours)} hours a day for ${days} days.`;
+    const setup = `${appl} rated ${P} W runs for ${num(hours)} ${hours === 1 ? "hour" : "hours"} a day for ${days} days.`;
     lines = [given("_P_kW", P / 1000), given("_hours", hours * days)];
     // The prompt states watts and hours per day; _P_kW and _hours above are worked values, so new labels.
     gv = [["_P_W", P], ["_h_per_day", hours], ["_days", days]];

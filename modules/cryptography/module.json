@@ -1,0 +1,14 @@
+{
+  "id": "cryptography",
+  "title": "Cryptography Basics",
+  "description": "Caesar and Vigenère ciphers, modular arithmetic and toy RSA, and how long a brute-force search takes.",
+  "icon": "key-round",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "caesar", "title": "Caesar cipher", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "vigenere", "title": "Vigenère cipher", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "modular", "title": "Modular arithmetic", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "key-space", "title": "Key space and brute force", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

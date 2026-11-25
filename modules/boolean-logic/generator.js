@@ -187,7 +187,7 @@ function genGates(difficulty, rng) {
   if (n === 3) lines.push(`Here ${ones} of the 3 inputs ${ones === 1 ? "is" : "are"} 1.`);
   lines.push(`So the output is **${out}**.`);
   return {
-    prompt: `What is the output of ${desc} with inputs ${fmtInputs(names, vals)}? Answer 0 or 1.`,
+    prompt: `What is the output of ${desc} with input${names.length === 1 ? "" : "s"} ${fmtInputs(names, vals)}? Answer 0 or 1.`,
     answer: out,
     answerType: "number",
     tolerance: 0,
@@ -360,7 +360,7 @@ function genTruthTables(difficulty, rng) {
     const params = { kind: "rows", n };
     const hints = [
       "Each input can be 0 or 1, so every extra input doubles the number of combinations.",
-      `Start from 1 row and double it once for each of the ${n} input${n === 1 ? "" : "s"}: that is 2^${n}.`,
+      `Start from 1 row and double it once for every input${n === 1 ? "" : ` (${n} times in all)`}.`,
     ];
     if (asChoice) {
       const c = buildNumChoices(rows, [2 * n, n * n, rows - 1, rows * 2, rows / 2, n], rng, 1, Infinity);

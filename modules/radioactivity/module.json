@@ -1,0 +1,13 @@
+{
+  "id": "radioactivity",
+  "title": "Radioactivity",
+  "description": "Nuclide notation, alpha, beta and gamma decay equations, and half-life calculations with background correction.",
+  "icon": "radiation",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "nuclear-notation", "title": "Nuclear notation", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "decay-equations", "title": "Decay equations", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "half-life", "title": "Half-life", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -784,8 +784,8 @@ function genInvestment(difficulty, rng) {
     unit = "pct";
     values = { costs: [price, install], yearly, years: y, resale };
     scen =
-      `${p.biz} buys ${p.asset} for ${cash(price)}, plus ${cash(install)} to install it. It expects ${cash(yearly)} of extra profit a year for ${years(y)}` +
-      (resale > 0 ? `, and then to sell it for ${cash(resale)}` : "") +
+      `${p.biz} buys ${p.asset} for ${cash(price)}, plus ${cash(install)} to install ${/^an? /.test(p.asset) ? "it" : "them"}. It expects ${cash(yearly)} of extra profit a year for ${years(y)}` +
+      (resale > 0 ? `, and then to sell ${/^an? /.test(p.asset) ? "it" : "them"} for ${cash(resale)}` : "") +
       ".";
     ask = `What is the ROI over that period? Use ROI = (total return - total cost) ÷ total cost × 100.${PCT_NOTE}${DP2}`;
     intro = "Add up everything spent and everything earned back, then compare the net gain with the total cost.";
@@ -811,7 +811,7 @@ function genInvestment(difficulty, rng) {
       exact = Y;
       fmt = "int";
       values = { cost, inflow: extra, monthly: false, upkeep };
-      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(extra)} of profit a year but costs ${cash(upkeep)} a year to maintain.`;
+      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. The investment adds ${cash(extra)} of profit a year but costs ${cash(upkeep)} a year to maintain.`;
       ask = "How many years will it take to earn back the cost? Assume the yearly amounts stay the same.";
       intro = "Payback period = cost ÷ net cash coming in each year.";
       lines = [
@@ -842,7 +842,7 @@ function genInvestment(difficulty, rng) {
       exact = cost / net;
       fmt = "2dp";
       values = { cost, inflow: M, monthly: true, upkeep: U };
-      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. It adds ${cash(M)} of profit a month and costs ${cash(U)} a year to maintain.`;
+      scen = `${p.biz} spends ${cash(cost)} on ${p.asset}. The investment adds ${cash(M)} of profit a month and costs ${cash(U)} a year to maintain.`;
       ask = `How many years will it take to earn back the cost? Assume the profit comes in evenly through the year.${DP2}`;
       intro = "Work in years: turn the monthly profit into a yearly one, take off upkeep, then divide the cost by the net.";
       lines = [
@@ -884,7 +884,7 @@ function genInvestment(difficulty, rng) {
       n === 2
         ? `${cash(flows[0])} at the end of year 1 and ${cash(flows[1])} at the end of year 2`
         : `${cash(flows[0])}, ${cash(flows[1])} and ${cash(flows[2])} at the end of years 1, 2 and 3`;
-    scen = `${p.biz} is considering ${p.asset}, which costs ${cash(cost)} today. It is expected to bring in ${flowText}.`;
+    scen = `${p.biz} is considering ${p.asset}, which ${/^an? /.test(p.asset) ? "costs" : "cost"} ${cash(cost)} today. The investment is expected to bring in ${flowText}.`;
     ask =
       `Using a ${num(r)}% discount rate, what is the net present value (NPV), in dollars? The cost is paid now and is not discounted.` +
       `${DP2} Use a negative number if the NPV is negative.`;
@@ -1878,8 +1878,19 @@ function withHints(q) {
   return { ...q, ...(intro ? { hints: [intro] } : {}), parts };
 }
 
+// A few draws land on an ill-posed 2-decimal answer: the exact value sits on a half cent
+// (e.g. 46.06 × 35% × 35 = 564.235), so 564.23 and 564.24 would both be right, and verify()
+// rejects it. Redraw from the same rng until verify() accepts: every seed that was already well
+// posed gives exactly the same question as before, and the others stay reproducible from the seed.
+const ownAnswer = (q) => (q.answerType === "multi" ? Object.fromEntries(q.parts.map((p) => [p.id, p.answer])) : q.answer);
+
 export function generate({ subtopic, difficulty, rng }) {
-  return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+  let q;
+  for (let t = 0; t < 10; t++) {
+    q = withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+    if (verify(q, ownAnswer(q)) === true) return q;
+  }
+  return q;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2116,7 +2127,7 @@ function verifyValue(kind, fmt, k, answer) {
     case "revenue": {
       // x must be a whole number of units times the price, and those units must just break even.
       const P = toC(k.P);
-      if (!(P > 0)) return false;
+      if (!(P > 0) || (fmt === "int" && !Number.isInteger(x))) return false;
       const units = Math.round((x * 100) / P);
       if (Math.abs(x * 100 - units * P) > 0.5 + 1e-6) return false;
       const mC = P - toC(k.C);

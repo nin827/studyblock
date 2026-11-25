@@ -1,0 +1,14 @@
+{
+  "id": "astronomy",
+  "title": "Astronomy",
+  "description": "Light-years and AU, Kepler's third law, solar-system scale models, apparent sizes and surface gravity. Every constant is given.",
+  "icon": "telescope",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "distances", "title": "Distances & light", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "orbits", "title": "Orbits", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "scale-models", "title": "Scale models", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "angles-gravity", "title": "Apparent size & gravity", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

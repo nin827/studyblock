@@ -1,0 +1,14 @@
+{
+  "id": "thermal-physics",
+  "title": "Thermal Physics",
+  "description": "Specific heat capacity, latent heat, temperature scales and heat transfer when mixing and heating, with every constant given.",
+  "icon": "thermometer",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "specific-heat", "title": "Specific heat capacity", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "latent-heat", "title": "Latent heat", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "temperature-scales", "title": "Temperature scales", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "mixing-heat", "title": "Mixing & heat transfer", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "calculus",
+  "title": "Calculus Basics",
+  "description": "Differentiate and integrate polynomials: gradients, tangents, stationary points and areas under curves.",
+  "icon": "chart-spline",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "derivatives", "title": "Derivatives", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "tangents", "title": "Gradients & tangents", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "stationary", "title": "Stationary points", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "integration", "title": "Integration", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "exponents-logs",
+  "title": "Exponents & Logarithms",
+  "description": "Index laws, negative and fractional powers, logarithms, exponential equations, and growth and decay.",
+  "icon": "superscript",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "index-laws", "title": "Index laws", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "logarithms", "title": "Logarithms", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "solving", "title": "Solving equations", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "growth-decay", "title": "Growth & decay", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -194,7 +194,7 @@ The engine samples rows with the seeded rng and shuffles choices.
 ### Answer checking
 
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
-- text: trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
+- text: `−` read as `-`, trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
 - choice: exact match of the chosen string.
 
 ### Multi-part questions (`answerType: "multi"`)
@@ -268,7 +268,7 @@ Scores per module/subtopic/difficulty are derived from attempts. On import, `cre
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Intervals & Scales, Chords, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**
@@ -485,7 +485,9 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Medical domain:** general facts and standard calculations only. No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
 - **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
 - **Collision:** touching never counts as overlapping. **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
-- Open choices for these are in ticket 012.
+- **Timelines:** a fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
+- **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.
+- Open choices for these are in tickets 012–014.
 
 ## Adding a module
 

@@ -1,0 +1,15 @@
+{
+  "id": "timelines",
+  "title": "Timelines",
+  "description": "Years between events across BC and AD, centuries and decades, putting events in order, and famous dates.",
+  "icon": "calendar-clock",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "years-between", "title": "Years between", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "centuries", "title": "Centuries & decades", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "ordering", "title": "Ordering", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "spans", "title": "Before, after & spans", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "famous-dates", "title": "Famous dates (recall)", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

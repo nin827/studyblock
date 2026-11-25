@@ -1,0 +1,15 @@
+{
+  "id": "sql-queries",
+  "title": "SQL Queries",
+  "description": "Read small tables and work out what SELECT, WHERE, ORDER BY, aggregates, GROUP BY and JOIN queries return.",
+  "icon": "database",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "select-where", "title": "SELECT and WHERE", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "order-limit", "title": "ORDER BY and LIMIT", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "aggregates", "title": "Aggregates", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "group-join", "title": "GROUP BY and JOIN", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -124,7 +124,7 @@ function genValues(difficulty, rng) {
     return {
       prompt: `In 4/4 time, with a quarter note as one beat, how many beats do ${listNotes(names)} last altogether?${DEC}`,
       answer: total, answerType: 'number', tolerance: 0,
-      explanation: `Change each note into beats, then add:\n\n${lines}\n\nTotal: ${names.map((x) => num(VALUES[x])).join(' + ')} = **${num(total)}** beats.`,
+      explanation: `Change each note into beats, then add:\n\n${lines}\n\nTotal: ${names.map((x) => num(VALUES[x])).join(' + ')} = **${num(total)}** ${total === 1 ? 'beat' : 'beats'}.`,
       hints: [
         `Change each note into beats: ${valueTable}.${names.some((x) => x.startsWith('dotted')) ? ` ${dotRule}` : ''}`,
         'Add the beats together.',
@@ -142,7 +142,7 @@ function genValues(difficulty, rng) {
       { id: 'sixteenths', label: 'Sixteenths', ask: 'How many sixteenth notes would last as long as the whole rhythm?', answerType: 'number', answer: six, tolerance: 0,
         hint: 'A sixteenth note is a quarter of a beat, so there are four sixteenths in every beat.' },
     ],
-    explanation: `**Beats:**\n\n${lines}\n\nTotal: ${names.map((x) => num(VALUES[x])).join(' + ')} = **${num(total)}** beats.\n\n**Sixteenths:** there are 4 sixteenths in a beat, so ${num(total)} × 4 = **${six}**.`,
+    explanation: `**Beats:**\n\n${lines}\n\nTotal: ${names.map((x) => num(VALUES[x])).join(' + ')} = **${num(total)}** ${total === 1 ? 'beat' : 'beats'}.\n\n**Sixteenths:** there are 4 sixteenths in a beat, so ${num(total)} × 4 = **${six}**.`,
     hints: ['Work out the total beats first; the second part follows from it.'],
     params: { multi: true, parts: { beats: { kind: 'sum-beats', names }, sixteenths: { kind: 'sum-ticks', names } } },
   };
@@ -259,7 +259,7 @@ function genMeters(difficulty, rng) {
         { id: 'count', label: `${unit[0].toUpperCase()}${unit.slice(1)} notes`, ask: `How many ${plural(unit, 2)} fill one bar?`, answerType: 'number', answer: m[0], tolerance: 0,
           hint: `The bottom number ${m[1]} stands for ${aNote(unit)}. The top number counts them.` },
       ],
-      explanation: `**Type:** ${why} So it is **${info.cat}**.\n\n**${unit} notes:** the bottom number ${m[1]} means ${aNote(unit)} and the top number counts them: **${m[0]}** per bar.`,
+      explanation: `**Type:** ${why} So it is **${info.cat}**.\n\n**${unit[0].toUpperCase()}${unit.slice(1)} notes:** the bottom number ${m[1]} means ${aNote(unit)} and the top number counts them: **${m[0]}** per bar.`,
       hints: ['Read the two numbers separately: the bottom one names a note value, the top one counts them.'],
       params: { multi: true, parts: { type: { kind: 'classify', sig: sig(m) }, count: { kind: 'count-in-bar', sig: sig(m), unit } } },
     };
@@ -351,7 +351,7 @@ function genBars(difficulty, rng) {
           { id: 'left', label: 'Beats left over', ask: `How many quarter-note beats are left over after those bars?${DEC}`, answerType: 'number', answer: left, tolerance: 0,
             hint: 'Take the beats used by the complete bars away from the total.' },
         ],
-        explanation: `${steps}\n- \`_total / _bar\` → ${num(bars)}, so **${full}** complete bars\n- \`_total - ${full} * _bar\` → **${num(left)}** beats left over`,
+        explanation: `${steps}\n- \`_total / _bar\` → ${num(bars)}, so **${full}** complete bars\n- \`_total - ${full} * _bar\` → **${num(left)}** ${left === 1 ? 'beat' : 'beats'} left over`,
         given,
         hints: [barHint],
         params: { multi: true, parts: { bars: { kind: 'full-bars', sig: sig(m), notes: [[a, na], [b, nb]] }, left: { kind: 'leftover', sig: sig(m), notes: [[a, na], [b, nb]] } } },
@@ -375,7 +375,7 @@ function genBars(difficulty, rng) {
     return {
       prompt: `A bar of ${sig(m)} already has ${listNotes(names)}. How many ${unitWord} are still needed to complete the bar?${inEighths ? '' : DEC}`,
       answer: ans, answerType: 'number', tolerance: 0,
-      explanation: `${barHint}\n\nUsed so far: ${names.map((x) => num(VALUES[x])).join(' + ')} = ${num(used)} beats.\n\nLeft: ${num(bar)} − ${num(used)} = ${num(left)} beats${inEighths ? `, which is ${num(left)} × 2 = **${num(ans)}** eighth notes` : `, so **${num(ans)}**`}.`,
+      explanation: `${barHint}\n\nUsed so far: ${names.map((x) => num(VALUES[x])).join(' + ')} = ${num(used)} ${used === 1 ? 'beat' : 'beats'}.\n\nLeft: ${num(bar)} − ${num(used)} = ${num(left)} ${left === 1 ? 'beat' : 'beats'}${inEighths ? `, which is ${num(left)} × 2 = **${num(ans)}** ${ans === 1 ? 'eighth note' : 'eighth notes'}` : `, so **${num(ans)}**`}.`,
       hints: [
         barHint,
         `Add up the notes already in the bar, in quarter-note beats.${names.some((x) => x.startsWith('dotted')) ? ` ${dotRule}` : ''}`,
@@ -435,7 +435,7 @@ function genTempo(difficulty, rng) {
     return {
       prompt: `At ${bpm} BPM, how many beats are played in ${secs} seconds?`,
       answer: beats, answerType: 'number', tolerance: 0,
-      explanation: `${bpm} beats per minute is ${num(bpm / 60)} beats per second.\n\n- \`_bpm * _seconds / 60\` → **${beats}** beats`,
+      explanation: `${bpm} beats per minute is ${num(bpm / 60)} ${bpm === 60 ? 'beat' : 'beats'} per second.\n\n- \`_bpm * _seconds / 60\` → **${beats}** beats`,
       given: [{ label: '_bpm', value: bpm }, { label: '_seconds', value: secs }],
       hints: [`${bpm} beats take 60 seconds. How many beats is that per second?`, `Multiply by the ${secs} seconds.`],
       params: { check: { kind: 'beats-in', bpm, secs } },

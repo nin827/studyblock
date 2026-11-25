@@ -172,7 +172,7 @@ function genSimplify(difficulty, rng) {
   const d = b * k;
   const format = difficulty === "hard" ? "mixed" : "fraction";
   const prompt =
-    difficulty === "hard" ? `Write \`${n}/${d}\` as a mixed number in simplest form.` : `Simplify \`${n}/${d}\`.`;
+    difficulty === "hard" ? `Write \`${n}/${d}\` as a mixed number.` : `Simplify \`${n}/${d}\`.`;
   const steps = [simplifyStep(n, d)];
   if (format === "mixed") steps.push(mixedStep(a, b));
   const base = { prompt, tolerance: 0, explanation: steps.join("\n\n"), params: { kind: "simplify", values: { n, d }, format } };

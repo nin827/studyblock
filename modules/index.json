@@ -4,7 +4,7 @@
       "id": "math",
       "title": "Math",
       "icon": "sigma",
-      "description": "Arithmetic, algebra, fractions, geometry, statistics, ratios, sequences and trigonometry.",
+      "description": "Arithmetic, algebra, fractions, geometry, statistics, probability, trigonometry, logarithms, number theory and calculus.",
       "modules": [
         "arithmetic",
         "algebra",
@@ -14,14 +14,18 @@
         "ratios-percentages",
         "sequences",
         "probability",
-        "trigonometry"
+        "trigonometry",
+        "coordinate-geometry",
+        "exponents-logs",
+        "number-theory",
+        "calculus"
       ]
     },
     {
       "id": "science",
       "title": "Science",
       "icon": "flask-conical",
-      "description": "Physics, forces and energy, chemistry, waves and units.",
+      "description": "Physics, forces, energy, heat, gases, radioactivity, astronomy, chemistry, waves and units.",
       "modules": [
         "kinematics",
         "forces-energy",
@@ -29,14 +33,18 @@
         "unit-conversion",
         "elements",
         "chemistry",
-        "waves"
+        "waves",
+        "thermal-physics",
+        "gases-pressure",
+        "radioactivity",
+        "astronomy"
       ]
     },
     {
       "id": "computing",
       "title": "Computing",
       "icon": "cpu",
-      "description": "Number bases, logic, writing and reviewing code, and how computers work.",
+      "description": "Number bases, logic, code, algorithms, networks, data, SQL and cryptography.",
       "modules": [
         "number-bases",
         "boolean-logic",
@@ -44,40 +52,46 @@
         "code-writing",
         "code-reviewing",
         "algorithms",
-        "networking"
+        "networking",
+        "data-representation",
+        "sql-queries",
+        "cryptography"
       ]
     },
     {
       "id": "geography",
       "title": "Geography",
       "icon": "globe",
-      "description": "Countries, capitals, continents and the physical world.",
+      "description": "Countries, capitals, continents, the physical world and map skills.",
       "modules": [
         "capitals",
         "continents",
-        "physical-geography"
+        "physical-geography",
+        "map-skills"
       ]
     },
     {
       "id": "history",
       "title": "History",
       "icon": "landmark",
-      "description": "Key events, dates and inventions.",
+      "description": "Key events, dates, inventions and timelines.",
       "modules": [
         "world-history",
-        "inventions"
+        "inventions",
+        "timelines"
       ]
     },
     {
       "id": "business",
       "title": "Business",
       "icon": "briefcase",
-      "description": "Percentages, interest, finance, accounting and real-world cases.",
+      "description": "Percentages, interest, finance, accounting, economics and real-world cases.",
       "modules": [
         "business-math",
         "business-case",
         "accounting-terms",
-        "finance"
+        "finance",
+        "economics"
       ]
     },
     {
@@ -95,11 +109,13 @@
       "id": "game-dev",
       "title": "Game Dev",
       "icon": "gamepad-2",
-      "description": "The maths behind games: vectors and movement, collisions, and drop rates.",
+      "description": "The maths behind games: vectors, collisions, drop rates, pixels and colour, and balancing.",
       "modules": [
         "vectors-movement",
         "collision",
-        "game-probability"
+        "game-probability",
+        "pixels-colour",
+        "balancing"
       ]
     },
     {

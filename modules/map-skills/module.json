@@ -1,0 +1,14 @@
+{
+  "id": "map-skills",
+  "title": "Map Skills",
+  "description": "Map scales and real distances, 4- and 6-figure grid references, three-figure bearings and time zones.",
+  "icon": "compass",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "scale-distance", "title": "Scale & distance", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "grid-references", "title": "Grid references", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "bearings", "title": "Bearings", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "time-zones", "title": "Time zones", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

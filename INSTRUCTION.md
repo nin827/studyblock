@@ -108,7 +108,7 @@ On phones the menu sits at the bottom of the screen.
 1. From a module page, choose a subtopic and difficulty and press **Start**. To practise a whole subject, use the **All topics** row or the **All** column: questions come from every topic and/or difficulty (10 per quiz for the hand-written subjects), and History labels them "All topics" / "All difficulties".
 2. Answer each question:
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
-   - **Text answers:** capital letters and extra spaces don't matter, including spaces around `:` and `,` (so `2,4` matches `2, 4`).
+   - **Text answers:** capital letters and extra spaces don't matter, including spaces around `:` and `,` (so `2,4` matches `2, 4`). A typed `−` counts the same as `-`.
    - **Multiple choice:** tap an option, or press keys **1–9**.
    - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
    - **Ratios:** type them like `3:4`.
@@ -139,10 +139,25 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 
 ### Subject notes
 
+- **Calculus Basics:** derivatives, integrals and tangent lines are multiple choice, written like `6x² − 4x + 1`, `x⁻²` and `x^(1/2)`, with `+ C` on indefinite integrals. Hard answers are rounded to 2 decimal places; an area counts every part as positive.
+- **Exponents & Logarithms:** exact answers are a whole number or a simplest fraction like `3/2` (improper, never mixed). In the calculator `log` is base 10 and `ln` is base e; for another base use `log(x) / log(b)`.
+- **Number Theory:** whole numbers or choices, no calculator. `p^k` means p to the power k; *a mod n* is the remainder from 0 to n − 1; a 12-hour clock shows 1–12 and a 24-hour clock 0–23.
+- **Coordinate Geometry:** type gradients and intercepts as a whole number or a simplest fraction like `-3/4`. Points, surds like `3√5` and line equations are picked from a list.
 - **Probability:** probabilities are fractions in simplest form, like `3/8`. Counting answers are whole numbers; expected values are rounded to 2 decimal places (a loss is negative).
 - **Forces & Energy:** SI units throughout. Medium and hard questions may state values in g, km/h, minutes, kJ, km, kN or ms, so convert first; a calculator label like `_m_g` or `_t_min` shows the unit of the given value. Head-on collision velocities can be negative.
+- **Thermal Physics, Gases & Pressure:** every constant is given in the question. Convert to kg, J, m², Pa and s first; gas-law temperatures go in kelvin (K = °C + 273).
+- **Radioactivity:** nuclides are written mass number on top, atomic number below (²³⁸₉₂U) and picked from a list. Subtract the background count before halving.
+- **Astronomy:** every constant and planet value is given. Very large answers ask for A × 10ⁿ: type just A. Orbits use T² = a³ with T in years and a in AU.
+- **Data Representation:** each size question says whether KB means 1000 or KiB 1024; files are uncompressed. Run-length encoding is count then character, like `3W2B1W`.
+- **SQL Queries:** work out by hand what the query returns from the small table shown. No calculator.
+- **Cryptography Basics:** Caesar shifts go forward and wrap from Z to A; Vigenère uses A = 0; mod answers run from 0 to n − 1.
 - **Algorithms:** lists are written like `[4, 9, 2, 7]`, with indexes starting at 0. Whole lists are picked from options; counts, values and indexes are whole numbers. Each question states the exact version of the algorithm it uses.
 - **Networking:** type addresses in dotted decimal with no leading zeros, like `192.168.1.0`. A binary octet needs all 8 bits (`00101101`); a prefix length is just the number (`26` for /26). Each data question says whether its prefixes mean 1000 (MB, Mbps) or 1024 (MiB, GiB); link speeds always use 1000.
+- **Economics:** every formula is stated; price elasticity is given as a positive number. Countries are fictional.
+- **Map Skills:** grid references are digits with no spaces, easting first (`343176`). Bearings can be `045` or `45`. Times are 24-hour `HH:MM` with two digits each (`07:05`); time zones use the fixed UTC offsets given, with no daylight saving.
+- **Timelines:** there is no year 0, so 44 BC to AD 79 is 122 years. Centuries are a number (`15` for the 15th century) and decades their first year (`1960`). Only *Famous dates (recall)* needs memorised years; every other topic gives them.
+- **Pixels & Colour:** type hex with the `#` (`#1A2B3C`) and single bytes as two digits (`0F`); either case counts. Ratios like `16:9`, channel lists like `12, 200, 7`; sprite frames, columns and rows count from 0.
+- **Balancing & Progression:** every formula and rounding rule is stated in the question.
 - **Game Dev:** vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). In Collision, touching never counts as overlapping, and tiles are counted from (0, 0) at the top-left. Game Probability percentages are typed without `%`, to 2 decimal places.
 - **Music Theory:** written notation only, no audio. Notes, intervals, keys and chords are multiple choice, so you never type ♯ or ♭; counts are whole numbers. Rhythm treats a quarter note as one beat unless told otherwise (in 6/8, a dotted quarter).
 - **Biology:** Genetics, Cells & Microscopy and Ecology build fresh crosses, micrographs and field data every time. Genotypes and ratios are picked from a list, in the order the question names; probabilities are typed as a percentage or a simplest-form fraction, as asked. Sizes use µm and nm; a magnification is a plain number (`400` for ×400).
@@ -159,7 +174,7 @@ Some Business Case questions ask for more than one thing about the same scenario
 
 ### The calculator
 
-Every subject has a calculator during quizzes, except those where working it out by hand is the point: Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Intervals & Scales, Chords and the three Language subjects. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
+Every subject has a calculator during quizzes, except those where working it out by hand is the point: Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords and the three Language subjects. On a computer it sits beside the question. On a phone, tap **Calculator** in the bar at the bottom.
 
 It works like a tiny spreadsheet. Each row has a **name**, a **calculation** and a live **result**:
 

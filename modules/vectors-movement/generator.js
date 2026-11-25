@@ -534,7 +534,7 @@ function genMovement(d, rng) {
       hints: [
         "Keep a small table of v and p. Each step: update v first, then use that new v to move p.",
         step1,
-        `Repeat for steps 2 to ${n} (in the calculator: a row \`_v1 = _v0 + _a * _dt\`, then \`_p1 = _p0 + _v1 * _dt\`, and so on).${THEN}`,
+        `${n === 2 ? "Repeat for step 2" : `Repeat for steps 2 to ${n}`} (in the calculator: a row \`_v1 = _v0 + _a * _dt\`, then \`_p1 = _p0 + _v1 * _dt\`, and so on).${THEN}`,
       ],
       given: g,
       params,

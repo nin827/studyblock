@@ -1,0 +1,14 @@
+{
+  "id": "data-representation",
+  "title": "Data Representation",
+  "description": "How computers store images, sound and text, and how compression and storage space work.",
+  "icon": "file-digit",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "images", "title": "Images", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sound", "title": "Sound", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "characters", "title": "Characters", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "compression", "title": "Compression and storage", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

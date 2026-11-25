@@ -1,0 +1,15 @@
+{
+  "id": "number-theory",
+  "title": "Number Theory",
+  "description": "Primes and factors, GCD and LCM, divisibility rules and modular (clock) arithmetic, all worked by hand.",
+  "icon": "hash",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "primes-factors", "title": "Primes & factors", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "gcd-lcm", "title": "GCD & LCM", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "divisibility", "title": "Divisibility", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "modular", "title": "Modular arithmetic", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

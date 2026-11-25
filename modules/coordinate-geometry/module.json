@@ -1,0 +1,14 @@
+{
+  "id": "coordinate-geometry",
+  "title": "Coordinate Geometry",
+  "description": "Points, distances and midpoints, gradients and straight lines, parallel and perpendicular lines, and where lines meet.",
+  "icon": "chart-scatter",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "points-distance", "title": "Points & distance", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "gradient-lines", "title": "Gradient & lines", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "parallel-perpendicular", "title": "Parallel & perpendicular", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "intersections", "title": "Intersections", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

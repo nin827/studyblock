@@ -344,7 +344,7 @@ function genEstimates(difficulty, rng) {
   const expl =
     `Mean per quadrat: \`${sum} ÷ ${k}\` ${resultTxt(mean, 2)}.\n\n${areaLine}` +
     `Field area: \`${L} × ${W}\` = ${area} m², which holds \`${area} ÷ ${qa}\` = ${num(area / qa)} quadrats.\n\n` +
-    `Estimate: \`mean × ${num(area / qa)}\` ${resultTxt(exact, 0)}.`;
+    `Estimate, using the unrounded mean: \`${sum} ÷ ${k} × ${num(area / qa)}\` ${resultTxt(exact, 0)}.`;
   if (difficulty === "hard" && rng.next() < 0.5) {
     return {
       prompt: story,
@@ -371,7 +371,7 @@ function genEstimates(difficulty, rng) {
       prompt: `${story} Estimate the total number of ${plant} in the field.${R0}`,
       explanation: expl,
       hints: [
-        "Find the mean number per quadrat: add up the counts and divide by how many quadrats there are.",
+        "Find the mean number per quadrat: add up the counts and divide by how many quadrats there are. Keep it unrounded.",
         qa === 1
           ? "Each quadrat is 1 m², so the mean is the number per m². Multiply by the field area in m² (in the calculator: `_total / _k * _L * _W`)."
           : "Each quadrat is 0.5 m × 0.5 m. Work out how many quadrats fit in the field (area ÷ quadrat area, both in m²), then multiply by the mean (in the calculator: `_total / _k * _L * _W / _quadrat`).",
@@ -408,7 +408,7 @@ function genGrowth(difficulty, rng) {
       return finish(
         {
           prompt: `A population of ${who} starts at ${P0} and doubles every ${T} years. Assume it keeps doubling at this rate. How big is it after ${n * T} years?`,
-          explanation: `\`${n * T} ÷ ${T}\` = ${n} doublings.\n\n\`${P0} × 2^${n}\` = **${exact}**.`,
+          explanation: `\`${n * T} ÷ ${T}\` = ${n} ${n === 1 ? 'doubling' : 'doublings'}.\n\n\`${P0} × 2^${n}\` = **${exact}**.`,
           hints: [`Work out how many doublings fit into ${n * T} years.`, "Double the starting population that many times (in the calculator: `_P0 * 2^(_years / _T)`)."],
           given: [{ label: "_P0", value: P0 }, { label: "_T", value: T }, { label: "_years", value: n * T }],
           params: { sub: "growth", kind: "double", P0, T, years: n * T },
@@ -425,7 +425,7 @@ function genGrowth(difficulty, rng) {
     return finish(
       {
         prompt: `A population of ${who} has ${P0} individuals at the start of a year. During the year there are ${B} births and ${D} deaths, and no animals arrive or leave. How many are there at the end of the year?`,
-        explanation: `Population change = births − deaths = \`${B} - ${D}\` = ${B - D}.\n\n\`${P0} + ${B - D}\` = **${exact}**.`,
+        explanation: `Population change = births − deaths = \`${B} - ${D}\` = ${B - D}.\n\n\`${P0} ${B - D < 0 ? "-" : "+"} ${Math.abs(B - D)}\` = **${exact}**.`,
         hints: ["Births add to the population and deaths take away from it.", "Start with the first population, add the births and subtract the deaths (in the calculator: `_P0 + _B - _D`)."],
         given: [{ label: "_P0", value: P0 }, { label: "_B", value: B }, { label: "_D", value: D }],
         params: { sub: "growth", kind: "change", P0, B, D },

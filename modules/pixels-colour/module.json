@@ -1,0 +1,14 @@
+{
+  "id": "pixels-colour",
+  "title": "Pixels & Colour",
+  "description": "Hex colours and RGB, alpha blending, resolutions and aspect ratios, and sprite sheets and texture memory.",
+  "icon": "palette",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "hex-rgb", "title": "Hex and RGB", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "blending", "title": "Alpha blending", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "resolution", "title": "Resolution and aspect", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sprites", "title": "Sprite sheets and textures", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -506,11 +506,11 @@ function hintsHexToBin(hex) {
   const out = ["Each hex digit becomes exactly 4 bits, using the place values 8, 4, 2, 1. Convert the digits one at a time."];
   if (hex.length >= 2) {
     const c = hex[0];
-    out.push(`For example, the first digit \`${c}\` is ${parseInt(c, 16)} = ${parseInt(c, 16).toString(2).padStart(4, "0")}. Do the same for the other ${hex.length - 1}.`);
+    out.push(`For example, the first digit \`${c}\` is ${parseInt(c, 16)} = ${parseInt(c, 16).toString(2).padStart(4, "0")}. Do the same for the other ${hex.length - 1 === 1 ? "digit" : `${hex.length - 1} digits`}.`);
   } else {
     out.push("Letters stand for 10–15 (A = 10 … F = 15). Write that value with the place values 8, 4, 2, 1.");
   }
-  out.push(`Join the ${hex.length} groups of 4 bits in order, then drop any zeros at the far left.`);
+  out.push(hex.length === 1 ? "Write the 4 bits, then drop any zeros at the far left." : `Join the ${hex.length} groups of 4 bits in order, then drop any zeros at the far left.`);
   return out;
 }
 

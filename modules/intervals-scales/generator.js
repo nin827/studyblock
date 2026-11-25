@@ -99,7 +99,7 @@ function genNotes(difficulty, rng) {
     const q = {
       prompt: `On a piano keyboard, how many semitones is it from ${fmt(x)} up to the next ${fmt(y)}?`,
       answer: ans, answerType: 'number', tolerance: 0,
-      explanation: `Count every key, black and white, going up from ${fmt(x)}.\n\n${steps.map((s) => `- ${s}`).join('\n')}\n\nSo it is **${ans}** semitones.`,
+      explanation: `Count every key, black and white, going up from ${fmt(x)}.\n\n${steps.map((s) => `- ${s}`).join('\n')}\n\nSo it is **${ans}** ${ans === 1 ? 'semitone' : 'semitones'}.`,
       hints: [
         `Start on ${fmt(x)} and move up one key at a time, black or white. Each move is one semitone.`,
         `Count the white-key letters first: from ${fmt(xWhite)} up to ${fmt(yWhite)}. Most neighbouring letters are a tone (two semitones) apart, but E–F and B–C are only a semitone apart.`,
@@ -241,7 +241,7 @@ function genIntervals(difficulty, rng) {
     const prompt = `How many semitones are in ${art(name)}?`;
     return {
       prompt, answer: size, answerType: 'number', tolerance: 0,
-      explanation: `Build it on C to see it on the keyboard: ${art(name)} above C is ${fmt(noteAbove(note(0), num, quality))}.\n\nCounting keys from C up to ${fmt(noteAbove(note(0), num, quality))} gives **${size}** semitones.`,
+      explanation: `Build it on C to see it on the keyboard: ${art(name)} above C is ${fmt(noteAbove(note(0), num, quality))}.\n\nCounting keys from C up to ${fmt(noteAbove(note(0), num, quality))} gives **${size}** ${size === 1 ? 'semitone' : 'semitones'}.`,
       hints: [
         `Build the interval on C, where most notes are white keys. In C major the ${ordinal(num === 8 ? 8 : num)} note is ${num === 8 ? 'C again' : LETTERS[num - 1]}, and every interval from C to a note of C major is major or perfect.`,
         quality === 'minor' ? 'A minor interval is one semitone smaller than the major one.' : quality === 'major' || quality === 'perfect' ? 'Count the keys from C up to that note, black and white.' : `An augmented interval is one semitone larger than the major or perfect one; a diminished one is one smaller than minor or perfect.`,

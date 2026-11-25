@@ -39,6 +39,28 @@ const givenFrom = (values, skip = []) =>
 
 const WHO = ["A cyclist", "A runner", "A car", "A train", "A skateboarder", "A delivery drone", "A sprinter", "A bus"];
 
+// Rough real-world limits per subject: [top speed m/s, largest |acceleration| m/s²].
+const LIMITS = {
+  "A cyclist": [20, 3], "A runner": [10, 4], "A car": [50, 8], "A train": [90, 2],
+  "A skateboarder": [15, 3], "A delivery drone": [40, 10], "A sprinter": [12, 8], "A bus": [30, 2],
+  "A racing car": [90, 12], "A rocket": [3000, 40],
+};
+// Used only when no subject in WHO fits the numbers.
+const FALLBACK = ["A racing car", "A rocket"];
+
+// Keep the drawn subject when the numbers suit it; otherwise the next subject in WHO that does,
+// else a racing car or rocket, else a neutral "An object" (so a "runner" never does 200 m/s). No rng calls: the numbers drawn
+// for each seed are unchanged, only the wording.
+function realistic(prompt, who, speeds, accels) {
+  const vMax = Math.max(0, ...speeds.filter(Number.isFinite).map(Math.abs));
+  const aMax = Math.max(0, ...accels.filter(Number.isFinite).map(Math.abs));
+  const fits = (w) => vMax <= LIMITS[w][0] && aMax <= LIMITS[w][1];
+  const i = WHO.indexOf(who);
+  const order = [...WHO.map((_, k) => WHO[(i + k) % WHO.length]), ...FALLBACK];
+  const pick = order.find(fits) || "An object";
+  return pick === who ? prompt : pick + prompt.slice(who.length);
+}
+
 // Final line of an explanation: "= **15 m/s**" or "≈ 14.2857 m/s, which rounds to **14.29 m/s**".
 function result(exact, rounded, unit) {
   const shown = fmtAns(exact, rounded);
@@ -144,6 +166,7 @@ function genSpeed(difficulty, rng) {
     ];
   }
 
+  prompt = realistic(prompt, who, [unknown === "v" ? exact : v], []);
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,
@@ -247,6 +270,12 @@ function genAccel(difficulty, rng) {
     ];
   }
 
+  prompt = realistic(
+    prompt,
+    who,
+    [unknown === "u" ? exact : u, unknown === "v" ? exact : v],
+    [unknown === "a" ? exact : a]
+  );
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,
@@ -394,6 +423,12 @@ function genMotion(difficulty, rng) {
     ];
   }
 
+  {
+    const U = unknown === "u" ? exact : u;
+    const A = unknown === "a" ? exact : a;
+    const V = unknown === "v" ? exact : v !== undefined ? v : U + A * t;
+    prompt = realistic(prompt, who, [U, V], [A]);
+  }
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,

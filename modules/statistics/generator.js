@@ -162,7 +162,7 @@ function genCentral(difficulty, rng) {
   if (kind === "mean") {
     exact = sum(data) / N;
     prompt = `${intro} What is the mean?${end}`;
-    explanation = `Mean = sum ÷ count.\n\nSum: \`${list(data).replace(/, /g, " + ").replace(/\+ -/g, "- ")} = ${sum(data)}\`.\n\n\`${sum(data)} / ${N}\` ${result(exact, rounded)}`;
+    explanation = `Mean = sum ÷ count.\n\nSum: \`${list(shown).replace(/, /g, " + ").replace(/\+ -/g, "- ")} = ${sum(data)}\`.\n\n\`${sum(data)} / ${N}\` ${result(exact, rounded)}`;
     candidates = [medianOf(s), sum(data) / (N - 1), sum(data) / (N + 1), sum(data)];
     hints = [
       `Mean = sum of the values ÷ how many there are. There are ${N} values.`,
@@ -418,7 +418,7 @@ function genProbability(difficulty, rng) {
       t1 = 6;
       f2 = k2;
       t2 = 6;
-      story = `Two fair six-sided dice are rolled. What is the probability that the first shows ${k1} or more and the second shows ${k2} or less?`;
+      story = `Two fair six-sided dice are rolled. What is the probability that the first shows ${k1} or more and the second shows ${k2 === 1 ? "a 1" : `${k2} or less`}?`;
       gv = [["_k1", k1], ["_k2", k2]];
       if (f1 === 6 || f2 === 6) return genProbability(difficulty, rng); // avoid a certain event
     }

@@ -899,6 +899,9 @@ function roundWords(rounded) {
   return rounded ? " Round to 2 decimal places." : "";
 }
 
+// "an 8 Mbps link", "an 11 Mbps link", but "a 100 Mbps link".
+const an = (n) => (/^(8|(11|18)(\d{3})?(\.\d+)?$)/.test(String(n)) ? "an" : "a");
+
 function genTransfer(difficulty, rng) {
   checkDifficulty(difficulty);
   const what = rng.pick(FILES);
@@ -911,7 +914,7 @@ function genTransfer(difficulty, rng) {
       do { T = rng.int(2, 90); } while ((R * T) % 8 !== 0);
       const S = (R * T) / 8;
       return dtFinish({
-        prompt: `How many seconds does it take to send ${what} of **${S} MB** over a **${R} Mbps** link? ${notes(["MB", "Mbps"])} The answer is a whole number.`,
+        prompt: `How many seconds does it take to send ${what} of **${S} MB** over ${an(R)} **${R} Mbps** link? ${notes(["MB", "Mbps"])} The answer is a whole number.`,
         explanation: `Convert the size to megabits, then divide by the speed.\n\n- ${S} MB × 8 = ${S * 8} Mb\n- ${S * 8} Mb ÷ ${R} Mbps = **${T} s**`,
         hints: [
           "Speeds are in bits per second but the size is in bytes. Multiply the size by 8 to get megabits.",
@@ -964,7 +967,7 @@ function genTransfer(difficulty, rng) {
       const unit = inMin ? "minutes" : "seconds";
       const calc = `_size * ${SIZE_C[su]} * 8 / (_rate * ${RATE_C[ru]})${inMin ? " / 60" : ""}`;
       return dtFinish({
-        prompt: `How long does it take to download ${what} of **${num(S)} ${su}** over a **${num(R)} ${ru}** connection, in **${unit}**? ${notes([su, ru])}${roundWords(true)}`,
+        prompt: `How long does it take to download ${what} of **${num(S)} ${su}** over ${an(R)} **${num(R)} ${ru}** connection, in **${unit}**? ${notes([su, ru])}${roundWords(true)}`,
         explanation: `Turn both into bits, then divide.\n\n- Size: ${num(S)} × ${commas(SIZE_F[su])} × 8 = ${commas(bits)} bits\n- Speed: ${num(R)} × ${commas(RATE_F[ru])} = ${commas(R * RATE_F[ru])} bits/s\n- Time: ${commas(bits)} ÷ ${commas(R * RATE_F[ru])} = ${num(secs)} s${inMin ? `\n- In minutes: ${num(secs)} ÷ 60 ≈ ${num(exact)}` : ""}\n\nRounded: **${round2(exact).toFixed(2)} ${unit}**`,
         hints: [
           `Size in bits: ${num(S)} × ${commas(SIZE_F[su])} × 8. Speed in bits per second: ${num(R)} × ${commas(RATE_F[ru])}.`,
@@ -1037,7 +1040,7 @@ function genTransfer(difficulty, rng) {
 
   if (kind === "multi") {
     return {
-      prompt: `You send ${what} of **${S} ${su}** over a **${num(R)} ${ru}** link.${effText} ${notes([su, ru])}`,
+      prompt: `You send ${what} of **${S} ${su}** over ${an(R)} **${num(R)} ${ru}** link.${effText} ${notes([su, ru])}`,
       answerType: "multi",
       parts: [
         { id: "bits", label: "Size in bits", ask: "How many bits is the file? Type the whole number.", answerType: "number", answer: bits, tolerance: 0,
@@ -1052,7 +1055,7 @@ function genTransfer(difficulty, rng) {
   }
 
   return dtFinish({
-    prompt: `How long does it take to send ${what} of **${S} ${su}** over a **${num(R)} ${ru}** link, in **${unit}**?${effText} ${notes([su, ru])}${roundWords(true)}`,
+    prompt: `How long does it take to send ${what} of **${S} ${su}** over ${an(R)} **${num(R)} ${ru}** link, in **${unit}**?${effText} ${notes([su, ru])}${roundWords(true)}`,
     explanation: `Work in bits and bits per second.\n\n${steps}\n\nRounded: **${round2(exact).toFixed(2)} ${unit}**`,
     hints: [
       `Size in bits: ${S} × ${commas(SIZE_F[su])} × 8. Watch out: ${su} uses 1024s, but the link speed uses 1000s.`,
@@ -1131,7 +1134,18 @@ export function generate({ subtopic, difficulty, rng }) {
   if (subtopic === "ip-binary") return genIpBinary(difficulty, rng);
   if (subtopic === "masks-cidr") return genMasks(difficulty, rng);
   if (subtopic === "network-broadcast") return genNetBroadcast(difficulty, rng);
-  if (subtopic === "data-transfer") return genTransfer(difficulty, rng);
+  if (subtopic === "data-transfer") {
+    // A few draws put a 2-decimal answer exactly on a half (25 Mbps × 331 s ÷ 8 = 1034.375 MB),
+    // so two answers would round correctly and verify() rejects it. Redraw from the same rng:
+    // well-posed seeds give exactly the same question as before.
+    let q;
+    for (let t = 0; t < 10; t++) {
+      q = genTransfer(difficulty, rng);
+      const own = q.answerType === "multi" ? Object.fromEntries(q.parts.map((p) => [p.id, p.answer])) : q.answer;
+      if (verify(q, own) === true) return q;
+    }
+    return q;
+  }
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
 

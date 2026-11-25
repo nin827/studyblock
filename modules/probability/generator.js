@@ -878,7 +878,7 @@ function genCounting(difficulty, rng) {
       const g = rng.pick(GROUPS);
       values = { n, r };
       exact = nCr(n, r);
-      prompt = `A ${g} of ${n} people chooses ${r} of them to go to a meeting. The order doesn't matter. How many different groups of ${r} are possible?${WHOLE}`;
+      prompt = `${/^[aeiou]/.test(g) ? "An" : "A"} ${g} of ${n} people chooses ${r} of them to go to a meeting. The order doesn't matter. How many different groups of ${r} are possible?${WHOLE}`;
       explanation = `Order doesn't matter, so use combinations.\n\n\`${n}C${r} = (${prodStr(n, r)}) ÷ (${prodStr(r, r)}) = ${nPr(n, r)} ÷ ${fact(r)} = ${exact}\`, so the answer is **${exact}**.`;
       hints = [`If order mattered, there would be \`${prodStr(n, r)}\` ways. But here the same ${r} people in a different order are the same group.`, `Each group of ${r} was counted ${r}! = ${prodStr(r, r)} times, so divide: \`(${prodStr(n, r)}) ÷ (${prodStr(r, r)})\`.`];
       cands = [nPr(n, r), n * r, n ** r < 1e9 ? n ** r : nPr(n, r) * 2, nCr(n, r - 1)];
@@ -952,7 +952,7 @@ function genCounting(difficulty, rng) {
       const inc = nCr(n - 1, r - 1);
       const second = rng.pick(["with", "without"]);
       const ans2 = second === "with" ? inc : all - inc;
-      const prompt2 = `A ${g} of ${n} people, including ${name}, picks a team of ${r}. The order doesn't matter. Give whole numbers.`;
+      const prompt2 = `${/^[aeiou]/.test(g) ? "An" : "A"} ${g} of ${n} people, including ${name}, picks a team of ${r}. The order doesn't matter. Give whole numbers.`;
       const parts = [
         {
           id: "teams", label: "All teams", ask: `How many different teams of ${r} are possible?`, answerType: "number", answer: all, tolerance: 0,

@@ -162,6 +162,8 @@ const asind = (x) => Math.asin(x) / DEG;
 // Wave equation: v = f × λ. Values are stored in SI units; `scale` converts the answer unit to SI.
 
 const EASY_WAVES = ["a wave", "a wave on a long rope", "a transverse wave", "a longitudinal wave", "a wave on a slinky spring", "a water wave"];
+// Rough top speeds (m/s) for the everyday waves above.
+const WAVE_MAX_SPEED = { "a wave on a long rope": 40, "a wave on a slinky spring": 10, "a water wave": 10 };
 
 function genWaveEquation(d, rng) {
   checkDifficulty(d);
@@ -172,7 +174,9 @@ function genWaveEquation(d, rng) {
     const f = rng.int(2, 50);
     const lam = rng.int(1, 20);
     const v = f * lam;
-    const what = rng.pick(EASY_WAVES);
+    const drawn = rng.pick(EASY_WAVES);
+    // Ropes, slinkies and water waves are slow; faster values keep the wording neutral (no rng call).
+    const what = v > (WAVE_MAX_SPEED[drawn] ?? Infinity) ? "a wave" : drawn;
     o = { dp: 6, rounded: false };
     scale = 1;
     if (unknown === "v") {
@@ -413,7 +417,7 @@ function genPeriod(d, rng) {
       scale = 1e-3;
       kind = "T";
       values = { f };
-      prompt = `A sound has a frequency of ${f} Hz. What is its period, in milliseconds (ms)?${EXACT}`;
+      prompt = `A vibration has a frequency of ${f} Hz. What is its period, in milliseconds (ms)?${EXACT}`;
       intro = "Use `T = 1 / f` to get seconds, then multiply by 1000 for milliseconds.";
       lines = [given("_f", f, "Hz"), step("_T", "1 / _f", `${num(1 / f)} s`), step("_T_ms", "_T * 1000", final(exact, o, unit))];
       candidates = [1 / f, f / 1000, 100 / f, 10000 / f];
@@ -447,7 +451,7 @@ function genPeriod(d, rng) {
       kind = "scope";
       if (!isClean(exact, 4)) return null;
       values = { div, X };
-      prompt = `On an oscilloscope set to ${num(X)} ms per division, one complete wave spans ${num(div)} divisions. What is the frequency of the signal, in Hz?${EXACT}`;
+      prompt = `On an oscilloscope set to ${num(X)} ms per division, one complete wave spans ${num(div)} ${div === 1 ? "division" : "divisions"}. What is the frequency of the signal, in Hz?${EXACT}`;
       intro = "The period is divisions × time per division. Convert it to seconds, then use `f = 1 / T`.";
       lines = [given("_div", div), given("_X", X, "ms per division"), step("_T", "_div * _X / 1000", `${num(Tms / 1000)} s`), step("_f", "1 / _T", final(exact, o, unit))];
       candidates = [1 / Tms, Tms, 1000 / X, 1000 * div / X];
@@ -541,7 +545,7 @@ function genRefraction(d, rng) {
       exact = 3 / v;
       unit = "";
       values = { v };
-      prompt = `Light travels at ${num(v)} × 10⁸ m/s in a transparent plastic. What is the plastic's refractive index? Use the fact that ${C_NOTE}. The refractive index has no unit.${roundNote(2)}`;
+      prompt = `Light travels at ${num(v)} × 10⁸ m/s in a transparent material. What is the material's refractive index? Use the fact that ${C_NOTE}. The refractive index has no unit.${roundNote(2)}`;
       intro = "Refractive index = speed of light in vacuum ÷ speed in the material: `n = c / v`. The 10⁸ cancels.";
       lines = [given("_c_light", 3, "× 10⁸ m/s"), given("_v", v, "× 10⁸ m/s"), step("_n", "_c_light / _v", final(exact, o, unit))];
       candidates = [v / 3, 3 * v, 3 - v, 1 / v];

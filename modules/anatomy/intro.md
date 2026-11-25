@@ -1,6 +1,6 @@
 # Anatomy
 
-For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.
+*For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.*
 
 The basic map of the human body, as taught in introductory courses: the major bones, what the main organs do, which body system each part belongs to, and how blood travels around the body.
 

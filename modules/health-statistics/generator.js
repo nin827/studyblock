@@ -586,10 +586,10 @@ function genRisk(difficulty, rng) {
 const MEASUREMENTS = [
   { what: "resting heart rates", unit: "beats per minute", who: "volunteers", lo: 52, hi: 96 },
   { what: "heights", unit: "cm", who: "adults in a survey", lo: 152, hi: 194 },
-  { what: "daily step counts, in thousands of steps", unit: "thousand steps", who: "participants in a walking study", lo: 3, hi: 16 },
+  { what: "daily step counts (in thousands)", unit: "thousand steps", who: "participants in a walking study", lo: 3, hi: 16 },
   { what: "minutes of exercise on one day", unit: "minutes", who: "students", lo: 0, hi: 90 },
   { what: "reaction times", unit: "milliseconds", who: "volunteers in a lab test", lo: 180, hi: 340 },
-  { what: "hours of sleep on one night, to the nearest hour", unit: "hours", who: "survey respondents", lo: 4, hi: 10 },
+  { what: "hours of sleep on one night (to the nearest hour)", unit: "hours", who: "survey respondents", lo: 4, hi: 10 },
 ];
 
 const sorted = (arr) => arr.slice().sort((x, y) => x - y);
@@ -626,7 +626,7 @@ function genAverages(difficulty, rng) {
     }
     const s = sorted(data);
     const shown = easy ? s : data;
-    const intro = `The ${m.what} of ${n} ${m.who} were${easy ? " (already in order)" : ""}: ${list(shown)} (${m.unit}).`;
+    const intro = `For ${n} ${m.who}, the ${m.what} were${easy ? " (already in order)" : ""}: ${list(shown)} (${m.unit}).`;
     const meanV = sum(data) / n, medV = medianOf(s), rangeV = s[n - 1] - s[0];
     const sortStep = easy ? "" : `Sort the values: ${list(s)}.\n\n`;
     const medianExpl = n % 2

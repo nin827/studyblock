@@ -230,7 +230,7 @@ const pretty = (f) => f.replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[d
 function massNote(formulas) {
   const els = [];
   for (const f of formulas) for (const el of elementsOf(f)) if (!els.includes(el)) els.push(el);
-  return `the atomic masses ${els.map((el) => `${el} = ${A[el]}`).join(", ")}`;
+  return `the atomic mass${els.length === 1 ? "" : "es"} ${els.map((el) => `${el} = ${A[el]}`).join(", ")}`;
 }
 
 // Calculator expression for a molar mass: "2*1 + 32 + 4*16".
@@ -797,8 +797,8 @@ function genBalancing(d, rng) {
     `Count the **${el}** atoms (${EL_NAME[el]}). The missing species ${pretty(terms[miss].f)} has ${k} ${el} atom${k === 1 ? "" : "s"}, ` +
     `so \`? × ${k}\` plus the other ${el} atoms on its side must equal the ${el} atoms on the other side.`;
   const lines = [
-    step(`_${el}_other`, exprFor(other, null), `${otherTotal} atoms on the other side`),
-    step(`_${el}_same`, exprFor(same, terms[miss]), `${sameKnown} atoms already on the same side`),
+    step(`_${el}_other`, exprFor(other, null), `${otherTotal} atom${otherTotal === 1 ? "" : "s"} on the other side`),
+    step(`_${el}_same`, exprFor(same, terms[miss]), `${sameKnown} atom${sameKnown === 1 ? "" : "s"} already on the same side`),
     step("_x", `(_${el}_other - _${el}_same) / ${k}`, `**${x}**`),
   ];
   // Final check: atom totals per element with the coefficient filled in.
@@ -1055,7 +1055,6 @@ function genComposition(d, rng) {
   const sr = simplestRatio(data);
   if (!sr || !order.every((el) => sr.counts[el] === ce[el] && Math.abs(sr.ratio[el] * sr.k - ce[el]) < 0.05)) return null;
 
-  const unitWord = useMass ? "g" : "% (treat as grams in 100 g)";
   const lines = [];
   const dl = (el) => `${useMass ? "_g_" : "_pct_"}${el}`;
   order.forEach((el) => lines.push(given(dl(el), data[el], useMass ? "g" : "%")));
@@ -1063,8 +1062,8 @@ function genComposition(d, rng) {
   const minEl = order.reduce((a, b) => (data[a] / A[a] <= data[b] / A[b] ? a : b));
   order.forEach((el) => lines.push(step(`_r_${el}`, `_n_${el} / _n_${minEl}`, num4(sr.ratio[el]))));
   const intro =
-    `Divide each ${useMass ? "mass" : "percentage"} by its atomic mass to get moles (${unitWord}), then divide by the smallest number of moles. ` +
-    (sr.k > 1 ? `The ratios are not all whole numbers, so multiply them all by ${sr.k}.` : "The ratios are already whole numbers.");
+    `Divide each ${useMass ? "mass" : "percentage"} by its atomic mass to get moles${useMass ? "" : " (treat each percentage as grams in a 100 g sample)"}, then divide by the smallest number of moles. ` +
+    (sr.k > 1 ? `The ratios are not all whole numbers, so multiply them all by ${sr.k}.` : "The ratios are already whole numbers (allowing for rounding in the data).");
   const outro = `Simplest whole-number ratio ${order.map((el) => `${el} ${ce[el]}`).join(" : ")}, so the empirical formula is ${formulaOf(order, ce)}.`;
   const askEl = rng.pick(order);
   const base = {

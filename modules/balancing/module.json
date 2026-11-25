@@ -1,0 +1,14 @@
+{
+  "id": "balancing",
+  "title": "Balancing & Progression",
+  "description": "XP curves, damage and armour formulas, stat scaling and bonus stacking, and in-game economies.",
+  "icon": "swords",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "xp-curves", "title": "XP curves", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "damage", "title": "Damage and armour", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "scaling", "title": "Stat scaling", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "economy", "title": "Game economy", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}
