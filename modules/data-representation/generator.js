@@ -990,6 +990,7 @@ function stateWhole(q) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return stateWhole(genExpert(subtopic, rng));
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "images") return stateWhole(genImages(difficulty, rng));
   if (subtopic === "sound") return stateWhole(genSound(difficulty, rng));
@@ -1004,12 +1005,553 @@ export function verify(question, answer) {
   if (!p || !p.kind) return false;
   if (answer === "" || answer === null || answer === undefined) return false;
   try {
+    if (p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
     if (p.kind.startsWith("i-")) return verifyImages(question, answer);
     if (p.kind.startsWith("s-")) return verifySound(question, answer);
     if (p.kind.startsWith("ch-")) return verifyCharacters(question, answer);
     if (p.kind.startsWith("r-")) return verifyCompression(question, answer);
   } catch {
     return false;
+  }
+  return false;
+}
+
+// =============================================================================================
+// Expert. A separate branch: generate() dispatches here before its difficulty check, so
+// easy/medium/hard draws are unchanged. Hints use only values already drawn. Params kinds start
+// with "x-"; verifyExpert checks with unit factors from unit names, residual and inequality
+// checks, TextEncoder / TextDecoder for UTF-8, and an exhaustive search for Huffman costs.
+
+const xv = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+const xnum = (answer, id) => {
+  const v = xv(answer, id);
+  return v === "" || v === null || v === undefined ? NaN : Number(v);
+};
+const tidy = (x) => commas(Math.round(x * 100) / 100);
+
+// ---- images / expert ----
+
+function xPalette(rng) {
+  for (;;) {
+    let N;
+    do N = rng.int(5, 256); while ((N & (N - 1)) === 0 && rng.next() < 0.8);
+    const b = Math.ceil(Math.log2(N));
+    const w = rng.int(8, 120) * 8;
+    const h = rng.int(40, 900);
+    const pix = (w * h * b) / 8;
+    const pal = N * 3;
+    const idx = pix + pal;
+    const tru = w * h * 3;
+    const saving = ((tru - idx) / tru) * 100;
+    if (nearTie(saving) || saving <= 0) continue;
+    return {
+      prompt: `A **${w} × ${h}** pixel image uses only **${N} different colours**. As true colour it would use 24 bits (3 bytes) per pixel. Instead it is saved as an **indexed** image: each pixel stores a palette number using the fewest bits that can count all ${N} colours, plus a palette table of ${N} entries × 3 bytes. No other header.`,
+      answerType: "multi",
+      parts: [
+        { id: "bpp", label: "Bits per pixel", ask: "How many bits does each pixel's palette number use?", answerType: "number", answer: b, tolerance: 0,
+          hint: `Find the smallest b with 2^b ≥ ${N}.` },
+        { id: "size", label: "Indexed size", ask: "Total size of the indexed image in bytes, palette included.", answerType: "number", answer: idx, tolerance: 0,
+          hint: "Pixel data = width × height × b ÷ 8 bytes; add the palette, 3 bytes per colour." },
+        { id: "saving", label: "Saving", ask: "By what percentage is that smaller than the true-colour image? Round to 2 decimal places.", answerType: "number", answer: round2(saving), tolerance: 0.005,
+          hint: "Percentage saved = (true-colour size − indexed size) ÷ true-colour size × 100." },
+      ],
+      explanation: `- Bits per pixel: 2^${b - 1} = ${2 ** (b - 1)} < ${N} ≤ 2^${b} = ${2 ** b}, so **${b}**.\n- Pixel data: ${w} × ${h} × ${b} ÷ 8 = ${commas(pix)} bytes; palette: ${N} × 3 = ${pal} bytes; total **${commas(idx)}** bytes.\n- True colour: ${w} × ${h} × 3 = ${commas(tru)} bytes.\n- Saving: (${commas(tru)} − ${commas(idx)}) ÷ ${commas(tru)} × 100 ≈ **${round2(saving).toFixed(2)}%**.`,
+      given: [{ label: "_w", value: w }, { label: "_h", value: h }, { label: "_colours", value: N }],
+      params: { kind: "x-palette", w, h, N },
+      hints: [
+        `The palette numbers run from 0 to ${N - 1}, so they need enough bits for ${N} values.`,
+        "Indexed size = pixel data + palette. True-colour size = width × height × 3 bytes.",
+        "Calculator, after adding a row `_b` for the bits: `_w * _h * _b / 8 + _colours * 3`.",
+      ],
+    };
+  }
+}
+
+function xVideo(rng) {
+  for (;;) {
+    const [w, h] = rng.pick(PHOTO_DIMS);
+    const fps = rng.pick([24, 25, 30, 50, 60]);
+    const t = rng.int(5, 120);
+    const frame = (w * h * 24) / 8 / 1e6;
+    const rate = (w * h * 24 * fps) / 1e6;
+    const total = (w * h * 3 * fps * t) / 1e9;
+    if ([frame, rate, total].some(nearTie)) continue;
+    return {
+      prompt: `An uncompressed video is **${w} × ${h}** pixels, **24-bit** colour, at **${fps} frames per second**, and lasts **${t} seconds**. No audio and no header. ${notes(["MB", "GB"])} 1 Mbps = 1,000,000 bits per second.`,
+      answerType: "multi",
+      parts: [
+        { id: "frame", label: "One frame", ask: "Size of one frame in MB. Round to 2 decimal places.", answerType: "number", answer: round2(frame), tolerance: 0.005,
+          hint: "One frame is one image: width × height × 24 bits, then ÷ 8 for bytes and ÷ 1,000,000 for MB." },
+        { id: "rate", label: "Data rate", ask: "Data rate needed to play it, in Mbps. Round to 2 decimal places.", answerType: "number", answer: round2(rate), tolerance: 0.005,
+          hint: "Bits per frame × frames per second, then ÷ 1,000,000." },
+        { id: "total", label: "Whole clip", ask: "Size of the whole clip in GB. Round to 2 decimal places.", answerType: "number", answer: round2(total), tolerance: 0.005,
+          hint: `Bytes per frame × ${fps} × ${t}, then ÷ 1,000,000,000.` },
+      ],
+      explanation: `- One frame: ${w} × ${h} × 24 = ${commas(w * h * 24)} bits = ${commas(w * h * 3)} bytes ≈ **${round2(frame).toFixed(2)} MB**\n- Data rate: ${commas(w * h * 24)} × ${fps} = ${commas(w * h * 24 * fps)} bits/s ≈ **${round2(rate).toFixed(2)} Mbps**\n- Whole clip: ${commas(w * h * 3)} × ${fps} × ${t} = ${commas(w * h * 3 * fps * t)} bytes ≈ **${round2(total).toFixed(2)} GB**`,
+      given: [{ label: "_w", value: w }, { label: "_h", value: h }, { label: "_fps", value: fps }, { label: "_t", value: t }],
+      params: { kind: "x-video", w, h, fps, t },
+      hints: [
+        "A video is a sequence of images: work out one frame first, exactly like an image.",
+        "Data rate is bits per second: bits in one frame × frames per second.",
+        "Calculator: `_w * _h * 3 * _fps * _t / 1e9` gives the whole clip in GB.",
+      ],
+    };
+  }
+}
+
+const ASPECTS = [[16, 9], [4, 3], [3, 2], [1, 1], [21, 9], [5, 4]];
+
+function xDimsBack(rng) {
+  const [a, b] = rng.pick(ASPECTS);
+  const k = rng.int(8, 160) * (a === 1 ? 4 : 1);
+  const d = rng.pick([8, 16, 24, 32]);
+  const w = a * k, h = b * k;
+  const bytes = (w * h * d) / 8;
+  if (!Number.isInteger(bytes)) return xDimsBack(rng);
+  return {
+    prompt: `An uncompressed image with no header has an aspect ratio of exactly **${a}:${b}** (width : height) and **${d}-bit** colour. Its file is exactly **${commas(bytes)} bytes**. 1 byte = 8 bits.`,
+    answerType: "multi",
+    parts: [
+      { id: "w", label: "Width", ask: "Width in pixels", answerType: "number", answer: w, tolerance: 0,
+        hint: `Write width = ${a}k and height = ${b}k; then ${a}k × ${b}k = pixels, so k² = pixels ÷ ${a * b}.` },
+      { id: "h", label: "Height", ask: "Height in pixels", answerType: "number", answer: h, tolerance: 0,
+        hint: `Once you have k, the height is ${b}k.` },
+    ],
+    explanation: `- Pixels: ${commas(bytes)} × 8 ÷ ${d} = ${commas(w * h)}\n- With width ${a}k and height ${b}k: ${a * b}k² = ${commas(w * h)}, so k² = ${commas(k * k)} and k = ${k}\n- Width = ${a} × ${k} = **${w}**, height = ${b} × ${k} = **${h}**`,
+    given: [{ label: "_bytes", value: bytes }, { label: "_depth", value: d }, { label: "_a", value: a }, { label: "_b", value: b }],
+    params: { kind: "x-dims", a, b, d, bytes },
+    hints: [
+      "Work backwards: bytes → bits → number of pixels (bits ÷ colour depth).",
+      `The ratio ${a}:${b} means width = ${a}k and height = ${b}k for some whole number k.`,
+      "Calculator: `sqrt(_bytes * 8 / _depth / (_a * _b))` gives k.",
+    ],
+  };
+}
+
+// ---- sound / expert ----
+
+function xSoundBack(rng) {
+  const r = rng.pick(S_RATES);
+  const d = rng.pick([8, 16, 24]);
+  const c = rng.int(1, 2);
+  const t = rng.int(2, 90);
+  const bytes = (r * d * c * t) / 8;
+  if (!Number.isInteger(bytes)) return xSoundBack(rng);
+  return {
+    prompt: `A ${chText(c)} recording at **${d}-bit** lasts **${t} seconds** and takes exactly **${commas(bytes)} bytes** (${S_NOTE.toLowerCase().replace(/\.$/, "")}). 1 byte = 8 bits. A sample rate can capture sounds up to **half** its value (the Nyquist limit).`,
+    answerType: "multi",
+    parts: [
+      { id: "rate", label: "Sample rate", ask: "What is the sample rate, in Hz (samples per second)?", answerType: "number", answer: r, tolerance: 0,
+        hint: "Size in bits = rate × depth × channels × seconds. Rearrange for the rate." },
+      { id: "nyq", label: "Highest frequency", ask: "What is the highest frequency it can capture, in Hz?", answerType: "number", answer: r / 2, tolerance: 0,
+        hint: "Halve the sample rate." },
+    ],
+    explanation: `- Bits: ${commas(bytes)} × 8 = ${commas(bytes * 8)}\n- Rate = bits ÷ (depth × channels × seconds) = ${commas(bytes * 8)} ÷ (${d} × ${c} × ${t}) = **${commas(r)} Hz**\n- Highest frequency: ${commas(r)} ÷ 2 = **${commas(r / 2)} Hz**`,
+    given: [{ label: "_bytes", value: bytes }, { label: "_depth", value: d }, { label: "_ch", value: c }, { label: "_t", value: t }],
+    params: { kind: "x-soundback", d, c, t, bytes },
+    hints: [
+      "Turn the size into bits first.",
+      `Every second holds rate × ${d} × ${c} bits, so divide the bits by ${d} × ${c} × ${t}. Calculator: \`_bytes * 8 / (_depth * _ch * _t)\`.`,
+    ],
+  };
+}
+
+function xSoundFit(rng) {
+  for (;;) {
+    const r = rng.pick([22050, 44100, 48000, 96000]);
+    const d = rng.pick([16, 24]);
+    const c = rng.int(1, 2);
+    const cap = rng.pick([1, 2, 4, 8, 16]);
+    const kb = rng.pick([96, 128, 160, 192, 256, 320]);
+    const perMin = (r * d * c * 60) / 8;
+    const mp3PerMin = (kb * 1000 * 60) / 8;
+    const raw = Math.floor((cap * 1e9) / perMin);
+    const mp3 = Math.floor((cap * 1e9) / mp3PerMin);
+    if (raw < 1 || Number.isInteger((cap * 1e9) / perMin) || Number.isInteger((cap * 1e9) / mp3PerMin)) continue;
+    return {
+      prompt: `A recorder saves ${chText(c)} audio at **${commas(r)} Hz** and **${d}-bit**, uncompressed. Its card holds **${cap} GB** (1 GB = 1,000,000,000 bytes; 1 byte = 8 bits). It can instead save compressed audio at **${kb} kbps** (1 kbps = 1,000 bits per second).`,
+      answerType: "multi",
+      parts: [
+        { id: "raw", label: "Uncompressed", ask: "How many whole minutes of uncompressed audio fit on the card?", answerType: "number", answer: raw, tolerance: 0,
+          hint: "One minute uses rate × depth × channels × 60 bits. Divide the card's bits by that and round down." },
+        { id: "mp3", label: "Compressed", ask: `How many whole minutes fit at ${kb} kbps?`, answerType: "number", answer: mp3, tolerance: 0,
+          hint: `At ${kb} kbps one minute uses ${kb} × 1,000 × 60 bits. Divide and round down.` },
+      ],
+      explanation: `- One minute uncompressed: ${commas(r)} × ${d} × ${c} × 60 = ${commas(perMin * 8)} bits = ${commas(perMin)} bytes\n- Card: ${commas(cap * 1e9)} bytes ÷ ${commas(perMin)} ≈ ${num((cap * 1e9) / perMin)} → **${commas(raw)}** whole minutes\n- One minute at ${kb} kbps: ${commas(mp3PerMin)} bytes, so ${commas(cap * 1e9)} ÷ ${commas(mp3PerMin)} ≈ ${num((cap * 1e9) / mp3PerMin)} → **${commas(mp3)}** whole minutes`,
+      given: [{ label: "_rate", value: r }, { label: "_depth", value: d }, { label: "_ch", value: c }, { label: "_card", value: cap }, { label: "_kbps", value: kb }],
+      params: { kind: "x-soundfit", r, d, c, cap, kb },
+      hints: [
+        "Work out how many bytes one minute takes in each format, then divide the card size by it.",
+        "Round **down**: a part minute doesn't count as a whole minute.",
+        "Calculator: `floor(_card * 1e9 * 8 / (_rate * _depth * _ch * 60))` for the uncompressed part.",
+      ],
+    };
+  }
+}
+
+const FREQS = [4, 5, 7.5, 8, 10, 11, 12, 15, 16, 20, 22, 24, 30];
+
+function xSoundChoose(rng) {
+  for (;;) {
+    const F = rng.pick(FREQS);
+    const pi = S_RATES.findIndex((x) => x >= 2 * F * 1000);
+    if (pi < 0) continue;
+    const d = rng.pick([16, 24]);
+    const c = rng.int(1, 2);
+    const t = rng.int(10, 600);
+    const mb = (S_RATES[pi] * d * c * t) / 8 / 1e6;
+    if (nearTie(mb)) continue;
+    const lo = Math.max(0, Math.min(pi - 1, S_RATES.length - 4));
+    const opts = S_RATES.slice(lo, lo + 4).map((x) => `${commas(x)} Hz`);
+    return {
+      prompt: `A recording must capture sounds up to **${F} kHz**. A sample rate can capture frequencies up to **half** its value (the Nyquist limit). The recorder offers: ${opts.join(", ")}. It records ${chText(c)} at **${d}-bit** for **${durFull(t)}**, uncompressed with no header. Take 1 MB = 1,000,000 bytes and 1 byte = 8 bits.`,
+      answerType: "multi",
+      parts: [
+        { id: "rate", label: "Sample rate", ask: "Which is the lowest offered rate that is enough?", answerType: "choice", answer: `${commas(S_RATES[pi])} Hz`, choices: opts,
+          hint: `You need a rate of at least 2 × ${F} kHz. Equal to that is enough.` },
+        { id: "size", label: "File size", ask: "How big is the recording at that rate, in MB? Round to 2 decimal places.", answerType: "number", answer: round2(mb), tolerance: 0.005,
+          hint: "Size in bits = rate × depth × channels × seconds; then ÷ 8 and ÷ 1,000,000." },
+      ],
+      explanation: `- Needed: at least 2 × ${F} kHz = ${commas(2 * F * 1000)} Hz. The lowest offered rate that reaches it is **${commas(S_RATES[pi])} Hz**${pi > lo ? ` (${commas(S_RATES[pi - 1])} Hz only reaches ${commas(S_RATES[pi - 1] / 2)} Hz)` : ""}.\n- Size: ${commas(S_RATES[pi])} × ${d} × ${c} × ${t} = ${commas(S_RATES[pi] * d * c * t)} bits = ${commas((S_RATES[pi] * d * c * t) / 8)} bytes ≈ **${round2(mb).toFixed(2)} MB**`,
+      given: [{ label: "_depth", value: d }, { label: "_ch", value: c }, { label: "_t", value: t }],
+      params: { kind: "x-soundchoose", F, d, c, t, opts },
+      hints: [
+        `Double the highest frequency: the rate must be at least 2 × ${F} kHz.`,
+        "Pick the smallest offered rate that is not below that.",
+        "Then the usual size formula. Calculator: add a row `_rate` and use `_rate * _depth * _ch * _t / 8 / 1e6`.",
+      ],
+    };
+  }
+}
+
+// ---- characters / expert ----
+
+const hx2 = (n) => n.toString(16).toUpperCase().padStart(2, "0");
+
+// Generation-side UTF-8 encoder from the bit layout.
+function utf8Bytes(cp) {
+  if (cp <= 0x7f) return [cp];
+  if (cp <= 0x7ff) return [0xc0 | (cp >> 6), 0x80 | (cp & 63)];
+  if (cp <= 0xffff) return [0xe0 | (cp >> 12), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63)];
+  return [0xf0 | (cp >> 18), 0x80 | ((cp >> 12) & 63), 0x80 | ((cp >> 6) & 63), 0x80 | (cp & 63)];
+}
+const UTF8_LAYOUT = "UTF-8 layouts: 2 bytes `110xxxxx 10xxxxxx` (11 bits, up to U+07FF), 3 bytes `1110xxxx 10xxxxxx 10xxxxxx` (16 bits, up to U+FFFF), 4 bytes `11110xxx 10xxxxxx 10xxxxxx 10xxxxxx` (21 bits). The code point's bits fill the x's from the right.";
+
+function randomCp(rng) {
+  const n = rng.pick([2, 2, 3, 3, 4]);
+  if (n === 2) return rng.int(0x80, 0x7ff);
+  if (n === 3) {
+    let cp;
+    do cp = rng.int(0x800, 0xffff); while (cp >= 0xd800 && cp <= 0xdfff);
+    return cp;
+  }
+  return rng.int(0x10000, 0x10ffff);
+}
+
+function layoutLines(cp, bytes) {
+  const n = bytes.length;
+  const bitsN = [0, 7, 11, 16, 21][n];
+  const bits = cp.toString(2).padStart(bitsN, "0");
+  return `${U_HEX(cp)} = ${cp} needs ${n} bytes. Its ${bitsN} bits are \`${bits}\`.\n\nFilled into the layout: ${bytes.map((x) => `\`${x.toString(2).padStart(8, "0")}\``).join(" ")} = ${bytes.map(hx2).join(" ")} in hex.`;
+}
+
+function xUtf8Enc(rng) {
+  const cp = randomCp(rng);
+  const bytes = utf8Bytes(cp);
+  return {
+    prompt: `Encode the code point **${U_HEX(cp)}** in UTF-8. ${UTF8_LAYOUT}`,
+    answerType: "multi",
+    parts: [
+      { id: "n", label: "Bytes", ask: "How many bytes does it take?", answerType: "number", answer: bytes.length, tolerance: 0,
+        hint: "Compare the code point with U+007F, U+07FF and U+FFFF." },
+      { id: "first", label: "First byte", ask: "The first byte, as 2 hex digits (like `C3`).", answerType: "text", answer: hx2(bytes[0]),
+        hint: "Write the code point in binary, padded to the layout's number of bits. The first byte is the prefix (110, 1110 or 11110) followed by the leftmost bits." },
+      { id: "last", label: "Last byte", ask: "The last byte, as 2 hex digits.", answerType: "text", answer: hx2(bytes[bytes.length - 1]),
+        hint: "The last byte is `10` followed by the code point's lowest 6 bits." },
+    ],
+    explanation: layoutLines(cp, bytes),
+    params: { kind: "x-utf8enc", cp },
+    hints: [
+      `First decide the length: ${U_HEX(cp)} compared with U+007F, U+07FF and U+FFFF.`,
+      "Write the hex code point in binary (4 bits per hex digit), then pad with zeros on the left to 11, 16 or 21 bits.",
+      "Fill the x's from the right: the last 6 bits go in the last byte, the 6 before that in the byte before, and so on.",
+    ],
+  };
+}
+
+function xUtf8Dec(rng) {
+  const cp = randomCp(rng);
+  const bytes = utf8Bytes(cp);
+  const hexs = bytes.map(hx2).join(" ");
+  return {
+    prompt: `These bytes (in hex) are **one** character in UTF-8: \`${hexs}\`. ${UTF8_LAYOUT}`,
+    answerType: "multi",
+    parts: [
+      { id: "n", label: "Length", ask: "How many bytes does the first byte say the character uses?", answerType: "number", answer: bytes.length, tolerance: 0,
+        hint: "Count the 1s at the start of the first byte before the first 0." },
+      { id: "cp", label: "Code point", ask: "What is the code point in decimal?", answerType: "number", answer: cp, tolerance: 0,
+        hint: "Remove the prefix bits from every byte, join the x bits, and read that binary number." },
+    ],
+    explanation: `In binary: ${bytes.map((x) => `\`${x.toString(2).padStart(8, "0")}\``).join(" ")}. The first byte starts with ${bytes.length} ones, so it is a **${bytes.length}**-byte character.\n\nStripping the prefixes leaves \`${cp.toString(2).padStart([0, 7, 11, 16, 21][bytes.length], "0")}\` = ${U_HEX(cp)} = **${commas(cp)}**.`,
+    params: { kind: "x-utf8dec", hexs },
+    hints: [
+      "Write each byte as 8 bits (each hex digit is 4 bits).",
+      "The first byte's leading 1s give the length; every other byte starts with 10.",
+      "Join the remaining bits in order and convert that binary number to decimal.",
+    ],
+  };
+}
+
+function xUtf16(rng) {
+  for (;;) {
+    const parts = [];
+    const nSp = rng.int(2, 3);
+    for (let i = 0; i < nSp; i++) parts.push(rng.pick(SPECIAL).ch);
+    if (!parts.some((ch) => ch.codePointAt(0) > 0xffff)) parts[rng.int(0, nSp - 1)] = rng.pick(SPECIAL.filter((x) => x.cp > 0xffff)).ch;
+    const word = rng.pick(WORDS).toLowerCase();
+    const s = rng.next() < 0.5 ? `${word} ${parts.join("")}` : `${parts.join(" ")} ${word}`;
+    const cps = cpsOf(s);
+    const u8 = cps.reduce((t, cp) => t + utf8Len(cp), 0);
+    const u16 = cps.reduce((t, cp) => t + (cp > 0xffff ? 4 : 2), 0);
+    return {
+      prompt: `Look at the text \`${s}\` (spaces count). ${cpList(s)}; every other character is plain ASCII. ${UTF8_RULE} UTF-16 uses 2 bytes for code points up to U+FFFF and 4 bytes (a surrogate pair) above that. Ignore any byte-order mark.`,
+      answerType: "multi",
+      parts: [
+        { id: "u8", label: "UTF-8", ask: "How many bytes in UTF-8?", answerType: "number", answer: u8, tolerance: 0,
+          hint: "ASCII characters are 1 byte each in UTF-8; give each other character its size from the ranges." },
+        { id: "u16", label: "UTF-16", ask: "How many bytes in UTF-16?", answerType: "number", answer: u16, tolerance: 0,
+          hint: "In UTF-16 even ASCII takes 2 bytes; only characters above U+FFFF take 4." },
+      ],
+      explanation: `Character by character (UTF-8 / UTF-16 bytes):\n\n${Array.from(s).map((ch) => { const cp = ch.codePointAt(0); return `- \`${ch === " " ? "space" : ch}\`: ${utf8Len(cp)} / ${cp > 0xffff ? 4 : 2}`; }).join("\n")}\n\n**UTF-8:** **${u8}** bytes. **UTF-16:** **${u16}** bytes.`,
+      params: { kind: "x-utf16", s },
+      hints: [
+        `There are ${cps.length} characters (code points). Make a list and give each one its size in both encodings.`,
+        "UTF-8 favours ASCII (1 byte); UTF-16 uses 2 bytes for every character up to U+FFFF.",
+      ],
+    };
+  }
+}
+
+// ---- compression / expert ----
+
+function huffmanCost(freqs) {
+  // Generation side: repeatedly merge the two smallest weights; the cost is the sum of merges.
+  const w = freqs.slice();
+  let cost = 0;
+  const merges = [];
+  while (w.length > 1) {
+    w.sort((a, b) => a - b);
+    const a = w.shift(), b = w.shift();
+    cost += a + b;
+    merges.push(`${a} + ${b} = ${a + b}`);
+    w.push(a + b);
+  }
+  return { cost, merges };
+}
+
+function xHuffman(rng) {
+  for (;;) {
+    const k = rng.int(4, 6);
+    const syms = rng.shuffle(["A", "B", "C", "D", "E", "F", "G", "R", "S", "T"]).slice(0, k).sort();
+    const freqs = syms.map(() => rng.int(1, 30));
+    const total = freqs.reduce((s, x) => s + x, 0);
+    const fixedBits = Math.ceil(Math.log2(k));
+    const fixed = total * fixedBits;
+    const { cost, merges } = huffmanCost(freqs);
+    if (cost >= fixed) continue;
+    return {
+      prompt: `A message of ${total} characters uses these characters this many times: ${syms.map((s, i) => `**${s}** × ${freqs[i]}`).join(", ")}. Huffman coding builds a code by repeatedly joining the two smallest counts; frequent characters get short codes.`,
+      answerType: "multi",
+      parts: [
+        { id: "fixed", label: "Fixed length", ask: `With a fixed-length code (the fewest bits that give each of the ${k} characters its own code), how many bits is the message?`, answerType: "number", answer: fixed, tolerance: 0,
+          hint: `Find the smallest b with 2^b ≥ ${k}; every character then costs b bits.` },
+        { id: "huff", label: "Huffman", ask: "With a Huffman code, how many bits is the message?", answerType: "number", answer: cost, tolerance: 0,
+          hint: "Shortcut: the total Huffman bits equal the sum of every merged count you create while building the tree." },
+      ],
+      explanation: `- Fixed length: ${k} characters need ${fixedBits} bits each (2^${fixedBits} = ${2 ** fixedBits} ≥ ${k}), so ${total} × ${fixedBits} = **${fixed}** bits.\n- Huffman: join the two smallest counts each time: ${merges.join("; ")}. Each merge adds one bit to every character beneath it, so the total is the sum of the merged counts: **${cost}** bits.`,
+      given: [{ label: "_total", value: total }],
+      params: { kind: "x-huffman", freqs, k },
+      hints: [
+        "Fixed length first: every character uses the same number of bits.",
+        "For Huffman, sort the counts, join the two smallest into one new count, and repeat until one count is left.",
+        "Each character's code length is how many joins it went through; or just add up all the joined counts.",
+      ],
+    };
+  }
+}
+
+function xCompressSend(rng) {
+  for (;;) {
+    const S = rng.int(50, 4000);
+    const R = rng.pick([10, 20, 50, 100, 200, 500, 1000]);
+    const ratio = rng.pick([1.5, 2, 2.5, 3, 4, 5, 8]);
+    const cs = rng.int(2, 90);
+    const plain = (S * 8) / R;
+    const comp = cs + (S * 8) / ratio / R;
+    if (nearTie(plain) || nearTie(comp) || Math.abs(plain - comp) < 0.5) continue;
+    const better = comp < plain ? "Compress first" : "Send it as it is";
+    return {
+      prompt: `You need to send a **${S} MB** file over a **${R} Mbps** link. You could first compress it with a ratio of **${ratio}** (original ÷ compressed), which takes **${cs} s** of computing time before sending starts. Ignore decompression and overhead. 1 MB = 1,000,000 bytes, 1 Mbps = 1,000,000 bits per second and 1 byte = 8 bits.`,
+      answerType: "multi",
+      parts: [
+        { id: "plain", label: "As it is", ask: "Seconds to send the file uncompressed. Round to 2 decimal places.", answerType: "number", answer: round2(plain), tolerance: 0.005,
+          hint: `Megabits ÷ Mbps: ${S} × 8 ÷ ${R}.` },
+        { id: "comp", label: "Compressed", ask: "Seconds in total to compress and then send. Round to 2 decimal places.", answerType: "number", answer: round2(comp), tolerance: 0.005,
+          hint: `The compressed file is ${S} ÷ ${ratio} MB. Add the ${cs} s of compressing to its sending time.` },
+        { id: "best", label: "Faster", ask: "Which is faster?", answerType: "choice", answer: better, choices: ["Compress first", "Send it as it is"],
+          hint: "Compare your two totals." },
+      ],
+      explanation: `- Uncompressed: ${S} × 8 ÷ ${R} = **${round2(plain).toFixed(2)} s**\n- Compressed: ${S} ÷ ${ratio} = ${tidy(S / ratio)} MB, sent in ${tidy(S / ratio)} × 8 ÷ ${R} = ${tidy((S * 8) / ratio / R)} s; plus ${cs} s compressing = **${round2(comp).toFixed(2)} s**\n\nSo: **${better}**.`,
+      given: [{ label: "_size", value: S }, { label: "_rate", value: R }, { label: "_ratio", value: ratio }, { label: "_ctime", value: cs }],
+      params: { kind: "x-compsend", S, R, ratio, cs },
+      hints: [
+        "Sending time = size in megabits ÷ speed in Mbps.",
+        "Compression only helps if the time it saves on the link is more than the time spent compressing.",
+        "Calculator: `_ctime + _size / _ratio * 8 / _rate` for the compressed route.",
+      ],
+    };
+  }
+}
+
+const RUN_COL = ["white", "black", "grey", "blue"];
+
+function xRleLong(rng) {
+  for (;;) {
+    const nr = rng.int(3, 5);
+    const runs = [];
+    let prev = -1;
+    for (let i = 0; i < nr; i++) {
+      let c;
+      do c = rng.int(0, 2); while (c === prev);
+      prev = c;
+      const len = rng.next() < 0.3 ? rng.pick([255, 256, 510, 511, 765]) : rng.int(1, 700);
+      runs.push([len, c]);
+    }
+    const width = runs.reduce((s, [n]) => s + n, 0);
+    const pieces = runs.map(([n]) => Math.ceil(n / 255));
+    const enc = pieces.reduce((s, x) => s + x, 0) * 2;
+    const ratio = width / enc;
+    if (!runs.some(([n]) => n > 255) || nearTie(ratio)) continue;
+    return {
+      prompt: `A row of **${width}** pixels (1 byte per pixel uncompressed) is: ${runs.map(([n, c]) => `${n} ${RUN_COL[c]}`).join(", then ")}. It is run-length encoded as pairs of bytes: a count byte, then a colour byte. One count byte can hold at most **255**, so a longer run is split into several pairs.`,
+      answerType: "multi",
+      parts: [
+        { id: "bytes", label: "Encoded size", ask: "How many bytes is the encoded row?", answerType: "number", answer: enc, tolerance: 0,
+          hint: "For each run, work out how many pairs it needs (255 per pair at most); each pair is 2 bytes." },
+        { id: "ratio", label: "Ratio", ask: "Compression ratio (original bytes ÷ encoded bytes). Round to 2 decimal places.", answerType: "number", answer: round2(ratio), tolerance: 0.005,
+          hint: `The original row is ${width} bytes. Divide by your encoded size.` },
+      ],
+      explanation: `${runs.map(([n, c], i) => `- ${n} ${RUN_COL[c]}: ${pieces[i]} pair${pieces[i] === 1 ? "" : "s"}${pieces[i] > 1 ? ` (${Array.from({ length: pieces[i] }, (_, k) => Math.min(255, n - 255 * k)).join(" + ")})` : ""}`).join("\n")}\n\n${pieces.reduce((s, x) => s + x, 0)} pairs × 2 = **${enc}** bytes. Ratio: ${width} ÷ ${enc} ≈ **${round2(ratio).toFixed(2)}**.`,
+      given: [{ label: "_width", value: width }],
+      params: { kind: "x-rlelong", runs },
+      hints: [
+        "A run of 255 fits in one pair, but 256 needs two pairs (255 + 1).",
+        "Pairs for a run = its length ÷ 255, rounded up.",
+        "Add up the pairs, double for bytes, then divide the original size by that.",
+      ],
+    };
+  }
+}
+
+function genExpert(subtopic, rng) {
+  const t = rng.int(0, 2);
+  if (subtopic === "images") return t === 0 ? xPalette(rng) : t === 1 ? xVideo(rng) : xDimsBack(rng);
+  if (subtopic === "sound") return t === 0 ? xSoundBack(rng) : t === 1 ? xSoundFit(rng) : xSoundChoose(rng);
+  if (subtopic === "characters") return t === 0 ? xUtf8Enc(rng) : t === 1 ? xUtf8Dec(rng) : xUtf16(rng);
+  if (subtopic === "compression") return t === 0 ? xHuffman(rng) : t === 1 ? xCompressSend(rng) : xRleLong(rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- expert verification ----
+
+// Minimum Σ f·len over all prefix-code length assignments (Kraft sum ≤ 1), by exhaustive search.
+function vOptimalCode(freqs) {
+  const k = freqs.length;
+  let best = Infinity;
+  const len = new Array(k).fill(1);
+  const rec = (i, kraft) => {
+    if (kraft > 1 + 1e-12) return;
+    if (i === k) { best = Math.min(best, freqs.reduce((s, f, j) => s + f * len[j], 0)); return; }
+    for (let l = 1; l <= k - 1; l++) { len[i] = l; rec(i + 1, kraft + 2 ** -l); }
+  };
+  rec(0, 0);
+  return best;
+}
+
+function verifyExpert(p, q, answer) {
+  if (p.kind === "x-palette") {
+    const b = bitsFor(p.N);
+    const size = p.w * p.h * b / 8 + p.N * 3;
+    const tru = p.w * p.h * 3;
+    return xnum(answer, "bpp") === b && xnum(answer, "size") === size && rounded2Ok(xnum(answer, "saving"), tru / 100, tru - size);
+  }
+  if (p.kind === "x-video") {
+    const bitsFrame = p.w * p.h * 24;
+    return rounded2Ok(xnum(answer, "frame"), unitFactor("MB") * 8, bitsFrame)
+      && rounded2Ok(xnum(answer, "rate"), 1e6, bitsFrame * p.fps)
+      && rounded2Ok(xnum(answer, "total"), unitFactor("GB") * 8, bitsFrame * p.fps * p.t);
+  }
+  if (p.kind === "x-dims") {
+    const w = xnum(answer, "w"), h = xnum(answer, "h");
+    return Number.isInteger(w) && Number.isInteger(h) && w * p.b === h * p.a && w * h * p.d === p.bytes * 8;
+  }
+  if (p.kind === "x-soundback") {
+    const r = xnum(answer, "rate");
+    return Number.isInteger(r) && r * p.d * p.c * p.t === p.bytes * 8 && xnum(answer, "nyq") * 2 === r;
+  }
+  if (p.kind === "x-soundfit") {
+    const card = p.cap * unitFactor("GB") * 8;
+    const fit = (x, perMinBits) => Number.isInteger(x) && x * perMinBits <= card && (x + 1) * perMinBits > card;
+    return fit(xnum(answer, "raw"), p.r * p.d * p.c * 60) && fit(xnum(answer, "mp3"), p.kb * 1000 * 60);
+  }
+  if (p.kind === "x-soundchoose") {
+    const rates = p.opts.map((s) => Number(s.replace(/[^0-9]/g, "")));
+    if (new Set(rates).size !== 4) return false;
+    const ok = rates.filter((r) => r / 2 >= p.F * 1000);
+    if (!ok.length) return false;
+    const r = Math.min(...ok);
+    return String(xv(answer, "rate")) === `${commas(r)} Hz` && rounded2Ok(xnum(answer, "size"), unitFactor("MB") * 8, r * p.d * p.c * p.t);
+  }
+  if (p.kind === "x-utf8enc") {
+    const enc = new TextEncoder().encode(String.fromCodePoint(p.cp));
+    const hex = (x) => x.toString(16).toUpperCase().padStart(2, "0");
+    return xnum(answer, "n") === enc.length && String(xv(answer, "first") ?? "").trim().toUpperCase() === hex(enc[0])
+      && String(xv(answer, "last") ?? "").trim().toUpperCase() === hex(enc[enc.length - 1]);
+  }
+  if (p.kind === "x-utf8dec") {
+    const bytes = p.hexs.split(" ").map((h) => parseInt(h, 16));
+    const s = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+    const cps = Array.from(s);
+    return cps.length === 1 && xnum(answer, "cp") === s.codePointAt(0) && xnum(answer, "n") === bytes.length;
+  }
+  if (p.kind === "x-utf16") {
+    return xnum(answer, "u8") === new TextEncoder().encode(p.s).length && xnum(answer, "u16") === p.s.length * 2;
+  }
+  if (p.kind === "x-huffman") {
+    let b = 0;
+    while (2 ** b < p.k) b++;
+    const total = p.freqs.reduce((s, x) => s + x, 0);
+    return xnum(answer, "fixed") === total * b && xnum(answer, "huff") === vOptimalCode(p.freqs);
+  }
+  if (p.kind === "x-compsend") {
+    const bits = p.S * unitFactor("MB") * 8;
+    const plain = bits / (p.R * 1e6);
+    const comp = p.cs + bits / p.ratio / (p.R * 1e6);
+    return rounded2Ok(xnum(answer, "plain"), 1, plain) && rounded2Ok(xnum(answer, "comp"), 1, comp)
+      && String(xv(answer, "best")) === (comp < plain ? "Compress first" : "Send it as it is");
+  }
+  if (p.kind === "x-rlelong") {
+    // Build the row, then encode it greedily with a 255 cap.
+    let row = "";
+    for (const [n, c] of p.runs) row += String(c).repeat(n);
+    let pairs = 0;
+    for (let i = 0; i < row.length;) {
+      let j = i;
+      while (j < row.length && row[j] === row[i] && j - i < 255) j++;
+      pairs++;
+      i = j;
+    }
+    return xnum(answer, "bytes") === pairs * 2 && rounded2Ok(xnum(answer, "ratio"), pairs * 2, row.length);
   }
   return false;
 }

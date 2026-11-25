@@ -7,8 +7,8 @@
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "exact-values", "title": "Exact values", "difficulties": ["easy"] },
-    { "id": "right-sides", "title": "Right triangles: sides", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "right-angles", "title": "Right triangles: angles", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "non-right", "title": "Sine and cosine rules", "difficulties": ["medium", "hard"] }
+    { "id": "right-sides", "title": "Right triangles: sides", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "right-angles", "title": "Right triangles: angles", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "non-right", "title": "Sine and cosine rules", "difficulties": ["medium", "hard", "expert"] }
   ]
 }

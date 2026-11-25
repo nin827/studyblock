@@ -830,7 +830,598 @@ function genLenses(d, rng) {
 
 const GENERATORS = { "wave-equation": genWaveEquation, period: genPeriod, refraction: genRefraction, lenses: genLenses };
 
+// ---------------------------------------------------------------------------------------------
+// Expert level: a separate branch. generate() sends "expert" here before any other code runs (and
+// before withHints, which is built for single answers), so easy/medium/hard draw exactly the same
+// rng values as before. Expert questions are multi-part, state the rounding on every part, carry
+// their own hints, and keep their inputs in params.v with params.kind "x-…". verify() recomputes the
+// true values a different way (bisection on Snell's law or the lens equation, time per wave instead
+// of waves per second) and compares each part. Hint code never calls rng.
+
+// Round half away from zero to dp decimals; never "-0".
+function xr(n, dp) {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+}
+// Display form for stated values and working: up to 4 decimals.
+const xs = (n) => String(xr(n, 4));
+// True when n sits within 2% of a unit of a rounding tie at dp decimals.
+function xTie(n, dp) {
+  const f = Math.abs(n) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 0.02;
+}
+const xDpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
+
+// A rounded numeric part (accepted within half a unit of the stated precision).
+const xNum = (id, label, ask, exact, dp, hint) => ({
+  id, label, ask: `${ask}, ${xDpWord(dp)}`, answerType: "number", answer: xr(exact, dp), tolerance: 0.5 * 10 ** -dp, hint, _exact: exact, _dp: dp,
+});
+// A choice part.
+const xChoice = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
+
+// Assemble a multi-part question. Returns null (regenerate) on a rounding tie, a zero or
+// non-finite answer, a given value equal to an answer, or NaN/undefined in the text.
+// "a 8 kg" -> "an 8 kg" (eight, eleven, eighteen, eighty... start with a vowel sound).
+function xArticles(text) {
+  return text.replace(/\b([Aa]n?) (\d+)/g, (all, art, digits) => {
+    const vowel = digits[0] === "8" || (digits.length % 3 === 2 && /^1[18]/.test(digits));
+    return `${art[0] === "A" ? (vowel ? "An" : "A") : vowel ? "an" : "a"} ${digits}`;
+  });
+}
+
+function xMulti({ kind, v, prompt, parts, steps, given, hints }) {
+  prompt = xArticles(prompt);
+  const dp = {};
+  const out = [];
+  for (const p of parts) {
+    const { _exact, _dp, ...part } = p;
+    part.id = part.id.toLowerCase(); // ids must match ^[a-z0-9-]+$
+    if (part.answerType === "number") {
+      if (!Number.isFinite(_exact) || part.answer === 0) return null;
+      if (_dp === null ? !Number.isInteger(_exact) : xTie(_exact, _dp)) return null;
+      if (given.some(([, g]) => Math.abs(g - part.answer) < 1e-9)) return null;
+      dp[part.id] = _dp;
+    } else {
+      if (!part.choices.includes(part.answer) || new Set(part.choices).size !== part.choices.length) return null;
+      dp[part.id] = "choice";
+    }
+    out.push(part);
+  }
+  const text = [prompt, ...steps, ...hints, ...out.map((p) => `${p.ask} ${p.hint} ${p.answer}`)].join(" ");
+  if (/NaN|undefined|Infinity/.test(text)) return null;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: out,
+    explanation: steps.join("\n\n"),
+    params: { kind, v, dp },
+    given: given.map(([label, value]) => ({ label, value })),
+    hints,
+  };
+}
+
+// Bisection: a root of f between lo and hi (f must change sign), else NaN.
+function xRoot(f, lo, hi) {
+  let a = lo;
+  let b = hi;
+  let fa = f(a);
+  const fb = f(b);
+  if (fa === 0) return a;
+  if (fb === 0) return b;
+  if (!Number.isFinite(fa) || !Number.isFinite(fb) || Math.sign(fa) === Math.sign(fb)) return NaN;
+  for (let i = 0; i < 200; i++) {
+    const m = (a + b) / 2;
+    const fm = f(m);
+    if (fm === 0) return m;
+    if (Math.sign(fm) === Math.sign(fa)) {
+      a = m;
+      fa = fm;
+    } else b = m;
+  }
+  return (a + b) / 2;
+}
+
+// Check every part against the independently recomputed truth { partId: number | string }.
+function xVerify(question, answer, truthFns) {
+  const p = question.params;
+  const fn = truthFns[p.kind];
+  if (!fn || !p.v || !p.dp) return false;
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  let truth;
+  try {
+    truth = fn(p.v);
+  } catch {
+    return false;
+  }
+  if (truth) truth = Object.fromEntries(Object.entries(truth).map(([k, x]) => [k.toLowerCase(), x]));
+  if (!truth || Object.keys(truth).length !== question.parts.length) return false;
+  for (const part of question.parts) {
+    if (!(part.id in truth)) return false;
+    const want = truth[part.id];
+    const got = answer[part.id];
+    if (typeof want === "string") {
+      const ch = part.choices;
+      if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(got)) || String(got) !== want) return false;
+      continue;
+    }
+    if (got === "" || got === null || got === undefined || typeof got === "boolean" || typeof got === "object") return false;
+    const x = Number(got);
+    if (!Number.isFinite(x) || !Number.isFinite(want)) return false;
+    const dp = p.dp[part.id];
+    if (dp === null) {
+      if (Math.abs(x - want) > 1e-9 * Math.max(1, Math.abs(want))) return false;
+    } else if (typeof dp !== "number" || Math.abs(x - want) > 0.5 * 10 ** -dp + 1e-9) return false;
+  }
+  return true;
+}
+
+// Retry a template until it returns a question (deterministic: only the rng passed in).
+function xTry(make, rng) {
+  for (let i = 0; i < 80; i++) {
+    const q = make(rng);
+    if (q) return q;
+  }
+  throw new Error("Expert: could not generate a question");
+}
+
+const X_UNROUNDED = "Use unrounded values from earlier parts.";
+
+// wave-equation / expert: sonar; speed from f and λ, then a depth from the echo time.
+function xSonar(rng) {
+  const who = rng.pick(["A ship's sonar", "A fishing boat's echo sounder", "A survey vessel", "A submarine's sonar"]);
+  const fk = rng.int(10, 200) / 2; // kHz
+  const v = rng.int(1440, 1540);
+  const lamcm = (v / (fk * 1000)) * 100;
+  const lamShown = xr(lamcm, 2);
+  const vv = fk * 1000 * (lamShown / 100);
+  const t = rng.int(20, 800) / 100;
+  const depth = (vv * t) / 2;
+  return xMulti({
+    kind: "x-sonar",
+    v: { fk, lam: lamShown, t },
+    prompt: `${who} sends out ${xs(fk)} kHz pulses. In seawater their wavelength is ${xs(lamShown)} cm. An echo from the seabed arrives ${xs(t)} s after a pulse is sent. ${X_UNROUNDED}`,
+    parts: [
+      xNum("v", "Speed", "Speed of sound in the seawater, in m/s", vv, 0, "v = f × λ with f in Hz and λ in m."),
+      xNum("depth", "Depth", "Depth of the water, in m", depth, 1, "The echo time covers the trip down and back up."),
+    ],
+    steps: [
+      `Convert: ${xs(fk)} kHz = ${xs(fk * 1000)} Hz and ${xs(lamShown)} cm = ${xs(lamShown / 100)} m.`,
+      `\`_v = _f_kHz * 1000 * _lam_cm / 100\` → ${xs(vv)}, which rounds to **${xr(vv, 0)} m/s**.`,
+      `The pulse travels down and back: \`_v * _t / 2\` → ${xs(depth)}, which rounds to **${xr(depth, 1)} m**.`,
+    ],
+    given: [["_f_kHz", fk], ["_lam_cm", lamShown], ["_t", t]],
+    hints: [
+      "Convert to SI first: kHz × 1000 for Hz, cm ÷ 100 for m. Then use v = f × λ.",
+      "Distance travelled by the pulse = speed × echo time.",
+      "That distance is there and back, so the depth is half of it.",
+    ],
+  });
+}
+
+const X_BOUNDARIES = [
+  ["water waves", "deep water", "shallow water", 5, 40, 0.3, 0.8],
+  ["sound", "air", "water", 3300, 3500, 4.2, 4.5],
+  ["sound", "air", "steel", 3300, 3500, 14, 18],
+  ["a wave on a rope", "a thick rope", "a thin rope", 20, 80, 1.3, 2.5],
+];
+
+// wave-equation / expert: crossing a boundary keeps the frequency; the wavelength changes with speed.
+function xBoundary(rng) {
+  const [what, m1, m2, vlo, vhi, rlo, rhi] = rng.pick(X_BOUNDARIES);
+  const v1 = what === "sound" ? rng.int(vlo, vhi) / 10 : rng.int(vlo, vhi) / 10;
+  const ratio = rng.int(Math.round(rlo * 100), Math.round(rhi * 100)) / 100;
+  const v2 = xr(v1 * ratio, 1);
+  const lam1 = rng.int(5, 300) / 100;
+  const f = v1 / lam1;
+  const lam2 = v2 / f;
+  const D = xr(lam2 * rng.int(15, 60), 0);
+  const n = D / lam2;
+  return xMulti({
+    kind: "x-boundary",
+    v: { v1, lam1, v2, D },
+    prompt: `When ${what} travel${what === "sound" || what === "a wave on a rope" ? "s" : ""} in ${m1}, the speed is ${xs(v1)} m/s and the wavelength is ${xs(lam1)} m. The wave then passes into ${m2}, where its speed is ${xs(v2)} m/s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("f", "Frequency", `Frequency in ${m2}, in Hz`, f, 2, "The frequency is set by the source, so it does not change at a boundary."),
+      xNum("lam2", "New wavelength", `Wavelength in ${m2}, in m`, lam2, 3, "λ = v ÷ f with the new speed and the same frequency."),
+      xNum("n", "Waves", `Number of whole and part wavelengths in ${D} m of ${m2}`, n, 1, "Divide the distance by the new wavelength."),
+    ],
+    steps: [
+      `\`_f = _v1 / _lam1\` → ${xs(f)} Hz, which rounds to **${xr(f, 2)} Hz**. It stays the same in ${m2}.`,
+      `\`_lam2 = _v2 / _f\` → ${xs(lam2)}, which rounds to **${xr(lam2, 3)} m**. (Equivalently λ2 = λ1 × v2 ÷ v1.)`,
+      `\`${D} / _lam2\` → ${xs(n)}, which rounds to **${xr(n, 1)}**.`,
+    ],
+    given: [["_v1", v1], ["_lam1", lam1], ["_v2", v2]],
+    hints: [
+      "At a boundary the speed and wavelength change, but the frequency stays the same.",
+      "Find the frequency from the first medium: f = v ÷ λ.",
+      "Then use the new speed with that same frequency for the new wavelength.",
+    ],
+  });
+}
+
+// wave-equation / expert: an FM station; wavelength, quarter-wave aerial and travel time.
+function xRadio(rng) {
+  const fM = rng.int(880, 1080) / 10;
+  const dkm = rng.int(5, 400);
+  const lam = 3e8 / (fM * 1e6);
+  const quarter = (lam / 4) * 100;
+  const tms = ((dkm * 1000) / 3e8) * 1000;
+  return xMulti({
+    kind: "x-radio",
+    v: { fM, dkm },
+    prompt: `An FM radio station broadcasts at ${xs(fM)} MHz. Radio waves travel at 3.00 × 10⁸ m/s. A simple aerial is a quarter of a wavelength long. A listener is ${dkm} km from the transmitter. ${X_UNROUNDED}`,
+    parts: [
+      xNum("lam", "Wavelength", "Wavelength, in m", lam, 3, "λ = c ÷ f with f in Hz (MHz × 10⁶)."),
+      xNum("aerial", "Aerial length", "Length of a quarter-wave aerial, in cm", quarter, 1, "A quarter of the wavelength, then m × 100 for cm."),
+      xNum("time", "Travel time", "Time for the signal to reach the listener, in ms", tms, 3, "Time = distance ÷ speed, with the distance in m; then s × 1000 for ms."),
+    ],
+    steps: [
+      `\`_lam = 3e8 / (_f_MHz * 1e6)\` → ${xs(lam)}, which rounds to **${xr(lam, 3)} m**.`,
+      `\`_lam / 4 * 100\` → ${xs(quarter)}, which rounds to **${xr(quarter, 1)} cm**.`,
+      `\`_d_km * 1000 / 3e8 * 1000\` → ${xs(tms)}, which rounds to **${xr(tms, 3)} ms**.`,
+    ],
+    given: [["_f_MHz", fM], ["_d_km", dkm]],
+    hints: [
+      "Convert MHz to Hz (× 10⁶) and use λ = c ÷ f, with c = 3 × 10⁸ m/s. In the calculator, 3e8 means 3 × 10⁸.",
+      "The aerial is a quarter of that wavelength.",
+      "The travel time uses the speed of the wave, not its frequency: distance ÷ speed.",
+    ],
+  });
+}
+
+// period / expert: a bobbing boat gives the period; with the crest spacing, the speed and a travel time.
+function xBob(rng) {
+  const thing = rng.pick(["A moored boat", "A buoy", "A floating duck", "A fishing float", "A surfer waiting for waves"]);
+  const N = rng.int(5, 30);
+  const t = rng.int(N * 15, N * 120) / 10;
+  const lam = rng.int(10, 400) / 10;
+  const X = rng.int(20, 500);
+  const T = t / N;
+  const v = lam / T;
+  const tx = X / v;
+  return xMulti({
+    kind: "x-bob",
+    v: { N, t, lam, X },
+    prompt: `${thing} rises and falls ${N} times in ${xs(t)} s as waves pass. The crests are ${xs(lam)} m apart. ${X_UNROUNDED}`,
+    parts: [
+      xNum("T", "Period", "Period of the waves, in s", T, 2, "The period is the time for one complete wave: total time ÷ number of waves."),
+      xNum("v", "Speed", "Speed of the waves, in m/s", v, 2, "In one period a crest moves forward one wavelength: v = λ ÷ T."),
+      xNum("tx", "Travel time", `Time for a crest to travel ${X} m, in s`, tx, 1, "Time = distance ÷ speed."),
+    ],
+    steps: [
+      `\`_T = _t / _N\` → ${xs(T)}, which rounds to **${xr(T, 2)} s**.`,
+      `\`_v = _lam / _T\` → ${xs(v)}, which rounds to **${xr(v, 2)} m/s**.`,
+      `\`${X} / _v\` → ${xs(tx)}, which rounds to **${xr(tx, 1)} s**.`,
+    ],
+    given: [["_N", N], ["_t", t], ["_lam", lam]],
+    hints: [
+      "Each rise and fall is one complete wave passing.",
+      "The distance between crests is the wavelength, and one wavelength passes in one period.",
+      "Speed = wavelength ÷ period (or wavelength × frequency).",
+    ],
+  });
+}
+
+// period / expert: something spinning; rpm to Hz and ms, then backwards from a period to rpm.
+function xRpm(rng) {
+  const what = rng.pick(["A ceiling fan", "A washing machine drum", "A car engine", "A drill", "A record turntable", "A wind turbine"]);
+  const rpm = rng.int(30, 6000);
+  const f = rpm / 60;
+  const Tms = 1000 / f;
+  const T2 = rng.int(50, 20000) / 10; // ms
+  const rpm2 = 60000 / T2;
+  return xMulti({
+    kind: "x-rpm",
+    v: { rpm, T2 },
+    prompt: `${what} turns at ${rpm} revolutions per minute (rpm). ${X_UNROUNDED}`,
+    parts: [
+      xNum("f", "Frequency", "Frequency of rotation, in Hz", f, 2, "rpm counts turns per minute; Hz counts per second. Divide by 60."),
+      xNum("T", "Period", "Time for one turn, in ms", Tms, 2, "T = 1 ÷ f gives seconds; × 1000 for ms."),
+      xNum("rpm2", "Speed needed", `Speed in rpm that would give one turn every ${xs(T2)} ms`, rpm2, 1, "Work backwards: convert the period to seconds, take 1 ÷ T for Hz, then × 60."),
+    ],
+    steps: [
+      `\`_f = _rpm / 60\` → ${xs(f)}, which rounds to **${xr(f, 2)} Hz**.`,
+      `\`1 / _f * 1000\` → ${xs(Tms)}, which rounds to **${xr(Tms, 2)} ms**.`,
+      `\`60 / (_T2_ms / 1000)\` → ${xs(rpm2)}, which rounds to **${xr(rpm2, 1)} rpm**.`,
+    ],
+    given: [["_rpm", rpm], ["_T2_ms", T2]],
+    hints: [
+      "Turns per minute ÷ 60 = turns per second, which is the frequency in Hz.",
+      "Period and frequency are reciprocals, and the period must be converted between s and ms.",
+      "For the last part go the other way: ms → s, then 1 ÷ T, then × 60.",
+    ],
+  });
+}
+
+// period / expert: an oscilloscope trace of a sound; frequency, wavelength in air, and the timebase for a target view.
+function xScope(rng) {
+  const k = rng.int(15, 80) / 10; // divisions per cycle
+  const tb = rng.pick([0.1, 0.2, 0.5, 1, 2, 5]); // ms/div
+  const T = (k * tb) / 1000;
+  const f = 1 / T;
+  if (f < 20 || f > 20000) return null;
+  const lam = 340 / f;
+  const cycles = rng.int(2, 6);
+  const tb2 = (cycles * T * 1000) / 10;
+  return xMulti({
+    kind: "x-scope",
+    v: { k, tb, cycles },
+    prompt: `A microphone feeds a sound into an oscilloscope set to ${xs(tb)} ms per division. One complete cycle spans ${xs(k)} divisions. The screen is 10 divisions wide, and sound travels at 340 m/s in air. ${X_UNROUNDED}`,
+    parts: [
+      xNum("f", "Frequency", "Frequency of the sound, in Hz", f, 1, "Period = divisions × time per division, converted to seconds; then f = 1 ÷ T."),
+      xNum("lam", "Wavelength", "Wavelength in air, in m", lam, 3, "λ = v ÷ f."),
+      xNum("tb2", "Timebase", `Time per division (in ms) that would show exactly ${cycles} cycles across the screen`, tb2, 3, "Work backwards: the screen must show that many periods across its 10 divisions."),
+    ],
+    steps: [
+      `\`_T = _div * _tb_ms / 1000\` → ${xs(T * 1000)} ms = ${String(xr(T, 7))} s. \`1 / _T\` → ${xs(f)}, which rounds to **${xr(f, 1)} Hz**.`,
+      `\`340 / _f\` → ${xs(lam)}, which rounds to **${xr(lam, 3)} m**.`,
+      `${cycles} cycles take ${xs(cycles * T * 1000)} ms, spread over 10 divisions: \`${cycles} * _T * 1000 / 10\` → ${xs(tb2)}, which rounds to **${xr(tb2, 3)} ms per division**.`,
+    ],
+    given: [["_div", k], ["_tb_ms", tb]],
+    hints: [
+      "The period is the time for one cycle: number of divisions × time per division. Convert ms to s.",
+      "Frequency = 1 ÷ period; wavelength = speed ÷ frequency.",
+      "For the new setting, find the total time for the cycles you want, then share it over the 10 divisions.",
+    ],
+  });
+}
+
+const X_LOW = [["water", 1.33], ["air", 1]];
+
+// refraction / expert: from glass-like media into water; the angle and the critical angle.
+function xTwoMedia(rng) {
+  const hi = rng.pick(MEDIA.filter(([, n]) => n >= 1.4));
+  const n2 = 1.33;
+  const C = Math.asin(n2 / hi[1]) / DEG;
+  const t1 = rng.int(10, Math.floor(C) - 3);
+  const t2 = Math.asin((hi[1] * Math.sin(t1 * DEG)) / n2) / DEG;
+  return xMulti({
+    kind: "x-twomedia",
+    v: { n1: hi[1], t1 },
+    prompt: `Light travels from ${hi[0]} (n = ${hi[1]}) into water (n = 1.33), meeting the boundary at ${t1}° to the normal. ${ANG} ${X_UNROUNDED}`,
+    parts: [
+      xNum("t2", "Angle in water", "Angle of refraction in the water, in degrees", t2, 1, "Snell's law: n1 sin θ1 = n2 sin θ2. Going into a lower index, the ray bends away from the normal."),
+      xNum("C", "Critical angle", `Critical angle for ${hi[0]} to water, in degrees`, C, 1, "At the critical angle the refracted ray is at 90°: sin C = n2 ÷ n1."),
+    ],
+    steps: [
+      `\`sin θ2 = _n1 * sin(_t1) / 1.33\` → ${xs((hi[1] * Math.sin(t1 * DEG)) / n2)}. \`asin(_n1 * sin(_t1) / 1.33)\` → ${xs(t2)}, which rounds to **${xr(t2, 1)}°**.`,
+      `\`asin(1.33 / _n1)\` → ${xs(C)}, which rounds to **${xr(C, 1)}°**. The ray here hits at ${t1}°, below this, so it does refract out.`,
+    ],
+    given: [["_n1", hi[1]], ["_t1", t1]],
+    hints: [
+      "Neither side is air, so keep both indices in Snell's law: n1 sin θ1 = n2 sin θ2.",
+      "Divide by the water's index, then take the inverse sine (`asin`). The calculator works in degrees.",
+      "For the critical angle, set θ2 = 90°, so sin C = n2 ÷ n1 (lower index ÷ higher index).",
+    ],
+  });
+}
+
+// refraction / expert: measure i and r for a block; index, speed and critical angle.
+function xFindN(rng) {
+  const i = rng.int(25, 75);
+  const n0 = rng.int(130, 200) / 100;
+  const r = Math.round(Math.asin(Math.sin(i * DEG) / n0) / DEG);
+  if (r < 8 || r >= i) return null;
+  const n = Math.sin(i * DEG) / Math.sin(r * DEG);
+  if (n < 1.2) return null;
+  const v = 3 / n;
+  const C = Math.asin(1 / n) / DEG;
+  return xMulti({
+    kind: "x-findn",
+    v: { i, r },
+    prompt: `In an experiment, a ray of light in air enters a transparent block at an angle of incidence of ${i}°. The angle of refraction inside the block is ${r}°. ${ANG} Take the speed of light in air as 3.00 × 10⁸ m/s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("n", "Refractive index", "Refractive index of the block (no unit)", n, 3, "From air, n = sin i ÷ sin r."),
+      xNum("v", "Speed in the block", "Speed of light in the block, in units of 10⁸ m/s", v, 2, "n = c ÷ v, so v = c ÷ n. With c = 3 (× 10⁸ m/s), the answer is in units of 10⁸ m/s."),
+      xNum("C", "Critical angle", "Critical angle from the block into air, in degrees", C, 1, "sin C = 1 ÷ n."),
+    ],
+    steps: [
+      `\`_n = sin(_i) / sin(_r)\` → ${xs(n)}, which rounds to **${xr(n, 3)}**.`,
+      `\`3 / _n\` → ${xs(v)}, which rounds to **${xr(v, 2)}** × 10⁸ m/s.`,
+      `\`asin(1 / _n)\` → ${xs(C)}, which rounds to **${xr(C, 1)}°**.`,
+    ],
+    given: [["_i", i], ["_r", r]],
+    hints: [
+      "Snell's law from air (n = 1): sin i = n sin r. Divide the sines, not the angles.",
+      "A higher refractive index means slower light: v = c ÷ n.",
+      "The critical angle uses the same index: sin C = 1 ÷ n.",
+    ],
+  });
+}
+
+// refraction / expert: will a ray inside a material escape, or be totally internally reflected?
+function xTir(rng) {
+  const hi = rng.pick(MEDIA.filter(([, n]) => n >= 1.36));
+  const lo = rng.pick(X_LOW);
+  if (hi[1] <= lo[1] + 0.05) return null;
+  const C = Math.asin(lo[1] / hi[1]) / DEG;
+  const th = rng.int(10, 85);
+  if (Math.abs(th - C) < 2) return null;
+  const outcome = th > C ? "Totally internally reflected" : "Refracts out";
+  return xMulti({
+    kind: "x-tir",
+    v: { n1: hi[1], n2: lo[1], th },
+    prompt: `A ray of light inside ${hi[0]} (n = ${hi[1]}) meets a boundary with ${lo[0]}${lo[1] === 1 ? "" : " (n = 1.33)"} at ${th}° to the normal. ${ANG} ${X_UNROUNDED}`,
+    parts: [
+      xNum("C", "Critical angle", "Critical angle at this boundary, in degrees", C, 1, `sin C = n2 ÷ n1, with n2 the index of the ${lo[0]}.`),
+      xChoice("out", "Outcome", "What happens to the ray?", outcome, ["Refracts out", "Totally internally reflected"], "Compare the angle of incidence with the critical angle."),
+    ],
+    steps: [
+      `\`asin(${lo[1] === 1 ? "1" : "1.33"} / _n1)\` → ${xs(C)}, which rounds to **${xr(C, 1)}°**.`,
+      th > C
+        ? `${th}° is bigger than the critical angle, so no ray can refract out: it is **Totally internally reflected**.`
+        : `${th}° is smaller than the critical angle, so the ray **Refracts out** (bending away from the normal), with a weak reflection too.`,
+    ],
+    given: [["_n1", hi[1]], ["_th", th]],
+    hints: [
+      "Total internal reflection can only happen going from a higher index to a lower one, beyond the critical angle.",
+      "Find the critical angle: sin C = (lower index) ÷ (higher index), then use `asin`.",
+      "If the angle of incidence is bigger than C, nothing refracts out.",
+    ],
+  });
+}
+
+// lenses / expert: design a projection; work back from a magnification to u and v.
+function xScreen(rng) {
+  const f = rng.int(30, 300) / 10;
+  const M = rng.int(12, 80) / 10;
+  const u = f * (1 + 1 / M);
+  const v = f * (1 + M);
+  return xMulti({
+    kind: "x-screen",
+    v: { f, M },
+    prompt: `A converging lens of focal length ${xs(f)} cm must project a real image of a slide onto a screen, ${xs(M)} times as tall as the slide. ${LENS_RULE} ${X_UNROUNDED}`,
+    parts: [
+      xNum("u", "Object distance", "Distance from the slide to the lens, in cm", u, 2, "Magnification = v ÷ u, so v = M × u. Put that into the lens equation: 1/f = 1/u + 1/(Mu)."),
+      xNum("v", "Image distance", "Distance from the lens to the screen, in cm", v, 2, "v = M × u."),
+      xNum("D", "Slide to screen", "Distance from the slide to the screen, in cm", u + v, 1, "The slide and screen are on opposite sides of the lens: add u and v."),
+    ],
+    steps: [
+      `With v = Mu: \`1/f = 1/u + 1/(Mu) = (M + 1)/(Mu)\`, so \`_u = _f * (1 + 1/_M)\` → ${xs(u)}, which rounds to **${xr(u, 2)} cm**.`,
+      `\`_v = _M * _u\` → ${xs(v)}, which rounds to **${xr(v, 2)} cm**.`,
+      `\`_u + _v\` → ${xs(u + v)}, which rounds to **${xr(u + v, 1)} cm**.`,
+    ],
+    given: [["_f", f], ["_M", M]],
+    hints: [
+      "Work backwards. A real image M times as big means v = M × u.",
+      "Substitute v = Mu into 1/f = 1/u + 1/v and combine the fractions: 1/f = (M + 1) ÷ (M u).",
+      "Rearrange for u, then v = M × u.",
+    ],
+  });
+}
+
+// lenses / expert: a magnifying glass (object inside f): a virtual image with negative v.
+function xMagnifier(rng) {
+  const f = rng.int(40, 250) / 10;
+  const u = rng.int(Math.ceil(f * 3), Math.floor(f * 9)) / 10;
+  if (u >= f - 0.2) return null;
+  const v = (u * f) / (u - f);
+  const m = Math.abs(v) / u;
+  const h = rng.int(2, 40) / 10;
+  return xMulti({
+    kind: "x-magnifier",
+    v: { f, u, h },
+    prompt: `A magnifying glass is a converging lens of focal length ${xs(f)} cm. It is held ${xs(u)} cm from an insect ${xs(h)} mm long. ${LENS_RULE} ${MAG_RULE} ${X_UNROUNDED}`,
+    parts: [
+      xNum("v", "Image distance", "Image distance v, in cm (negative for a virtual image)", v, 2, "1/v = 1/f - 1/u. The object is inside the focal length, so 1/v comes out negative."),
+      xNum("m", "Magnification", "Magnification (no unit)", m, 2, "|v| ÷ u."),
+      xNum("hi", "Image length", "Length of the image, in mm", m * h, 2, "Object length × magnification."),
+    ],
+    steps: [
+      `\`_v = 1 / (1/_f - 1/_u)\` → ${xs(v)}, which rounds to **${xr(v, 2)} cm**: negative, so the image is virtual, on the same side as the insect.`,
+      `\`abs(_v) / _u\` → ${xs(m)}, which rounds to **${xr(m, 2)}**.`,
+      `\`_h * abs(_v) / _u\` → ${xs(m * h)}, which rounds to **${xr(m * h, 2)} mm**.`,
+    ],
+    given: [["_f", f], ["_u", u], ["_h", h]],
+    hints: [
+      "The insect is closer than the focal length, which is how a magnifying glass works: the image is virtual and upright.",
+      "Use 1/v = 1/f - 1/u. The result is negative: keep the sign, it means virtual.",
+      "For the size, use |v| ÷ u (ignore the sign) and multiply by the insect's length.",
+    ],
+  });
+}
+
+// lenses / expert: object and screen a fixed distance apart; two lens positions give a sharp image.
+function xTwoPos(rng) {
+  const f = rng.int(50, 250) / 10;
+  const D = rng.int(Math.ceil(4.4 * f), Math.floor(9 * f));
+  const disc = Math.sqrt(D * D - 4 * D * f);
+  const u1 = (D - disc) / 2;
+  const u2 = (D + disc) / 2;
+  const m1 = (D - u1) / u1;
+  return xMulti({
+    kind: "x-twopos",
+    v: { f, D },
+    prompt: `An object and a screen are fixed ${D} cm apart. A converging lens of focal length ${xs(f)} cm is moved between them. There are two positions where a sharp image forms on the screen. ${LENS_RULE} ${MAG_RULE} ${X_UNROUNDED}`,
+    parts: [
+      xNum("u1", "Nearer position", "Distance from the object to the lens in the position nearer the object, in cm", u1, 2, "With u + v = D, the lens equation becomes 1/f = 1/u + 1/(D - u): a quadratic in u."),
+      xNum("u2", "Further position", "Distance from the object to the lens in the other position, in cm", u2, 2, "The two answers are symmetric: they swap u and v, so they add up to D."),
+      xNum("m1", "Magnification", "Magnification in the nearer position (no unit)", m1, 2, "|v| ÷ u, with v = D - u."),
+    ],
+    steps: [
+      `\`1/f = 1/u + 1/(D - u)\` gives \`u² - Du + Df = 0\`, i.e. \`u² - ${D}u + ${xs(D * f)} = 0\`.`,
+      `\`(_D - sqrt(_D^2 - 4 * _D * _f)) / 2\` → ${xs(u1)}, which rounds to **${xr(u1, 2)} cm**.`,
+      `\`(_D + sqrt(_D^2 - 4 * _D * _f)) / 2\` → ${xs(u2)}, which rounds to **${xr(u2, 2)} cm**.`,
+      `Nearer position: v = ${xs(D - u1)} cm, so \`(_D - _u1) / _u1\` → ${xs(m1)}, which rounds to **${xr(m1, 2)}** (an enlarged image; the other position gives the reciprocal).`,
+    ],
+    given: [["_D", D], ["_f", f]],
+    hints: [
+      "The object-to-screen distance is fixed: u + v = D, so v = D - u.",
+      "Put v = D - u into 1/f = 1/u + 1/v and multiply out: you get a quadratic in u.",
+      "Both roots are valid positions. A sharp image needs D ≥ 4f, which holds here.",
+    ],
+  });
+}
+
+function genExpert(subtopic, rng) {
+  const pick = (list) => list[rng.int(0, list.length - 1)];
+  if (subtopic === "wave-equation") return xTry(pick([xSonar, xBoundary, xRadio]), rng);
+  if (subtopic === "period") return xTry(pick([xBob, xRpm, xScope]), rng);
+  if (subtopic === "refraction") return xTry(pick([xTwoMedia, xFindN, xTir]), rng);
+  if (subtopic === "lenses") return xTry(pick([xScreen, xMagnifier, xTwoPos]), rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Independent truth for verify: bisection on Snell's law and the lens equation as written, and
+// frequency-first or time-per-wave routes where the generator went the other way.
+const X_SIN = (x) => Math.sin((x * Math.PI) / 180);
+const X_TRUTH = {
+  "x-sonar": ({ fk, lam, t }) => {
+    const v = xRoot((x) => x / (fk * 1000) - lam / 100, 0, 1e5);
+    return { v, depth: xRoot((d) => (2 * d) / v - t, 0, 1e7) };
+  },
+  "x-boundary": ({ v1, lam1, v2, D }) => {
+    const lam2 = (lam1 * v2) / v1;
+    return { f: v2 / lam2, lam2, n: (D * v1) / (lam1 * v2) };
+  },
+  "x-radio": ({ fM, dkm }) => {
+    const T = 1 / (fM * 1e6); // one wave passes in T and moves one wavelength
+    const lam = 3e8 * T;
+    return { lam, aerial: lam * 25, time: (dkm / 3e5) * 1000 };
+  },
+  "x-bob": ({ N, t, lam, X }) => {
+    const f = N / t;
+    return { T: 1 / f, v: f * lam, tx: X / (f * lam) };
+  },
+  "x-rpm": ({ rpm, T2 }) => {
+    const turnsPerMs = rpm / 60000;
+    return { f: turnsPerMs * 1000, T: 1 / turnsPerMs, rpm2: (1 / T2) * 60000 };
+  },
+  "x-scope": ({ k, tb, cycles }) => {
+    const f = 1000 / (k * tb);
+    return { f, lam: 340 / f, tb2: ((cycles / f) * 1000) / 10 };
+  },
+  "x-twomedia": ({ n1, t1 }) => ({
+    t2: xRoot((x) => n1 * X_SIN(t1) - 1.33 * X_SIN(x), 0, 90),
+    C: xRoot((x) => n1 * X_SIN(x) - 1.33, 0, 90),
+  }),
+  "x-findn": ({ i, r }) => {
+    const n = xRoot((x) => x * X_SIN(r) - X_SIN(i), 1, 10);
+    return { n, v: xRoot((x) => n * x - 3, 0, 3), C: xRoot((x) => n * X_SIN(x) - 1, 0, 90) };
+  },
+  "x-tir": ({ n1, n2, th }) => {
+    const C = xRoot((x) => n1 * X_SIN(x) - n2, 0, 90);
+    // Total internal reflection when Snell's law has no solution: n1 sin θ > n2.
+    return { C, out: n1 * X_SIN(th) > n2 ? "Totally internally reflected" : "Refracts out" };
+  },
+  "x-screen": ({ f, M }) => {
+    const u = xRoot((x) => 1 / x + 1 / (M * x) - 1 / f, f * 1.0000001, 1e6);
+    return { u, v: M * u, D: u + M * u };
+  },
+  "x-magnifier": ({ f, u, h }) => {
+    const v = xRoot((x) => 1 / u + 1 / x - 1 / f, -1e7, -u * 1.0000001);
+    return { v, m: -v / u, hi: (-v / u) * h };
+  },
+  "x-twopos": ({ f, D }) => {
+    const g = (x) => 1 / x + 1 / (D - x) - 1 / f;
+    const u1 = xRoot(g, f * 1.0000001, D / 2);
+    return { u1, u2: xRoot(g, D / 2, D - f * 1.0000001), m1: (D - u1) / u1 };
+  },
+};
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   const gen = GENERATORS[subtopic];
   if (!gen) throw new Error(`Unknown subtopic: ${subtopic}`);
   for (let i = 0; i < 80; i++) {
@@ -976,6 +1567,7 @@ function answerOk(p, raw) {
 
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (!p || !p.values || typeof p.kind !== "string") return false;
   try {
     if (question.answerType === "choice") {

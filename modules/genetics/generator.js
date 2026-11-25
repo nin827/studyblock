@@ -1267,6 +1267,7 @@ function genPopulation(difficulty, rng) {
 // ---------- entry ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "punnett") return genPunnett(difficulty, rng);
   if (subtopic === "dihybrid") return genDihybrid(difficulty, rng);
@@ -1483,6 +1484,7 @@ function matches(exp, answer, q) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.expert) return xVerify(question, answer);
   if (question.answerType === "multi") {
     if (!answer || typeof answer !== "object" || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => {
@@ -1527,4 +1529,817 @@ function verifyInfer(p, answer, q) {
   const mine = score(parse(answer));
   if (!Number.isFinite(mine)) return false;
   return scores.filter((s) => s <= mine + 1e-12).length === 1;
+}
+
+// =============================================================================================
+// Expert. A separate branch: generate() sends "expert" here before anything else, so easy, medium
+// and hard questions never see an extra rng draw. Each part carries a check name and the values
+// stated in the prompt (in SI). verify() substitutes the candidate into the un-rearranged law,
+// recomputing any intermediate from the stated values (never from an earlier part), and accepts it
+// when the law changes sign inside the answer ± half a unit in the last place.
+
+class XRetry extends Error {}
+const xRound = (n, dp) => {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+};
+const xTie = (x, dp) => {
+  const f = Math.abs(x) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 1e-6;
+};
+const xFix = (x, dp) => xRound(x, dp).toFixed(dp);
+const xN = (n) => String(xRound(n, 6));
+const xDP = (dp) => (dp === 0 ? " Round to the nearest whole number." : ` Round to ${dp} decimal place${dp === 1 ? "" : "s"}.`);
+const xG = (label, value) => ({ label, value });
+
+function xNum(id, label, ask, exact, dp, hint, check) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  return {
+    part: { id, label, ask: ask + xDP(dp), answerType: "number", answer: xRound(exact, dp), tolerance: 0.5 * 10 ** -dp, hint },
+    spec: { id, check, dp },
+  };
+}
+// A whole-number part that must be exact (counts, "round up" answers): tolerance 0.
+function xInt(id, label, ask, answer, hint, check) {
+  if (!Number.isInteger(answer)) throw new XRetry();
+  return { part: { id, label, ask, answerType: "number", answer, tolerance: 0, hint }, spec: { id, check, int: true } };
+}
+function xPick(id, label, ask, answer, choices, hint, check) {
+  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+}
+function xMulti(prompt, list, steps, values, given, hints) {
+  const q = {
+    prompt,
+    answerType: "multi",
+    parts: list.map((p) => p.part),
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, parts: list.map((p) => p.spec) },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+function xSingle(prompt, exact, dp, steps, values, check, given, hints) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  const q = {
+    prompt: prompt + xDP(dp),
+    answer: xRound(exact, dp),
+    answerType: "number",
+    choices: undefined,
+    tolerance: 0.5 * 10 ** -dp,
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, check, dp },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+// "≈ 12.3456, which rounds to **12.35**" (or "= **12.35**" when exact).
+function xRes(exact, dp, unit) {
+  const u = unit ? (unit.startsWith("°") ? unit : ` ${unit}`) : "";
+  const shown = xFix(exact, dp);
+  if (Math.abs(exact - Number(shown)) < 1e-9) return `= **${shown}${u}**`;
+  return `≈ ${Number(exact.toPrecision(7))}${u}, which rounds to **${shown}${u}**`;
+}
+function xRun(make, rng) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      return make(rng);
+    } catch (e) {
+      if (!(e instanceof XRetry)) throw e;
+    }
+  }
+  return make(rng);
+}
+
+// Root of f strictly inside (x - h, x + h): a sign change across the window.
+function xBracket(f, x, h) {
+  if (!Number.isFinite(x)) return false;
+  const lo = f(x - h);
+  const hi = f(x + h);
+  return Number.isFinite(lo) && Number.isFinite(hi) && lo * hi < 0;
+}
+const xNumOf = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+
+function xVerify(question, answer) {
+  const p = question.params;
+  const v = p.values;
+  if (!v || typeof v !== "object") return false;
+  const one = (spec, a, q) => {
+    const fn = X_CHECKS[spec.check];
+    if (!fn) return false;
+    if (q.answerType === "choice") {
+      if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
+      if (!q.choices.includes(String(a))) return false;
+      return fn(v, String(a)) === true;
+    }
+    if (q.answerType === "text") return typeof a === "string" && fn(v, a.trim()) === true;
+    const x = xNumOf(a);
+    if (!Number.isFinite(x)) return false;
+    if (spec.int) return Number.isInteger(x) && fn(v, x, 0) === true;
+    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+  };
+  if (question.answerType === "multi") {
+    if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;
+    if (!answer || typeof answer !== "object") return false;
+    return p.parts.every((spec, i) => spec.id === question.parts[i].id && one(spec, answer[spec.id], question.parts[i]));
+  }
+  return one(p, answer, question);
+}
+
+// =====================================================================================
+// Expert questions. Generation uses the product rule with exact fractions; the checks enumerate
+// gametes and family trees (with Bayes' rule for "given that ..." questions) and compare.
+// =====================================================================================
+
+const xq = (n, d) => {
+  const g = gcd(n, d) || 1;
+  return [n / g, d / g];
+};
+const xqMul = (a, b) => xq(a[0] * b[0], a[1] * b[1]);
+const xqAdd = (a, b) => xq(a[0] * b[1] + b[0] * a[1], a[1] * b[1]);
+const xqSub = (a, b) => xq(a[0] * b[1] - b[0] * a[1], a[1] * b[1]);
+const xqStr = (q) => `${q[0]}/${q[1]}`;
+const xqOk = (q) => q[0] > 0 && q[0] < q[1];
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+// A probability typed as a fraction in simplest form (a text answer, like the rest of the module).
+function xFrac(id, label, ask, q, hint, check) {
+  if (!xqOk(q)) throw new XRetry();
+  return { part: { id, label, ask: ask + FRAC_NOTE, answerType: "text", answer: xqStr(q), hint }, spec: { id, check } };
+}
+// "3/8" -> 0.375, only when written in simplest form.
+function xFracVal(s) {
+  const m = /^(\d+)\s*\/\s*(\d+)$/.exec(String(s));
+  if (!m) return NaN;
+  const n = Number(m[1]), d = Number(m[2]);
+  if (d === 0 || gcd(n, d) !== 1) return NaN;
+  return n / d;
+}
+const xFracIs = (s, val) => Math.abs(xFracVal(s) - val) < 1e-12;
+
+// ---------- Punnett squares ----------
+
+// What we know about a parent with the dominant phenotype, from the cross that produced it.
+const X_BACK = [
+  { cross: [1, 1], het: [2, 3] },
+  { cross: [2, 1], het: [1, 2] },
+  { cross: [1, 0], het: [1, 1] },
+];
+
+// Punnett, expert 1: two dominant-looking parents of uncertain genotype; probabilities before and after
+// seeing a recessive offspring.
+function xPunnettUncertain(rng) {
+  const t = rng.pick(MONO);
+  const b1 = rng.pick(X_BACK.slice(0, 2));
+  const b2 = rng.pick(X_BACK);
+  const askRec = rng.next() < 0.5;
+  const L = t.L;
+  const h1 = b1.het, h2 = b2.het;
+  const pRec = xqMul(xqMul(h1, h2), [1, 4]);
+  const next = askRec ? [1, 4] : [3, 4];
+  const from = (b) => `${code(g1(L, b.cross[0]))} × ${code(g1(L, b.cross[1]))}`;
+  const D = `the dominant phenotype (${t.dom})`;
+  const R = `the recessive phenotype (${t.rec})`;
+  const values = { c1: b1.cross, c2: b2.cross, askRec };
+  return xMulti(
+    `In ${t.many}, ${t.dom} (\`${L}\`) is dominant to ${t.rec} (\`${L.toLowerCase()}\`). ${cap(t.one)} 1 has ${D}; its parents were ${from(b1)}. ${cap(t.one)} 2 also has ${D}; its parents were ${from(b2)}. ${cap(t.many)} 1 and 2 are crossed.`,
+    [
+      xFrac("het1", "Parent 1", `What is the probability that ${t.one} 1 is heterozygous (${code(g1(L, 1))})?`, h1,
+        `Draw the Punnett square for ${from(b1)}, then cross out the boxes that can't be right: ${t.one} 1 is known to have ${D}.`, "pu-het"),
+      xFrac("rec", "First offspring", `What is the probability that their first offspring has ${R}?`, pRec,
+        "Both parents must be heterozygous, and then a quarter of their offspring are recessive. Multiply the three probabilities.", "pu-rec"),
+      xFrac("next", "After that", `Their first offspring turns out to have ${R}. What is the probability that the next one has ${askRec ? R : D}?`, next,
+        `A recessive offspring proves something about both parents' genotypes. Once those are certain, the uncertainty has gone.`, "pu-next"),
+    ],
+    [
+      `${cap(t.one)} 1 came from ${from(b1)}. Among its offspring with ${D}, the share that are ${code(g1(L, 1))} is **${xqStr(h1)}**. ${cap(t.one)} 2 (from ${from(b2)}): ${xqStr(h2)}.`,
+      `A recessive offspring needs both parents heterozygous and then the 1/4 box: \`${xqStr(h1)} × ${xqStr(h2)} × 1/4\` = **${xqStr(pRec)}**.`,
+      `Once a recessive offspring appears, both parents must be ${code(g1(L, 1))} (each passed on \`${L.toLowerCase()}\`). Now it is a plain ${code(g1(L, 1))} × ${code(g1(L, 1))} cross, so the next offspring has ${askRec ? R : D} with probability **${xqStr(next)}**. Earlier offspring don't change later ones; only what we know about the parents changed.`,
+    ],
+    values,
+    undefined,
+    [
+      "A parent with the dominant phenotype could be homozygous or heterozygous. Use the cross it came from, but only count the boxes that match its phenotype.",
+      "For a recessive offspring, both parents must carry the recessive allele and both must pass it on.",
+      "When you learn something about an offspring, ask what it proves about the parents. Then work out the next offspring from the updated parents.",
+    ],
+  );
+}
+
+// Punnett, expert 3: a test cross that keeps giving dominant offspring. Bayes' rule updates the chance
+// that the parent is heterozygous.
+function xPunnettTestcross(rng) {
+  const t = rng.pick(MONO);
+  const b = rng.pick(X_BACK.slice(0, 2));
+  const n = rng.int(1, 12);
+  const L = t.L;
+  const D = `the dominant phenotype (${t.dom})`;
+  // P(het | n dominant offspring) = h (1/2)^n / (h (1/2)^n + (1 - h)).
+  const h = b.het;
+  const num2 = xqMul(h, xq(1, 2 ** n));
+  const post = xq(num2[0] * h[1], num2[0] * h[1] + (h[1] - h[0]) * num2[1]);
+  const nextRec = xqMul(post, [1, 2]);
+  const from = `${code(g1(L, b.cross[0]))} × ${code(g1(L, b.cross[1]))}`;
+  const values = { cross: b.cross, n };
+  return xMulti(
+    `In ${t.many}, ${t.dom} (\`${L}\`) is dominant to ${t.rec} (\`${L.toLowerCase()}\`). A ${t.one} with ${D} came from the cross ${from}. To find its genotype it is crossed with a ${code(g1(L, 0))} ${t.one}. The first ${n === 1 ? "offspring has" : `${n} offspring all have`} ${D}.`,
+    [
+      xFrac("het", "Heterozygous", `Given these results, what is the probability that the ${t.one} is heterozygous (${code(g1(L, 1))})?`, post,
+        `Before the test cross it was heterozygous with probability ${xqStr(h)}. A heterozygote gives a dominant offspring only half the time; a homozygote always does.`, "tc-het"),
+      xFrac("next", "Next offspring", `What is the probability that the next offspring of the test cross has the recessive phenotype (${t.rec})?`, nextRec,
+        "Only a heterozygous parent can give a recessive offspring here, and then only half the time.", "tc-next"),
+    ],
+    [
+      `Before the test cross: from ${from}, its chance of being ${code(g1(L, 1))} is ${xqStr(h)} (only boxes with ${D} count).`,
+      `If it is ${code(g1(L, 1))}, the chance that ${n === 1 ? "one offspring is" : `all ${n} offspring are`} dominant is \`(1/2)^${n}\`. If it is ${code(g1(L, 2))}, that is certain.`,
+      `Bayes' rule: \`${xqStr(h)} × (1/2)^${n} / (${xqStr(h)} × (1/2)^${n} + ${xqStr(xqSub([1, 1], h))})\` = **${xqStr(post)}**.`,
+      `Next offspring recessive: heterozygous and passes on \`${L.toLowerCase()}\`: \`${xqStr(post)} × 1/2\` = **${xqStr(nextRec)}**.`,
+    ],
+    values,
+    undefined,
+    [
+      "Start with the chance it is heterozygous before the test cross, from the cross it came from (only count dominant-phenotype boxes).",
+      "Each dominant offspring is a little evidence for homozygous: weigh each possibility by how likely it makes these results.",
+      "Posterior = (prior × chance of the results if heterozygous) ÷ (total chance of the results).",
+    ],
+  );
+}
+
+// Punnett, expert 2: keep self-pollinating a heterozygous plant; heterozygotes halve every generation.
+function xPunnettSelfing(rng) {
+  const t = rng.pick(MONO.filter((x) => /plant/.test(x.one)));
+  const n = rng.int(2, 6);
+  const L = t.L;
+  const R = `the recessive phenotype (${t.rec})`;
+  const het = xq(1, 2 ** n);
+  const rec = xq(2 ** n - 1, 2 ** (n + 1));
+  const values = { n };
+  return xMulti(
+    `In ${t.many}, ${t.dom} (\`${L}\`) is dominant to ${t.rec} (\`${L.toLowerCase()}\`). A ${code(g1(L, 1))} plant is self-pollinated. Every plant in the next generation is self-pollinated too, and so on. Each plant leaves the same number of offspring. Generation 1 is the offspring of the first self-pollination.`,
+    [
+      xFrac("het", "Heterozygous", `What fraction of generation ${n} is heterozygous?`, het,
+        `Selfing ${code(g1(L, 2))} or ${code(g1(L, 0))} only gives the same genotype. Selfing ${code(g1(L, 1))} gives only half ${code(g1(L, 1))} again.`, "sf-het"),
+      xFrac("rec", "Recessive", `What fraction of generation ${n} has ${R}?`, rec,
+        `Whatever isn't heterozygous is homozygous, split equally between ${code(g1(L, 2))} and ${code(g1(L, 0))}.`, "sf-rec"),
+    ],
+    [
+      `Selfing ${code(g1(L, 1))} gives 1/4 ${code(g1(L, 2))}, 1/2 ${code(g1(L, 1))}, 1/4 ${code(g1(L, 0))}. Homozygous plants breed true.`,
+      `So the heterozygous share halves each generation: after ${n} generations it is \`(1/2)^${n}\` = **${xqStr(het)}**.`,
+      `The other \`1 - ${xqStr(het)}\` is homozygous, half dominant and half recessive: \`(1 - ${xqStr(het)}) / 2\` = **${xqStr(rec)}** has ${R}.`,
+    ],
+    values,
+    undefined,
+    [
+      "Follow each genotype through one self-pollination. Which genotypes stay the same, and what happens to the heterozygotes?",
+      `Write the heterozygous share after generations 1, 2, 3 ... and spot the pattern. Then split the rest evenly between the two homozygotes.`,
+    ],
+  );
+}
+
+// ---------- Dihybrid crosses ----------
+
+const X_DI_OPTS = [[[1, 1], [1, 1]], [[1, 1], [0, 0]], [[1, 1], [1, 0]], [[1, 1], [0, 1]], [[1, 2], [1, 0]]];
+// Product rule: share of offspring in each class [AB, Ab, aB, ab].
+function xDiShares(p1, p2) {
+  const domA = 1 - (1 - p1[0] / 2) * (1 - p2[0] / 2);
+  const domB = 1 - (1 - p1[1] / 2) * (1 - p2[1] / 2);
+  return [domA * domB, domA * (1 - domB), (1 - domA) * domB, (1 - domA) * (1 - domB)];
+}
+const xDiFit = (obs, sh) => {
+  const N = obs.reduce((a, b) => a + b, 0);
+  return obs.reduce((s, o, i) => s + (o / N - sh[i]) ** 2, 0);
+};
+
+// Dihybrid, expert 1: offspring counts -> which cross? Then predict a class in a repeat cross.
+function xDihybridInfer(rng) {
+  const t = rng.pick(DI);
+  const opts = rng.shuffle(X_DI_OPTS).slice(0, 4);
+  const ans = rng.pick(opts);
+  const sh = xDiShares(ans[0], ans[1]);
+  const N = rng.int(10, 50) * 16;
+  const counts = sh.map((s) => (s === 0 ? 0 : Math.max(1, Math.round(s * N * (1 + rng.int(-8, 8) / 100)))));
+  const fits = opts.map((o) => xDiFit(counts, xDiShares(o[0], o[1])));
+  const best = Math.min(...fits);
+  if (fits.filter((f) => f <= best * 4 + 1e-6).length !== 1 || fits[opts.indexOf(ans)] !== best) throw new XRetry();
+  const nonzero = [0, 1, 2, 3].filter((i) => sh[i] > 0);
+  const cls = rng.pick(nonzero);
+  const M = rng.int(5, 40) * 16;
+  const expect = Math.round(sh[cls] * M);
+  if (Math.abs(sh[cls] * M - expect) > 1e-9) throw new XRetry();
+  const A = t.A.L, B = t.B.L;
+  const gtxt = (p) => code(g1(A, p[0]) + g1(B, p[1]));
+  const crossTxt = (o) => `${gtxt(o[0])} × ${gtxt(o[1])}`;
+  const names = [diPhen(t, 1, 1), diPhen(t, 1, 0), diPhen(t, 0, 1), diPhen(t, 0, 0)];
+  const values = { counts, opts, M, cls };
+  const ratio = sh.map((s) => s * 16);
+  return xMulti(
+    `In ${t.many}, ${t.A.dom} (\`${A}\`) is dominant to ${t.A.rec} (\`${A.toLowerCase()}\`) and ${t.B.dom} (\`${B}\`) is dominant to ${t.B.rec} (\`${B.toLowerCase()}\`); the genes are on different chromosomes. A cross gives ${counts.map((c, i) => `${c} ${names[i]}`).join(", ")}.`,
+    [
+      xPick("cross", "Parents", "Which cross fits these results best?", crossTxt(ans), opts.map(crossTxt),
+        "Turn the counts into a rough ratio (divide by the smallest non-zero count), then look at each gene on its own: is it about 3 : 1, 1 : 1, or all dominant?", "di-cross"),
+      xInt("expect", "Prediction", `The same cross is repeated and gives ${M} offspring. How many would you expect to be ${names[cls]}?`, expect,
+        "Use the exact expected share for that class from the cross you chose (in sixteenths), not the observed counts.", "di-expect"),
+    ],
+    [
+      `Look at one gene at a time. ${t.A.dom}: ${counts[0] + counts[1]}, ${t.A.rec}: ${counts[2] + counts[3]}. ${t.B.dom}: ${counts[0] + counts[2]}, ${t.B.rec}: ${counts[1] + counts[3]}.`,
+      "About 3 : 1 for a gene means both parents are heterozygous for it; about 1 : 1 means one heterozygous and one homozygous recessive; all dominant means at least one parent is homozygous dominant.",
+      `That points to **${crossTxt(ans)}**, which predicts ${ratio.map((r) => num(r)).join(" : ")} (out of 16). The counts are close to that, but not exact, because offspring are a random sample.`,
+      `Expected ${names[cls]}: \`${num(ratio[cls])}/16 × ${M}\` = **${expect}**.`,
+    ],
+    values,
+    [xG("_n1", counts[0]), xG("_n2", counts[1]), xG("_n3", counts[2]), xG("_n4", counts[3]), xG("_M", M)],
+    [
+      "Split the problem: count the offspring for the first trait only (ignoring the second), then for the second trait only.",
+      "A 3 : 1 split for a gene means both parents are heterozygous for it. A 1 : 1 split means a heterozygote crossed with a homozygous recessive. No recessives at all means a parent is homozygous dominant.",
+      "For the prediction, multiply the expected share of that class by the new total.",
+    ],
+  );
+}
+
+const X_TRI = [
+  { one: "pea plant", many: "pea plants", genes: [{ L: "T", dom: "tall", rec: "short" }, { L: "R", dom: "round seeds", rec: "wrinkled seeds" }, { L: "Y", dom: "yellow seeds", rec: "green seeds" }] },
+  { one: "tomato plant", many: "tomato plants", genes: [{ L: "T", dom: "tall", rec: "dwarf" }, { L: "R", dom: "red fruit", rec: "yellow fruit" }, { L: "H", dom: "hairy stems", rec: "smooth stems" }] },
+  { one: "guinea pig", many: "guinea pigs", genes: [{ L: "B", dom: "black fur", rec: "white fur" }, { L: "R", dom: "rough fur", rec: "smooth fur" }, { L: "S", dom: "short hair", rec: "long hair" }] },
+  { one: "fruit fly", many: "fruit flies", genes: [{ L: "G", dom: "a grey body", rec: "an ebony body" }, { L: "N", dom: "normal wings", rec: "vestigial wings" }, { L: "R", dom: "red eyes", rec: "brown eyes" }] },
+];
+
+// Dihybrid, expert 2: three genes at once (product rule over 64 boxes).
+function xTrihybrid(rng) {
+  const t = rng.pick(X_TRI);
+  const k1 = [rng.int(0, 1), rng.int(0, 1), rng.int(0, 1)];
+  const k2 = [rng.int(0, 1), rng.int(0, 1), rng.int(0, 1)];
+  if (k1.some((k, i) => k + k2[i] === 0)) throw new XRetry();
+  const pDom = (a, b) => xqSub([1, 1], xqMul(xq(2 - a, 2), xq(2 - b, 2)));
+  const pRec = (a, b) => xqMul(xq(2 - a, 2), xq(2 - b, 2));
+  // P(offspring genotype has k dominant alleles) for one gene.
+  const pK = (a, b, k) => {
+    const pa = xq(a, 2), pb = xq(b, 2);
+    const qa = xqSub([1, 1], pa), qb = xqSub([1, 1], pb);
+    if (k === 2) return xqMul(pa, pb);
+    if (k === 0) return xqMul(qa, qb);
+    return xqAdd(xqMul(pa, qb), xqMul(qa, pb));
+  };
+  let allDom = [1, 1], allRec = [1, 1], same = [1, 1];
+  for (let i = 0; i < 3; i++) {
+    allDom = xqMul(allDom, pDom(k1[i], k2[i]));
+    allRec = xqMul(allRec, pRec(k1[i], k2[i]));
+    same = xqMul(same, pK(k1[i], k2[i], k1[i]));
+  }
+  if (!xqOk(allDom) || !xqOk(allRec) || !xqOk(same)) throw new XRetry();
+  const gt = (k) => code(t.genes.map((g, i) => g1(g.L, k[i])).join(""));
+  const values = { k1, k2 };
+  return xMulti(
+    `In ${t.many}, three genes on different chromosomes each have a dominant allele: ${t.genes.map((g) => `${g.dom} (\`${g.L}\`) over ${g.rec} (\`${g.L.toLowerCase()}\`)`).join(", ")}. Two ${t.many} are crossed: ${gt(k1)} × ${gt(k2)}.`,
+    [
+      xFrac("dom", "All dominant", `What is the probability that an offspring shows all three dominant traits (${t.genes.map((g) => g.dom).join(", ")})?`, allDom,
+        "Find the chance of the dominant phenotype for each gene separately (a one-gene cross each), then multiply.", "tri-dom"),
+      xFrac("rec", "All recessive", "What is the probability that an offspring shows all three recessive traits?", allRec,
+        "For each gene, the recessive phenotype needs a recessive allele from both parents. Multiply across the genes.", "tri-rec"),
+      xFrac("same", "Like parent 1", `What is the probability that an offspring has exactly the same genotype as the first parent, ${gt(k1)}?`, same,
+        "Gene by gene: the chance that the offspring matches the first parent for that gene. Then multiply.", "tri-same"),
+    ],
+    [
+      "The genes are inherited independently, so treat each one as its own one-gene cross and multiply the probabilities (the product rule). That is quicker than a 64-box square.",
+      ...t.genes.map((g, i) => `\`${g.L}\` gene: ${code(g1(g.L, k1[i]))} × ${code(g1(g.L, k2[i]))} gives dominant phenotype ${xqStr(pDom(k1[i], k2[i])).replace(/^1\/1$/, "1")}, recessive ${xqStr(pRec(k1[i], k2[i])).replace(/^0\/1$/, "0")}, same as parent 1 ${xqStr(pK(k1[i], k2[i], k1[i])).replace(/^1\/1$/, "1")}.`),
+      `All dominant: **${xqStr(allDom)}**. All recessive: **${xqStr(allRec)}**. Same genotype as parent 1: **${xqStr(same)}**.`,
+    ],
+    values,
+    undefined,
+    [
+      "Independent genes can be split up: do three small one-gene crosses instead of one huge square.",
+      "For each gene, write the chance of the dominant phenotype, the recessive phenotype and each genotype.",
+      "Multiply the chances for the three genes to get the chance of a combination.",
+    ],
+  );
+}
+
+// ---------- Sex-linked & blood groups ----------
+
+const X_XL_BG = [
+  { id: "brother", txt: (d) => `Her brother ${d.aff}, but neither of her parents does.`, c: [1, 2] },
+  { id: "grandfather", txt: (d) => `Her mother's father ${d.aff}; her mother and her father do not.`, c: [1, 2] },
+  { id: "uncle", txt: (d) => `Her mother's brother ${d.aff}, but her mother, her father and her mother's parents do not.`, c: [1, 4] },
+  { id: "cousin", txt: (d) => `Her mother's sister has a son who ${d.aff}; nobody else in the family is affected, including her mother, her father, her mother's sister and her mother's parents.`, c: [1, 4] },
+];
+const X_WOMEN = ["Ana", "Beth", "Chloe", "Dana", "Ella", "Farah", "Grace", "Hana", "Isla", "Jade", "Kira", "Lena"];
+
+// Sex-linked, expert 1: carrier probability from a family history, then her children.
+function xSexPedigree(rng) {
+  const d = rng.pick(XL);
+  const bg = rng.pick(X_XL_BG);
+  const who = rng.pick(X_WOMEN);
+  const husbandAff = rng.next() < 0.35;
+  const c = bg.c;
+  const sonAff = xqMul(c, [1, 2]);
+  const third = husbandAff ? xqMul(c, [1, 2]) : xqAdd(xqSub([1, 1], c), xqMul(c, [1, 4]));
+  const values = { bg: bg.id, husbandAff };
+  return xMulti(
+    `${d.name.charAt(0).toUpperCase() + d.name.slice(1)} is caused by a recessive allele on the X chromosome. ${who} does not have it. ${bg.txt(d)} ${who}'s partner ${husbandAff ? d.aff : "does not have it"}.`,
+    [
+      xFrac("carrier", "Carrier", `What is the probability that ${who} is a carrier?`, c,
+        "Work down the family tree one generation at a time. An unaffected man passes on a normal X; a carrier woman passes on the recessive X half the time.", "xl-carrier"),
+      xFrac("son", "A son", `What is the probability that a son of ${who} and her partner ${d.aff}?`, sonAff,
+        `A son's X comes from ${who}. She must be a carrier and then pass on the recessive X.`, "xl-son"),
+      husbandAff
+        ? xFrac("daughter", "A daughter", `What is the probability that a daughter of theirs ${d.aff}?`, third,
+          "A daughter gets her father's X (recessive here) and one X from her mother. She is affected only if both are recessive.", "xl-dau")
+        : xFrac("twosons", "Two sons", "If they have two sons, what is the probability that neither is affected?", third,
+          `Split it into two cases: ${who} is not a carrier (both sons are certainly fine), or she is a carrier (then each son is fine half the time).`, "xl-two"),
+    ],
+    [
+      bg.id === "brother"
+        ? `Her brother's X came from their mother, so her mother must be a carrier. ${who} got one of her mother's two X chromosomes: carrier with probability **${xqStr(c)}**.`
+        : bg.id === "grandfather"
+          ? `Her mother got her X from an affected father, so her mother is certainly a carrier. ${who} is a carrier with probability **${xqStr(c)}**.`
+          : bg.id === "uncle"
+            ? `Her mother's brother got his recessive X from his mother, so ${who}'s grandmother is a carrier. Her mother is a carrier with probability 1/2, and ${who} with \`1/2 × 1/2\` = **${xqStr(c)}**.`
+            : `The cousin got his recessive X from his mother, so ${who}'s aunt is a carrier. Her grandfather is unaffected, so the aunt's recessive X came from the grandmother: she is a carrier too. ${who}'s mother is then a carrier with probability 1/2, and ${who} with \`1/2 × 1/2\` = **${xqStr(c)}**.`,
+      `A son gets his X from ${who}: \`${xqStr(c)} × 1/2\` = **${xqStr(sonAff)}**.`,
+      husbandAff
+        ? `A daughter gets the recessive X from her father, so she is affected if ${who} also passes on a recessive X: \`${xqStr(c)} × 1/2\` = **${xqStr(third)}**.`
+        : `Two unaffected sons: not a carrier (${xqStr(xqSub([1, 1], c))}, both certainly fine) or a carrier (${xqStr(c)}) with both fine (\`1/2 × 1/2\`): \`${xqStr(xqSub([1, 1], c))} + ${xqStr(c)} × 1/4\` = **${xqStr(third)}**. The sons are not independent of each other, because they share the same uncertain mother.`,
+    ],
+    values,
+    undefined,
+    [
+      "Males have one X (from their mother). An affected male's X always tells you something about his mother.",
+      `Work out who must be a carrier first, then go down the tree to ${who}: each step through a carrier mother halves the chance.`,
+      "For her children, multiply her carrier probability by the chance she passes on the recessive X.",
+    ],
+  );
+}
+
+// Parent descriptions for blood groups. Each says what is known; dist = genotype probabilities.
+const X_BGP = [
+  { id: "A-momO", txt: (s) => `group A, and ${s} mother is group O`, dist: { AO: [1, 1] } },
+  { id: "B-dadO", txt: (s) => `group B, and ${s} father is group O`, dist: { BO: [1, 1] } },
+  { id: "A-AB", txt: (s) => `group A, and both of ${s} parents are group AB`, dist: { AA: [1, 1] } },
+  { id: "A-AiAi", txt: (s) => `group A, and both of ${s} parents have genotype \`I^A i\``, dist: { AA: [1, 3], AO: [2, 3] } },
+  { id: "B-BiBi", txt: (s) => `group B, and both of ${s} parents have genotype \`I^B i\``, dist: { BB: [1, 3], BO: [2, 3] } },
+  { id: "AB", txt: () => "group AB", dist: { AB: [1, 1] } },
+  { id: "O", txt: () => "group O", dist: { OO: [1, 1] } },
+  { id: "B-ABO", txt: (s) => `group B, and ${s} parents are group AB and group O`, dist: { BO: [1, 1] } },
+];
+
+// Blood groups, expert 2: parents known only through their own parents; probabilities for a child.
+function xBloodFamily(rng) {
+  const mo = rng.pick(X_BGP);
+  const fa = rng.pick(X_BGP);
+  // Gamete probabilities from each parent's genotype distribution (product rule).
+  const gam = (dist) => {
+    const out = { A: [0, 1], B: [0, 1], O: [0, 1] };
+    for (const [k, w] of Object.entries(dist)) for (const a of BG[k]) out[a] = xqAdd(out[a], xqMul(w, [1, 2]));
+    return out;
+  };
+  const gm = gam(mo.dist), gf = gam(fa.dist);
+  const P = { A: [0, 1], B: [0, 1], AB: [0, 1], O: [0, 1] };
+  for (const a of ["A", "B", "O"]) for (const b of ["A", "B", "O"]) {
+    const s = new Set([a, b]);
+    const grp = s.has("A") && s.has("B") ? "AB" : s.has("A") ? "A" : s.has("B") ? "B" : "O";
+    P[grp] = xqAdd(P[grp], xqMul(gm[a], gf[b]));
+  }
+  const ok = GROUPS.filter((g) => xqOk(P[g]));
+  if (ok.length < 2) throw new XRetry();
+  const asks = rng.shuffle(ok).slice(0, 2).sort((x, y) => GROUPS.indexOf(x) - GROUPS.indexOf(y));
+  const values = { mo: mo.id, fa: fa.id };
+  const gtx = (g) => xqStr(g).replace(/^0\/1$/, "0").replace(/^1\/1$/, "1");
+  return xMulti(
+    `${BG_INTRO} A woman is ${mo.txt("her")}. Her partner is ${fa.txt("his")}.`,
+    asks.map((g) => xFrac(`g${g}`, `Group ${g}`, `What is the probability that their child is group ${g}?`, P[g],
+      "List the alleles each parent could pass on, with their chances, then combine them in a 3 × 3 grid.", `bg-${g}`)),
+    [
+      BG_KEY,
+      `Woman: ${Object.entries(mo.dist).map(([k, w]) => `${code(bgGeno(k))} (${gtx(w)})`).join(" or ")}. She passes on \`I^A\` ${gtx(gm.A)}, \`I^B\` ${gtx(gm.B)}, \`i\` ${gtx(gm.O)}.`,
+      `Partner: ${Object.entries(fa.dist).map(([k, w]) => `${code(bgGeno(k))} (${gtx(w)})`).join(" or ")}. He passes on \`I^A\` ${gtx(gf.A)}, \`I^B\` ${gtx(gf.B)}, \`i\` ${gtx(gf.O)}.`,
+      `Combine (multiply the chances and add the boxes that give each group): ${asks.map((g) => `group ${g} **${xqStr(P[g])}**`).join(", ")}.`,
+    ],
+    values,
+    undefined,
+    [
+      "First work out each parent's possible genotypes from the family information. A group A person with a group O parent must carry `i`.",
+      "If two `I^A i` parents have a group A child, only count the group A boxes of their Punnett square: `I^A I^A` and `I^A i` in the ratio 1 : 2.",
+      "Then find the chance each parent passes on `I^A`, `I^B` or `i`, and multiply across.",
+    ],
+  );
+}
+
+// ---------- Population genetics ----------
+
+const X_HW_TRAITS = HW_TRAITS;
+
+// Population, expert 1: from 1 in N recessive, find q, the carrier rate, and the risk for two random
+// dominant-phenotype parents.
+function xHWRisk(rng) {
+  const t = rng.pick(X_HW_TRAITS);
+  const N = rng.int(4, 400) * 25;
+  const big = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  const q = 1 / Math.sqrt(N);
+  const H = 2 * q * (1 - q);
+  const carrierGivenDom = H / (1 - q * q);
+  const risk = (carrierGivenDom ** 2) / 4;
+  const oneIn = 1 / risk;
+  const values = { N };
+  return xMulti(
+    `In a large population of ${t.many}, 1 in ${big(N)} has ${t.rec}, which is caused by a recessive allele. ${HW_ASSUME}`,
+    [
+      xNum("q", "q", "What is the frequency q of the recessive allele?", q, 4,
+        "The recessive phenotype frequency is q².", "hw-q"),
+      xNum("carriers", "Carriers", `What percentage of the population are carriers (heterozygous)? (Type the number without the % sign.)`, H * 100, 2,
+        "Carriers are 2pq of the population, with p = 1 - q.", "hw-H"),
+      xNum("oneIn", "Risk", `Two ${t.many} without ${t.rec} are picked at random and mated. Their offspring has a 1 in X chance of ${t.rec}. What is X?`, oneIn, 0,
+        `Each parent must be a carrier. But they don't have ${t.rec}, so the chance is 2pq ÷ (1 - q²), not 2pq. Then both pass on the recessive allele (1/4).`, "hw-risk"),
+    ],
+    [
+      HW_EQ,
+      `\`q² = 1 / ${N}\`, so \`q = √(1 / ${N})\` ${xRes(q, 4, "")}. In the calculator: \`sqrt(1 / _N)\`.`,
+      `\`2pq = 2 × q × (1 - q)\` = ${Number(H.toPrecision(6))} ${xRes(H * 100, 2, "%")}.`,
+      `Among individuals without ${t.rec}, the carrier share is \`2pq / (1 - q²)\` = ${Number(carrierGivenDom.toPrecision(6))}. Both must be carriers and the offspring gets two recessive alleles: \`(${Number(carrierGivenDom.toPrecision(6))})² × 1/4\` = ${Number(risk.toPrecision(6))}.`,
+      `X = 1 ÷ that ${xRes(oneIn, 0, "")}. Keep full precision until the end: rounding q early changes X.`,
+    ],
+    values,
+    [xG("_N", N)],
+    [
+      "Start from the recessive phenotype: its frequency is q². Then p = 1 - q.",
+      "Heterozygotes (carriers) make up 2pq of everyone.",
+      "The parents are known not to show the trait, so divide the carrier share by the share without the trait (1 - q²). Then multiply the two parents' chances by 1/4.",
+    ],
+  );
+}
+
+// Population, expert 2: selection against the recessive phenotype; q_next = q / (1 + q).
+function xHWSelection(rng) {
+  const t = rng.pick(X_HW_TRAITS);
+  const q0 = rng.int(10, 70) / 100;
+  const n = rng.int(2, 8);
+  const qn = q0 / (1 + n * q0);
+  const target = rng.pick([0.5, 1, 2, 4, 5]);
+  if (q0 * q0 * 100 <= target) throw new XRetry();
+  const qt = Math.sqrt(target / 100);
+  const gExact = 1 / qt - 1 / q0;
+  if (Math.abs(gExact - Math.round(gExact)) < 1e-6) throw new XRetry();
+  const gens = Math.ceil(gExact);
+  const values = { q0, n, target };
+  return xMulti(
+    `In a population of ${t.many}, ${num(roundTo(q0 * q0 * 100, 2))}% have ${t.rec}, which is caused by a recessive allele. From now on, every individual with ${t.rec} is removed before it can breed, and the rest mate at random. In each generation, then, q changes to \`q ÷ (1 + q)\`. Start from Hardy–Weinberg proportions.`,
+    [
+      xNum("q0", "q now", "What is the recessive allele frequency q now?", q0, 2,
+        "The recessive phenotype frequency is q².", "sel-q0"),
+      xNum("qn", `After ${n}`, `What is q after ${n} generations of this selection?`, qn, 4,
+        "Apply `q ÷ (1 + q)` once per generation, keeping full precision each time (or spot the pattern: 1/q goes up by 1 each generation).", "sel-qn"),
+      xInt("gens", "How long", `After how many generations does the share of ${t.many} with ${t.rec} first fall below ${target}%?`, gens,
+        `The phenotype share is q². Find the q that gives ${target}%, then count generations until q drops below it.`, "sel-gens"),
+    ],
+    [
+      `\`q = √${num(roundTo(q0 * q0, 4))}\` = **${num(q0)}**.`,
+      `Taking reciprocals, \`1/q_next = (1 + q)/q = 1/q + 1\`: 1/q rises by exactly 1 each generation. So after ${n} generations \`1/q = 1/${num(q0)} + ${n}\` = ${Number((1 / q0 + n).toPrecision(7))}, and \`q\` ${xRes(qn, 4, "")}.`,
+      `Below ${target}% means \`q² < ${target / 100}\`, so \`q < ${Number(qt.toPrecision(6))}\` and \`1/q > ${Number((1 / qt).toPrecision(6))}\`. That needs \`1/${num(q0)} + g > ${Number((1 / qt).toPrecision(6))}\`, so g > ${Number(gExact.toPrecision(6))}: **${gens}** generations.`,
+      "Selection against a recessive allele gets slower and slower, because most copies hide in carriers, who aren't removed.",
+    ],
+    values,
+    [xG("_q0", q0), xG("_n", n), xG("_target", target)],
+    [
+      "Start with q: the recessive phenotype share is q².",
+      "Apply the rule `q ÷ (1 + q)` repeatedly. It is quicker to notice what happens to 1/q each generation.",
+      "For the last part, turn the target percentage into a q value, then count generations until q falls below it.",
+    ],
+  );
+}
+
+function xGenerate(subtopic, rng) {
+  if (subtopic === "punnett") {
+    const r = rng.next();
+    return xRun(r < 0.4 ? xPunnettUncertain : r < 0.8 ? xPunnettTestcross : xPunnettSelfing, rng);
+  }
+  if (subtopic === "dihybrid") return xRun(rng.next() < 0.5 ? xDihybridInfer : xTrihybrid, rng);
+  if (subtopic === "sex-linked") return xRun(rng.next() < 0.5 ? xSexPedigree : xBloodFamily, rng);
+  if (subtopic === "population") return xRun(rng.next() < 0.5 ? xHWRisk : xHWSelection, rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---------- Expert checks: enumeration, Bayes and simulation ----------
+
+// Dominant-phenotype offspring of a cross, as weights over k (number of dominant alleles).
+function xDomOffspring(cross) {
+  const box = enumMono(cross[0], cross[1]); // [aa, Aa, AA] out of 4
+  return [[1, box[1]], [2, box[2]]].filter(([, w]) => w > 0);
+}
+// P(first offspring recessive), P(both of two offspring have phenotype ph | first recessive).
+function xPunnettEnum(v) {
+  let pFirst = 0, pBoth = 0, tot = 0;
+  for (const [k1, w1] of xDomOffspring(v.c1)) for (const [k2, w2] of xDomOffspring(v.c2)) {
+    const w = w1 * w2;
+    tot += w;
+    const box = enumMono(k1, k2);
+    const rec = box[0] / 4;
+    pFirst += w * rec;
+    pBoth += w * rec * (v.askRec ? rec : 1 - rec);
+  }
+  return { first: pFirst / tot, nextGiven: pBoth / pFirst };
+}
+// Woman's carrier probability by walking down the tree; each woman is a distribution over 0/1/2 recessive X's.
+function xDaughter(mother, fatherRec) {
+  const out = [0, 0, 0];
+  mother.forEach((w, k) => {
+    if (!w) return;
+    // Her two X's, each passed on half the time.
+    for (const a of [k >= 1 ? 1 : 0, k === 2 ? 1 : 0]) out[a + fatherRec] += w / 2;
+  });
+  out[2] = 0; // known to be unaffected
+  const s = out[0] + out[1];
+  return out.map((x) => x / s);
+}
+// An unaffected woman with an affected son: Bayes over carrier / not carrier (any prior > 0).
+function xCarrierGivenSon(prior) {
+  const like = [0, 0.5, 0];
+  const post = prior.map((w, k) => w * like[k]);
+  const s = post.reduce((a, b) => a + b, 0);
+  return post.map((x) => x / s);
+}
+function xWoman(bg) {
+  const unknown = [0.5, 0.5, 0];
+  if (bg === "brother") return xDaughter(xCarrierGivenSon(unknown), 0);
+  if (bg === "grandfather") return xDaughter(xDaughter([1, 0, 0], 1), 0);
+  if (bg === "uncle") return xDaughter(xDaughter(xCarrierGivenSon(unknown), 0), 0);
+  if (bg === "cousin") {
+    // Grandmother: Bayes on "her daughter (the aunt) has an affected son".
+    const post = unknown.map((w, k) => {
+      if (!w) return 0;
+      const aunt = [0, 0, 0];
+      aunt[k] = 1;
+      return w * xDaughter(aunt, 0)[1] * 0.5;
+    });
+    const s = post.reduce((a, b) => a + b, 0);
+    return xDaughter(xDaughter(post.map((x) => x / s), 0), 0);
+  }
+  return null;
+}
+// Blood-group parent genotype distribution, by enumerating the grandparents and conditioning.
+const X_ALL_BG = ["AA", "AO", "BB", "BO", "AB", "OO"];
+function xBgParent(id) {
+  const grp = (a, b) => {
+    const s = new Set([a, b]);
+    return s.has("A") && s.has("B") ? "AB" : s.has("A") ? "A" : s.has("B") ? "B" : "O";
+  };
+  const spec = {
+    "A-momO": [["OO"], X_ALL_BG, "A"], "B-dadO": [["OO"], X_ALL_BG, "B"], "A-AB": [["AB"], ["AB"], "A"],
+    "A-AiAi": [["AO"], ["AO"], "A"], "B-BiBi": [["BO"], ["BO"], "B"], "B-ABO": [["AB"], ["OO"], "B"],
+  }[id];
+  if (id === "AB") return { AB: 1 };
+  if (id === "O") return { OO: 1 };
+  if (!spec) return null;
+  const out = {};
+  let tot = 0;
+  for (const g1x of spec[0]) for (const g2x of spec[1]) for (const a of BG[g1x]) for (const b of BG[g2x]) {
+    if (grp(a, b) !== spec[2]) continue;
+    const key = X_ALL_BG.find((k) => (BG[k][0] === a && BG[k][1] === b) || (BG[k][0] === b && BG[k][1] === a));
+    out[key] = (out[key] || 0) + 1;
+    tot++;
+  }
+  for (const k of Object.keys(out)) out[k] /= tot;
+  return out;
+}
+function xBgChild(v, group) {
+  const mo = xBgParent(v.mo), fa = xBgParent(v.fa);
+  if (!mo || !fa) return NaN;
+  let p = 0;
+  for (const [km, wm] of Object.entries(mo)) for (const [kf, wf] of Object.entries(fa)) for (const a of BG[km]) for (const b of BG[kf]) {
+    const s = new Set([a, b]);
+    const grp = s.has("A") && s.has("B") ? "AB" : s.has("A") ? "A" : s.has("B") ? "B" : "O";
+    if (grp === group) p += (wm * wf) / 4;
+  }
+  return p;
+}
+// Bisection for q from q² = 1/N (no square root).
+function xBisectQ(N) {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    if (mid * mid * N < 1) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+// Generation-by-generation selection: remove the recessive phenotype, renormalise.
+function xSelectStep(q) {
+  const p = 1 - q;
+  const AA = p * p, Aa = 2 * p * q;
+  return (Aa / 2) / (AA + Aa);
+}
+
+const X_CHECKS = {
+  // Bayes by enumeration: candidate genotypes from the parents' cross, weighted by P(n dominant test-cross offspring).
+  "tc-het": (v, a) => { const r = xTestcrossEnum(v); return xFracIs(a, r.het); },
+  "tc-next": (v, a) => { const r = xTestcrossEnum(v); return xFracIs(a, r.nextRec); },
+  "pu-het": (v, a) => {
+    const ws = xDomOffspring(v.c1);
+    const tot = ws.reduce((s, [, w]) => s + w, 0);
+    return xFracIs(a, (ws.find(([k]) => k === 1)?.[1] || 0) / tot);
+  },
+  "pu-rec": (v, a) => xFracIs(a, xPunnettEnum(v).first),
+  "pu-next": (v, a) => xFracIs(a, xPunnettEnum(v).nextGiven),
+  "sf-het": (v, a) => {
+    let d = [0, 1, 0]; // [aa, Aa, AA] shares
+    for (let i = 0; i < v.n; i++) {
+      const nx = [0, 0, 0];
+      d.forEach((w, k) => enumMono(k, k).forEach((c, j) => { nx[j] += (w * c) / 4; }));
+      d = nx;
+    }
+    return xFracIs(a, d[1]);
+  },
+  "sf-rec": (v, a) => {
+    let d = [0, 1, 0];
+    for (let i = 0; i < v.n; i++) {
+      const nx = [0, 0, 0];
+      d.forEach((w, k) => enumMono(k, k).forEach((c, j) => { nx[j] += (w * c) / 4; }));
+      d = nx;
+    }
+    return xFracIs(a, d[0]);
+  },
+  // Best fit by enumerating each option's 16 boxes.
+  "di-cross": (v, a) => {
+    const N = v.counts.reduce((s, c) => s + c, 0);
+    const fit = (o) => enumDi(o[0], o[1]).cls.reduce((s, c, i) => s + (v.counts[i] / N - c / 16) ** 2, 0);
+    const fits = v.opts.map(fit);
+    const best = Math.min(...fits);
+    const i = fits.indexOf(best);
+    if (fits.filter((f) => f === best).length !== 1) return false;
+    const o = v.opts[i];
+    const L = /`([A-Za-z]{4})` × `([A-Za-z]{4})`/.exec(a);
+    if (!L) return false;
+    const k = (s, j) => [s[j * 2], s[j * 2 + 1]].filter((c) => c === c.toUpperCase()).length;
+    return k(L[1], 0) === o[0][0] && k(L[1], 1) === o[0][1] && k(L[2], 0) === o[1][0] && k(L[2], 1) === o[1][1];
+  },
+  "di-expect": (v, x) => {
+    const N = v.counts.reduce((s, c) => s + c, 0);
+    const fit = (o) => enumDi(o[0], o[1]).cls.reduce((s, c, i) => s + (v.counts[i] / N - c / 16) ** 2, 0);
+    const fits = v.opts.map(fit);
+    const o = v.opts[fits.indexOf(Math.min(...fits))];
+    return x * 16 === enumDi(o[0], o[1]).cls[v.cls] * v.M;
+  },
+  // 8 × 8 gametes over three genes.
+  "tri-dom": (v, a) => xFracIs(a, xTriEnum(v, (k) => k.every((x) => x > 0))),
+  "tri-rec": (v, a) => xFracIs(a, xTriEnum(v, (k) => k.every((x) => x === 0))),
+  "tri-same": (v, a) => xFracIs(a, xTriEnum(v, (k) => k.every((x, i) => x === v.k1[i]))),
+  "xl-carrier": (v, a) => { const w = xWoman(v.bg); return !!w && xFracIs(a, w[1]); },
+  "xl-son": (v, a) => { const w = xWoman(v.bg); return !!w && xFracIs(a, w[1] * 0.5); },
+  "xl-dau": (v, a) => { const w = xWoman(v.bg); return !!w && v.husbandAff && xFracIs(a, w[1] * 0.5); },
+  // Enumerate both sons' X chromosomes for each possible mother.
+  "xl-two": (v, a) => {
+    const w = xWoman(v.bg);
+    if (!w || v.husbandAff) return false;
+    let p = 0;
+    w.forEach((wk, k) => {
+      const xs = [k >= 1 ? 1 : 0, k === 2 ? 1 : 0];
+      for (const s1 of xs) for (const s2 of xs) if (!s1 && !s2) p += wk / 4;
+    });
+    return xFracIs(a, p);
+  },
+  "bg-A": (v, a) => xFracIs(a, xBgChild(v, "A")),
+  "bg-B": (v, a) => xFracIs(a, xBgChild(v, "B")),
+  "bg-AB": (v, a) => xFracIs(a, xBgChild(v, "AB")),
+  "bg-O": (v, a) => xFracIs(a, xBgChild(v, "O")),
+  "hw-q": (v, x, h) => x - h > 0 && xBracket((q) => q * q * v.N - 1, x, h),
+  "hw-H": (v, x, h) => { const q = xBisectQ(v.N); return xBracket((pc) => pc / 100 - 2 * q * (1 - q), x, h); },
+  // Enumerate parent genotypes (AA, Aa) with HW weights, keep the recessive-offspring chance.
+  "hw-risk": (v, x, h) => {
+    const q = xBisectQ(v.N), p = 1 - q;
+    const par = [[p * p, 2], [2 * p * q, 1]];
+    let num = 0, den = 0;
+    for (const [w1, k1] of par) for (const [w2, k2] of par) { den += w1 * w2; num += (w1 * w2 * enumMono(k1, k2)[0]) / 4; }
+    const risk = num / den;
+    return xBracket((X) => X * risk - 1, x, h);
+  },
+  "sel-q0": (v, x, h) => x - h > 0 && xBracket((q) => q * q * 100 - roundTo(v.q0 * v.q0 * 100, 2), x, h),
+  "sel-qn": (v, x, h) => { let q = v.q0; for (let i = 0; i < v.n; i++) q = xSelectStep(q); return xBracket((y) => y - q, x, h); },
+  "sel-gens": (v, x) => {
+    let q = v.q0, g = 0;
+    while (q * q * 100 >= v.target && g < 10000) { q = xSelectStep(q); g++; }
+    return x === g;
+  },
+};
+function xTestcrossEnum(v) {
+  let tot = 0, het = 0, rec = 0;
+  for (const [k, w] of xDomOffspring(v.cross)) {
+    const box = enumMono(k, 0); // test cross with aa: [aa, Aa, AA] out of 4
+    const like = (1 - box[0] / 4) ** v.n;
+    tot += w * like;
+    if (k === 1) het += w * like;
+    rec += (w * like * box[0]) / 4;
+  }
+  return { het: het / tot, nextRec: rec / tot };
+}
+function xTriEnum(v, pred) {
+  const gam = (k) => {
+    const sets = k.map((kk) => [kk >= 1 ? 1 : 0, kk === 2 ? 1 : 0]);
+    const out = [];
+    for (const a of sets[0]) for (const b of sets[1]) for (const c of sets[2]) out.push([a, b, c]);
+    return out;
+  };
+  let hit = 0, tot = 0;
+  for (const x of gam(v.k1)) for (const y of gam(v.k2)) {
+    tot++;
+    if (pred(x.map((xi, i) => xi + y[i]))) hit++;
+  }
+  return hit / tot;
 }

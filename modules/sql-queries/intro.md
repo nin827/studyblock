@@ -26,3 +26,4 @@ SQL is how programs ask databases questions. Each question here shows one or two
 | Easy | One condition, top or bottom row, `COUNT`, `MIN`, `MAX`, counts per group |
 | Medium | AND, OR and BETWEEN, top-n lists, `SUM`, `AVG`, `COUNT(DISTINCT …)`, values per group |
 | Hard | Brackets and NOT, OFFSET and two sort keys, subqueries, HAVING, joins, questions with several parts |
+| Expert | Working backwards (a missing number in the query or the table, the ORDER BY that gives an order), AND before OR without brackets, pages with LIMIT and OFFSET, and queries that combine JOIN, WHERE, subqueries, GROUP BY and HAVING |

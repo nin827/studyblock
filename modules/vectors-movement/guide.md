@@ -17,6 +17,8 @@ Example: a = (3, −2) and b = (1, 4) give a + b = (4, 2) and a · b = 3 − 8 =
 
 **Watch out:** the dot product is one number, not a vector, and the vector from A to B is B − A, not A − B.
 
+**Expert: bounce, closest point, perpendicular.** A mirror bounce off a wall with normal n is `r = v − 2 × (v·n / n·n) × n`. The closest point on a segment A→B is at `t = (AP · AB) / (AB · AB)`, clamped into 0 to 1 (below 0 means A, above 1 means B). To make `a + k·b` perpendicular to c, solve `a·c + k(b·c) = 0`.
+
 ## Movement
 
 1. Position after t seconds: `start + velocity × t`, for each axis.
@@ -27,6 +29,8 @@ Example: a = (3, −2) and b = (1, 4) give a + b = (4, 2) and a · b = 3 − 8 =
 Example: 300 px/s at 60 fps moves 300 / 60 = 5 px per frame.
 
 **Watch out:** without delta time, movement speeds up on faster monitors: px per second = px per frame × fps.
+
+**Expert: intercepts, dashes and jumps.** To hit a moving target, set `|d + u·t| = s·t` (d = target − shooter), square it into `(u·u − s²)t² + 2(d·u)t + d·d = 0` and keep the positive root. A dash that speeds up to a top speed covers `vmax² / (2a)` while speeding up, then `vmax` per second. For a step-by-step jump, after n steps `y = y0 + n·v0·dt + a·dt²·n(n + 1)/2`: the peak is at the last step with v above 0, and it lands on the first step with y ≤ 0.
 
 ## Interpolation
 
@@ -39,6 +43,8 @@ Example: lerp(10, 30, 0.25) = 10 + 20 × 0.25 = 15.
 
 **Watch out:** smoothing never quite reaches the target. Each frame removes a fraction of what is left, not a fixed amount.
 
+**Expert: new frame rates, curves and easing.** Smoothing tuned at F1 fps keeps `(1 − f)^F1` of the gap per second; at F2 fps use `r = (1 − f)^(F1/F2)` per frame and close `1 − r`. A quadratic Bézier is three lerps with the same t (P0→P1, P1→P2, then between those); it heads along Q1 − Q0. Easing: clamp t into 0 to 1 first, then `s = t² × (3 − 2t)`, then lerp with s.
+
 ## Angles & direction
 
 1. Find the angle to the x axis: `atan(|y| / |x|)`.
@@ -49,3 +55,5 @@ Example: lerp(10, 30, 0.25) = 10 + 20 × 0.25 = 15.
 Example: (−3, 3) points at 135°, and rotating (2, 5) by 90° counter-clockwise gives (−5, 2).
 
 **Watch out:** in screen coordinates (y down), flip the sign of y before measuring a y-up angle. For a turn, wrap the difference into −180 to 180.
+
+**Expert: any rotation, turn rates and view cones.** Rotating counter-clockwise by φ: `x' = x·cos φ − y·sin φ`, `y' = x·sin φ + y·cos φ` (clockwise is a negative φ). With a turn rate, the time is |turn| ÷ rate, and the heading part-way is facing ± rate × time, wrapped into 0 to 360. A guard sees you only if the angle between its facing and you is at most half the cone **and** you are within range.

@@ -18,6 +18,8 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 
 **Watch out:** always round units **up**. One unit short is still a loss.
 
+**Expert.** Work backwards to a price: `price = variable cost + (fixed + target) / units`, rounded **up** to the cent. Margin of safety = profit ÷ contribution × 100, and operating leverage = contribution ÷ profit (a 10% rise in sales lifts profit by leverage × 10%). For a sales mix, treat one mix set as a single product, find the whole sets needed, then multiply by each product's share.
+
 ## Unit economics
 
 1. Contribution margin ratio = `(_price - _unit_cost) * 100 / _price`.
@@ -27,6 +29,8 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 
 **Watch out:** divide LTV by CAC, not the other way round.
 
+**Expert.** To work backwards from a target ratio, write LTV = target × CAC and solve for the unknown: the highest churn is `gross profit / (target * CAC) * 100`. CAC payback = `ceil(CAC / monthly gross profit)`. With two channels, blended CAC = total spend ÷ total customers, but also check each channel's own CAC: a good blend can hide a weak channel.
+
 ## Investment returns
 
 1. ROI = `(total return - total cost) * 100 / total cost`. Include installation in the cost, and resale in the return.
@@ -34,6 +38,8 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 3. NPV: discount each cash flow by `(1 + _rate)^year`, add them up, then subtract the cost paid today.
 
 **Watch out:** the cost paid today is not discounted.
+
+**Expert.** The annuity factor `(1 - (1 + r)^(-n)) / r` turns an equal yearly flow into today's money, so the flow that makes NPV zero is `cost / factor`. Discount a resale value once, at the end of the project's life. For discounted payback, keep a running total of the discounted flows and find the first year it reaches the cost.
 
 ## Pricing decisions
 
@@ -44,6 +50,8 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 
 **Watch out:** a price rise with falling sales needs both the new price **and** the new quantity.
 
+**Expert.** For a price change, profit stays the same when sales × margin stays the same: a rise can afford a sales fall of `(1 - old margin / new margin) * 100`%, and a cut needs a rise of `(old margin / new margin - 1) * 100`%. For a special order, count its margin, minus any setup, minus the full margin on regular sales it pushes out when capacity runs short.
+
 ## Inventory
 
 1. Reorder point = daily demand × lead time + safety stock. Find the daily demand first if you are given yearly or weekly demand.
@@ -53,6 +61,8 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 
 **Watch out:** average stock is **half** the order size.
 
+**Expert.** With a bulk discount, compare **total** yearly cost including purchases: `demand * price + demand / Q * order cost + Q / 2 * holding`, where holding is a percent of the (discounted) price. Working backwards from an EOQ, square both sides: order cost = `EOQ^2 * holding / (2 * demand)`. At the EOQ, ordering cost equals holding cost.
+
 ## Hiring
 
 1. Full monthly cost = `_salary * (1 + _overhead / 100) / 12`.
@@ -61,3 +71,5 @@ Example: price $4.50, cost $1.20, fixed $3300 → margin 3.30 → 3300 / 3.30 = 
 4. Payback months = `ceil(_upfront / _net)`.
 
 **Watch out:** include the overheads. The salary alone understates the cost.
+
+**Expert.** To find the sales a hire needs, add the up-front cost spread over the payback months to the monthly cost, then divide by the margin (`/ (_margin / 100)`) and round up. Against a contractor, the break-even hours are the employee's monthly cost ÷ the hourly rate: more hours than that, and the employee is cheaper.

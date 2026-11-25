@@ -4,7 +4,7 @@
       "id": "math",
       "title": "Math",
       "icon": "sigma",
-      "description": "Arithmetic, algebra, fractions, geometry, statistics, probability, trigonometry, logarithms, number theory and calculus.",
+      "description": "Arithmetic, algebra, fractions, geometry, statistics, probability, trigonometry, logarithms, number theory and ciphers, and calculus.",
       "modules": [
         "arithmetic",
         "algebra",
@@ -44,7 +44,7 @@
       "id": "computing",
       "title": "Computing",
       "icon": "cpu",
-      "description": "Number bases, logic, code, algorithms, networks, data, SQL and cryptography.",
+      "description": "Number bases, logic, code, algorithms, networks, data and SQL.",
       "modules": [
         "number-bases",
         "boolean-logic",
@@ -54,8 +54,7 @@
         "algorithms",
         "networking",
         "data-representation",
-        "sql-queries",
-        "cryptography"
+        "sql-queries"
       ]
     },
     {
@@ -109,13 +108,10 @@
       "id": "game-dev",
       "title": "Game Dev",
       "icon": "gamepad-2",
-      "description": "The maths behind games: vectors, collisions, drop rates, pixels and colour, and balancing.",
+      "description": "The maths behind games: vectors and movement, and drop rates.",
       "modules": [
         "vectors-movement",
-        "collision",
-        "game-probability",
-        "pixels-colour",
-        "balancing"
+        "game-probability"
       ]
     },
     {
@@ -133,7 +129,7 @@
       "id": "biology",
       "title": "Biology",
       "icon": "leaf",
-      "description": "Cells and microscopes, genetics, ecology and the basics of living things.",
+      "description": "Cells and microscopes, genetics, ecology, and the basics of living things and the human body.",
       "modules": [
         "biology",
         "cells-microscopy",
@@ -145,14 +141,41 @@
       "id": "medical",
       "title": "Medical",
       "icon": "stethoscope",
-      "description": "General health facts and standard calculations. For learning only, not medical advice.",
+      "description": "Everyday health maths: body measurements and food energy. For learning only, not medical advice.",
       "modules": [
-        "anatomy",
         "body-measurements",
-        "vital-signs",
-        "nutrition",
-        "health-statistics"
+        "nutrition"
       ]
+    }
+  ],
+  "archived": [
+    {
+      "id": "balancing",
+      "title": "Balancing & Progression"
+    },
+    {
+      "id": "pixels-colour",
+      "title": "Pixels & Colour"
+    },
+    {
+      "id": "collision",
+      "title": "Collision"
+    },
+    {
+      "id": "vital-signs",
+      "title": "Vital Signs"
+    },
+    {
+      "id": "health-statistics",
+      "title": "Health Statistics"
+    },
+    {
+      "id": "cryptography",
+      "title": "Cryptography Basics"
+    },
+    {
+      "id": "anatomy",
+      "title": "Anatomy"
     }
   ]
 }

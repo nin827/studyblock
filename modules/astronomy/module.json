@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "distances", "title": "Distances & light", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "orbits", "title": "Orbits", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "scale-models", "title": "Scale models", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "angles-gravity", "title": "Apparent size & gravity", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "distances", "title": "Distances & light", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "orbits", "title": "Orbits", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "scale-models", "title": "Scale models", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "angles-gravity", "title": "Apparent size & gravity", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

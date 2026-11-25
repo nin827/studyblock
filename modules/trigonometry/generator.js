@@ -744,9 +744,364 @@ function genNonRight(difficulty, rng) {
   return finish(base, exact, "2dp", [a * b * sinD(C), 0.5 * a * b * cosC, 0.5 * a * b, 0.5 * a * c * sinD(C), (a * b * c) / 4 / 10], rng);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert: multi-step, multi-part problems (easy/medium/hard above are untouched).
+// Every template draws all of its rng values first, then builds text. Hints use only values
+// already drawn (no rng) and stop one step short of each answer. All answers: 2 decimal places.
+
+const pad3 = (b) => String(b).padStart(3, "0"); // bearings are whole degrees, written 065°
+const mod360 = (x) => ((x % 360) + 360) % 360;
+const okDp = (...xs) => xs.every((x) => Number.isFinite(x) && x > 0 && !isTie(x));
+const BEARINGS = " Bearings are measured clockwise from north, from 0 up to (not including) 360.";
+let XB = null; // bearing values written as 065° in the prompt (inPrompt can't see them)
+
+function part2(id, label, ask, exact, unit, hint) {
+  const u = unit === "°" ? " (degrees)" : unit ? ` (${unit})` : "";
+  return { id, label, ask: `${ask}${u}`, answerType: "number", answer: round2(exact), tolerance: 0.005, hint };
+}
+
+// Like attachGiven, for multi-part questions: no given value may equal any part's answer.
+function attachGivenExpert(q) {
+  const seen = new Set();
+  const list = [];
+  for (const g of GIVEN || []) {
+    const key = g.label.toLowerCase();
+    if (!GIVEN_LABEL.test(g.label) || seen.has(key) || !Number.isFinite(g.value)) continue;
+    const shown = inPrompt(q.prompt, g.value) || ((XB || []).includes(g.value) && q.prompt.includes(`${pad3(g.value)}°`));
+    if (!shown) continue;
+    if (q.parts.some((p) => Math.abs(g.value - p.answer) <= 0.005 + 1e-9)) continue;
+    seen.add(key);
+    list.push(g);
+  }
+  return list.length >= 2 ? { ...q, given: list.slice(0, 8) } : q;
+}
+
+// right-sides / expert 0: two angles of elevation from points a known distance apart.
+const TALL = [
+  { thing: "vertical mast", top: "the top of the mast" },
+  { thing: "tall tree", top: "the top of the tree" },
+  { thing: "lighthouse", top: "the top of the lighthouse" },
+  { thing: "church tower", top: "the top of the tower" },
+];
+function xElevTwo(rng) {
+  const obj = rng.pick(TALL);
+  const d = rng.int(15, 150);
+  const a1 = dec1(rng, 12, 40);
+  const a2 = dec1(rng, a1 + 10, 70);
+  const t1 = tanD(a1);
+  const t2 = tanD(a2);
+  const x = (d * t1) / (t2 - t1);
+  const h = x * t2;
+  if (!okDp(x, h)) return null;
+  return {
+    prompt: `From a point P on level ground, the angle of elevation of ${obj.top} of a ${obj.thing} is ${show(a1)}°. You walk ${d} m in a straight line towards its foot, to a point Q, and the angle of elevation is now ${show(a2)}°.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("dist", "Distance", "Distance from Q to the foot", x, "m", `Write the height two ways, \`h = x × tan(${show(a2)})\` and \`h = (x + ${d}) × tan(${show(a1)})\`, and solve for x.`),
+      part2("height", "Height", `Height of the ${obj.thing.replace(/^(vertical|tall|church) /, "")}`, h, "m", `Once you have x unrounded, the height is opposite the ${show(a2)}° angle at Q: multiply x by tan(${show(a2)}).`),
+    ],
+    explanation: [
+      `Let x be the distance from Q to the foot and h the height. Triangle Q-foot-top gives \`h = x × tan(a2)\`; triangle P-foot-top gives \`h = (x + d) × tan(a1)\`.`,
+      `Set them equal: \`x × (tan(a2) - tan(a1)) = d × tan(a1)\`, so \`x = d × tan(a1) / (tan(a2) - tan(a1))\`.`,
+      [given("_d", d), given("_a1", a1), given("_a2", a2), row("_x", "_d * tan(_a1) / (tan(_a2) - tan(_a1))", final(x, "2dp", "m")), row("_h", "_x * tan(_a2)", final(h, "2dp", "m"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-elev2", d, a1, a2 },
+    hints: [
+      `Call the distance from Q to the foot x, and the height h. Both points make a right-angled triangle with the same height: from Q, \`h = x × tan(${show(a2)})\`; from P, which is ${d} m further away, \`h = (x + ${d}) × tan(${show(a1)})\`.`,
+      `Set the two expressions for h equal and collect the x terms: \`x × (tan(${show(a2)}) - tan(${show(a1)})) = ${d} × tan(${show(a1)})\`.`,
+      `Divide to get x (\`_x\`), keep it unrounded, then multiply by tan(${show(a2)}) for the height.${LATE}`,
+    ],
+  };
+}
+
+// right-sides / expert 1: altitude splits a triangle into two right triangles that share AD.
+function xAltitude(rng) {
+  const c = dec1(rng, 4, 30);
+  const B = dec1(rng, 25, 80);
+  const C = dec1(rng, 25, 80);
+  const AD = c * sinD(B);
+  const BD = c * cosD(B);
+  const DC = AD / tanD(C);
+  const BC = BD + DC;
+  if (!okDp(AD, BC) || Math.abs(B - C) < 2) return null;
+  return {
+    prompt: `In triangle ABC, AB = ${show(c)} cm, angle B = ${show(B)}° and angle C = ${show(C)}°. D is the point on BC where AD is perpendicular to BC.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("ad", "AD", "Length of AD", AD, "cm", `In triangle ABD (right angle at D), AB is the hypotenuse and AD is opposite angle B.`),
+      part2("bc", "BC", "Length of BC", BC, "cm", `BC = BD + DC. Find BD in triangle ABD and DC in triangle ADC, which shares the side AD.`),
+    ],
+    explanation: [
+      `AD splits the triangle into two right-angled triangles that share AD. Work through ABD first (you know its hypotenuse), then ADC.`,
+      [given("_c", c), given("_angB", B), given("_angC", C), row("_AD", "_c * sin(_angB)", final(AD, "2dp", "cm")), row("_BD", "_c * cos(_angB)", mid(BD)), row("_DC", "_AD / tan(_angC)", mid(DC)), row("_BC", "_BD + _DC", final(BC, "2dp", "cm"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-alt", c, B, C },
+    hints: [
+      `Sketch it: AD splits ABC into two right-angled triangles, ABD and ADC, with the right angles at D. They share the side AD.`,
+      `In ABD the hypotenuse is AB = ${show(c)} cm: \`_AD = _c * sin(_angB)\` and \`_BD = _c * cos(_angB)\`.`,
+      `In ADC, AD is opposite the ${show(C)}° angle and DC is adjacent, so \`_DC = _AD / tan(_angC)\`. Then add BD and DC, all unrounded.${LATE}`,
+    ],
+  };
+}
+
+// right-sides / expert 2: flagpole at a corner of a rectangular field (Pythagoras, then tan).
+function xPoleField(rng) {
+  const l = rng.int(20, 120);
+  const w = rng.int(10, l - 5);
+  const theta = dec1(rng, 8, 40);
+  const AC = Math.sqrt(l * l + w * w);
+  const h = AC * tanD(theta);
+  const phi = atanD(h / w);
+  if (!okDp(AC, h, phi) || phi >= 89) return null;
+  return {
+    prompt: `A rectangular field ABCD has AB = ${l} m and BC = ${w} m. A vertical flagpole stands at corner A. From corner C, the angle of elevation of the top of the pole is ${show(theta)}°.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("ac", "AC", "Length of the diagonal AC", AC, "m", `The diagonal AC is the hypotenuse of the right-angled triangle ABC: use Pythagoras.`),
+      part2("height", "Pole", "Height of the flagpole", h, "m", `In the vertical triangle A-C-top, the ground distance AC is adjacent to the ${show(theta)}° angle and the pole is opposite.`),
+      part2("angle", "From D", "Angle of elevation of the top of the pole from corner D", phi, "°", `D is ${w} m from A (AD = BC). Opposite = the pole, adjacent = ${w} m: use atan.`),
+    ],
+    explanation: [
+      `Two right-angled triangles: ABC on the ground (gives the diagonal), then a vertical one standing on AC (gives the height). From D, the ground distance is AD = BC = ${w} m.`,
+      [given("_l", l), given("_w", w), given("_theta", theta), row("_AC", "sqrt(_l^2 + _w^2)", final(AC, "2dp", "m")), row("_h", "_AC * tan(_theta)", final(h, "2dp", "m")), row("_phi", "atan(_h / _w)", final(phi, "2dp", "°"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-pole", l, w, theta },
+    hints: [
+      `Start on the ground: in triangle ABC the right angle is at B, so \`_AC = sqrt(_l^2 + _w^2)\`.`,
+      `Now the vertical triangle with the pole: AC is adjacent to the ${show(theta)}° angle and the pole is opposite, so use TOA: \`_h = _AC * tan(_theta)\`.`,
+      `From D, the pole is opposite the angle and AD = ${w} m is adjacent: \`atan(_h / _w)\`, with _h unrounded.${LATE}`,
+    ],
+  };
+}
+
+// right-angles / expert 0: angles of a cuboid's space diagonal.
+function xCuboid(rng) {
+  const l = rng.int(4, 30);
+  const w = rng.int(2, l);
+  const h = rng.int(2, 25);
+  const AC = Math.sqrt(l * l + w * w);
+  const base = atanD(h / AC);
+  const AG = Math.sqrt(AC * AC + h * h);
+  const edge = acosD(l / AG);
+  if (!okDp(AC, base, edge) || Number.isInteger(clean(AC))) return null;
+  return {
+    prompt: `A cuboid ABCDEFGH has a rectangular base ABCD with AB = ${l} cm and BC = ${w} cm, and vertical edges AE, BF, CG and DH of ${h} cm. G is directly above C.${UNROUNDED}${DEG}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("ac", "AC", "Length of the base diagonal AC", AC, "cm", `Triangle ABC is right-angled at B.`),
+      part2("base", "With base", "Angle between the space diagonal AG and the base ABCD", base, "°", `The angle with the base is angle GAC, in the right-angled triangle ACG (right angle at C). CG is opposite it, AC adjacent.`),
+      part2("edge", "With AB", "Angle between AG and the edge AB", edge, "°", `In triangle ABG the right angle is at B, AB is adjacent to the angle at A and AG is the hypotenuse. Find AG with Pythagoras first.`),
+    ],
+    explanation: [
+      `Find a right-angled triangle for each angle. The angle with the base sits in triangle ACG (right angle at C). The angle with AB sits in triangle ABG (right angle at B, because BG lies in the face BCGF, which is perpendicular to AB).`,
+      [given("_l", l), given("_w", w), given("_h", h), row("_AC", "sqrt(_l^2 + _w^2)", final(AC, "2dp", "cm")), row("_base", "atan(_h / _AC)", final(base, "2dp", "°")), row("_AG", "sqrt(_AC^2 + _h^2)", mid(AG)), row("_edge", "acos(_l / _AG)", final(edge, "2dp", "°"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-cuboid", l, w, h },
+    hints: [
+      `Start on the base: \`_AC = sqrt(_l^2 + _w^2)\`.`,
+      `The space diagonal AG, the base diagonal AC and the edge CG = ${h} cm form a right-angled triangle with the right angle at C. The angle with the base is at A: CG is opposite, AC adjacent.`,
+      `For the angle with AB, use triangle ABG: \`_AG = sqrt(_AC^2 + _h^2)\` is the hypotenuse and AB = ${l} cm is adjacent, so use acos.${LATE}`,
+    ],
+  };
+}
+
+// right-angles / expert 1: two legs at right angles; distance and bearing back to the start.
+function xBearingBack(rng) {
+  const who = rng.pick(["A hiker", "A cyclist", "A drone", "A boat"]);
+  const b1 = rng.int(1, 359);
+  const right = rng.next() < 0.5;
+  const a = dec1(rng, 1.5, 20);
+  const b = dec1(rng, 1.5, 20);
+  const dist = Math.sqrt(a * a + b * b);
+  const alpha = atanD(b / a);
+  const out = mod360(b1 + (right ? alpha : -alpha));
+  const back = mod360(out + 180);
+  if (!okDp(dist, back) || back < 0.01 || back > 359.99 || Math.abs(a - b) < 0.3) return null;
+  XB.push(b1);
+  return {
+    prompt: `${who} travels ${show(a)} km from a start point S on a bearing of ${pad3(b1)}°, then turns 90° to the ${right ? "right" : "left"} and travels ${show(b)} km in a straight line to a point E.${BEARINGS}${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("dist", "Distance", "Straight-line distance from E back to S", dist, "km", `The two legs meet at a right angle, so the distance back is the hypotenuse.`),
+      part2("bearing", "Bearing", "Bearing of S from E", back, "°", `First find the bearing of E from S, then add or subtract 180° so the result lies from 0 to 360.`),
+    ],
+    explanation: [
+      `S, the turning point T and E form a right-angled triangle with the right angle at T. The angle at S between the first leg and SE is \`atan(b / a)\`.`,
+      `Turning ${right ? "right" : "left"} puts E ${right ? "clockwise" : "anticlockwise"} of the first bearing, so the bearing of E from S is ${pad3(b1)} ${right ? "+" : "-"} that angle. The bearing back is that plus or minus 180°.`,
+      [given("_a", a), given("_b", b), given("_bear1", b1), row("_dist", "sqrt(_a^2 + _b^2)", final(dist, "2dp", "km")), row("_alpha", "atan(_b / _a)", mid(alpha)), row("_out", `_bear1 ${right ? "+" : "-"} _alpha`, mid(out) + (out !== b1 + (right ? alpha : -alpha) ? " (after wrapping into 0 to 360)" : "")), row("_back", "_out ± 180", final(back, "2dp", "°"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-bearing", b1, right, a, b },
+    hints: [
+      `Sketch it with a north line at S. The two legs meet at a right angle at the turning point, so S, the turning point and E make a right-angled triangle with legs ${show(a)} km and ${show(b)} km.`,
+      `The distance SE is the hypotenuse. The angle at S between the first leg and SE is \`atan(_b / _a)\`: the second leg is opposite it.`,
+      `Turning ${right ? "right" : "left"} means E is ${right ? "clockwise" : "anticlockwise"} from the ${pad3(b1)}° line, so ${right ? "add" : "subtract"} that angle to get the bearing of E from S. The bearing back is that ± 180°, kept between 0 and 360.${LATE}`,
+    ],
+  };
+}
+
+// right-angles / expert 2: a ladder's foot is pushed towards the wall.
+function xLadderMove(rng) {
+  const L = dec1(rng, 4, 12);
+  const up = dec1(rng, L * 0.55, L - 0.4);
+  const foot = Math.sqrt(L * L - up * up);
+  const d = dec1(rng, 0.2, Math.max(0.2, foot * 0.6));
+  const foot2 = foot - d;
+  if (!(foot2 > 0.2)) return null;
+  const ang1 = acosD(foot / L);
+  const ang2 = acosD(foot2 / L);
+  const up2 = Math.sqrt(L * L - foot2 * foot2);
+  const rise = up2 - up;
+  if (!okDp(ang1, ang2, rise) || ang2 >= 89) return null;
+  return {
+    prompt: `A ${show(L)} m ladder leans against a vertical wall and reaches ${show(up)} m up the wall. Its foot is then pushed ${show(d)} m closer to the wall.${UNROUNDED}${DEG}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("before", "Before", "Angle between the ladder and the ground before it moves", ang1, "°", `The ladder is the hypotenuse and the height up the wall is opposite the angle at the ground.`),
+      part2("after", "After", "Angle between the ladder and the ground after it moves", ang2, "°", `Find the original distance from the wall with Pythagoras, subtract ${show(d)} m, then use cos = adjacent / hypotenuse.`),
+      part2("rise", "Rise", "How much higher up the wall the top now reaches", rise, "m", `New height: Pythagoras with the new foot distance. Then subtract the old height.`),
+    ],
+    explanation: [
+      `The ladder length stays ${show(L)} m. Find the foot's distance from the wall, move it, and redo the triangle.`,
+      [given("_L", L), given("_up", up), given("_d", d), row("_ang1", "asin(_up / _L)", final(ang1, "2dp", "°")), row("_foot", "sqrt(_L^2 - _up^2)", mid(foot)), row("_foot2", "_foot - _d", mid(foot2)), row("_ang2", "acos(_foot2 / _L)", final(ang2, "2dp", "°")), row("_rise", "sqrt(_L^2 - _foot2^2) - _up", final(rise, "2dp", "m"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-ladder", L, up, d },
+    hints: [
+      `Before: the ladder (${show(L)} m) is the hypotenuse and the height ${show(up)} m is opposite the angle at the ground, so use asin.`,
+      `The foot's distance from the wall is \`_foot = sqrt(_L^2 - _up^2)\`. After the push it is \`_foot - _d\`, and the ladder is still ${show(L)} m long.`,
+      `After: \`acos(_foot2 / _L)\` for the angle, and \`sqrt(_L^2 - _foot2^2)\` for the new height. Subtract the old height for the rise.${LATE}`,
+    ],
+  };
+}
+
+// non-right / expert 0: the ambiguous case of the sine rule.
+function xAmbiguous(rng) {
+  const A = dec1(rng, 20, 65);
+  const b = dec1(rng, 6, 35);
+  const a = dec1(rng, b * sinD(A) + 0.3, b - 0.3);
+  const s = (b * sinD(A)) / a;
+  if (!(s > 0 && s < 1)) return null;
+  const B1 = asinD(s);
+  const B2 = 180 - B1;
+  const C2 = 180 - A - B2;
+  const c2 = (a * sinD(C2)) / sinD(A);
+  if (B1 > 84 || C2 < 3 || !okDp(B1, B2, c2)) return null;
+  return {
+    prompt: `In triangle ABC, angle A = ${show(A)}°, side a = BC = ${show(a)} cm and side b = AC = ${show(b)} cm. Two different triangles fit these measurements.${UNROUNDED}${DEG}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("acute", "Acute B", "Angle B in the triangle where B is acute", B1, "°", `Sine rule for an angle: sin(B) = b × sin(A) / a, then asin.`),
+      part2("obtuse", "Obtuse B", "Angle B in the triangle where B is obtuse", B2, "°", `sin(180° - x) = sin(x), so the other angle with the same sine is 180° minus the acute one.`),
+      part2("c", "Side c", "Side c = AB in the triangle where B is obtuse", c2, "cm", `In the obtuse case, find C = 180 - A - B first, then use the sine rule again: c = a × sin(C) / sin(A).`),
+    ],
+    explanation: [
+      `Side a is shorter than b but longer than b × sin(A), so the swinging side a can meet the base line in two places: the ambiguous case.`,
+      [given("_angA", A), given("_a", a), given("_b", b), row("_sinB", "_b * sin(_angA) / _a", mid(s)), row("_B1", "asin(_sinB)", final(B1, "2dp", "°")), row("_B2", "180 - _B1", final(B2, "2dp", "°")), row("_C2", "180 - _angA - _B2", mid(C2)), row("_c2", "_a * sin(_C2) / sin(_angA)", final(c2, "2dp", "cm"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-ambig", A, a, b },
+    hints: [
+      `You know a side and its opposite angle (a and A), plus side b, so use the sine rule for B: \`sin(B) = b × sin(A) / a\` = ${show(b)} × sin(${show(A)}) ÷ ${show(a)}.`,
+      `asin gives only the acute angle. Because sin(180° - x) = sin(x), the obtuse angle 180° - B also has that sine, and it still fits: A + (180° - B) is less than 180°.`,
+      `For the obtuse triangle, the third angle is C = 180 - A - (obtuse B). Then \`c = a × sin(C) / sin(A)\`, with everything unrounded.${LATE}`,
+    ],
+  };
+}
+
+// non-right / expert 1: cosine rule -> angle -> perpendicular height.
+function xChain(rng) {
+  const b = dec1(rng, 3, 30);
+  const c = dec1(rng, 3, 30);
+  const A = dec1(rng, 25, 150);
+  const a = Math.sqrt(b * b + c * c - 2 * b * c * cosD(A));
+  const B = acosD((a * a + c * c - b * b) / (2 * a * c));
+  const area = 0.5 * b * c * sinD(A);
+  const ht = (2 * area) / a;
+  if (!okDp(a, B, ht) || Math.abs(b - c) < 0.5) return null;
+  return {
+    prompt: `In triangle ABC, side b = AC = ${show(b)} cm, side c = AB = ${show(c)} cm and angle A = ${show(A)}°.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("a", "Side a", "Side a = BC", a, "cm", `Two sides and the angle between them: cosine rule.`),
+      part2("angb", "Angle B", "Angle B", B, "°", `Three sides are now known: \`cos(B) = (a² + c² - b²) / (2ac)\`, then acos. This works even if B is obtuse.`),
+      part2("height", "Height", "Perpendicular distance from A to the line BC", ht, "cm", `Area = ½ × b × c × sin(A), and also area = ½ × BC × height. Rearrange for the height.`),
+    ],
+    explanation: [
+      `Cosine rule for a, the rearranged cosine rule for B (safer than the sine rule, which can't tell an obtuse angle from its acute partner), then the area two ways.`,
+      [given("_b", b), given("_c", c), given("_angA", A), row("_a", "sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))", final(a, "2dp", "cm")), row("_angB", "acos((_a^2 + _c^2 - _b^2) / (2 * _a * _c))", final(B, "2dp", "°")), row("_area", "0.5 * _b * _c * sin(_angA)", mid(area)), row("_ht", "2 * _area / _a", final(ht, "2dp", "cm"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-chain", b, c, A },
+    hints: [
+      `Start with the cosine rule: \`_a = sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))\`. Keep it unrounded.`,
+      `For angle B use the cosine rule rearranged: \`cos(B) = (a² + c² - b²) / (2ac)\`. The side you subtract, b, is the one opposite B.`,
+      `The height from A meets BC at a right angle, so area = ½ × a × height. Work out the area from \`0.5 * _b * _c * sin(_angA)\`, then divide 2 × area by _a.${LATE}`,
+    ],
+  };
+}
+
+// non-right / expert 2: two legs on bearings that don't meet at a right angle (cosine rule).
+function xBearingCos(rng) {
+  const who = rng.pick(["A ship", "A yacht", "A plane", "A ferry"]);
+  const b1 = rng.int(1, 359);
+  const t = rng.int(25, 155);
+  const right = rng.next() < 0.5;
+  const d1 = dec1(rng, 5, 60);
+  const d2 = dec1(rng, 5, 60);
+  const b2 = mod360(b1 + (right ? t : -t));
+  const Bang = 180 - t;
+  const AC = Math.sqrt(d1 * d1 + d2 * d2 - 2 * d1 * d2 * cosD(Bang));
+  const angA = acosD((d1 * d1 + AC * AC - d2 * d2) / (2 * d1 * AC));
+  const bear = mod360(b1 + (right ? angA : -angA));
+  if (b2 === 0 || !okDp(AC, bear) || bear < 0.01 || bear > 359.99) return null;
+  XB.push(b1, b2);
+  return {
+    prompt: `${who} leaves port P and travels ${show(d1)} km on a bearing of ${pad3(b1)}° to a point Q. It then changes course and travels ${show(d2)} km on a bearing of ${pad3(b2)}° to a point R.${BEARINGS}${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      part2("dist", "Distance", "Distance PR", AC, "km", `Find the angle inside the triangle at Q from the change of course, then use the cosine rule.`),
+      part2("bearing", "Bearing", "Bearing of R from P", bear, "°", `Find the angle QPR with the cosine rule rearranged, then add it to or subtract it from ${pad3(b1)}°.`),
+    ],
+    explanation: [
+      `The course changes by ${t}° (${right ? "clockwise" : "anticlockwise"}), so the angle inside triangle PQR at Q is 180° - ${t}° = ${Bang}°.`,
+      `Cosine rule for PR, then the rearranged cosine rule for the angle at P. R is ${right ? "clockwise" : "anticlockwise"} of the first course, so ${right ? "add" : "subtract"} that angle${right ? " to" : " from"} ${pad3(b1)}°.`,
+      [given("_d1", d1), given("_d2", d2), given("_bear1", b1), given("_bear2", b2), fact("_angQ", Bang), row("_PR", "sqrt(_d1^2 + _d2^2 - 2 * _d1 * _d2 * cos(_angQ))", final(AC, "2dp", "km")), row("_angP", "acos((_d1^2 + _PR^2 - _d2^2) / (2 * _d1 * _PR))", mid(angA)), row("_bear", `_bear1 ${right ? "+" : "-"} _angP`, final(bear, "2dp", "°") + (Math.abs(bear - (b1 + (right ? angA : -angA))) > 1e-9 ? " (after wrapping into 0 to 360)" : ""))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-bearcos", b1, b2, d1, d2 },
+    hints: [
+      `Sketch it with a north line at P and at Q. The course turns from ${pad3(b1)}° to ${pad3(b2)}°, a change of ${t}°, so the angle inside the triangle at Q is 180° - ${t}°.`,
+      `Cosine rule for PR: \`PR² = d1² + d2² - 2 × d1 × d2 × cos(Q)\`. Keep PR unrounded (\`_PR\`).`,
+      `Angle at P: \`cos(P) = (d1² + PR² - d2²) / (2 × d1 × PR)\`. R lies ${right ? "clockwise" : "anticlockwise"} of the first course, so ${right ? "add P to" : "subtract P from"} ${pad3(b1)}° (wrap into 0 to 360 if needed).${LATE}`,
+    ],
+  };
+}
+
+const XGENS = {
+  "right-sides": [xElevTwo, xAltitude, xPoleField],
+  "right-angles": [xCuboid, xBearingBack, xLadderMove],
+  "non-right": [xAmbiguous, xChain, xBearingCos],
+};
+
+function genExpert(subtopic, rng) {
+  const list = XGENS[subtopic];
+  if (!list) throw new Error(`Subtopic ${subtopic} has no expert level`);
+  for (let t = 0; t < 200; t++) {
+    GIVEN = [];
+    XB = [];
+    const q = list[rng.int(0, list.length - 1)](rng);
+    if (q) {
+      const out = attachGivenExpert(q);
+      GIVEN = null;
+      XB = null;
+      return out;
+    }
+  }
+  GIVEN = null;
+  XB = null;
+  throw new Error(`Could not build a ${subtopic}/expert question`);
+}
+
 const GENS = { "exact-values": genExact, "right-sides": genRightSides, "right-angles": genRightAngles, "non-right": genNonRight };
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   const fn = GENS[subtopic];
   if (!fn) throw new Error(`Unknown subtopic: ${subtopic}`);
   checkDifficulty(difficulty);
@@ -866,6 +1221,7 @@ function exactOf(p) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.kind) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer);
 
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -897,4 +1253,103 @@ export function verify(question, answer) {
   if (!Number.isFinite(exact)) return false;
   if (p.fmt === "2dp") return Math.abs(x - exact) <= 0.005 + 1e-9;
   return Math.abs(x - exact) <= 1e-9 * Math.max(1, Math.abs(exact));
+}
+
+// ---- Expert verification: rebuild each figure by another route (coordinates, vectors, the
+// sine rule instead of tan, atan2 instead of asin/acos) and compare every part.
+
+const angleBetween = (u, v) => {
+  const dot = u.reduce((s, x, i) => s + x * v[i], 0);
+  const cr = u.length === 2 ? Math.abs(u[0] * v[1] - u[1] * v[0])
+    : Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]);
+  return Math.atan2(cr, dot) / RAD;
+};
+// Bearing of the vector (east, north), clockwise from north.
+const bearingOf = (e, n) => mod360(Math.atan2(e, n) / RAD);
+const step = (bear, d) => [d * Math.sin(bear * RAD), d * Math.cos(bear * RAD)];
+
+function expertExact(p) {
+  switch (p.kind) {
+    case "x-elev2": {
+      // Triangle P-Q-top: angle at top = a2 - a1; sine rule gives Q-top.
+      const qt = (p.d * Math.sin(p.a1 * RAD)) / Math.sin((p.a2 - p.a1) * RAD);
+      return { dist: qt * Math.cos(p.a2 * RAD), height: qt * Math.sin(p.a2 * RAD) };
+    }
+    case "x-alt": {
+      // Sine rule for BC, then place B = (0,0), C = (BC,0) and intersect the rays from B and C.
+      const A = 180 - p.B - p.C;
+      const bc = (p.c * Math.sin(A * RAD)) / Math.sin(p.C * RAD);
+      const tB = Math.tan(p.B * RAD);
+      const tC = Math.tan(p.C * RAD);
+      const x = (bc * tC) / (tB + tC);
+      return { ad: x * tB, bc };
+    }
+    case "x-pole": {
+      const ac = Math.hypot(p.l, p.w);
+      const h = ac / Math.tan((90 - p.theta) * RAD);
+      // Pole top at (0,0,h); D at (0,w,0): angle between D->top and the ground.
+      return { ac, height: h, angle: angleBetween([0, -p.w, h], [0, -p.w, 0]) };
+    }
+    case "x-cuboid": {
+      const g = [p.l, p.w, p.h];
+      return { ac: Math.hypot(p.l, p.w), base: angleBetween(g, [p.l, p.w, 0]), edge: angleBetween(g, [1, 0, 0]) };
+    }
+    case "x-bearing": {
+      const s1 = step(p.b1, p.a);
+      const s2 = step(p.b1 + (p.right ? 90 : -90), p.b);
+      const e = s1[0] + s2[0];
+      const n = s1[1] + s2[1];
+      return { dist: Math.hypot(e, n), bearing: bearingOf(-e, -n) };
+    }
+    case "x-ladder": {
+      const f1 = Math.sqrt(p.L * p.L - p.up * p.up);
+      const f2 = f1 - p.d;
+      const h2 = Math.sqrt(p.L * p.L - f2 * f2);
+      return { before: Math.atan2(p.up, f1) / RAD, after: Math.atan2(h2, f2) / RAD, rise: h2 - p.up };
+    }
+    case "x-ambig": {
+      // A = (0,0), C = (b,0), B = t(cos A, sin A) with |BC| = a: t² - 2bt·cos A + b² - a² = 0.
+      const k = p.b * Math.cos(p.A * RAD);
+      const disc = k * k - p.b * p.b + p.a * p.a;
+      if (!(disc > 0)) return null;
+      const out = [k - Math.sqrt(disc), k + Math.sqrt(disc)].map((t) => {
+        const B = [t * Math.cos(p.A * RAD), t * Math.sin(p.A * RAD)];
+        return { t, ang: angleBetween([-B[0], -B[1]], [p.b - B[0], -B[1]]) };
+      });
+      if (!(out[0].t > 0)) return null;
+      // The shorter AB gives the obtuse angle at B.
+      return { acute: out[1].ang, obtuse: out[0].ang, c: out[0].t };
+    }
+    case "x-chain": {
+      const A = [0, 0];
+      const B = [p.c, 0];
+      const C = [p.b * Math.cos(p.A * RAD), p.b * Math.sin(p.A * RAD)];
+      const bc = [C[0] - B[0], C[1] - B[1]];
+      const len = Math.hypot(bc[0], bc[1]);
+      const height = Math.abs(bc[0] * (A[1] - B[1]) - bc[1] * (A[0] - B[0])) / len;
+      return { a: len, angb: angleBetween([A[0] - B[0], A[1] - B[1]], bc), height };
+    }
+    case "x-bearcos": {
+      const s1 = step(p.b1, p.d1);
+      const s2 = step(p.b2, p.d2);
+      const e = s1[0] + s2[0];
+      const n = s1[1] + s2[1];
+      return { dist: Math.hypot(e, n), bearing: bearingOf(e, n) };
+    }
+    default:
+      return null;
+  }
+}
+
+function verifyExpert(p, answer) {
+  if (!answer || typeof answer !== "object") return false;
+  const ex = expertExact(p);
+  if (!ex) return false;
+  for (const [id, v] of Object.entries(ex)) {
+    const raw = answer[id];
+    if (raw === "" || raw === null || raw === undefined || typeof raw === "boolean") return false;
+    const x = Number(raw);
+    if (!Number.isFinite(x) || !Number.isFinite(v) || Math.abs(x - v) > 0.005 + 1e-9) return false;
+  }
+  return true;
 }

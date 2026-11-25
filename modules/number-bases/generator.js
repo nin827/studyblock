@@ -412,6 +412,7 @@ function generateRaw(subtopic, difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   return withHints(generateRaw(subtopic, difficulty, rng));
 }
 
@@ -665,6 +666,7 @@ function expectation(p) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
   const exp = expectation(p);
   if (!exp) return false;
 
@@ -684,4 +686,540 @@ export function verify(question, answer) {
 
   const v = parseAnswer(answer, exp.to);
   return Number.isFinite(v) && exp.ok(v);
+}
+
+// =====================================================================================
+// Expert. A separate branch: easy/medium/hard never reach this code, so their rng draws (and
+// questions) are unchanged. Every expert question carries its own hints (no rng calls in them)
+// and params with a kind starting "x-", checked by verifyExpert below.
+
+const placeSum = (bits) => {
+  const n = bits.length;
+  const used = [];
+  for (let i = 0; i < n; i++) if (bits[i] === "1") used.push(2 ** (n - 1 - i));
+  return used;
+};
+const sumText = (bits) => {
+  const used = placeSum(bits);
+  return used.length ? `${used.join(" + ")} = ${used.reduce((a, b) => a + b, 0)}` : "0";
+};
+
+// ---- binary / expert ----
+
+const BIT_OPS = { AND: (x, y) => x & y, OR: (x, y) => x | y, XOR: (x, y) => x ^ y };
+const BIT_RULE = {
+  AND: "AND gives 1 only where both bits are 1",
+  OR: "OR gives 1 where at least one of the bits is 1",
+  XOR: "XOR gives 1 where the two bits are different",
+};
+const BIT_USE = {
+  AND: "A program uses AND with a mask to keep only some bits of a status register.",
+  OR: "A program uses OR to switch some flag bits on in a settings byte.",
+  XOR: "A program uses XOR to flip some bits of a pixel value.",
+};
+
+function xBitwise(rng) {
+  const op = rng.pick(["AND", "OR", "XOR"]);
+  let a, b, r;
+  do {
+    a = rng.int(1, 255);
+    b = rng.int(1, 255);
+    r = BIT_OPS[op](a, b);
+  } while (r === 0 || a === b || r === a || r === b);
+  const A = toByte(a);
+  const B = toByte(b);
+  const R = toByte(r);
+  const lines = [
+    `${BIT_RULE[op]}. Line the two bytes up and work out each of the 8 columns on its own:\n\n\`\`\`\n    ${A}\n${op.padEnd(4)}${B}\n  = ${R}\n\`\`\``,
+    `Result: **${R}**.`,
+    `In decimal, add the place values under each 1: ${sumText(R)}, so **${r}**.`,
+  ];
+  return {
+    prompt: `${BIT_USE[op]} Work out \`${A} ${op} ${B}\` bit by bit (8 bits each).`,
+    answerType: "multi",
+    parts: [
+      { id: "res", label: "Result", ask: `The 8-bit result. ${BYTE_FMT}`, answerType: "text", answer: R,
+        hint: `Do one column at a time: ${BIT_RULE[op]}. Keep all 8 bits, including leading zeros.` },
+      { id: "dec", label: "Decimal", ask: "The result as a decimal number.", answerType: "number", answer: r, tolerance: 0,
+        hint: "Write the place values 128, 64, 32, 16, 8, 4, 2, 1 above your result and add the ones that sit over a 1." },
+    ],
+    explanation: lines.join("\n\n"),
+    params: { kind: "x-bitwise", op, a: A, b: B },
+    hints: [
+      `${BIT_RULE[op]}. Each column is worked out separately: no carries.`,
+      `Write \`${A}\` above \`${B}\` so the columns line up, then go left to right through all 8 columns.`,
+      "For the decimal value, add the place values (128, 64, …, 1) of the columns where your result has a 1.",
+    ],
+  };
+}
+
+const fracBits = (num, k) => num.toString(2).padStart(k, "0").replace(/0+$/, "");
+// value = whole + num / 2^k, written as a binary fraction.
+const binFrac = (whole, num, k) => `${toBin(whole)}.${fracBits(num, k)}`;
+const decFrac = (whole, num, k) => String(whole + num / 2 ** k);
+
+function fracPart(rng) {
+  const k = rng.int(2, 4);
+  let num;
+  do num = rng.int(1, 2 ** k - 1); while (num % 2 === 0); // last bit 1, so exactly k places
+  return { whole: rng.int(1, 31), num, k };
+}
+
+function xFractions(rng) {
+  const a = fracPart(rng);
+  let b;
+  do b = fracPart(rng); while (b.whole === a.whole && b.num === a.num && b.k === a.k);
+  const A = binFrac(a.whole, a.num, a.k);
+  const aDec = a.whole + a.num / 2 ** a.k;
+  const bDec = decFrac(b.whole, b.num, b.k);
+  const B = binFrac(b.whole, b.num, b.k);
+  const like = B === "10.01" ? "`1.1`" : "`10.01`";
+  const placesA = A.split(".")[1].split("").map((c, i) => (c === "1" ? `1/${2 ** (i + 1)}` : null)).filter(Boolean);
+  // Doubling method for the fraction of b, as explanation lines.
+  const dbl = [];
+  let f = b.num / 2 ** b.k;
+  while (f > 0 && dbl.length < 6) {
+    const d = f * 2;
+    const bit = d >= 1 ? 1 : 0;
+    dbl.push(`- ${f} × 2 = ${d} → write ${bit}${bit && d > 1 ? `, keep ${d - 1}` : ""}`);
+    f = d - bit;
+  }
+  return {
+    prompt: `In a binary fraction the places after the point are worth 1/2, 1/4, 1/8, 1/16, … (0.5, 0.25, 0.125, 0.0625).\n\n(a) What is \`${A}\` in decimal?\n\n(b) Write ${bDec} in binary.`,
+    answerType: "multi",
+    parts: [
+      { id: "todec", label: "(a) Decimal", ask: `\`${A}\` as an exact decimal (e.g. 2.75)`, answerType: "number", answer: aDec, tolerance: 0,
+        hint: `The whole part is \`${toBin(a.whole)}\`. After the point, add the place values (1/2, 1/4, …) that sit under a 1.` },
+      { id: "tobin", label: "(b) Binary", ask: `${bDec} in binary, like ${like}: no leading zeros and no zeros at the end after the point`, answerType: "text", answer: B,
+        hint: `Convert ${b.whole} as usual. For the fraction, keep doubling it: each time the result reaches 1, write 1 and subtract 1, otherwise write 0. Stop when nothing is left.` },
+    ],
+    explanation: [
+      `**(a)** Whole part \`${toBin(a.whole)}\` = ${a.whole}. After the point, the 1s are worth ${placesA.join(" + ")} = ${a.num}/${2 ** a.k} = ${a.num / 2 ** a.k}. So \`${A}\` = **${aDec}**.`,
+      `**(b)** ${b.whole} = \`${toBin(b.whole)}\`. For ${b.num / 2 ** b.k}, keep doubling:\n\n${dbl.join("\n")}\n\nReading the bits down gives .${fracBits(b.num, b.k)}, so ${bDec} = **${B}**.`,
+    ].join("\n\n"),
+    params: { kind: "x-frac", a: A, b: bDec },
+    hints: [
+      "Place values keep halving to the right of the point: 1/2, 1/4, 1/8, 1/16.",
+      "Treat the whole part and the fraction part separately, then put them together.",
+      "To turn a decimal fraction into binary, double it again and again; the whole number you get each time (0 or 1) is the next bit.",
+    ],
+  };
+}
+
+function xCounter(rng) {
+  const n = rng.int(4, 12);
+  const size = 2 ** n;
+  const w = rng.int(1, Math.min(size - 1, 200)); // steps until it wraps
+  const start = size - w;
+  let T, end;
+  do {
+    T = rng.next() < 0.3 ? rng.int(1, Math.max(1, w - 1)) : rng.int(w + 1, w + Math.min(size, 300));
+    end = (start + T) % size;
+  } while (end === 0 || T === w);
+  const S = toBin(start).padStart(n, "0");
+  const wraps = Math.floor((start + T) / size);
+  return {
+    prompt: `An **${n}-bit** counter holds whole numbers from 0 up to its largest ${n}-bit value. One more step after the largest value wraps it back to 0. It now holds \`${S}\` (all ${n} bits shown) and adds 1 every second.`,
+    answerType: "multi",
+    parts: [
+      { id: "wrap", label: "Seconds to 0", ask: "After how many seconds does it next show 0?", answerType: "number", answer: w, tolerance: 0,
+        hint: `The largest ${n}-bit value is 2^${n} − 1. Count the steps from the current value up to 2^${n}, which is where 0 appears.` },
+      { id: "after", label: `After ${T} s`, ask: `What does it hold after ${T} seconds? ${BIN_FMT}`, answerType: "text", answer: toBin(end),
+        hint: `Add ${T} to the current value. If you reach 2^${n} or more, take 2^${n} away (as often as needed), then convert back to binary.` },
+    ],
+    explanation: [
+      `Current value: \`${S}\` = ${sumText(S)}. The counter has 2^${n} = ${size} values, 0 to ${size - 1}.`,
+      `It shows 0 again after ${size} − ${start} = **${w}** seconds.`,
+      `After ${T} seconds: ${start} + ${T} = ${start + T}${wraps ? `; take away ${size}${wraps > 1 ? ` ${wraps} times` : ""} to get ${end}` : ""}. In binary: **${toBin(end)}**.`,
+    ].join("\n\n"),
+    params: { kind: "x-counter", n, start: S, t: T },
+    hints: [
+      `First read \`${S}\` as a decimal number.`,
+      `An ${n}-bit counter has 2^${n} different values, so it wraps when it would reach 2^${n}.`,
+      "Adding past the top is like taking the remainder after dividing by 2^n.",
+    ],
+  };
+}
+
+// ---- hexadecimal / expert ----
+
+function hexColumns(a, b, sub) {
+  const A = toHex(a);
+  const B = toHex(b);
+  const n = Math.max(A.length, B.length);
+  const pa = A.padStart(n, "0");
+  const pb = B.padStart(n, "0");
+  const rows = [];
+  let carry = 0;
+  let count = 0;
+  for (let i = n - 1; i >= 0; i--) {
+    const x = parseInt(pa[i], 16);
+    const y = parseInt(pb[i], 16);
+    if (!sub) {
+      const s = x + y + carry;
+      rows.push(`- ${pa[i]} + ${pb[i]}${carry ? " + carry 1" : ""} = ${s}${s >= 16 ? ` = 16 + ${s - 16} → write ${toHex(s - 16)}, carry 1` : ` → write ${toHex(s)}`}`);
+      carry = s >= 16 ? 1 : 0;
+      if (carry) count++;
+    } else {
+      const s = x - y - carry;
+      rows.push(`- ${pa[i]} − ${pb[i]}${carry ? " − borrow 1" : ""}${s < 0 ? `: too small, so borrow 16: ${x + 16} − ${y + carry} = ${s + 16} → write ${toHex(s + 16)}` : ` = ${s} → write ${toHex(s)}`}`);
+      carry = s < 0 ? 1 : 0;
+      if (carry) count++;
+    }
+  }
+  if (!sub && carry) rows.push("- The last carry becomes a new leftmost digit 1.");
+  return { rows, count, pa, pb };
+}
+
+function xHexArith(rng) {
+  const sub = rng.next() < 0.4;
+  let a, b, c, res;
+  do {
+    a = rng.int(256, 0xffff);
+    b = rng.int(256, 0xffff);
+    if (sub && b > a) [a, b] = [b, a];
+    res = sub ? a - b : a + b;
+    c = hexColumns(a, b, sub);
+  } while (a === b || res < 16 || c.count < 2);
+  const sym = sub ? "−" : "+";
+  return {
+    prompt: `Work in hexadecimal: \`${toHex(a)} ${sym} ${toHex(b)}\`. Remember that each hex column is worth 16 of the column to its right.`,
+    answerType: "multi",
+    parts: [
+      { id: "hex", label: sub ? "Difference" : "Sum", ask: `The answer in hex. ${HEX_FMT}`, answerType: "text", answer: toHex(res),
+        hint: sub
+          ? "Subtract column by column from the right. If the top digit is too small, borrow 16 from the next column."
+          : "Add column by column from the right. A column total of 16 or more: write total − 16 and carry 1." },
+      { id: "dec", label: "Decimal", ask: "The same answer as a decimal number.", answerType: "number", answer: res, tolerance: 0,
+        hint: "Multiply each hex digit of your answer by its place value (1, 16, 256, 4096, 65536 from the right) and add." },
+    ],
+    explanation: [
+      `Line the numbers up on the right and work column by column (A = 10 … F = 15):\n\n\`\`\`\n  ${c.pa}\n${sym} ${c.pb}\n\`\`\``,
+      c.rows.join("\n"),
+      `Result: **${toHex(res)}**.`,
+      `In decimal: ${toHex(res).split("").map((d, i, arr) => `${d} × ${16 ** (arr.length - 1 - i)}`).join(" + ")} = **${res}**. Check: ${a} ${sym} ${b} = ${res}.`,
+    ].join("\n\n"),
+    params: { kind: "x-hexarith", a: toHex(a), b: toHex(b), sub },
+    hints: [
+      `Hex digits go up to F = 15, so a column ${sub ? "borrows 16, not 10" : "carries when it reaches 16, not 10"}.`,
+      `Start with the rightmost column: ${toHex(a).slice(-1)} ${sym} ${toHex(b).slice(-1)}. Turn letters into numbers first.`,
+      "For the decimal part you can convert your hex answer, or convert both numbers first and check.",
+    ],
+  };
+}
+
+const CH = ["red", "green", "blue"];
+const hex2 = (v) => v.toString(16).toUpperCase().padStart(2, "0");
+const colourCode = (rgb) => `#${rgb.map(hex2).join("")}`;
+const cap1 = (s) => s[0].toUpperCase() + s.slice(1);
+
+function xColour(rng) {
+  let rgb;
+  do rgb = [rng.int(0, 255), rng.int(0, 255), rng.int(0, 255)];
+  while (new Set(rgb).size < 3 || rgb.some((v) => v % 17 === 0)); // every channel has two different digits
+  const code = colourCode(rgb);
+  const pairRows = rgb.map((v, i) => `- ${CH[i]}: \`${hex2(v)}\` = ${parseInt(hex2(v)[0], 16)} × 16 + ${parseInt(hex2(v)[1], 16)} = ${v}`).join("\n");
+
+  if (rng.next() < 0.5) {
+    return {
+      prompt: `Web colours are written as \`#RRGGBB\`: two hex digits each for red, green and blue, from 00 (none) to FF (full). What are the red, green and blue values of \`${code}\` in decimal?`,
+      answerType: "multi",
+      parts: CH.map((name, i) => ({
+        id: name, label: cap1(name), ask: `${cap1(name)} (0 to 255)`, answerType: "number", answer: rgb[i], tolerance: 0,
+        hint: `The ${name} digits are \`${hex2(rgb[i])}\`. The left digit is worth 16 each.`,
+      })),
+      explanation: `Split the code into pairs and convert each one (left digit × 16 + right digit):\n\n${pairRows}`,
+      params: { kind: "x-colour", code },
+      hints: [
+        `Split \`${code}\` after the # into three pairs: red, green, blue.`,
+        "Each pair is a 2-digit hex number: left digit × 16 + right digit, with A = 10 … F = 15.",
+      ],
+    };
+  }
+
+  // Reverse: decimal channels -> which code. Distractors are classic slips.
+  const swapDigits = (i) => rgb.map((v, k) => (k === i ? ((v & 15) << 4) | (v >> 4) : v));
+  const i0 = rng.int(0, 2);
+  const cands = [
+    colourCode(swapDigits(i0)), // digits of one channel swapped
+    colourCode([rgb[2], rgb[1], rgb[0]]), // blue and red swapped (BGR order)
+    colourCode(rgb.map((v, k) => (k === (i0 + 1) % 3 ? (v + 16) % 256 : v))), // one 16s digit off by one
+    colourCode(swapDigits((i0 + 2) % 3)),
+    colourCode(rgb.map((v, k) => (k === (i0 + 2) % 3 ? (v + 240) % 256 : v))),
+  ];
+  const wrong = [];
+  for (const c of cands) if (c !== code && !wrong.includes(c) && wrong.length < 3) wrong.push(c);
+  return {
+    prompt: `Web colours are written as \`#RRGGBB\`: two hex digits each for red, green and blue. Which code is the colour with red ${rgb[0]}, green ${rgb[1]} and blue ${rgb[2]}?`,
+    answer: code,
+    answerType: "choice",
+    choices: rng.shuffle([code, ...wrong]),
+    explanation: `Convert each channel to a 2-digit hex number (divide by 16: the whole-number result is the left digit, the remainder the right):\n\n${rgb.map((v, i) => `- ${CH[i]}: ${v} = ${Math.floor(v / 16)} × 16 + ${v % 16} → \`${hex2(v)}\``).join("\n")}\n\nIn red, green, blue order: **${code}**.`,
+    params: { kind: "x-colour-rev", rgb },
+    hints: [
+      "Each channel becomes exactly two hex digits, in the order red, green, blue.",
+      `Divide ${rgb[0]} by 16: the whole-number result is the left digit and the remainder is the right digit. Do the same for the other two.`,
+      "Check the options for swapped digits or swapped channels.",
+    ],
+  };
+}
+
+function xMemory(rng) {
+  const start = rng.int(0x1000, 0xfe00);
+  let n = rng.int(20, 700);
+  let last = start + n - 1;
+  if (rng.next() < 0.25) {
+    // Edge case: the buffer ends right before a 16-byte boundary.
+    n += 15 - (last % 16);
+    last = start + n - 1;
+  }
+  const next = Math.ceil((last + 1) / 16) * 16;
+  const S = toHex(start);
+  return {
+    prompt: `Memory addresses are written in hex, and each address holds one byte. A buffer starts at address \`${S}\` and holds **${n}** bytes (that count is in decimal).`,
+    answerType: "multi",
+    parts: [
+      { id: "last", label: "Last address", ask: `Address of the buffer's last byte. ${HEX_FMT}`, answerType: "text", answer: toHex(last),
+        hint: `The first byte is at \`${S}\` itself, so the last one is ${n} − 1 addresses further on.` },
+      { id: "next", label: "Next aligned", ask: `The next buffer must start on a 16-byte boundary (an address ending in hex 0) after this buffer. Which address is that? ${HEX_FMT}`, answerType: "text", answer: toHex(next),
+        hint: "Take the address right after the last byte. If its last hex digit is 0 it is already aligned; otherwise round it up to the next address ending in 0." },
+    ],
+    explanation: [
+      `Work in one base. \`${S}\` = ${start}.`,
+      `The last byte is at ${start} + ${n} − 1 = ${last} = **${toHex(last)}** (not ${start} + ${n}: the first byte uses address \`${S}\` itself).`,
+      `The address after it is ${last + 1} = \`${toHex(last + 1)}\`. ${(last + 1) % 16 === 0 ? "Its last hex digit is already 0, so it is aligned" : "Round up to the next multiple of 16 (last hex digit 0)"}: **${toHex(next)}**.`,
+    ].join("\n\n"),
+    params: { kind: "x-memory", start: S, n },
+    hints: [
+      `Work in one base: convert \`${S}\` to decimal (or ${n} to hex) first.`,
+      "Off-by-one check: a buffer of 1 byte starts and ends at the same address.",
+      "A 16-byte boundary is an address whose last hex digit is 0 (a multiple of 16).",
+    ],
+  };
+}
+
+// ---- binary arithmetic / expert ----
+
+const signed8 = (v) => (v >= 128 ? v - 256 : v);
+
+function xSignedAdd(rng) {
+  const over = rng.next() < 0.5;
+  let a, b;
+  do {
+    if (over) {
+      if (rng.next() < 0.5) {
+        a = rng.int(20, 127);
+        b = rng.int(128 - a, 127);
+      } else {
+        a = -rng.int(20, 128);
+        b = -rng.int(Math.max(1, 129 + a), 128);
+      }
+    } else {
+      a = rng.int(-128, 127);
+      b = rng.int(Math.max(-128, -128 - a), Math.min(127, 127 - a));
+    }
+  } while (a === 0 || b === 0 || a + b === 0 || over === (a + b >= -128 && a + b <= 127));
+  const x = a & 0xff;
+  const y = b & 0xff;
+  const r = (x + y) & 0xff;
+  const X = toByte(x);
+  const Y = toByte(y);
+  const R = toByte(r);
+  const val = signed8(r);
+  const carryOut = x + y > 255;
+  return {
+    prompt: `These are 8-bit two's complement numbers (the leftmost bit is worth −128). Add \`${X}\` + \`${Y}\`, keeping only 8 bits.`,
+    answerType: "multi",
+    parts: [
+      { id: "res", label: "8-bit result", ask: `The 8-bit result. ${BYTE_FMT}`, answerType: "text", answer: R,
+        hint: "Add like ordinary binary, column by column from the right. If a carry comes out of the leftmost column, drop it." },
+      { id: "val", label: "Value", ask: "The signed decimal value your 8-bit result stands for. Include the minus sign if needed.", answerType: "number", answer: val, tolerance: 0,
+        hint: "If the result starts with 1, its value is −128 plus the other seven place values." },
+      { id: "ovf", label: "Overflow", ask: "Did the addition overflow (is the 8-bit result different from the true sum)?", answerType: "choice", answer: over ? "Yes" : "No", choices: ["Yes", "No"],
+        hint: "Read both inputs as signed numbers, add them in decimal, and check whether that sum fits in −128 to 127." },
+    ],
+    explanation: [
+      `As signed values: \`${X}\` = ${a} and \`${Y}\` = ${b}, so the true sum is ${a + b}.`,
+      `Binary addition: ${x} + ${y} = ${x + y}${carryOut ? `, which needs 9 bits; dropping the carry leaves ${r}` : ""}, so the 8-bit result is **${R}**.`,
+      `Read it as two's complement: ${R[0] === "1" ? `−128 + ${r - 128} = ` : ""}**${val}**.`,
+      over
+        ? `The true sum ${a + b} is outside −128 to 127, so the 8-bit result is wrong: overflow, **Yes**. Both inputs have the same sign, but the result's sign is different.`
+        : `The true sum ${a + b} fits in −128 to 127, so there is **No** overflow${carryOut ? " (a carry out of the leftmost bit is not overflow in two's complement)" : ""}.`,
+    ].join("\n\n"),
+    params: { kind: "x-sadd", x: X, y: Y },
+    hints: [
+      "Add the bit patterns exactly as you would unsigned binary, then keep only the rightmost 8 bits.",
+      "Work out what each input means: a pattern starting with 1 is negative (−128 plus the rest).",
+      "Overflow means the true answer doesn't fit in 8 bits. It can only happen when both inputs have the same sign.",
+    ],
+  };
+}
+
+function xSubtract(rng) {
+  let a, b;
+  do {
+    a = rng.int(1, 127);
+    b = rng.int(1, 127);
+    if (rng.next() < 0.6 && a > b) [a, b] = [b, a];
+  } while (a === b);
+  const A = toByte(a);
+  const B = toByte(b);
+  const nb = (256 - b) & 0xff;
+  const r = (a + nb) & 0xff;
+  const R = toByte(r);
+  return {
+    prompt: `Computers subtract by adding the negative. In 8-bit two's complement, work out \`${A}\` − \`${B}\` as \`${A}\` + (−\`${B}\`).`,
+    answerType: "multi",
+    parts: [
+      { id: "neg", label: "Negative", ask: `The two's complement (negative) of \`${B}\`. ${BYTE_FMT}`, answerType: "text", answer: toByte(nb),
+        hint: "Invert every bit, then add 1." },
+      { id: "res", label: "Result", ask: `The 8-bit result of the addition (drop any carry out of 8 bits). ${BYTE_FMT}`, answerType: "text", answer: R,
+        hint: "Add the first number to the negative you found, column by column, and keep only 8 bits." },
+      { id: "val", label: "Value", ask: "The signed decimal value of the result. Include the minus sign if needed.", answerType: "number", answer: a - b, tolerance: 0,
+        hint: "If the result starts with 1 it is negative: −128 plus the other place values." },
+    ],
+    explanation: [
+      `Negate \`${B}\`: invert to \`${toByte(~b)}\`, add 1 → \`${toByte(nb)}\`.`,
+      `Add: \`${A}\` + \`${toByte(nb)}\` = ${a} + ${nb} = ${a + nb}${a + nb > 255 ? `; drop the carry out of 8 bits → ${r}` : ""}, so the result is **${R}**.`,
+      `Value: ${R[0] === "1" ? `−128 + ${r - 128} = ` : ""}**${a - b}**. Check: ${a} − ${b} = ${a - b}.`,
+    ].join("\n\n"),
+    params: { kind: "x-sub", a: A, b: B },
+    hints: [
+      `Step 1: negate \`${B}\` (invert every bit, then add 1).`,
+      `Step 2: add \`${A}\` to that pattern in binary, keeping only 8 bits.`,
+      "Step 3: read the result as two's complement. A leading 1 means negative.",
+    ],
+  };
+}
+
+function genExpert(subtopic, rng) {
+  if (subtopic === "binary") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xBitwise(rng) : t === 1 ? xFractions(rng) : xCounter(rng);
+  }
+  if (subtopic === "hexadecimal") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xHexArith(rng) : t === 1 ? xColour(rng) : xMemory(rng);
+  }
+  if (subtopic === "binary-arithmetic") return rng.next() < 0.5 ? xSignedAdd(rng) : xSubtract(rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- expert verification: re-derive with the hand parser (parseDigits), loops and per-bit work ----
+
+const xPart = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+
+// Parse a binary fraction "101.011" bit by bit (no parseInt). NaN if not canonical.
+function parseBinFrac(raw) {
+  const s = String(raw ?? "").trim();
+  const m = /^(1[01]*)\.([01]*1)$/.exec(s);
+  if (!m) return NaN;
+  let v = parseDigits(m[1], 2);
+  let place = 1;
+  for (const c of m[2]) {
+    place /= 2;
+    if (c === "1") v += place;
+  }
+  return v;
+}
+
+// Signed value of an 8-bit pattern: top bit weighted -128.
+function signedOf(bits) {
+  let s = 0;
+  for (let i = 0; i < 8; i++) if (bits[i] === "1") s += i === 0 ? -128 : 2 ** (7 - i);
+  return s;
+}
+
+function verifyExpert(p, question, answer) {
+  if (p.kind === "x-bitwise") {
+    if (!/^[01]{8}$/.test(p.a) || !/^[01]{8}$/.test(p.b)) return false;
+    let want = "";
+    for (let i = 0; i < 8; i++) {
+      const x = p.a[i] === "1";
+      const y = p.b[i] === "1";
+      want += (p.op === "AND" ? x && y : p.op === "OR" ? x || y : x !== y) ? "1" : "0";
+    }
+    const res = parseAnswer(xPart(answer, "res"), "byte");
+    const dec = parseAnswer(xPart(answer, "dec"), "dec");
+    return res === parseDigits(want, 2) && dec === parseDigits(want, 2);
+  }
+  if (p.kind === "x-frac") {
+    const aBits = /^([01]+)\.([01]+)$/.exec(p.a);
+    if (!aBits) return false;
+    // (a): x × 2^k must equal the digits read as one whole number.
+    const raw = xPart(answer, "todec");
+    const x = Number(raw);
+    if (!Number.isFinite(x) || String(raw ?? "").trim() === "") return false;
+    if (x * 2 ** aBits[2].length !== parseDigits(aBits[1] + aBits[2], 2)) return false;
+    // (b): the typed binary fraction read back must equal the decimal in the prompt.
+    return parseBinFrac(xPart(answer, "tobin")) === Number(p.b);
+  }
+  if (p.kind === "x-counter") {
+    const start = parseDigits(p.start, 2);
+    if (!Number.isFinite(start) || p.start.length !== p.n) return false;
+    const top = parseDigits("1".repeat(p.n), 2);
+    const tick = (v) => (v === top ? 0 : v + 1);
+    let v = start;
+    let steps = 0;
+    do {
+      v = tick(v);
+      steps++;
+    } while (v !== 0 && steps < 100000);
+    if (parseAnswer(xPart(answer, "wrap"), "dec") !== steps) return false;
+    v = start;
+    for (let i = 0; i < p.t; i++) v = tick(v);
+    return v !== 0 && parseAnswer(xPart(answer, "after"), "bin") === v;
+  }
+  if (p.kind === "x-hexarith") {
+    const a = parseDigits(p.a, 16);
+    const b = parseDigits(p.b, 16);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+    const want = p.sub ? a - b : a + b;
+    return want > 0 && parseAnswer(xPart(answer, "hex"), "hex") === want && parseAnswer(xPart(answer, "dec"), "dec") === want;
+  }
+  if (p.kind === "x-colour") {
+    const m = /^#([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/.exec(p.code);
+    if (!m) return false;
+    return CH.every((name, i) => parseAnswer(xPart(answer, name), "dec") === parseDigits(m[i + 1], 16));
+  }
+  if (p.kind === "x-colour-rev") {
+    const ch = question.choices;
+    if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4 || !ch.includes(String(answer))) return false;
+    const fits = (c) => {
+      const m = /^#([0-9A-F]{2})([0-9A-F]{2})([0-9A-F]{2})$/.exec(c);
+      return !!m && [1, 2, 3].every((i) => parseDigits(m[i], 16) === p.rgb[i - 1]);
+    };
+    const ok = ch.filter(fits);
+    return ok.length === 1 && ok[0] === String(answer);
+  }
+  if (p.kind === "x-memory") {
+    const start = parseDigits(p.start, 16);
+    const last = parseAnswer(xPart(answer, "last"), "hex");
+    const next = parseAnswer(xPart(answer, "next"), "hex");
+    if (!Number.isFinite(start) || !Number.isFinite(last) || !Number.isFinite(next)) return false;
+    // Counting the addresses from start to last, inclusive, must give n.
+    if (last - start + 1 !== p.n) return false;
+    return next % 16 === 0 && next > last && next - 16 <= last;
+  }
+  if (p.kind === "x-sadd") {
+    if (!/^[01]{8}$/.test(p.x) || !/^[01]{8}$/.test(p.y)) return false;
+    const sx = signedOf(p.x);
+    const sy = signedOf(p.y);
+    const res = parseAnswer(xPart(answer, "res"), "byte");
+    if (!Number.isFinite(res) || (res - (parseDigits(p.x, 2) + parseDigits(p.y, 2))) % 256 !== 0) return false;
+    if (parseAnswer(xPart(answer, "val"), "dec") !== signedOf(toByte(res))) return false;
+    const over = sx + sy < -128 || sx + sy > 127;
+    return String(xPart(answer, "ovf")) === (over ? "Yes" : "No");
+  }
+  if (p.kind === "x-sub") {
+    if (!/^[01]{8}$/.test(p.a) || !/^[01]{8}$/.test(p.b)) return false;
+    const a = parseDigits(p.a, 2);
+    const b = parseDigits(p.b, 2);
+    const neg = parseAnswer(xPart(answer, "neg"), "byte");
+    if (!Number.isFinite(neg) || (neg + b) % 256 !== 0) return false;
+    const res = parseAnswer(xPart(answer, "res"), "byte");
+    if (!Number.isFinite(res) || signedOf(toByte(res)) !== a - b) return false;
+    return parseAnswer(xPart(answer, "val"), "dec") === a - b;
+  }
+  return false;
 }

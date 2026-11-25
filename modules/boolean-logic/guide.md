@@ -18,6 +18,8 @@ Example: a three-input XOR with A = 1, B = 1, C = 1 has three 1s. Three is odd, 
 
 **Watch out:** NOR gives 1 only when **every** input is 0.
 
+**Expert: circuits of gates.** Work out the wires in order, one input row at a time, and write a column for each wire. A NAND or NOR gate with both inputs joined is a NOT gate. To find which single gate a circuit matches, compare its OUT column with each gate's truth table. To see whether OUT depends on A, compare rows that differ only in A (000 and 100, 001 and 101, …).
+
 ## Expressions
 
 1. Substitute the input values into the expression.
@@ -29,6 +31,8 @@ Example: with A = 1, B = 1, C = 0, `(A AND NOT B) OR C` → NOT B = 0 → 1 AND 
 
 **Watch out:** `NOT A AND B` means `(NOT A) AND B`, not `NOT (A AND B)`.
 
+**Expert: equivalent expressions.** Two expressions are equivalent when they agree on every row, so build both columns and compare. De Morgan: `NOT (X AND Y)` = `NOT X OR NOT Y` and `NOT (X OR Y)` = `NOT X AND NOT Y`: both sides get a NOT and the operator flips. A double NOT cancels.
+
 ## Truth tables
 
 1. Count the inputs. n inputs give 2ⁿ rows: 2 → 4, 3 → 8, 4 → 16.
@@ -37,3 +41,5 @@ Example: with A = 1, B = 1, C = 0, `(A AND NOT B) OR C` → NOT B = 0 → 1 AND 
 4. Count the rows that give 1.
 
 **Watch out:** a letter that appears twice is still one input, so it does not add rows.
+
+**Expert: tables to expressions.** To pick the expression for a table, test each option on a few rows (000, 111, then a row with output 1): one wrong row rules it out. For a rule in words, first turn it into an 8-row table; watch "at least", "exactly" and "unless".

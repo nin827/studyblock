@@ -7,9 +7,9 @@
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [
-    { "id": "triads", "title": "Triads", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "identify", "title": "Identify", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "in-key", "title": "Chords in a key", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "sevenths", "title": "Seventh chords", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "triads", "title": "Triads", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "identify", "title": "Identify", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "in-key", "title": "Chords in a key", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "sevenths", "title": "Seventh chords", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

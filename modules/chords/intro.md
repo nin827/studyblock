@@ -26,6 +26,10 @@ The **bass** is the lowest note. With the root in the bass, the chord is in **ro
 
 The triads on each note of a major scale are **I ii iii IV V vi vii°**: capitals are major, lower case minor, and ° diminished. In C major: C, Dm, Em, F, G, Am, B°. **V7** is the dominant 7th on the 5th note.
 
+## Expert
+
+**Expert** questions work backwards and combine ideas: which triad or seventh chord has a given note as its 3rd, 5th or 7th; what a triad becomes when one note moves a semitone; naming seventh chords in inversion and finding a chord from its bass note; finding the key a chord belongs to; the chords of a minor key (harmonic minor); and V7 in major and minor keys.
+
 ## Answer formats
 
 Every answer is multiple choice: notes are listed lowest first, like `D, F♯, A`. No chord needs a double sharp or flat. There's no calculator here.

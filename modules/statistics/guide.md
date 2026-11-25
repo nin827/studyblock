@@ -17,6 +17,8 @@ Example: for `2, 3, 3, 8`, the mean is 16 ÷ 4 = 4, the median is (3 + 3) ÷ 2 =
 
 **Watch out:** the median of an unsorted list is not just the middle of what you see. Sort it first.
 
+**Expert: working back from a mean.** Turn every mean into a total (mean × count). A new value is the jump between two totals; a missing value is the total minus the values you can see; a copying mistake is fixed by taking the wrong value out of the total and putting the right one in. Example: 4 tests average 70 (total 280), 5 tests average 72 (total 360), so test 5 scored 80.
+
 ## Range and IQR
 
 1. **Range** = largest - smallest.
@@ -27,6 +29,8 @@ Example: for `2, 3, 3, 8`, the mean is 16 ÷ 4 = 4, the median is (3 + 3) ÷ 2 =
 Example: `1, 3, 5, 7, 9, 11, 13` → lower half `1, 3, 5` (Q1 = 3), upper half `9, 11, 13` (Q3 = 11), IQR = 8.
 
 **Watch out:** the range uses the smallest and largest values, not the first and last ones in an unsorted list.
+
+**Expert: outliers and missing values.** The fences are `Q1 - 1.5 × IQR` and `Q3 + 1.5 × IQR`; a value strictly outside them is an outlier. To find a missing value from the IQR, work out the quartile that doesn't involve it, use the IQR to get the other one, then undo the median of that half (if the quartile is halfway between x and a neighbour, x = 2 × quartile - neighbour).
 
 ## Probability
 
@@ -39,6 +43,8 @@ Example: two dice, both showing a 6: `1/6 × 1/6 = 1/36`.
 
 **Watch out:** "at least one in 3 rolls" is not 3 × P(one roll). Use 1 - P(none).
 
+**Expert: tables and experiments.** In a two-way table, a missing cell is its row (or column) total minus the other cells. "Given that" shrinks the group: divide by that row's or column's total, not the grand total. To combine experiments, add the successes and the trials before dividing, then expected count = trials × estimate.
+
 ## Weighted average
 
 1. Multiply each score by its weight.
@@ -49,3 +55,5 @@ Example: two dice, both showing a 6: `1/6 × 1/6 = 1/36`.
 Example: 80 (weight 60%) and 70 (weight 40%) → `(4800 + 2800) ÷ 100 = 76`.
 
 **Watch out:** don't take a plain average of the scores. Heavier weights count more.
+
+**Expert: weighted averages backwards.** For groups, work with totals: group B's total = combined mean × everyone - group A's total. For an unknown weight w%, write `score1 × (100 - w) + score2 × w = 100 × overall` and solve for w. For a mixture, `mass1 × price1 + mass2 × price2 = mixture price × total mass`.

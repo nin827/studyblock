@@ -1,12 +1,12 @@
-import { loadModule, loadIntro, domainOf, ALL, isLangModule, effectiveLang } from '../lib/engine.js';
+import { loadModule, loadIntro, domainOf, ALL, isLangModule, effectiveLang, DIFFICULTY_ORDER } from '../lib/engine.js';
 import { crumbsHtml } from './quiz.js';
 import { getModuleCellStats, getCookie, setCookie, setCodeLang } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
 import { isLang, langTitle } from '../lib/languages.js';
-import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle, difficultyLabel } from './ui.js';
+import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle, difficultyLabel, difficultyHtml } from './ui.js';
 import { getQuizMode, setQuizMode, GUIDED, PRACTICE } from './guided.js';
 
-const ORDER = ['easy', 'medium', 'hard'];
+const ORDER = DIFFICULTY_ORDER;
 
 /*
  * Code language picker (module page of a language-aware module, and Settings): a segmented radio
@@ -113,7 +113,7 @@ export async function render(root, { moduleId }, ctx) {
       <div class="section-head">
         <h2 id="practice-title">${mode === GUIDED ? 'Guided practice' : 'Practice'}</h2>
         <label class="inline-field">Difficulty
-          <select id="diff-select">${cols.map(d => `<option value="${esc(d)}" ${d === preferred ? 'selected' : ''}>${esc(d === ALL ? 'All difficulties' : cap(d))}</option>`).join('')}</select>
+          <select id="diff-select">${cols.map(d => `<option value="${esc(d)}" ${d === preferred ? 'selected' : ''}>${esc(difficultyLabel(d))}</option>`).join('')}</select>
         </label>
       </div>
       <div class="mode-switch">
@@ -125,7 +125,7 @@ export async function render(root, { moduleId }, ctx) {
       </div>
       ${isLangModule(mod) ? codeLangPickerHtml(mod.languages, effectiveLang(mod), { id: 'code-lang', label: 'Language' }) : ''}
       ${mod.subtopics.length ? `<div class="table-wrap"><table class="matrix">
-        <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}" ${d === ALL ? 'class="all-col" title="All difficulties"' : ''}>${esc(colLabel(d))}</th>`).join('')}</tr></thead>
+        <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}" ${d === ALL ? 'class="all-col" title="All difficulties"' : ''}>${difficultyHtml(d, colLabel(d))}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
       </table></div>` : '<p class="muted">This module has no subtopics.</p>'}
     </section>

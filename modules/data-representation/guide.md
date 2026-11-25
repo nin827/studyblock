@@ -17,6 +17,8 @@ Example: 100 × 50 pixels at 8 bits = 40,000 bits = 5,000 bytes = 5 KB.
 
 **Watch out:** 300 colours needs 9 bits, because 8 bits only give 256.
 
+**Expert: palettes, video and working backwards.** An indexed image stores a palette number per pixel (the fewest bits for all the colours) plus a palette of colours × 3 bytes. A video is frames × frame size; its data rate is bits per frame × frames per second. From a file size and an aspect ratio a:b, find the pixels (bits ÷ depth), then width = ak and height = bk with ab × k² = pixels.
+
 ## Sound
 
 1. Bits per second = sample rate × bit depth × channels.
@@ -27,6 +29,8 @@ Example: 100 × 50 pixels at 8 bits = 40,000 bits = 5,000 bytes = 5 KB.
 Example: 1 second at 8,000 Hz, 8-bit, mono = 64,000 bits = 8,000 bytes.
 
 **Watch out:** stereo doubles the size, because there are 2 channels.
+
+**Expert: sample rates.** A rate captures sounds up to half its value (the Nyquist limit), so to capture F kHz you need at least 2F kHz. Rearrange size = rate × depth × channels × seconds to find any missing value. For time on a card, divide the card's bytes by the bytes per minute and round down.
 
 ## Characters
 
@@ -39,6 +43,8 @@ Example: `C` is 2 after `A`, so its code is 67 = 01000011.
 
 **Watch out:** the character `7` has code 55, not 7.
 
+**Expert: UTF-8 bytes.** Layouts: `110xxxxx 10xxxxxx` (11 bits), `1110xxxx 10xxxxxx 10xxxxxx` (16 bits), `11110xxx` plus three `10xxxxxx` (21 bits). Write the code point in binary, pad it on the left, and fill the x's from the right. To decode, the first byte's leading 1s give the length; strip the prefixes and join the rest. UTF-16 uses 2 bytes up to U+FFFF and 4 above.
+
 ## Compression and storage
 
 1. Ratio = original ÷ compressed. Saving % = (original − compressed) ÷ original × 100.
@@ -49,3 +55,5 @@ Example: `C` is 2 after `A`, so its code is 67 = 01000011.
 Example: `WWWBBW` → `3W2B1W`.
 
 **Watch out:** a run of 1 still needs its count, so RLE can make text longer.
+
+**Expert: Huffman and trade-offs.** Huffman: keep joining the two smallest counts; the total bits equal the sum of all the joined counts. A fixed-length code uses the fewest bits b with 2^b ≥ number of characters. Compressing before sending pays off only if the link time saved is more than the compression time. When a count byte holds at most 255, a run of 256 needs two pairs.

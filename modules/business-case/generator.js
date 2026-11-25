@@ -1878,6 +1878,985 @@ function withHints(q) {
   return { ...q, ...(intro ? { hints: [intro] } : {}), parts };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert: multi-step cases that combine two ideas, work backwards from a target, or need setting up.
+// A separate branch: easy/medium/hard never reach this code, so their questions are unchanged.
+// Each template draws all of its rng values first, then builds text. Given values and hints are
+// written out explicitly (no rng); hints show formulas with this question's numbers, never a result.
+// params.x names the template; verify() rechecks it with verifyExpert (substitution, direct
+// simulation of both options, or a different formula arrangement).
+
+const SAME_LIMIT = 0.01; // distance (in cents) from a half cent below which a 2-decimal answer is ill-posed
+const halfCent = (v) => Math.abs((Math.abs(v * 100) % 1) - 0.5) < SAME_LIMIT;
+// A whole-number result computed with ceil() must sit clearly away from an integer, so the
+// calculator's binary error can't tip it.
+const ceilSafe = (v) => {
+  const f = v - Math.floor(v);
+  return f >= 0.02 && f <= 0.98;
+};
+// "a 5%" / "an 8%": the article for a number read aloud.
+const an = (n) => (/^(8|11|18)(\D|$)/.test(String(n)) ? "an" : "a");
+const xRow = (pairs) => pairs.map(([l, v]) => given(l, v));
+const xGiven = (pairs) => pairs.map(([label, v]) => ({ label, value: Number(v) }));
+const xPart = (id, label, ask, answer, tolerance, hint) => ({ id, label, ask, answerType: "number", answer, tolerance, hint });
+const xChoice = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices: choices.slice(), hint });
+const r2part = (id, label, ask, exact, hint) => xPart(id, label, ask, round2(exact), 0.005, hint);
+
+const MIXES = [
+  { biz: "A café", a: ["coffee", "coffees"], b: ["sandwich", "sandwiches"], pa: [3, 6], pb: [6, 10] },
+  { biz: "A neighborhood bakery", a: ["loaf", "loaves"], b: ["celebration cake", "celebration cakes"], pa: [5, 9], pb: [20, 35] },
+  { biz: "A print shop", a: ["poster", "posters"], b: ["pack of business cards", "packs of business cards"], pa: [12, 30], pb: [25, 45] },
+  { biz: "A self-service car wash", a: ["basic wash", "basic washes"], b: ["full valet", "full valets"], pa: [10, 15], pb: [40, 70] },
+  { biz: "A smoothie bar", a: ["smoothie", "smoothies"], b: ["juice shot", "juice shots"], pa: [5, 9], pb: [3, 5] },
+];
+const MIX_RATIOS = [[2, 1], [3, 1], [3, 2], [4, 1], [1, 1], [5, 2]];
+const SUBSCRIPTION = [...SAAS, "A coffee-bean subscription service", "A meal-kit startup"];
+const CHANNELS = [["Paid ads", "Referrals"], ["Social media ads", "Trade shows"], ["Search ads", "Partner deals"]];
+const BOTH = "Both";
+const NEITHER = "Neither";
+const CHANNEL_RATIOS = [1.5, 1.8, 2, 2.2, 2.5, 2.7, 3.4, 3.7, 4, 4.5, 5, 6];
+const OPT_A = "Project A";
+const OPT_B = "Project B";
+const KEEP_PRICE = "Keep the price";
+const ACCEPT = "Accept";
+const REJECT = "Reject";
+const ORDER_EOQ = "Order the EOQ";
+const TAKE_DISC = "Take the discount";
+const CONTRACT = "Use a contractor";
+
+// Break-even / expert 0: work backwards to the lowest price that hits a profit target, then the
+// break-even quantity at that price, then check it against what customers will pay.
+function xBePrice(rng) {
+  const s = rng.pick(SHOPS);
+  const Cc = priceC(rng, [s.price[0] * 0.3, s.price[0] * 0.6], 5);
+  const D = rng.int(s.vol[0], s.vol[1]);
+  const T = rng.int(4, 40) * 50;
+  const F = rng.int(Math.ceil((s.price[0] * D * 0.15) / 50), Math.ceil((s.price[1] * D * 0.35) / 50)) * 50;
+  const gap = rng.int(5, 60) * (rng.next() < 0.5 ? 1 : -1);
+
+  const needC = Cc * D + 100 * (F + T);
+  const Pc = ceilDiv(needC, D);
+  const be = ceilDiv(100 * F, Pc - Cc);
+  const maxC = Pc + gap;
+  const ok = maxC >= Pc;
+  const P = Pc / 100;
+  const prompt =
+    `${s.biz} sells ${s.sells}. Each ${s.unit} costs ${cash(Cc / 100)} in variable costs, and fixed costs are ${cash(F)} a month. ` +
+    `It expects to sell ${D} ${s.units} a month and wants a monthly profit of ${cash(T)} after fixed costs. ` +
+    `Market research says customers will pay at most ${cash(maxC / 100)} per ${s.unit}.`;
+  const lines = [
+    ...xRow([["_unit_cost", mv(Cc / 100)], ["_fixed", F], ["_target", T], ["_demand", D], ["_max_price", mv(maxC / 100)]]),
+    step("_price", "ceil((_unit_cost + (_fixed + _target) / _demand) * 100) / 100", `**${cash(P)}**`),
+    step("_be_units", "ceil(_fixed / (_price - _unit_cost))", `**${be} ${s.units}**`),
+  ];
+  const explanation =
+    explain("Work backwards: each unit must cover its own variable cost plus an equal share of fixed costs and the target profit.", lines) +
+    `\n\nAt ${cash(P)} the margin is ${cash(P - Cc / 100)}, so break-even needs ${be} ${s.units}.` +
+    `\n\n\`_price\` (${cash(P)}) is ${ok ? "within" : "above"} \`_max_price\` (${cash(maxC / 100)}), so the answer is **${ok ? YES : NO}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      xPart("price", "Minimum price", `What is the lowest price per ${s.unit} that reaches the target profit at ${D} ${s.units}? Round up to the next cent.`, P, 0,
+        `Spread \`_fixed + _target\` (${F} + ${T}) over \`_demand\` (${D}) ${s.units}, then add \`_unit_cost\` (${mv(Cc / 100)}). Round **up** to the next cent, or the target is missed.`),
+      xPart("units", "Break-even units", `At that price, how many ${s.units} a month does it need to break even (no profit target)? Round up to whole ${s.units}.`, be, 0,
+        "`_be_units = ceil(_fixed / (_price - _unit_cost))`: use your *Minimum price* answer as `_price`, and leave the target profit out."),
+      xChoice("rec", "Recommendation", "Can it reach the target at a price customers will pay?", ok ? YES : NO, REC_CHOICES.demand,
+        `Compare your *Minimum price* answer with \`_max_price\` (${mv(maxC / 100)}): the plan works only if the price needed is not above it.`),
+    ],
+    explanation,
+    params: { x: "be-price", Cc, D, T, F, maxC },
+    given: xGiven([["_unit_cost", Cc / 100], ["_fixed", F], ["_target", T], ["_demand", D], ["_max_price", maxC / 100]]),
+    hints: [
+      "Work backwards from the target: at the expected sales, revenue must cover variable costs, fixed costs and the target profit.",
+      `Price per ${s.unit} = variable cost + (fixed costs + target profit) ÷ ${s.units} sold.`,
+    ],
+  };
+}
+
+// Break-even / expert 1: margin of safety and operating leverage, then use leverage to predict profit.
+function xBeLeverage(rng) {
+  const s = rng.pick(SHOPS);
+  const Pc = priceC(rng, s.price, 5);
+  const Cc = priceC(rng, [(Pc / 100) * 0.3, (Pc / 100) * 0.6], 5);
+  const Q = rng.int(s.vol[0], s.vol[1]);
+  const share = rng.int(40, 85);
+  const g = rng.pick([5, 10, 15, 20]);
+
+  const cm = (Q * (Pc - Cc)) / 100;
+  const F = Math.round((cm * share) / 100 / 10) * 10;
+  const profit = cm - F;
+  const mos = (profit / cm) * 100;
+  const dol = cm / profit;
+  const rise = dol * g;
+  const prompt =
+    `${s.biz} sells ${Q} ${s.units} a month at ${cash(Pc / 100)} each. Each ${s.unit} costs ${cash(Cc / 100)} in variable costs, ` +
+    `and fixed costs are ${cash(F)} a month. Prices and costs per ${s.unit} stay the same.`;
+  const lines = [
+    ...xRow([["_sales", Q], ["_price", mv(Pc / 100)], ["_unit_cost", mv(Cc / 100)], ["_fixed", F], ["_growth", g]]),
+    step("_contribution", "_sales * (_price - _unit_cost)", mv(cm)),
+    step("_profit", "_contribution - _fixed", mv(profit)),
+    step("_mos", "_profit / _contribution * 100", final(mos, "2dp", "pct")),
+    step("_dol", "_contribution / _profit", final(dol, "2dp")),
+    step("_rise", "_dol * _growth", final(rise, "2dp", "pct")),
+  ];
+  const explanation =
+    explain("Margin of safety is how far sales can fall before profit hits zero. Operating leverage (contribution ÷ profit) says how strongly profit reacts to a change in sales.", lines) +
+    `\n\nCheck the last part directly: at ${g}% more sales, contribution rises by ${g}% of ${cash(cm)}, and fixed costs stay put.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("mos", "Margin of safety", "By what percent could sales fall before it makes a loss (the margin of safety)? Answer as a number without the % sign. Round to 2 decimal places.", mos,
+        "Break-even is where contribution equals fixed costs, so the share of sales you can lose is profit ÷ contribution. Round to 2 decimal places."),
+      r2part("dol", "Operating leverage", "What is its degree of operating leverage (contribution ÷ profit)? Round to 2 decimal places.", dol,
+        "Work out `_contribution = _sales * (_price - _unit_cost)` and `_profit = _contribution - _fixed`, then divide. Round to 2 decimal places."),
+      r2part("rise", "Profit change", `If sales rise by ${g}%, by what percent does profit rise? Use the unrounded leverage. Answer without the % sign. Round to 2 decimal places.`, rise,
+        `Profit rises by leverage × the sales change: multiply \`_dol\` by \`_growth\` (${g}). Keep \`_dol\` unrounded.`),
+    ],
+    explanation,
+    params: { x: "be-leverage", Q, Pc, Cc, F, g },
+    given: xGiven([["_sales", Q], ["_price", Pc / 100], ["_unit_cost", Cc / 100], ["_fixed", F], ["_growth", g]]),
+    hints: [
+      `Start with the contribution: ${Q} × (${mv(Pc / 100)} - ${mv(Cc / 100)}). Profit is contribution minus fixed costs (${F}).`,
+      "Every extra sale adds its margin while fixed costs stay the same, so profit changes faster than sales. That ratio is the operating leverage.",
+    ],
+  };
+}
+
+// Break-even / expert 2: two products sold in a fixed mix.
+function xBeMix(rng) {
+  const m = rng.pick(MIXES);
+  const [ra, rb] = rng.pick(MIX_RATIOS);
+  const Pa = priceC(rng, m.pa, 10);
+  const Pb = priceC(rng, m.pb, 10);
+  const Ca = priceC(rng, [(Pa / 100) * 0.3, (Pa / 100) * 0.6], 5);
+  const Cb = priceC(rng, [(Pb / 100) * 0.3, (Pb / 100) * 0.6], 5);
+  const F = rng.int(30, 160) * 50;
+
+  const bundle = ra * (Pa - Ca) + rb * (Pb - Cb); // cents per mix set
+  const n = ceilDiv(100 * F, bundle);
+  const wcm = bundle / (ra + rb) / 100;
+  const setText = `${ra} ${ra === 1 ? m.a[0] : m.a[1]} for every ${rb} ${rb === 1 ? m.b[0] : m.b[1]}`;
+  const prompt =
+    `${m.biz} sells ${m.a[1]} at ${cash(Pa / 100)} (variable cost ${cash(Ca / 100)}) and ${m.b[1]} at ${cash(Pb / 100)} (variable cost ${cash(Cb / 100)}). ` +
+    `Sales always come in a fixed mix of ${setText}. Fixed costs are ${cash(F)} a month. ` +
+    `At break-even, round up to whole mix sets of ${ra + rb} items.`;
+  const lines = [
+    ...xRow([["_price_a", mv(Pa / 100)], ["_cost_a", mv(Ca / 100)], ["_price_b", mv(Pb / 100)], ["_cost_b", mv(Cb / 100)], ["_mix_a", ra], ["_mix_b", rb], ["_fixed", F]]),
+    step("_set_margin", "_mix_a * (_price_a - _cost_a) + _mix_b * (_price_b - _cost_b)", mv(bundle / 100)),
+    step("_avg_margin", "_set_margin / (_mix_a + _mix_b)", final(wcm, "2dp", "money")),
+    step("_sets", "ceil(_fixed / _set_margin)", String(n)),
+    step("_units_a", "_sets * _mix_a", `**${ra * n} ${m.a[1]}**`),
+    step("_units_b", "_sets * _mix_b", `**${rb * n} ${m.b[1]}**`),
+  ];
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("avg", "Average margin", "What is the weighted average contribution margin per item sold, in dollars? Round to 2 decimal places.", wcm,
+        `Add up the margin of one mix set (${ra} × the first margin + ${rb} × the second), then share it over the ${ra + rb} items in the set.`),
+      xPart("units-a", `Break-even ${m.a[1]}`, `How many ${m.a[1]} a month at break-even?`, ra * n, 0,
+        "Find the number of whole mix sets that covers the fixed costs: `ceil(_fixed / _set_margin)`. Then multiply by the first product's share of the set."),
+      xPart("units-b", `Break-even ${m.b[1]}`, `How many ${m.b[1]} a month at break-even?`, rb * n, 0,
+        `Use the same number of mix sets, times ${rb}.`),
+    ],
+    explanation: explain("Treat one mix set as a single product: its margin is the sum of its items' margins.", lines),
+    params: { x: "be-mix", Pa, Ca, Pb, Cb, ra, rb, F },
+    given: xGiven([["_price_a", Pa / 100], ["_cost_a", Ca / 100], ["_price_b", Pb / 100], ["_cost_b", Cb / 100], ["_mix_a", ra], ["_mix_b", rb], ["_fixed", F]]),
+    hints: [
+      `A mix set is ${setText}. Work out the contribution margin of one whole set.`,
+      "Fixed costs ÷ set margin gives the number of sets to sell (round up). Each product's units are that number times its share of the set.",
+    ],
+  };
+}
+
+// Unit economics / expert 0: the highest churn the business can afford, CAC payback, and a check.
+function xUeChurn(rng) {
+  const biz = rng.pick(SAAS);
+  const feeC = rng.int(2, 15) * 1000 - 1;
+  const g = rng.int(55, 90);
+  const t = rng.pick([3, 4, 5]);
+  const c0 = rng.int(20, 90) / 10;
+  const cur = rng.int(10, 120) / 10;
+
+  const gp = (feeC * g) / 10000; // monthly gross profit per customer
+  const CAC = Math.round((100 * gp) / (t * c0));
+  const maxChurn = (100 * gp) / (CAC * t);
+  const months = Math.ceil(CAC / gp);
+  const healthy = cur <= maxChurn;
+  const fee = feeC / 100;
+  const prompt =
+    `${biz} charges ${cash(fee)} per customer per month at ${an(g)} ${g}% gross margin, and spends ${cash(CAC)} to acquire each customer. ` +
+    `Its investors want an LTV:CAC ratio of at least ${t}:1, with LTV = monthly gross profit ÷ monthly churn. Its current monthly churn is ${cur}%.`;
+  const lines = [
+    ...xRow([["_fee", mv(fee)], ["_margin", g], ["_cac", CAC], ["_target", t], ["_churn", cur]]),
+    step("_gross_profit", "_fee * _margin / 100", num(gp)),
+    step("_max_churn", "_gross_profit / (_cac * _target) * 100", final(maxChurn, "2dp", "pct")),
+    step("_payback", "ceil(_cac / _gross_profit)", `**${months} months**`),
+  ];
+  const explanation =
+    explain("Work backwards from the ratio: LTV ≥ target × CAC, and LTV = gross profit ÷ churn, so churn ≤ gross profit ÷ (target × CAC).", lines) +
+    `\n\n\`_churn\` (${cur}%) is ${healthy ? "at or below" : "above"} \`_max_churn\`, so the answer is **${healthy ? HEALTHY : UNHEALTHY}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("churn", "Highest churn", `What is the highest monthly churn that still gives LTV:CAC of at least ${t}:1? Answer as a number without the % sign. Round to 2 decimal places.`, maxChurn,
+        "Set LTV equal to target × CAC and solve for churn: churn = gross profit ÷ (target × CAC). Multiply by 100 for a percent. Round to 2 decimal places."),
+      xPart("payback", "CAC payback", "How many months of gross profit does it take to earn back the CAC? Round up to whole months.", months, 0,
+        "Divide `_cac` by the monthly gross profit per customer and round **up**."),
+      xChoice("rec", "Recommendation", "At its current churn, are its unit economics healthy (LTV:CAC at least the target)?", healthy ? HEALTHY : UNHEALTHY, REC_CHOICES.health,
+        `Compare \`_churn\` (${cur}) with your *Highest churn* answer: lower churn means a longer lifetime and a higher LTV.`),
+    ],
+    explanation,
+    params: { x: "ue-churn", feeC, g, t, CAC, cur },
+    given: xGiven([["_fee", fee], ["_margin", g], ["_cac", CAC], ["_target", t], ["_churn", cur]]),
+    hints: [
+      `Monthly gross profit per customer = \`_fee * _margin / 100\`, here \`${mv(fee)} * ${g} / 100\`.`,
+      `LTV = gross profit ÷ (churn ÷ 100). Higher churn means lower LTV, so there is a highest churn that keeps LTV ≥ ${t} × CAC.`,
+    ],
+  };
+}
+
+// Unit economics / expert 1: blended CAC across two channels, and which channel fails the rule.
+function xUeBlend(rng) {
+  const biz = rng.pick(SUBSCRIPTION);
+  const [chA, chB] = rng.pick(CHANNELS);
+  const feeC = rng.int(2, 12) * 1000 - 1;
+  const g = rng.int(55, 90);
+  const c = rng.int(20, 80) / 10;
+  const rA = rng.pick(CHANNEL_RATIOS);
+  const rB = rng.pick(CHANNEL_RATIOS);
+  const nA = rng.int(40, 400);
+  const nB = rng.int(20, 200);
+
+  const ltv = (feeC * g) / (100 * c);
+  const SA = Math.round((nA * ltv) / rA / 10) * 10;
+  const SB = Math.round((nB * ltv) / rB / 10) * 10;
+  const cac = (SA + SB) / (nA + nB);
+  const ratio = ltv / cac;
+  const failA = nA * ltv < HEALTHY_MIN * SA;
+  const failB = nB * ltv < HEALTHY_MIN * SB;
+  const which = failA && failB ? BOTH : failA ? chA : failB ? chB : NEITHER;
+  const fee = feeC / 100;
+  const prompt =
+    `${biz} charges ${cash(fee)} a month at ${an(g)} ${g}% gross margin, and ${c}% of customers cancel each month (LTV = monthly gross profit ÷ churn). ` +
+    `Last month it spent ${cash(SA)} on ${chA.toLowerCase()} and won ${nA} customers, and ${cash(SB)} on ${chB.toLowerCase()} and won ${nB} customers. ` +
+    `A channel is healthy if its own LTV:CAC is at least ${HEALTHY_MIN}:1.`;
+  const lines = [
+    ...xRow([["_fee", mv(fee)], ["_margin", g], ["_churn", c], ["_spend_a", SA], ["_new_a", nA], ["_spend_b", SB], ["_new_b", nB]]),
+    step("_ltv", "_fee * _margin / 100 / (_churn / 100)", num(ltv)),
+    step("_cac", "(_spend_a + _spend_b) / (_new_a + _new_b)", final(cac, "2dp", "money")),
+    step("_ratio", "_ltv / _cac", final(ratio, "2dp")),
+    step("_ratio_a", "_ltv / (_spend_a / _new_a)", num(nA * ltv / SA)),
+    step("_ratio_b", "_ltv / (_spend_b / _new_b)", num(nB * ltv / SB)),
+  ];
+  const explanation =
+    explain("Blended CAC is total spend ÷ total new customers. Each channel also has its own CAC, which the blend can hide.", lines) +
+    `\n\nBelow ${HEALTHY_MIN}: ${[failA ? chA : "", failB ? chB : ""].filter(Boolean).join(" and ") || "none"}, so the answer is **${which}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("cac", "Blended CAC", "What is the blended CAC across both channels, in dollars? Round to 2 decimal places.", cac,
+        "Add the two spends, and divide by the total number of new customers. Round to 2 decimal places."),
+      r2part("ratio", "Blended LTV:CAC", "What is the blended LTV:CAC ratio? If the ratio is x:1, answer with x. Round to 2 decimal places.", ratio,
+        `Work out \`_ltv = _fee * _margin / 100 / (_churn / 100)\`, here \`${mv(fee)} * ${g} / 100 / (${c} / 100)\`, then divide by the unrounded blended CAC.`),
+      xChoice("channel", "Weak channel", `Which channel on its own falls below ${HEALTHY_MIN}:1?`, which, [chA, chB, BOTH, NEITHER],
+        "Work out each channel's own CAC (its spend ÷ its customers) and its own LTV:CAC. Compare each with the rule."),
+    ],
+    explanation,
+    params: { x: "ue-blend", feeC, g, c, SA, nA, SB, nB, chA, chB },
+    given: xGiven([["_fee", fee], ["_margin", g], ["_churn", c], ["_spend_a", SA], ["_new_a", nA], ["_spend_b", SB], ["_new_b", nB]]),
+    hints: [
+      "LTV is the same for every customer, whichever channel brought them in. Only the CAC differs.",
+      "A blended average can look fine while one channel loses money. Check each channel separately too.",
+    ],
+  };
+}
+
+// Investment / expert 0: work backwards to the yearly inflow that makes NPV zero, then test an estimate.
+function xInvAnnuity(rng) {
+  const p = rng.pick(PROJECTS);
+  const C = rng.int(200, 1500) * 100;
+  const n = rng.int(3, 8);
+  const r = rng.int(8, 24) / 2;
+  let e;
+  do e = rng.int(-25, 25); while (Math.abs(e) < 3);
+
+  const af = (1 - Math.pow(1 + r / 100, -n)) / (r / 100);
+  const A = C / af;
+  const E = Math.round((A * (100 + e)) / 100);
+  const npv = E * af - C;
+  const go = npv > 0;
+  const prompt =
+    `${p.biz} is considering ${p.asset}, which costs ${cash(C)} today and will last ${years(n)}, with no resale value. ` +
+    `It uses ${an(r)} ${r}% discount rate, and cash comes in as an equal amount at the end of each year. The owner's own estimate is ${cash(E)} a year. ` +
+    `The owner invests only if the NPV is positive.`;
+  const lines = [
+    ...xRow([["_cost", C], ["_years", n], ["_rate", r], ["_estimate", E]]),
+    step("_factor", "(1 - (1 + _rate / 100) ^ (-_years)) / (_rate / 100)", num(af)),
+    step("_flow", "_cost / _factor", final(A, "2dp", "money")),
+    step("_npv", "_estimate * _factor - _cost", final(npv, "2dp", "money")),
+  ];
+  const explanation =
+    explain("The annuity factor is the sum of the discount factors for years 1 to n. NPV is zero when the yearly flow × factor equals the cost.", lines) +
+    `\n\n\`_npv\` is ${go ? "positive" : "negative"}, so the answer is **${go ? INVEST : PASS}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("flow", "Break-even inflow", "What equal yearly inflow gives an NPV of exactly zero, in dollars? Round to 2 decimal places.", A,
+        `Find the annuity factor \`(1 - (1 + _rate / 100) ^ (-_years)) / (_rate / 100)\`, here with ${r} and ${n}, then divide \`_cost\` by it. Round to 2 decimal places.`),
+      r2part("npv", "NPV at estimate", "What is the NPV at the owner's estimate, in dollars? Use a negative number if it is negative. Round to 2 decimal places.", npv,
+        "NPV = estimate × annuity factor − cost. Use the unrounded factor."),
+      xChoice("rec", "Recommendation", "Should it invest?", go ? INVEST : PASS, REC_CHOICES.invest,
+        "Look at the sign of your *NPV at estimate* answer, or compare `_estimate` with your *Break-even inflow* answer."),
+    ],
+    explanation,
+    params: { x: "inv-annuity", C, n, r, E },
+    given: xGiven([["_cost", C], ["_years", n], ["_rate", r], ["_estimate", E]]),
+    hints: [
+      `Each year's ${cash(1)} is worth 1 ÷ (1 + ${r}/100)^year today. Adding those for years 1 to ${n} gives the annuity factor.`,
+      "Work backwards: the NPV is zero when yearly inflow × annuity factor equals the cost.",
+    ],
+  };
+}
+
+// Investment / expert 1: two projects with different lives and resale values; pick by NPV.
+function xInvCompare(rng) {
+  const biz = rng.pick(PROJECTS).biz;
+  const r = rng.int(10, 24) / 2;
+  const draw = (nLo, nHi) => {
+    const C = rng.int(100, 600) * 100;
+    const n = rng.int(nLo, nHi);
+    const f = Math.round(((C / n) * rng.int(85, 135)) / 100 / 10) * 10;
+    const R = Math.round((C * rng.int(0, 25)) / 100 / 100) * 100;
+    return { C, n, f, R };
+  };
+  const a = draw(2, 4);
+  const b = draw(4, 7);
+
+  const npvOf = (o) => (o.f * (1 - Math.pow(1 + r / 100, -o.n))) / (r / 100) + o.R / Math.pow(1 + r / 100, o.n) - o.C;
+  const na = npvOf(a);
+  const nb = npvOf(b);
+  const pick = na <= 0 && nb <= 0 ? NEITHER : na > nb ? OPT_A : OPT_B;
+  const desc = (o, L) =>
+    `**${L}** costs ${cash(o.C)} today, brings in ${cash(o.f)} at the end of each year for ${years(o.n)}, and can then be sold for ${cash(o.R)}.`;
+  const prompt =
+    `${biz} can choose one of two machines. ${desc(a, OPT_A)} ${desc(b, OPT_B)} The discount rate is ${r}%. ` +
+    `It picks the project with the higher NPV, but only if that NPV is positive; otherwise it picks neither.`;
+  const lines = [
+    ...xRow([["_rate", r], ["_cost_a", a.C], ["_flow_a", a.f], ["_years_a", a.n], ["_resale_a", a.R], ["_cost_b", b.C], ["_flow_b", b.f], ["_years_b", b.n], ["_resale_b", b.R]]),
+    step("_npv_a", "_flow_a * (1 - (1 + _rate / 100) ^ (-_years_a)) / (_rate / 100) + _resale_a / (1 + _rate / 100) ^ _years_a - _cost_a", final(na, "2dp", "money")),
+    step("_npv_b", "_flow_b * (1 - (1 + _rate / 100) ^ (-_years_b)) / (_rate / 100) + _resale_b / (1 + _rate / 100) ^ _years_b - _cost_b", final(nb, "2dp", "money")),
+  ];
+  const explanation =
+    explain("Discount each project's yearly flows (an annuity) and its resale value (one amount at the end of its life), then subtract its cost.", lines) +
+    `\n\nThe better choice by NPV is **${pick}**.`;
+  // Nine values: the calculator takes 8, so the shared rate is left for the user to type.
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("npv-a", "NPV of A", "What is the NPV of Project A, in dollars? Use a negative number if it is negative. Round to 2 decimal places.", na,
+        `Annuity factor for ${a.n} years at ${r}%, times ${a.f}; plus ${a.R} ÷ (1 + ${r}/100)^${a.n}; minus ${a.C}.`),
+      r2part("npv-b", "NPV of B", "What is the NPV of Project B, in dollars? Use a negative number if it is negative. Round to 2 decimal places.", nb,
+        `Annuity factor for ${b.n} years at ${r}%, times ${b.f}; plus ${b.R} ÷ (1 + ${r}/100)^${b.n}; minus ${b.C}.`),
+      xChoice("rec", "Recommendation", "Which should it choose?", pick, [OPT_A, OPT_B, NEITHER],
+        "Pick the higher of your two NPV answers, but only if it is above zero."),
+    ],
+    explanation,
+    params: { x: "inv-compare", r, a, b },
+    given: xGiven([["_cost_a", a.C], ["_flow_a", a.f], ["_years_a", a.n], ["_resale_a", a.R], ["_cost_b", b.C], ["_flow_b", b.f], ["_years_b", b.n], ["_resale_b", b.R]]),
+    hints: [
+      `The yearly flows are an annuity: factor = (1 - (1 + ${r}/100)^(-years)) ÷ (${r}/100). Add \`_rate = ${r}\` as a row first.`,
+      "The resale arrives once, at the end of the project's life, so discount it by (1 + rate)^years. The cost is paid today and is not discounted.",
+    ],
+  };
+}
+
+// Investment / expert 2: discounted payback with uneven cash flows.
+function xInvDpay(rng) {
+  const p = rng.pick(PROJECTS);
+  const C = rng.int(200, 1200) * 100;
+  const r = rng.int(10, 24) / 2;
+  const flows = [];
+  for (let i = 0; i < 5; i++) flows.push(Math.round((C * rng.int(15, 42)) / 100 / 100) * 100);
+  const maxY = rng.int(2, 5);
+
+  let cum = 0;
+  let dp = 0;
+  const cums = [];
+  flows.forEach((f, i) => {
+    cum += f / Math.pow(1 + r / 100, i + 1);
+    cums.push(cum);
+    if (!dp && cum >= C) dp = i + 1;
+  });
+  const pv = cum;
+  const go = dp > 0 && dp <= maxY;
+  const prompt =
+    `${p.biz} is considering ${p.asset}, which costs ${cash(C)} today. It should bring in ${flows.slice(0, 4).map(cash).join(", ")} and ${cash(flows[4])} ` +
+    `at the end of years 1 to 5. The discount rate is ${r}%. The owner invests only if the **discounted** payback period is at most ${years(maxY)}.`;
+  const lines = [
+    ...xRow([["_cost", C], ["_rate", r], ...flows.map((f, i) => [`_cf${i + 1}`, f])]),
+    ...flows.map((f, i) => step(`_pv${i + 1}`, `_cf${i + 1} / (1 + _rate / 100) ^ ${i + 1}`, num(f / Math.pow(1 + r / 100, i + 1)))),
+    step("_pv_total", "_pv1 + _pv2 + _pv3 + _pv4 + _pv5", final(pv, "2dp", "money")),
+  ];
+  const explanation =
+    explain("Discount each year's cash flow, then add them up year by year until the running total reaches the cost.", lines) +
+    `\n\nRunning totals: ${cums.map((v, i) => `year ${i + 1}: ${cash(round2(v))}`).join(", ")}. The total first reaches ${cash(C)} in **year ${dp}**.` +
+    `\n\nThat is ${go ? "within" : "more than"} ${years(maxY)}, so the answer is **${go ? INVEST : PASS}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("pv", "Present value", "What is the present value of all five cash flows, in dollars? Round to 2 decimal places.", pv,
+        "Discount each flow by (1 + rate/100)^year and add the five results. Round to 2 decimal places."),
+      xPart("payback", "Discounted payback", "In which year does the running total of discounted cash flows first reach the cost? Answer with the year number.", dp, 0,
+        "Keep a running total of the discounted flows, year by year, and stop at the first year where it is at least the cost."),
+      xChoice("rec", "Recommendation", "Should it invest?", go ? INVEST : PASS, REC_CHOICES.invest,
+        `Compare your *Discounted payback* answer with the limit of ${maxY} years.`),
+    ],
+    explanation,
+    params: { x: "inv-dpay", C, r, flows, maxY },
+    given: xGiven([["_cost", C], ["_rate", r], ...flows.map((f, i) => [`_cf${i + 1}`, f])]),
+    hints: [
+      `Year t's flow is worth flow ÷ (1 + ${r}/100)^t today: for year 1, \`_cf1 / (1 + _rate / 100) ^ 1\`.`,
+      "Simple payback uses the raw flows; discounted payback uses the discounted ones, so it always takes at least as long.",
+    ],
+  };
+}
+
+// Pricing / expert 0: how far can sales fall (or how much must they rise) before a price change stops paying?
+function xPrElastic(rng) {
+  const s = rng.pick(SHOPS);
+  const Pc = priceC(rng, s.price, 20);
+  const Cc = priceC(rng, [(Pc / 100) * 0.3, (Pc / 100) * 0.55], 5);
+  const Q = rng.int(Math.ceil(s.vol[0] / 10), Math.floor(s.vol[1] / 10)) * 10;
+  const raise = rng.next() < 0.5;
+  const u = rng.pick([5, 10, 15, 20]);
+  const e = rng.int(1, 30);
+  const F = rng.int(10, 80) * 50;
+
+  const newPc = (Pc * (100 + (raise ? u : -u))) / 100;
+  const m = Pc - Cc;
+  const m2 = newPc - Cc;
+  const thr = raise ? (1 - m / m2) * 100 : (m / m2 - 1) * 100;
+  const Q2 = (Q * (100 + (raise ? -e : e))) / 100;
+  const pNow = (Q * m) / 100 - F;
+  const pNew = (Q2 * m2) / 100 - F;
+  const change = raise ? "Raise the price" : "Cut the price";
+  const better = pNew > pNow ? change : KEEP_PRICE;
+  const verb = raise ? "fall" : "rise";
+  const prompt =
+    `${s.biz} sells ${Q} ${s.units} a month at ${cash(Pc / 100)} each. Each ${s.unit} costs ${cash(Cc / 100)} in variable costs, and fixed costs are ${cash(F)} a month. ` +
+    `It is thinking of ${raise ? "raising" : "cutting"} the price by ${u}%. Its best guess is that sales would ${verb} by ${e}%.`;
+  const lines = [
+    ...xRow([["_sales", Q], ["_price", mv(Pc / 100)], ["_unit_cost", mv(Cc / 100)], ["_fixed", F], ["_change", u], ["_expected", e]]),
+    step("_new_price", `_price * (1 ${raise ? "+" : "-"} _change / 100)`, mv(newPc / 100)),
+    step("_margin", "_price - _unit_cost", mv(m / 100)),
+    step("_new_margin", "_new_price - _unit_cost", mv(m2 / 100)),
+    step("_threshold", raise ? "(1 - _margin / _new_margin) * 100" : "(_margin / _new_margin - 1) * 100", final(thr, "2dp", "pct")),
+  ];
+  const explanation =
+    explain("Profit stays the same when sales × margin stays the same. Fixed costs don't change, so they cancel out.", lines) +
+    `\n\nThe expected ${verb} of ${e}% is ${raise ? (e < thr ? "smaller" : "larger") : (e > thr ? "larger" : "smaller")} than the threshold, so profit ${pNew > pNow ? "goes up" : "goes down"}: **${better}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("threshold", "Threshold", `By what percent ${raise ? "could sales fall" : "must sales rise"} before profit is exactly the same as now? Answer without the % sign. Round to 2 decimal places.`, thr,
+        "Set current sales × current margin equal to new sales × new margin, and solve for the percent change in sales."),
+      xChoice("rec", "Recommendation", "With the expected change in sales, what should it do?", better, [change, KEEP_PRICE],
+        `Compare the expected ${verb} (${e}%) with your *Threshold* answer: which side of it is the guess on?`),
+    ],
+    explanation,
+    params: { x: "pr-elastic", Q, Pc, Cc, F, raise, u, e },
+    given: xGiven([["_sales", Q], ["_price", mv(Pc / 100)], ["_unit_cost", mv(Cc / 100)], ["_fixed", F], ["_change", u], ["_expected", e]]),
+    hints: [
+      `Find the new price first: ${mv(Pc / 100)} ${raise ? "+" : "−"} ${u}%. Then the old and new margins per ${s.unit}.`,
+      "Fixed costs are the same either way. Profit is unchanged when (new sales ÷ old sales) = old margin ÷ new margin.",
+    ],
+  };
+}
+
+// Pricing / expert 1: a one-off special order with limited capacity.
+function xPrSpecial(rng) {
+  const s = rng.pick(SHOPS);
+  const Pc = priceC(rng, s.price, 5);
+  const Cc = priceC(rng, [(Pc / 100) * 0.3, (Pc / 100) * 0.55], 5);
+  const cap = rng.int(Math.ceil(s.vol[0] / 10), Math.floor(s.vol[1] / 10)) * 10;
+  const usePct = rng.int(60, 95);
+  const ordPct = rng.int(10, 40);
+  const offerPct = rng.int(55, 85);
+  const X = rng.int(2, 30) * 10;
+
+  const Q = Math.round((cap * usePct) / 100);
+  const N = Math.max(10, Math.round((cap * ordPct) / 100));
+  const Oc = Math.round((Pc * offerPct) / 100);
+  const spare = cap - Q;
+  const lost = Math.max(0, N - spare);
+  const changeC = N * (Oc - Cc) - lost * (Pc - Cc) - 100 * X;
+  const needC = N * Cc + lost * (Pc - Cc) + 100 * X;
+  const minC = ceilDiv(needC, N);
+  const accept = changeC > 0;
+  const prompt =
+    `${s.biz} can make at most ${cap} ${s.units} a month. It now sells ${Q} a month at ${cash(Pc / 100)}, and each ${s.unit} costs ${cash(Cc / 100)} in variable costs. ` +
+    `A customer offers a one-off order of ${N} ${s.units} at ${cash(Oc / 100)} each, which needs ${cash(X)} of extra setup. ` +
+    `If the order doesn't fit in the spare capacity, regular sales are given up to make room.`;
+  const lines = [
+    ...xRow([["_capacity", cap], ["_sales", Q], ["_price", mv(Pc / 100)], ["_unit_cost", mv(Cc / 100)], ["_order", N], ["_offer", mv(Oc / 100)], ["_setup", X]]),
+    step("_spare", "_capacity - _sales", String(spare)),
+    step("_lost", "max(0, _order - _spare)", String(lost)),
+    step("_gain", "_order * (_offer - _unit_cost) - _lost * (_price - _unit_cost) - _setup", final(changeC / 100, "2dp", "money")),
+    step("_min_offer", "ceil((_order * _unit_cost + _lost * (_price - _unit_cost) + _setup) / _order * 100) / 100", `**${cash(minC / 100)}**`),
+  ];
+  const explanation =
+    explain("Fixed costs don't change. The order earns its own margin, minus the setup and minus the margin on any regular sales it pushes out.", lines) +
+    `\n\n\`_gain\` is ${accept ? "positive" : "zero or negative"}, so the answer is **${accept ? ACCEPT : REJECT}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      xPart("gain", "Profit change", "By how much does monthly profit change if it accepts, in dollars? Use a negative number for a fall.", changeC / 100, 0.005,
+        "Margin on the order (offer − variable cost, times the order size), minus the setup, minus the regular margin lost on any sales pushed out."),
+      xPart("min", "Lowest price", `What is the lowest price per ${s.unit} at which the order doesn't reduce profit? Round up to the next cent.`, minC / 100, 0,
+        "Total extra cost of the order = its variable costs + the setup + any regular margin given up. Share that over the order size and round **up** to the next cent."),
+      xChoice("rec", "Recommendation", "Should it accept the order?", accept ? ACCEPT : REJECT, [ACCEPT, REJECT],
+        "Accept only if your *Profit change* answer is above zero."),
+    ],
+    explanation,
+    params: { x: "pr-special", cap, Q, Pc, Cc, N, Oc, X },
+    given: xGiven([["_capacity", cap], ["_sales", Q], ["_price", Pc / 100], ["_unit_cost", Cc / 100], ["_order", N], ["_offer", Oc / 100], ["_setup", X]]),
+    hints: [
+      `Spare capacity is ${cap} − ${Q}. Any part of the ${N}-unit order beyond that replaces regular sales.`,
+      "A replaced regular sale costs its whole margin (price − variable cost), not just its price.",
+    ],
+  };
+}
+
+// Inventory / expert 0: EOQ versus a bulk discount, with holding cost as a percent of the price.
+function xIvDiscount(rng) {
+  const st = rng.pick(STOCK);
+  const D = rng.int(20, 200) * 100;
+  const S = rng.int(20, 150);
+  const Uc = priceC(rng, [5, 40], 5);
+  const h = rng.int(15, 30);
+  const d = rng.pick([2, 3, 4, 5]);
+  const k = rng.int(5, 20) / 10; // Qmin as a multiple of the size where the discount roughly stops paying
+
+  const U = Uc / 100;
+  const H = (h / 100) * U;
+  const eoq = Math.round(Math.sqrt((2 * D * S) / H));
+  // Ignoring ordering costs, the discount stops paying near Q = 2 × demand × discount ÷ holding %.
+  const Qmin = Math.max(Math.ceil((eoq * 1.2) / 100) * 100, Math.round(((2 * D * d) / h) * k / 100) * 100);
+  const U2 = U * (1 - d / 100);
+  const costOf = (Q, price) => D * price + (D / Q) * S + (Q / 2) * (h / 100) * price;
+  const cE = costOf(eoq, U);
+  const cD = costOf(Qmin, U2);
+  const best = cD < cE ? TAKE_DISC : ORDER_EOQ;
+  const prompt =
+    `${st.biz} sells ${D} ${st.item} a year. Each order costs ${cash(S)} to place, each ${st.unit} costs ${cash(U)} to buy, and holding stock for a year costs ${h}% of its price. ` +
+    `The supplier offers ${d}% off the price on orders of at least ${Qmin} ${st.units}. ` +
+    `Total yearly cost = purchases + ordering cost + holding cost. It picks whichever option has the lower total.`;
+  const lines = [
+    ...xRow([["_demand", D], ["_order_cost", S], ["_price", mv(U)], ["_hold_pct", h], ["_discount", d], ["_min_order", Qmin]]),
+    step("_holding", "_hold_pct / 100 * _price", num(H)),
+    step("_eoq", "round(sqrt(2 * _demand * _order_cost / _holding))", String(eoq)),
+    step("_total_eoq", "_demand * _price + _demand / _eoq * _order_cost + _eoq / 2 * _holding", final(cE, "2dp", "money")),
+    step("_new_price", "_price * (1 - _discount / 100)", num(U2)),
+    step("_total_disc", "_demand * _new_price + _demand / _min_order * _order_cost + _min_order / 2 * (_hold_pct / 100 * _new_price)", final(cD, "2dp", "money")),
+  ];
+  const explanation =
+    explain("Find the EOQ at the normal price, then compare its full yearly cost (including purchases) with ordering the discount quantity at the lower price.", lines) +
+    `\n\nThe lower total is **${best}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("eoq-cost", "Cost at EOQ", `First find the EOQ = √(2 × demand × order cost ÷ holding cost per ${st.unit}), rounded to the nearest whole ${st.unit}. What is the total yearly cost when it orders that amount? Round to 2 decimal places.`, cE,
+        "Holding cost per unit = the holding percent × the price. Total = demand × price + (demand ÷ EOQ) × order cost + (EOQ ÷ 2) × holding cost. Round to 2 decimal places."),
+      r2part("disc-cost", "Cost with discount", `What is the total yearly cost if it orders ${Qmin} ${st.units} each time at the discounted price? Round to 2 decimal places.`, cD,
+        "Use the discounted price for purchases **and** for the holding cost, with the minimum order size as the order size."),
+      xChoice("rec", "Recommendation", "Which option should it choose?", best, [ORDER_EOQ, TAKE_DISC],
+        "Pick the lower of your two totals."),
+    ],
+    explanation,
+    params: { x: "iv-discount", D, S, Uc, h, d, Qmin },
+    given: xGiven([["_demand", D], ["_order_cost", S], ["_price", U], ["_hold_pct", h], ["_discount", d], ["_min_order", Qmin]]),
+    hints: [
+      `Holding cost per ${st.unit} a year is ${h}% of the price, so it changes when the price changes.`,
+      "Here the purchase cost matters: the discount lowers it, while the bigger orders raise the holding cost and cut the ordering cost.",
+    ],
+  };
+}
+
+// Inventory / expert 1: work backwards from an EOQ to the order cost it implies.
+function xIvBack(rng) {
+  const st = rng.pick(STOCK);
+  const D = rng.int(30, 250) * 100;
+  const Q = rng.int(8, 60) * 10;
+  const Hc = priceC(rng, [1, 12], 5);
+
+  const H = Hc / 100;
+  const S = (Q * Q * H) / (2 * D);
+  const orders = D / Q;
+  const total = Q * H;
+  const prompt =
+    `${st.biz} sells ${D} ${st.item} a year, and holding one ${st.unit} for a year costs ${cash(H)}. ` +
+    `It orders ${Q} ${st.units} at a time, and this is exactly its economic order quantity (EOQ = √(2 × demand × order cost ÷ holding cost)).`;
+  const lines = [
+    ...xRow([["_demand", D], ["_holding", mv(H)], ["_eoq", Q]]),
+    step("_order_cost", "_eoq ^ 2 * _holding / (2 * _demand)", final(S, "2dp", "money")),
+    step("_orders", "_demand / _eoq", final(orders, "2dp")),
+    step("_total", "_orders * _order_cost + _eoq / 2 * _holding", final(total, "2dp", "money")),
+  ];
+  const explanation =
+    explain("Square both sides of the EOQ formula and solve for the order cost. At the EOQ, yearly ordering cost equals yearly holding cost.", lines) +
+    `\n\nCheck: holding cost is ${Q} ÷ 2 × ${mv(H)} = ${cash(total / 2)}, which is half the total, as it should be at the EOQ.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("order-cost", "Order cost", "What cost per order does that imply, in dollars? Round to 2 decimal places.", S,
+        "Square both sides: EOQ² = 2 × demand × order cost ÷ holding cost. Then rearrange for the order cost. Round to 2 decimal places."),
+      r2part("orders", "Orders a year", "How many orders does it place a year? Round to 2 decimal places.", orders,
+        "Yearly demand ÷ the order size."),
+      r2part("total", "Yearly cost", "What is its total yearly ordering and holding cost? Use the unrounded order cost. Round to 2 decimal places.", total,
+        "Ordering cost = orders a year × order cost; holding cost = (order size ÷ 2) × holding cost. At the EOQ these two are equal."),
+    ],
+    explanation,
+    params: { x: "iv-back", D, Hc, Q },
+    given: xGiven([["_demand", D], ["_holding", H], ["_eoq", Q]]),
+    hints: [
+      "This one runs backwards: you know the EOQ and want the order cost that produces it.",
+      `Start from ${Q}² = 2 × ${D} × order cost ÷ ${mv(H)}.`,
+    ],
+  };
+}
+
+// Hiring / expert 0: work backwards to the sales a hire must bring in.
+function xHrSales(rng) {
+  const ro = rng.pick(ROLES);
+  const salary = rng.int(140, 400) * 200;
+  const o = rng.int(15, 40);
+  const g = rng.int(25, 80);
+  const F = rng.int(10, 60) * 100;
+  const T = rng.int(3, 12);
+  let e;
+  do e = rng.int(-30, 30); while (Math.abs(e) < 3);
+
+  const M = (salary * (100 + o)) / 1200;
+  const exact = ((M + F / T) * 100) / g;
+  const S = Math.ceil(exact);
+  const E = Math.round((S * (100 + e)) / 100);
+  const hire = E >= S;
+  const prompt =
+    `${ro.biz} is thinking of hiring ${ro.role} on a salary of ${cash(salary)} a year. Overheads add ${o}% on top of the salary. ` +
+    `Recruiting and training cost ${cash(F)} up front, and the owner wants that paid back within ${T} months. The extra sales earn ${an(g)} ${g}% gross margin. ` +
+    `The owner expects the hire to bring in ${cash(E)} of extra sales a month.`;
+  const lines = [
+    ...xRow([["_salary", salary], ["_overhead", o], ["_upfront", F], ["_months", T], ["_margin", g], ["_expected", E]]),
+    step("_monthly_cost", "_salary * (1 + _overhead / 100) / 12", final(M, "2dp", "money")),
+    step("_needed", "ceil((_monthly_cost + _upfront / _months) / (_margin / 100))", `**${cash(S)}**`),
+  ];
+  const explanation =
+    explain(`Each month the extra gross profit must cover the full monthly cost plus 1/${T} of the up-front cost. Work backwards from that profit to the sales.`, lines) +
+    `\n\n\`_expected\` (${cash(E)}) is ${hire ? "at least" : "below"} \`_needed\`, so the answer is **${hire ? HIRE : NO_HIRE}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("cost", "Monthly cost", "What is the full monthly cost of the hire, in dollars? Round to 2 decimal places.", M,
+        `\`_salary * (1 + _overhead / 100) / 12\`, here \`${salary} * (1 + ${o} / 100) / 12\`. Round to 2 decimal places.`),
+      xPart("sales", "Sales needed", `What monthly sales must the hire bring in to cover its cost and repay the up-front cost within ${T} months? Round up to whole dollars.`, S, 0,
+        `Gross profit needed each month = monthly cost + ${F} ÷ ${T}. Sales = that ÷ (${g} / 100), rounded **up**. Use the unrounded monthly cost.`),
+      xChoice("rec", "Recommendation", "Should it hire?", hire ? HIRE : NO_HIRE, NEW_REC_CHOICES.hire,
+        `Compare \`_expected\` (${E}) with your *Sales needed* answer.`),
+    ],
+    explanation,
+    params: { x: "hr-sales", salary, o, g, F, T, E },
+    given: xGiven([["_salary", salary], ["_overhead", o], ["_upfront", F], ["_months", T], ["_margin", g], ["_expected", E]]),
+    hints: [
+      "Only the gross margin of each sales dollar is available to pay for the hire.",
+      `Spread the up-front cost evenly over the ${T}-month payback window, and add it to the monthly cost.`,
+    ],
+  };
+}
+
+// Hiring / expert 1: employee versus contractor, with a break-even number of hours.
+function xHrContract(rng) {
+  const ro = rng.pick(ROLES);
+  const salary = rng.int(140, 400) * 200;
+  const o = rng.int(15, 40);
+  const F = rng.int(10, 60) * 100;
+  const R = rng.int(30, 120);
+  const Hm = rng.int(40, 200);
+
+  const E = (salary * (100 + o) + 100 * F) / 1200;
+  const beh = E / R;
+  const hire = Hm * R > E;
+  const prompt =
+    `${ro.biz} needs ${Hm} hours of work a month from ${ro.role}. It could hire someone on a salary of ${cash(salary)} a year, with overheads adding ${o}% on top and ${cash(F)} of up-front recruiting cost, which it spreads over the first 12 months. ` +
+    `Or it could use a contractor at ${cash(R)} an hour. It picks the cheaper option per month.`;
+  const lines = [
+    ...xRow([["_salary", salary], ["_overhead", o], ["_upfront", F], ["_rate", R], ["_hours", Hm]]),
+    step("_employee", "_salary * (1 + _overhead / 100) / 12 + _upfront / 12", final(E, "2dp", "money")),
+    step("_break_even", "_employee / _rate", final(beh, "2dp")),
+    step("_contractor", "_hours * _rate", mv(Hm * R)),
+  ];
+  const explanation =
+    explain("The employee costs the same each month however many hours are needed; the contractor costs hours × rate. They cost the same at the break-even hours.", lines) +
+    `\n\n${Hm} hours is ${hire ? "above" : "below"} the break-even, so the answer is **${hire ? HIRE : CONTRACT}**.`;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      r2part("employee", "Employee cost", "What is the employee's monthly cost in the first year, in dollars? Round to 2 decimal places.", E,
+        "Salary plus overheads, divided by 12, plus one twelfth of the up-front cost. Round to 2 decimal places."),
+      r2part("hours", "Break-even hours", "At how many hours a month would the contractor cost the same? Use the unrounded employee cost. Round to 2 decimal places.", beh,
+        "Divide the employee's monthly cost by the contractor's hourly rate."),
+      xChoice("rec", "Recommendation", "Which should it choose?", hire ? HIRE : CONTRACT, [HIRE, CONTRACT],
+        `Compare \`_hours\` (${Hm}) with your *Break-even hours* answer: above it, the fixed cost of an employee works out cheaper.`),
+    ],
+    explanation,
+    params: { x: "hr-contract", salary, o, F, R, Hm },
+    given: xGiven([["_salary", salary], ["_overhead", o], ["_upfront", F], ["_rate", R], ["_hours", Hm]]),
+    hints: [
+      "An employee is a fixed monthly cost; a contractor's cost grows with the hours.",
+      "Find the number of hours where hours × rate equals the employee's monthly cost.",
+    ],
+  };
+}
+
+const EXPERT = {
+  "break-even": [xBePrice, xBeLeverage, xBeMix],
+  "unit-economics": [xUeChurn, xUeBlend],
+  investment: [xInvAnnuity, xInvCompare, xInvDpay],
+  "pricing-decision": [xPrElastic, xPrSpecial],
+  inventory: [xIvDiscount, xIvBack],
+  hiring: [xHrSales, xHrContract],
+};
+
+// Redraw from the same rng until verify() accepts (ill-posed draws: half cents, ties near a rule).
+function generateExpert(subtopic, rng) {
+  const list = EXPERT[subtopic];
+  if (!list) throw new Error(`Unknown subtopic: ${subtopic}`);
+  let q;
+  for (let t = 0; t < 20; t++) {
+    q = list[rng.int(0, list.length - 1)](rng);
+    if (verify(q, ownAnswer(q)) === true) return q;
+  }
+  return q;
+}
+
+// ---- Expert verification ----
+
+const xn = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+// A 2-decimal answer: within 0.005 of the independently computed value, which must not sit on a half cent.
+const near2 = (x, exact) => Number.isFinite(x) && Number.isFinite(exact) && !halfCent(exact) && Math.abs(x - exact) <= 0.005 + 1e-9;
+// A whole number of cents, given in dollars.
+const centsOf = (x) => {
+  if (!Number.isFinite(x)) return NaN;
+  const c = Math.round(x * 100);
+  return Math.abs(x * 100 - c) < 1e-6 ? c : NaN;
+};
+// Horner: present value of flows at the ends of years 1..n.
+const pvOf = (flows, r) => {
+  let v = 0;
+  for (let i = flows.length - 1; i >= 0; i--) v = (v + flows[i]) / (1 + r / 100);
+  return v;
+};
+
+function verifyExpert(question, answer) {
+  const p = question.params;
+  const parts = question.parts;
+  if (question.answerType !== "multi" || !Array.isArray(parts) || !answer || typeof answer !== "object") return false;
+  if (Object.keys(answer).length !== parts.length) return false;
+  for (const part of parts) {
+    if (!Object.prototype.hasOwnProperty.call(answer, part.id)) return false;
+    if (part.answerType === "choice" && (!Array.isArray(part.choices) || new Set(part.choices).size !== part.choices.length || !part.choices.includes(String(answer[part.id])))) return false;
+  }
+  const a = (id) => xn(answer[id]);
+  const ch = (id) => String(answer[id]);
+
+  switch (p.x) {
+    case "be-price": {
+      // The price covers variable cost + fixed + target at the expected volume; one cent less does not.
+      const P = centsOf(a("price"));
+      const need = p.Cc * p.D + 100 * (p.F + p.T);
+      if (!(P * p.D >= need && (P - 1) * p.D < need) || !ceilSafe(need / p.D)) return false;
+      const u = a("units");
+      const m = P - p.Cc;
+      if (!(m > 0 && Number.isInteger(u) && u * m >= 100 * p.F && (u - 1) * m < 100 * p.F) || !ceilSafe((100 * p.F) / m)) return false;
+      if (Math.abs(p.maxC - P) < 5) return false;
+      return ch("rec") === (P <= p.maxC ? YES : NO);
+    }
+    case "be-leverage": {
+      // Profit simulated at different sales levels.
+      const m = (p.Pc - p.Cc) / 100;
+      const profitAt = (q) => q * m - p.F;
+      const p0 = profitAt(p.Q);
+      if (!(p0 > 0)) return false;
+      // margin of safety: sales falling by x% bring profit to zero
+      const mos = (1 - p.F / (p.Q * m)) * 100;
+      const dol = (profitAt(p.Q * 1.01) - p0) / p0 / 0.01; // % change in profit per % change in sales (linear, so exact)
+      const rise = ((profitAt((p.Q * (100 + p.g)) / 100) - p0) / p0) * 100;
+      return near2(a("mos"), mos) && Math.abs(profitAt(p.Q * (1 - mos / 100))) < 1e-6 * p.Q * m + 1e-6 &&
+        near2(a("dol"), dol) && near2(a("rise"), rise);
+    }
+    case "be-mix": {
+      const A = a("units-a");
+      const B = a("units-b");
+      if (!Number.isInteger(A) || !Number.isInteger(B) || A <= 0 || A % p.ra !== 0 || A * p.rb !== B * p.ra) return false;
+      const n = A / p.ra;
+      // Profit of n sets from per-product totals, in cents.
+      const profitC = (k) => k * p.ra * (p.Pa - p.Ca) + k * p.rb * (p.Pb - p.Cb) - 100 * p.F;
+      if (!(profitC(n) >= 0 && profitC(n - 1) < 0)) return false;
+      const setM = p.ra * (p.Pa - p.Ca) + p.rb * (p.Pb - p.Cb);
+      if (!ceilSafe((100 * p.F) / setM)) return false;
+      const totalRev = p.ra * p.Pa + p.rb * p.Pb;
+      const totalVar = p.ra * p.Ca + p.rb * p.Cb;
+      return near2(a("avg"), (totalRev - totalVar) / (p.ra + p.rb) / 100);
+    }
+    case "ue-churn": {
+      const gp = (p.feeC * p.g) / 10000;
+      // Highest churn: at that churn, LTV ÷ CAC equals the target exactly.
+      const c = a("churn");
+      const maxC = (100 * gp) / (p.CAC * p.t);
+      if (!near2(c, maxC) || Math.abs(gp / (maxC / 100) / p.CAC - p.t) > 1e-9) return false;
+      // Payback months in integers: x × fee × margin ≥ CAC × 10000.
+      const x = a("payback");
+      const per = p.feeC * p.g;
+      if (!(Number.isInteger(x) && x * per >= p.CAC * 10000 && (x - 1) * per < p.CAC * 10000) || !ceilSafe((p.CAC * 10000) / per)) return false;
+      const ratio = gp / (p.cur / 100) / p.CAC;
+      if (Math.abs(ratio - p.t) < 0.02 || Math.abs(p.cur - maxC) < 0.1) return false;
+      return ch("rec") === (ratio >= p.t ? HEALTHY : UNHEALTHY);
+    }
+    case "ue-blend": {
+      const ltv = ((p.feeC / 100) * (p.g / 100)) * (100 / p.c);
+      const n = p.nA + p.nB;
+      const s = p.SA + p.SB;
+      if (!near2(a("cac"), s / n) || !near2(a("ratio"), (ltv * n) / s)) return false;
+      const ra = ltv / (p.SA / p.nA);
+      const rb = ltv / (p.SB / p.nB);
+      if (Math.abs(ra - HEALTHY_MIN) < 0.05 || Math.abs(rb - HEALTHY_MIN) < 0.05) return false;
+      const want = ra < HEALTHY_MIN && rb < HEALTHY_MIN ? BOTH : ra < HEALTHY_MIN ? p.chA : rb < HEALTHY_MIN ? p.chB : NEITHER;
+      return ch("channel") === want;
+    }
+    case "inv-annuity": {
+      // Discount factors summed year by year (not the closed form).
+      let af = 0;
+      for (let t = 1; t <= p.n; t++) af += 1 / Math.pow(1 + p.r / 100, t);
+      if (!near2(a("flow"), p.C / af)) return false;
+      const npv = pvOf(Array(p.n).fill(p.E), p.r) - p.C;
+      if (!near2(a("npv"), npv) || Math.abs(npv) < 0.5) return false;
+      return ch("rec") === (npv > 0 ? INVEST : PASS);
+    }
+    case "inv-compare": {
+      const flowsOf = (o) => Array.from({ length: o.n }, (_, i) => o.f + (i === o.n - 1 ? o.R : 0));
+      const na = pvOf(flowsOf(p.a), p.r) - p.a.C;
+      const nb = pvOf(flowsOf(p.b), p.r) - p.b.C;
+      if (!near2(a("npv-a"), na) || !near2(a("npv-b"), nb)) return false;
+      if (Math.abs(na) < 1 || Math.abs(nb) < 1 || Math.abs(na - nb) < 1) return false;
+      const want = na <= 0 && nb <= 0 ? NEITHER : na > nb ? OPT_A : OPT_B;
+      return ch("rec") === want;
+    }
+    case "inv-dpay": {
+      if (!near2(a("pv"), pvOf(p.flows, p.r))) return false;
+      // Compare in future value at year k: Σ cf_t (1+r)^(k-t) against cost × (1+r)^k.
+      const f = 1 + p.r / 100;
+      let dp = 0;
+      for (let k = 1; k <= p.flows.length; k++) {
+        let fv = 0;
+        for (let t = 1; t <= k; t++) fv += p.flows[t - 1] * Math.pow(f, k - t);
+        const costFv = p.C * Math.pow(f, k);
+        if (Math.abs(fv - costFv) < Math.pow(f, k)) return false; // within $1 (today's money) of the cost
+        if (!dp && fv >= costFv) dp = k;
+      }
+      if (!dp || a("payback") !== dp) return false;
+      return ch("rec") === (dp <= p.maxY ? INVEST : PASS);
+    }
+    case "pr-elastic": {
+      const m = p.Pc - p.Cc;
+      const newPc = (p.Pc * (100 + (p.raise ? p.u : -p.u))) / 100;
+      const m2 = newPc - p.Cc;
+      if (!(m > 0 && m2 > 0)) return false;
+      // Threshold: the sales change x% at which new profit equals current profit (residual form).
+      const x = a("threshold");
+      const exact = (Math.abs(m - m2) / m2) * 100;
+      const res = (100 + (p.raise ? -x : x)) * m2 - 100 * m;
+      if (!near2(x, exact) || Math.abs(res) > 0.005 * m2 + 1e-6) return false;
+      if (Math.abs(exact - p.e) < 0.5) return false;
+      const q2 = (p.Q * (100 + (p.raise ? -p.e : p.e))) / 100;
+      const pNow = p.Q * m - 100 * p.F;
+      const pNew = q2 * m2 - 100 * p.F;
+      return ch("rec") === (pNew > pNow ? (p.raise ? "Raise the price" : "Cut the price") : KEEP_PRICE);
+    }
+    case "pr-special": {
+      // Simulate the month with and without the order (cents).
+      if (!(p.N <= p.cap && p.Q <= p.cap)) return false;
+      const without = p.Q * (p.Pc - p.Cc);
+      const withC = (offer) => Math.min(p.Q, p.cap - p.N) * (p.Pc - p.Cc) + p.N * (offer - p.Cc) - 100 * p.X;
+      const diff = withC(p.Oc) - without;
+      if (!near2(a("gain"), diff / 100) || Math.abs(diff) < 100) return false;
+      const mc = centsOf(a("min"));
+      if (!(withC(mc) - without >= 0 && withC(mc - 1) - without < 0)) return false;
+      const lostC = without - Math.min(p.Q, p.cap - p.N) * (p.Pc - p.Cc);
+      if (!ceilSafe((p.N * p.Cc + lostC + 100 * p.X) / p.N)) return false;
+      return ch("rec") === (diff > 0 ? ACCEPT : REJECT);
+    }
+    case "iv-discount": {
+      const U = p.Uc / 100;
+      const H = (p.h / 100) * U;
+      const v = (2 * p.D * p.S) / H;
+      let Q = 1;
+      while ((Q + 0.5) * (Q + 0.5) < v) Q++;
+      if (Math.abs(Math.sqrt(v) - Math.round(Math.sqrt(v)) ) > 0.48 || p.Qmin <= Q) return false;
+      // Cost per order cycle (buy Q, place one order) × cycles a year, plus holding on average stock.
+      const yearly = (q, price) => (p.D / q) * (p.S + q * price) + (q / 2) * (p.h / 100) * price;
+      const cE = yearly(Q, U);
+      const cD = yearly(p.Qmin, U * (100 - p.d) / 100);
+      if (!near2(a("eoq-cost"), cE) || !near2(a("disc-cost"), cD) || Math.abs(cE - cD) < 1) return false;
+      return ch("rec") === (cD < cE ? TAKE_DISC : ORDER_EOQ);
+    }
+    case "iv-back": {
+      const H = p.Hc / 100;
+      const S = a("order-cost");
+      // Substitute back: the EOQ formula with the candidate order cost must give the stated EOQ.
+      const exactS = (p.Q * p.Q * H) / (2 * p.D);
+      if (!(exactS >= 1) || !near2(S, exactS) || Math.abs(Math.sqrt((2 * p.D * S) / H) - p.Q) > 0.5) return false;
+      const orders = p.D / p.Q;
+      if (!near2(a("orders"), orders)) return false;
+      return near2(a("total"), orders * exactS + (p.Q / 2) * H);
+    }
+    case "hr-sales": {
+      const M = (p.salary * (100 + p.o)) / 1200;
+      if (!near2(a("cost"), M)) return false;
+      // Whole dollars of sales x: 12·x·g·T ≥ salary·(100 + o)·T + 1200·F, and x - 1 falls short.
+      const x = a("sales");
+      const need = p.salary * (100 + p.o) * p.T + 1200 * p.F;
+      if (!(Number.isInteger(x) && 12 * x * p.g * p.T >= need && 12 * (x - 1) * p.g * p.T < need)) return false;
+      if (!ceilSafe(need / (12 * p.g * p.T)) || Math.abs(p.E - x) < 1) return false;
+      return ch("rec") === (p.E >= x ? HIRE : NO_HIRE);
+    }
+    case "hr-contract": {
+      const total = p.salary * (100 + p.o) + 100 * p.F; // employee cost × 1200
+      const e = a("employee");
+      const h = a("hours");
+      if (!near2(e, total / 1200) || Math.abs(e * 1200 - total) > 0.005 * 1200 + 1e-6) return false;
+      if (!near2(h, total / (1200 * p.R)) || Math.abs(h * p.R * 1200 - total) > 0.005 * p.R * 1200 + 1e-6) return false;
+      const contractor = p.Hm * p.R * 1200;
+      if (Math.abs(contractor - total) < p.R * 1200) return false; // at least an hour from break-even
+      return ch("rec") === (contractor > total ? HIRE : CONTRACT);
+    }
+    default:
+      return false;
+  }
+}
+
 // A few draws land on an ill-posed 2-decimal answer: the exact value sits on a half cent
 // (e.g. 46.06 × 35% × 35 = 564.235), so 564.23 and 564.24 would both be right, and verify()
 // rejects it. Redraw from the same rng until verify() accepts: every seed that was already well
@@ -1885,6 +2864,7 @@ function withHints(q) {
 const ownAnswer = (q) => (q.answerType === "multi" ? Object.fromEntries(q.parts.map((p) => [p.id, p.answer])) : q.answer);
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return generateExpert(subtopic, rng);
   let q;
   for (let t = 0; t < 10; t++) {
     q = withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
@@ -1905,6 +2885,7 @@ export function generate({ subtopic, difficulty, rng }) {
 // (never from the submitted calculation), with a guard band around its threshold.
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.x === "string") return verifyExpert(question, answer);
   if (!p || !p.values) return false; // regenerate from the seed to get params back
   const k = p.values;
 

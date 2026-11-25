@@ -606,7 +606,535 @@ function genWeighted(difficulty, rng) {
   return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 }), hints };
 }
 
+// ---- Expert: multi-step questions (easy/medium/hard above are untouched) ----
+//
+// Every template draws its rng values first (retrying inside the template when needed), then
+// builds text. Hints use only values already drawn (no rng) and never state a final answer.
+// Params use "x-" kinds, which verify() routes to verifyExpert().
+
+const isTie2 = (x) => Math.abs(((Math.abs(x) * 100) % 1) - 0.5) < 1e-6; // exactly halfway at the 3rd decimal
+const dp = (x) => fmtAns(x, true); // "12", "12.5" -> "12.50", "12.33"
+const X_ROUND = "round to 2 decimal places if it is not a whole number";
+const NAMES = ["Ava", "Ben", "Chloe", "Dev", "Ella", "Finn", "Grace", "Hugo", "Isla", "Jay", "Kofi", "Lena", "Mia", "Noah"];
+const xGiven = (pairs) => ({ given: pairs.map(([label, value]) => ({ label, value })) });
+
+const SCORE_CTX = [
+  { items: "tests", item: "test", what: "score", lo: 20, hi: 100, mLo: 50, mHi: 85 },
+  { items: "basketball games", item: "game", what: "points", lo: 0, hi: 45, mLo: 8, mHi: 28 },
+  { items: "darts rounds", item: "round", what: "score", lo: 10, hi: 180, mLo: 50, mHi: 120 },
+  { items: "spelling quizzes", item: "quiz", what: "score", lo: 0, hi: 50, mLo: 20, mHi: 40 },
+];
+
+// mean-median-mode / expert, template 0: working backwards from a changing mean (multi-part).
+function genXRunningMean(rng) {
+  const ctx = rng.pick(SCORE_CTX);
+  const name = rng.pick(NAMES);
+  let n, m, m2, m3, a, b;
+  for (let t = 0; ; t++) {
+    n = rng.int(3, 8);
+    m = rng.int(ctx.mLo, ctx.mHi);
+    const d1 = rng.pick([-4, -3, -2, -1, 1, 2, 3, 4, 5]);
+    const d2 = rng.int(1, 4);
+    m2 = m + d1;
+    m3 = m2 + d2;
+    a = (n + 1) * m2 - n * m;
+    b = (n + 2) * m3 - (n + 1) * m2;
+    if ((a >= ctx.lo && a <= ctx.hi && b >= ctx.lo && b <= ctx.hi && a !== b) || t > 400) break;
+  }
+  if (!(a >= ctx.lo && a <= ctx.hi && b >= ctx.lo && b <= ctx.hi)) {
+    // fallback (never seen in testing): small steps keep both scores in range
+    n = 3; m = ctx.mLo; m2 = m + 1; m3 = m2 + 1;
+    a = (n + 1) * m2 - n * m;
+    b = (n + 2) * m3 - (n + 1) * m2;
+  }
+  const prompt =
+    `${name}'s mean ${ctx.what} over the first ${n} ${ctx.items} is ${m}. After ${ctx.item} ${n + 1}, the mean is ${m2}. ` +
+    `${name} wants the mean after ${ctx.item} ${n + 2} to be exactly ${m3}.`;
+  const steps = [
+    `Mean × count = total. After ${n} ${ctx.items}: \`_n × _m = ${n} × ${m} = ${n * m}\`.`,
+    `After ${n + 1}: \`${n + 1} × ${m2} = ${(n + 1) * m2}\`, so ${ctx.item} ${n + 1} scored \`${(n + 1) * m2} - ${n * m}\` = **${a}**.`,
+    `After ${n + 2} the total must be \`${n + 2} × ${m3} = ${(n + 2) * m3}\`, so ${ctx.item} ${n + 2} needs \`${(n + 2) * m3} - ${(n + 1) * m2}\` = **${b}**.`,
+  ];
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      { id: "next", label: `${ctx.item[0].toUpperCase()}${ctx.item.slice(1)} ${n + 1}`, ask: `What was the ${ctx.what} in ${ctx.item} ${n + 1}?`, answerType: "number", answer: a, tolerance: 0,
+        hint: `Work out the total before and after ${ctx.item} ${n + 1} (mean × count); the difference is that ${ctx.item}'s ${ctx.what}.` },
+      { id: "needed", label: `${ctx.item[0].toUpperCase()}${ctx.item.slice(1)} ${n + 2}`, ask: `What ${ctx.what} is needed in ${ctx.item} ${n + 2}?`, answerType: "number", answer: b, tolerance: 0,
+        hint: `The target total after ${n + 2} ${ctx.items} is \`${n + 2} × _m3\`. Subtract the total you already have after ${n + 1}.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-running", values: { n, m, m2, m3 } },
+    ...xGiven([["_n", n], ["_m", m], ["_m2", m2], ["_m3", m3]]),
+    hints: [
+      "Don't average the means. Turn each mean into a total: total = mean × number of values.",
+      `Total after ${n} ${ctx.items}: \`_n × _m = ${n * m}\`. Total after ${n + 1}: \`(_n + 1) × _m2 = ${(n + 1) * m2}\`.`,
+      `Each new ${ctx.item}'s ${ctx.what} is the jump in the total. For the last part, the total after ${n + 2} must be \`(_n + 2) × _m3 = ${(n + 2) * m3}\`.`,
+    ],
+  };
+}
+
+// mean-median-mode / expert, template 1: an unknown value from the mean, then the median (multi-part).
+function genXMissing(rng) {
+  const n = rng.int(6, 10);
+  const lo = rng.pick([1, 5, 10]);
+  const hi = lo + rng.pick([30, 40, 50]);
+  const others = [];
+  for (let i = 0; i < n - 1; i++) others.push(rng.int(lo, hi));
+  const S = sum(others);
+  const opts = [];
+  for (let v = lo; v <= hi; v++) if ((S + v) % n === 0) opts.push(v);
+  const x = rng.pick(opts);
+  const pos = rng.int(0, n - 1);
+  const M = (S + x) / n;
+  const shown = others.slice(0, pos).map(String).concat(["x"], others.slice(pos).map(String));
+  const full = sorted([...others, x]);
+  const med = medianOf(full);
+  const steps = [
+    `Total = mean × count: \`_mean × _n = ${M} × ${n} = ${M * n}\`.`,
+    `The other ${n - 1} values add up to ${S}, so \`x = ${M * n} - ${S}\` = **${x}**.`,
+    `Sorted, with x in place: ${list(full)}. ${n % 2 ? `The median is the ${ord((n + 1) / 2)} value` : `The median is halfway between the ${ord(n / 2)} and ${ord(n / 2 + 1)} values`} = **${dp(med)}**.`,
+  ];
+  return {
+    prompt: `These ${n} values have a mean of ${M}: ${shown.join(", ")}.`,
+    answerType: "multi",
+    parts: [
+      { id: "x", label: "Missing value", ask: "Value of x", answerType: "number", answer: x, tolerance: 0,
+        hint: "x = (mean × count) - (sum of the values you can see)." },
+      { id: "median", label: "Median", ask: `The median of all ${n} values (${X_ROUND})`, answerType: "number", answer: round2(med), tolerance: 0.005,
+        hint: `Put x into the list, sort all ${n} values, then find the middle${n % 2 ? " one" : " pair and go halfway between them"}.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-missing", values: { others, mean: M } },
+    ...xGiven([["_mean", M], ["_n", n]]),
+    hints: [
+      `The mean tells you the total: \`_mean × _n = ${M * n}\`.`,
+      `The values you can see add up to ${S}. The rest of the total belongs to x.`,
+      "Once you know x, the median needs the full list sorted, including x.",
+    ],
+  };
+}
+
+// mean-median-mode / expert, template 2: correcting a mean after a copying mistake (multi-part).
+function genXCorrection(rng) {
+  const n = rng.int(8, 30);
+  const m = rng.int(40, 80);
+  let c, w, swapped, mean;
+  for (let t = 0; ; t++) {
+    const d1 = rng.int(1, 9);
+    let d2 = rng.int(0, 9);
+    if (d2 === d1) d2 = (d2 + 3) % 10;
+    swapped = rng.next() < 0.6;
+    c = 10 * d1 + d2;
+    w = swapped ? 10 * d2 + d1 : rng.int(10, 99);
+    mean = (n * m - w + c) / n;
+    if ((w !== c && w >= 10 && !isTie2(mean)) || t > 50) break;
+  }
+  if (w === c || w < 10 || isTie2(mean)) { c = 47; w = 74; mean = (n * m - w + c) / n; swapped = true; }
+  const T = n * m - w + c;
+  const why = swapped ? "the digits were swapped: " : "";
+  const steps = [
+    `The wrong total is \`_n × _m = ${n} × ${m} = ${n * m}\`.`,
+    `Take out the wrong mark and put in the right one: \`${n * m} - ${w} + ${c}\` = **${T}**.`,
+    `Correct mean = \`${T} / ${n}\` ${result(mean, true)}.`,
+  ];
+  return {
+    prompt: `A teacher worked out the mean of ${n} marks as ${m}. Later she found that one mark had been copied wrongly (${why}it was recorded as ${w} instead of ${c}).`,
+    answerType: "multi",
+    parts: [
+      { id: "total", label: "Correct total", ask: "The correct total of all the marks", answerType: "number", answer: T, tolerance: 0,
+        hint: `Start from the wrong total (mean × count), then swap ${w} for ${c}.` },
+      { id: "mean", label: "Correct mean", ask: `The correct mean (${X_ROUND})`, answerType: "number", answer: round2(mean), tolerance: 0.005,
+        hint: `Divide the correct total by the number of marks, ${n}.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-correct", values: { n, m, w, c } },
+    ...xGiven([["_n", n], ["_m", m], ["_wrong", w], ["_right", c]]),
+    hints: [
+      "The mean came from a total. Rebuild the total that was used: mean × count.",
+      `That total includes ${w}, which should have been ${c}. Correct the total first: \`_n × _m - _wrong + _right\`.`,
+      `Then divide by the count (${n}). The count doesn't change: one mark was wrong, not missing.`,
+    ],
+  };
+}
+
+// range-iqr / expert, template 0: outliers by the 1.5 × IQR rule (multi-part).
+function genXOutliers(rng) {
+  let data, q1, q3, iqr, loF, hiF, outs;
+  for (let t = 0; ; t++) {
+    const n = rng.int(9, 12);
+    const base = [];
+    for (let i = 0; i < n; i++) base.push(rng.int(20, 60));
+    const s = sorted(base);
+    const qs = quartiles(s);
+    q1 = qs.q1;
+    q3 = qs.q3;
+    iqr = q3 - q1;
+    loF = q1 - 1.5 * iqr;
+    hiF = q3 + 1.5 * iqr;
+    const up = rng.next() < 0.75;
+    const down = !up || rng.next() < 0.35;
+    // Replacing the very largest / smallest value keeps both quartiles (each half has 4+ values).
+    if (up) s[n - 1] = Math.ceil(hiF) + rng.int(1, 25);
+    if (down && Math.floor(loF) - 1 >= 0) s[0] = Math.max(0, Math.floor(loF) - rng.int(1, 15));
+    data = rng.shuffle(s);
+    outs = data.filter((v) => v < loF || v > hiF).length;
+    const onFence = data.some((v) => v === loF || v === hiF);
+    const ok = iqr > 0 && outs >= 1 && !onFence && quartiles(sorted(data)).q1 === q1 && quartiles(sorted(data)).q3 === q3;
+    if (ok || t > 200) break;
+  }
+  const n = data.length;
+  const s = sorted(data);
+  const { lower, upper } = quartiles(s);
+  const steps = [
+    `Sort: ${list(s)}.`,
+    `${n % 2 ? `Leave out the middle value (${s[(n - 1) / 2]}). ` : ""}Lower half: ${list(lower)}, so Q1 = ${num(q1)}. Upper half: ${list(upper)}, so Q3 = ${num(q3)}.`,
+    `IQR = \`${num(q3)} - ${num(q1)}\` = **${dp(iqr)}**.`,
+    `Lower fence = \`Q1 - 1.5 × IQR = ${num(q1)} - ${num(1.5 * iqr)}\` = **${dp(loF)}**. Upper fence = \`Q3 + 1.5 × IQR = ${num(q3)} + ${num(1.5 * iqr)}\` = **${dp(hiF)}**.`,
+    `Values below ${num(loF)} or above ${num(hiF)}: ${list(s.filter((v) => v < loF || v > hiF))}, so there ${outs === 1 ? "is **1** outlier" : `are **${outs}** outliers`}.`,
+  ];
+  return {
+    prompt:
+      `Here are ${n} values: ${list(data)}.${QUARTILE_METHOD} ` +
+      "A value is an outlier if it is more than 1.5 × IQR below Q1 or more than 1.5 × IQR above Q3.",
+    answerType: "multi",
+    parts: [
+      { id: "iqr", label: "IQR", ask: `The interquartile range (${X_ROUND})`, answerType: "number", answer: round2(iqr), tolerance: 0.005,
+        hint: `Sort first, then split into halves of ${Math.floor(n / 2)}. IQR = Q3 - Q1.` },
+      { id: "low", label: "Lower fence", ask: `Q1 - 1.5 × IQR (${X_ROUND})`, answerType: "number", answer: round2(loF), tolerance: 0.005,
+        hint: "Multiply the IQR by 1.5 and subtract it from Q1. The fence can be negative." },
+      { id: "high", label: "Upper fence", ask: `Q3 + 1.5 × IQR (${X_ROUND})`, answerType: "number", answer: round2(hiF), tolerance: 0.005,
+        hint: "Multiply the IQR by 1.5 and add it to Q3." },
+      { id: "outliers", label: "Outliers", ask: "How many of the values are outliers?", answerType: "number", answer: outs, tolerance: 0,
+        hint: "Count the values strictly below the lower fence or strictly above the upper fence. Check both ends." },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-outliers", values: { data } },
+    hints: [
+      `Sort the ${n} values${n % 2 ? `, leave out the middle one,` : ""} and split them into a lower and upper half of ${Math.floor(n / 2)} each.`,
+      "Q1 and Q3 are the medians of the halves; IQR = Q3 - Q1.",
+      "The fences are 1.5 × IQR beyond the quartiles: below Q1 and above Q3. Anything outside them is an outlier.",
+    ],
+  };
+}
+
+// range-iqr / expert, template 1: working backwards from the IQR to a missing value (multi-part).
+function genXIqrBack(rng) {
+  let s, idx, which, iqr, mean;
+  for (let t = 0; ; t++) {
+    const n = rng.int(8, 11);
+    s = [rng.int(1, 20)];
+    for (let i = 1; i < n; i++) s.push(s[i - 1] + rng.int(1, 7));
+    const half = Math.floor(n / 2);
+    const posOf = (from) => (half % 2 ? [from + (half - 1) / 2] : [from + half / 2 - 1, from + half / 2]);
+    which = rng.next() < 0.5 ? "q1" : "q3";
+    idx = rng.pick(posOf(which === "q1" ? 0 : n - half));
+    const qs = quartiles(s);
+    iqr = qs.q3 - qs.q1;
+    mean = sum(s) / n;
+    if (!isTie2(mean) || t > 50) break;
+  }
+  const n = s.length;
+  const x = s[idx];
+  const shown = s.map((v, i) => (i === idx ? "x" : String(v)));
+  const { lower, upper, q1, q3 } = quartiles(s);
+  const known = which === "q1" ? q3 : q1;
+  const target = which === "q1" ? q3 - iqr : q1 + iqr;
+  const half = Math.floor(n / 2);
+  const pair = half % 2 === 0;
+  const steps = [
+    `${n % 2 ? `There are ${n} values, so leave out the middle one. ` : ""}Lower half: ${lower.map((v, i) => (i === idx ? "x" : v)).join(", ")}. Upper half: ${upper.map((v, i) => (n - half + i === idx ? "x" : v)).join(", ")}.`,
+    `${which === "q1" ? `Q3 = ${num(q3)} (x isn't in the upper half), so Q1 = Q3 - IQR = \`${num(q3)} - ${num(iqr)}\` = ${num(q1)}.` : `Q1 = ${num(q1)} (x isn't in the lower half), so Q3 = Q1 + IQR = \`${num(q1)} + ${num(iqr)}\` = ${num(q3)}.`}`,
+    pair
+      ? `${which.toUpperCase()} is halfway between x and its neighbour in the middle of that half, so x = 2 × ${num(target)} - ${idx === (which === "q1" ? half / 2 - 1 : n - half + half / 2 - 1) ? s[idx + 1] : s[idx - 1]} = **${x}**.`
+      : `${which.toUpperCase()} is the middle value of that half, which is x itself: **${x}**.`,
+    `Mean = \`${sum(s)} / ${n}\` ${result(mean, true)}.`,
+  ];
+  return {
+    prompt: `These ${n} values are in order from smallest to largest: ${shown.join(", ")}. Their interquartile range is ${num(iqr)}.${QUARTILE_METHOD}`,
+    answerType: "multi",
+    parts: [
+      { id: "x", label: "Missing value", ask: "Value of x", answerType: "number", answer: x, tolerance: 0,
+        hint: `x sits in the ${which === "q1" ? "lower" : "upper"} half, so it affects ${which === "q1" ? "Q1" : "Q3"}. Find the other quartile first.` },
+      { id: "mean", label: "Mean", ask: `The mean of all ${n} values (${X_ROUND})`, answerType: "number", answer: round2(mean), tolerance: 0.005,
+        hint: `Add all ${n} values, with x filled in, and divide by ${n}.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-iqrback", values: { shown, iqr } },
+    hints: [
+      `Split the ${n} values into halves of ${half}${n % 2 ? " (leaving out the middle value)" : ""}. Which half contains x?`,
+      `The other quartile doesn't involve x: ${which === "q1" ? `Q3 = ${num(known)}` : `Q1 = ${num(known)}`}. Use the IQR to find ${which === "q1" ? "Q1 = Q3 - IQR" : "Q3 = Q1 + IQR"}.`,
+      pair
+        ? `In that half, ${which.toUpperCase()} is halfway between two middle values, and x is one of them: x = 2 × ${which.toUpperCase()} - (the other one).`
+        : `In that half, ${which.toUpperCase()} is the single middle value.`,
+    ],
+  };
+}
+
+const TABLES = [
+  { who: "students", rows: ["Year 10", "Year 11"], cols: ["Walk", "Bus", "Car"], verb: "travel to school by", rowQ: (r) => `in ${r}`, colQ: (c) => `travels by ${c.toLowerCase()}`, colIs: (c) => (c === "Walk" ? "walks" : `travels by ${c.toLowerCase()}`) },
+  { who: "visitors", rows: ["Adults", "Children"], cols: ["Swimming", "Gym", "Tennis"], verb: "chose", rowQ: (r) => `is ${r === "Adults" ? "an adult" : "a child"}`, colQ: (c) => `chose ${c.toLowerCase()}`, colIs: (c) => `chose ${c.toLowerCase()}` },
+  { who: "orders", rows: ["Morning", "Afternoon"], cols: ["Tea", "Coffee", "Juice"], verb: "were for", rowQ: (r) => `was placed in the ${r.toLowerCase()}`, colQ: (c) => `is for ${c.toLowerCase()}`, colIs: (c) => `is for ${c.toLowerCase()}` },
+  { who: "members", rows: ["Under 30", "30 and over"], cols: ["Fiction", "History", "Science"], verb: "prefer", rowQ: (r) => `is ${r.toLowerCase()}`, colQ: (c) => `prefers ${c.toLowerCase()}`, colIs: (c) => `prefers ${c.toLowerCase()}` },
+];
+
+// probability / expert, template 0: two-way table with a missing cell, then conditional probability.
+function genXTable(rng) {
+  const ctx = rng.pick(TABLES);
+  let cells, hr, hc, c2, r3, c3;
+  for (let t = 0; ; t++) {
+    cells = ctx.rows.map(() => ctx.cols.map(() => rng.int(3, 30)));
+    hr = rng.int(0, 1);
+    hc = rng.int(0, 2);
+    c2 = rng.int(0, 2);
+    r3 = rng.int(0, 1);
+    c3 = rng.next() < 0.6 ? hc : rng.int(0, 2);
+    const colT = cells[0][c2] + cells[1][c2];
+    const grand = sum(cells.flat());
+    const pA = reduce(colT, grand);
+    const pB = reduce(cells[r3][c3], cells[0][c3] + cells[1][c3]);
+    if ((pA[1] > 1 && pB[1] > 1) || t > 50) break;
+  }
+  const rowT = cells.map((r) => sum(r));
+  const colT = ctx.cols.map((_, j) => cells[0][j] + cells[1][j]);
+  const grand = sum(rowT);
+  const missing = cells[hr][hc];
+  const cellTxt = (i, j) => (i === hr && j === hc ? "?" : String(cells[i][j]));
+  const table = [
+    `| | ${ctx.cols.join(" | ")} | Total |`,
+    `| --- | ${ctx.cols.map(() => "---").join(" | ")} | --- |`,
+    ...ctx.rows.map((r, i) => `| ${r} | ${ctx.cols.map((_, j) => cellTxt(i, j)).join(" | ")} | ${rowT[i]} |`),
+    `| Total | ${colT.join(" | ")} | ${grand} |`,
+  ].join("\n");
+  const pA = fracStr(colT[c2], grand);
+  const pB = fracStr(cells[r3][c3], colT[c3]);
+  const one = ctx.who.replace(/s$/, "");
+  const steps = [
+    `The ${ctx.rows[hr]} row total is ${rowT[hr]}, so ? = \`${rowT[hr]} - ${ctx.cols.map((_, j) => (j === hc ? null : cells[hr][j])).filter((v) => v !== null).join(" - ")}\` = **${missing}**. (Check with the column: \`${colT[hc]} - ${cells[1 - hr][hc]} = ${missing}\`.)`,
+    `${ctx.cols[c2]}: ${colT[c2]} out of ${grand}, so P = \`${colT[c2]}/${grand}\`${pA === `${colT[c2]}/${grand}` ? "" : `, which simplifies to`} **${pA}**.`,
+    `Given ${ctx.cols[c3]}, only that column counts: ${cells[r3][c3]} of its ${colT[c3]} ${ctx.who} are in ${ctx.rows[r3]}, so P = \`${cells[r3][c3]}/${colT[c3]}\`${pB === `${cells[r3][c3]}/${colT[c3]}` ? "" : `, which simplifies to`} **${pB}**.`,
+  ];
+  return {
+    prompt: `The table shows ${grand} ${ctx.who}; one cell is missing. One of the ${ctx.who} is picked at random.\n\n${table}`,
+    answerType: "multi",
+    parts: [
+      { id: "missing", label: "Missing count", ask: "The missing number (?)", answerType: "number", answer: missing, tolerance: 0,
+        hint: `Use the ${ctx.rows[hr]} row: its total minus the other two cells in that row.` },
+      { id: "p", label: `P(${ctx.cols[c2]})`, ask: `Probability that the ${one} ${ctx.colIs(ctx.cols[c2])}, as a fraction in simplest form like 3/8`, answerType: "text", answer: pA,
+        hint: `Use the ${ctx.cols[c2]} column total over the grand total, ${grand}. Simplify.` },
+      { id: "cond", label: "Conditional", ask: `Given that the ${one} ${ctx.colIs(ctx.cols[c3])}, the probability that it is in the ${ctx.rows[r3]} row, as a fraction in simplest form`, answerType: "text", answer: pB,
+        hint: `"Given that" shrinks the group to the ${ctx.cols[c3]} column only: use that column's total as the bottom of the fraction.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-table", values: { shown: ctx.rows.map((_, i) => ctx.cols.map((_, j) => (i === hr && j === hc ? null : cells[i][j]))), rowT, colT, grand, c2, r3, c3 } },
+    ...xGiven([["_rowTotal", rowT[hr]], ["_colTotal", colT[hc]], ["_total", grand]]),
+    hints: [
+      "Each row adds up to its row total, and each column to its column total. One subtraction finds the missing cell.",
+      `P(${ctx.cols[c2]}) = (${ctx.cols[c2]} column total) ÷ (grand total).`,
+      `For "given that", divide by the total of the group you were given (the ${ctx.cols[c3]} column, ${colT[c3]}), not by ${grand}.`,
+    ],
+  };
+}
+
+const SPIN_CTX = [
+  { thing: "spinner", act: "spun", trials: "spins", event: (c) => `lands on ${c}`, outcomes: ["red", "blue", "green", "yellow"] },
+  { thing: "drawing pin", act: "dropped", trials: "drops", event: (c) => `lands ${c}`, outcomes: ["point up", "point down"] },
+  { thing: "biased die", act: "rolled", trials: "rolls", event: (c) => `shows a ${c}`, outcomes: ["6", "1", "4"] },
+];
+
+// probability / expert, template 1: pooling two experiments into one relative-frequency estimate (multi-part).
+function genXPooled(rng) {
+  const ctx = rng.pick(SPIN_CTX);
+  const out = rng.pick(ctx.outcomes);
+  const [p1, p2] = rng.shuffle(NAMES).slice(0, 2);
+  let n1, n2, k1, k2, M, N, K, rn, rd;
+  for (let t = 0; ; t++) {
+    n1 = 10 * rng.int(2, 10);
+    n2 = 10 * rng.int(2, 10);
+    const p = rng.int(10, 60) / 100;
+    k1 = Math.max(1, Math.min(n1 - 1, Math.round(n1 * p + rng.int(-4, 4))));
+    k2 = Math.max(1, Math.min(n2 - 1, Math.round(n2 * p + rng.int(-4, 4))));
+    N = n1 + n2;
+    K = k1 + k2;
+    [rn, rd] = reduce(K, N);
+    if ((rd > 1 && rd <= 100 && fracStr(k1, n1) !== fracStr(K, N)) || t > 50) break;
+  }
+  M = rd * rng.int(Math.ceil(200 / rd), Math.max(Math.ceil(200 / rd), Math.floor(2000 / rd)));
+  const exp = (M / rd) * rn;
+  const steps = [
+    `Pool both experiments: ${k1} + ${k2} = ${K} out of ${n1} + ${n2} = ${N} ${ctx.trials}.`,
+    `Estimate = \`${K}/${N}\`${fracStr(K, N) === `${K}/${N}` ? "" : ", which simplifies to"} **${fracStr(K, N)}**. More trials give a better estimate, so use all of them.`,
+    `Expected count in ${M} ${ctx.trials}: \`${M} × ${K}/${N}\` = **${exp}**.`,
+  ];
+  return {
+    prompt: `${p1} ${ctx.act} a ${ctx.thing} ${n1} times and it ${ctx.event(out)} ${k1} times. ${p2} ${ctx.act} the same ${ctx.thing} ${n2} times and it ${ctx.event(out)} ${k2} times. Next, the ${ctx.thing} will be ${ctx.act} another ${M} times.`,
+    answerType: "multi",
+    parts: [
+      { id: "p", label: "Best estimate", ask: `Best estimate of the probability that it ${ctx.event(out)}, using all the results, as a fraction in simplest form like 3/8`, answerType: "text", answer: fracStr(K, N),
+        hint: "Add the successes together and the trials together before dividing; don't average the two fractions." },
+      { id: "expected", label: "Expected count", ask: `How many times would you expect it to ${ctx.event(out).replace(/^lands/, "land").replace(/^shows/, "show")} in ${M} ${ctx.trials}?`, answerType: "number", answer: exp, tolerance: 0,
+        hint: `Expected count = number of ${ctx.trials} × estimated probability.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-pooled", values: { n1, n2, k1, k2, M } },
+    ...xGiven([["_n1", n1], ["_k1", k1], ["_n2", n2], ["_k2", k2], ["_trials", M]]),
+    hints: [
+      "Relative frequency = successes ÷ trials. The best estimate uses every trial you have.",
+      `In total: \`_k1 + _k2\` successes out of \`_n1 + _n2\` trials. Simplify that fraction.`,
+      `Then multiply the estimate by \`_trials\` (${M}).`,
+    ],
+  };
+}
+
+// weighted-average / expert, template 0: reverse a combined mean, then add one more value (multi-part).
+function genXClasses(rng) {
+  let nA, nB, mA, mB, M, s, after;
+  for (let t = 0; ; t++) {
+    nA = rng.int(10, 30);
+    nB = rng.int(8, 30);
+    mA = rng.int(50, 85);
+    do mB = rng.int(45, 90); while (mB === mA);
+    M = (nA * mA + nB * mB) / (nA + nB);
+    if (Number.isInteger(Math.round(M * 100 * 1e6) / 1e6) || t > 300) break;
+  }
+  if (!Number.isInteger(Math.round(M * 100 * 1e6) / 1e6)) { nB = nA; M = (mA + mB) / 2; }
+  M = Math.round(M * 100) / 100;
+  for (let t = 0; ; t++) {
+    s = rng.int(30, 100);
+    after = (M * (nA + nB) + s) / (nA + nB + 1);
+    if (!isTie2(after) || t > 30) break;
+  }
+  const N = nA + nB;
+  const steps = [
+    `Combined total = \`_M × (_nA + _nB) = ${num(M)} × ${N}\` = ${num(M * N)}. Class A's total = \`${nA} × ${mA}\` = ${nA * mA}.`,
+    `Class B's total = \`${num(M * N)} - ${nA * mA}\` = ${num(M * N - nA * mA)}, so its mean = \`${num(M * N - nA * mA)} / ${nB}\` = **${mB}**.`,
+    `With the new student: \`(${num(M * N)} + ${s}) / ${N + 1}\` ${result(after, true)}.`,
+  ];
+  return {
+    prompt: `Class A has ${nA} students with a mean score of ${mA}. Class B has ${nB} students. The mean score of all ${N} students together is ${num(M)}. Then a new student who scored ${s} joins class B.`,
+    answerType: "multi",
+    parts: [
+      { id: "meanB", label: "Class B mean", ask: "Class B's mean score before the new student joined", answerType: "number", answer: mB, tolerance: 0,
+        hint: "Total of everyone minus class A's total leaves class B's total. Divide by class B's size." },
+      { id: "after", label: "New overall mean", ask: `The mean of all ${N + 1} students after the new student joins (${X_ROUND})`, answerType: "number", answer: round2(after), tolerance: 0.005,
+        hint: `Add the new score to the combined total and divide by ${N + 1}.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-classes", values: { nA, mA, nB, M, s } },
+    ...xGiven([["_nA", nA], ["_mA", mA], ["_nB", nB], ["_M", M], ["_s", s]]),
+    hints: [
+      "A combined mean is a weighted average of the class means, weighted by class size. Work with totals (mean × count).",
+      `Total for everyone: \`_M × (_nA + _nB)\`. Total for class A: \`_nA × _mA = ${nA * mA}\`.`,
+      "Class B's mean is its total divided by its size. For the last part, the new student adds one score and one person.",
+    ],
+  };
+}
+
+// weighted-average / expert, template 1: find the weight from a result, then use it (multi-part).
+function genXFindWeight(rng) {
+  let c, e, w, g, c2, T, need;
+  for (let t = 0; ; t++) {
+    c = rng.int(40, 95);
+    do e = rng.int(30, 98); while (Math.abs(e - c) < 8);
+    w = 5 * rng.int(4, 14);
+    g = (c * (100 - w) + e * w) / 100;
+    c2 = rng.int(40, 95);
+    T = rng.int(50, 85);
+    need = (100 * T - (100 - w) * c2) / w;
+    if ((need >= 0 && need <= 100 && !isTie2(need) && c2 !== c) || t > 300) break;
+  }
+  if (!(need >= 0 && need <= 100) || isTie2(need)) { c2 = T; need = T; }
+  const name = rng.pick(NAMES);
+  const steps = [
+    `Let the exam weight be w%. Then \`${c} × (100 - w) + ${e} × w = 100 × ${num(g)}\`.`,
+    `\`${100 * c} + ${e - c}w = ${num(100 * g)}\`, so \`w = ${num(100 * g - 100 * c)} / ${e - c}\` = **${w}**. Coursework is worth ${100 - w}%.`,
+    `For a total of ${T}: \`${100 - w} × ${c2} + ${w}x = 100 × ${T}\`, so \`x = (${100 * T} - ${(100 - w) * c2}) / ${w}\` ${result(need, true)}.`,
+  ];
+  return {
+    prompt: `A course grade is a weighted average of coursework and a final exam. ${name} scored ${c} on coursework and ${e} on the exam, and got an overall grade of ${num(g)}. Another student scored ${c2} on coursework and wants an overall grade of exactly ${T}.`,
+    answerType: "multi",
+    parts: [
+      { id: "weight", label: "Exam weight", ask: "What percentage of the grade is the exam worth?", answerType: "number", answer: w, tolerance: 0,
+        hint: `Write the overall grade with the exam weight as w% and coursework as (100 - w)%, then solve for w.` },
+      { id: "needed", label: "Exam score needed", ask: `What exam score does the other student need? (${X_ROUND})`, answerType: "number", answer: round2(need), tolerance: 0.005,
+        hint: "Use the weights you found: coursework part + exam weight × x = 100 × target. Solve for x." },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-weight", values: { c, e, g, c2, T } },
+    ...xGiven([["_c", c], ["_e", e], ["_g", g], ["_c2", c2], ["_target", T]]),
+    hints: [
+      "Call the exam weight w (a percentage). Coursework then has weight 100 - w.",
+      `\`_c × (100 - w) + _e × w = 100 × _g\`. Expand: the w terms combine to \`(_e - _c) × w\` = \`${e - c}w\`.`,
+      "With w known, the second student's equation has one unknown, the exam score.",
+    ],
+  };
+}
+
+const BLENDS = [
+  { what: "coffee beans", a: "Arabica", b: "Robusta" },
+  { what: "nuts", a: "cashews", b: "peanuts" },
+  { what: "tea", a: "Darjeeling", b: "Assam" },
+  { what: "bird seed", a: "sunflower seed", b: "millet" },
+];
+
+// weighted-average / expert, template 2: a mixture problem (working backwards from the blend price).
+function genXBlend(rng) {
+  const ctx = rng.pick(BLENDS);
+  let a, b, x, y, m, pct;
+  for (let t = 0; ; t++) {
+    a = rng.int(8, 30);
+    do b = rng.int(3, 25); while (b >= a - 1);
+    x = rng.int(2, 20);
+    y = rng.int(2, 20);
+    m = (x * a + y * b) / (x + y);
+    pct = (100 * x) / (x + y);
+    if ((Number.isInteger(Math.round(m * 100 * 1e6) / 1e6) && !isTie2(pct)) || t > 400) break;
+  }
+  if (!Number.isInteger(Math.round(m * 100 * 1e6) / 1e6) || isTie2(pct)) { y = x; m = (a + b) / 2; pct = 50; }
+  m = Math.round(m * 100) / 100;
+  const price = (v) => `£${Number.isInteger(v) ? v : v.toFixed(2)}`;
+  const steps = [
+    `Let y kg of ${ctx.b} be used. Cost balance: \`${x} × ${a} + ${b}y = ${num(m)} × (${x} + y)\`.`,
+    `\`${x * a} + ${b}y = ${num(m * x)} + ${num(m)}y\`, so \`${num(m - b)}y = ${num(x * a - m * x)}\` and y = **${y}** kg.`,
+    `The blend is ${x + y} kg, of which ${x} kg is ${ctx.a}: \`100 × ${x} / ${x + y}\` ${result(pct, true)}%.`,
+  ];
+  return {
+    prompt: `A shop mixes ${x} kg of ${ctx.a} costing ${price(a)} per kg with some ${ctx.b} costing ${price(b)} per kg. The mixture of ${ctx.what} costs exactly ${price(m)} per kg.`,
+    answerType: "multi",
+    parts: [
+      { id: "kg", label: `${ctx.b[0].toUpperCase()}${ctx.b.slice(1)}`, ask: `How many kg of ${ctx.b} are in the mixture?`, answerType: "number", answer: y, tolerance: 0,
+        hint: `Total cost of the parts = price of the mixture × total mass. Call the unknown mass y and solve.` },
+      { id: "pct", label: `% ${ctx.a}`, ask: `What percentage of the mixture's mass is ${ctx.a}? (${X_ROUND}, no % sign)`, answerType: "number", answer: round2(pct), tolerance: 0.005,
+        hint: `Mass of ${ctx.a} ÷ total mass × 100.` },
+    ],
+    explanation: steps.join("\n\n"),
+    params: { kind: "x-blend", values: { x, a, b, m } },
+    ...xGiven([["_x", x], ["_a", a], ["_b", b], ["_m", m]]),
+    hints: [
+      "The mixture price is a weighted average of the two prices, weighted by mass.",
+      `Write \`_x × _a + _b × y = _m × (_x + y)\`, where y is the unknown mass.`,
+      "Collect the y terms on one side: each kg of the cheap one is below the mixture price by `_m - _b`, and that has to balance the dearer one being above it.",
+    ],
+  };
+}
+
+function genExpert(subtopic, rng) {
+  if (subtopic === "mean-median-mode") {
+    const t = rng.int(0, 2);
+    return t === 0 ? genXRunningMean(rng) : t === 1 ? genXMissing(rng) : genXCorrection(rng);
+  }
+  if (subtopic === "range-iqr") return rng.next() < 0.5 ? genXOutliers(rng) : genXIqrBack(rng);
+  if (subtopic === "probability") return rng.next() < 0.6 ? genXTable(rng) : genXPooled(rng);
+  if (subtopic === "weighted-average") {
+    const t = rng.int(0, 2);
+    return t === 0 ? genXClasses(rng) : t === 1 ? genXFindWeight(rng) : genXBlend(rng);
+  }
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "mean-median-mode") return genCentral(difficulty, rng);
   if (subtopic === "range-iqr") return genSpread(difficulty, rng);
   if (subtopic === "probability") return genProbability(difficulty, rng);
@@ -641,6 +1169,7 @@ function medianByCount(data, from, count) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.values) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
 
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -727,4 +1256,117 @@ export function verify(question, answer) {
   if (!Number.isFinite(exact)) return false;
   if (p.rounded) return Math.abs(x - exact) <= 0.005 + 1e-9;
   return Number.isInteger(x) && Math.abs(x - exact) <= 1e-9;
+}
+
+// ---- Expert verification: substitute the candidate answers back into the stated facts ----
+
+const toNum = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+const partNum = (ans, id) => (ans && typeof ans === "object" ? toNum(ans[id]) : NaN);
+const partFrac = (ans, id) => {
+  const f = ans && typeof ans === "object" ? parseFrac(ans[id]) : null;
+  return f && f[1] > 1 && gcd(f[0], f[1]) === 1 ? f : null; // simplest form, not a whole number
+};
+const near = (a, b, tol) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tol + 1e-9;
+
+function verifyExpert(p, question, answer) {
+  const k = p.values;
+  if (p.kind === "x-running") {
+    const a = partNum(answer, "next");
+    const b = partNum(answer, "needed");
+    if (!Number.isInteger(a) || !Number.isInteger(b)) return false;
+    // the means as stated: (n·m + a)/(n+1) = m2 and (n·m + a + b)/(n+2) = m3
+    return (k.n * k.m + a) === (k.n + 1) * k.m2 && (k.n * k.m + a + b) === (k.n + 2) * k.m3;
+  }
+  if (p.kind === "x-missing") {
+    const x = partNum(answer, "x");
+    const med = partNum(answer, "median");
+    if (!Number.isInteger(x)) return false;
+    const full = [...k.others, x];
+    const n = full.length;
+    if (full.reduce((s, v) => s + (v - k.mean), 0) !== 0) return false; // deviations from the mean sum to 0
+    return near(med, medianByCount(full, 0, n), 0.005);
+  }
+  if (p.kind === "x-correct") {
+    const T = partNum(answer, "total");
+    const mean = partNum(answer, "mean");
+    if (!Number.isInteger(T)) return false;
+    // undo the correction: the total with the wrong mark back in must give the reported mean
+    if (T - k.c + k.w !== k.n * k.m) return false;
+    return Number.isFinite(mean) && Math.abs(mean * k.n - T) <= 0.005 * k.n + 1e-9;
+  }
+  if (p.kind === "x-outliers") {
+    const d = k.data;
+    const n = d.length;
+    const h = Math.floor(n / 2);
+    const q1 = medianByCount(d, 0, h);
+    const q3 = medianByCount(d, n - h, h);
+    const iqr = q3 - q1;
+    const lo = q1 - 1.5 * iqr;
+    const hi = q3 + 1.5 * iqr;
+    let outs = 0;
+    for (const v of d) if (v < lo || v > hi) outs++;
+    return near(partNum(answer, "iqr"), iqr, 0.005) && near(partNum(answer, "low"), lo, 0.005)
+      && near(partNum(answer, "high"), hi, 0.005) && partNum(answer, "outliers") === outs;
+  }
+  if (p.kind === "x-iqrback") {
+    const x = partNum(answer, "x");
+    if (!Number.isInteger(x)) return false;
+    const full = k.shown.map((v) => (v === "x" ? x : Number(v)));
+    for (let i = 1; i < full.length; i++) if (full[i] < full[i - 1]) return false; // still in order
+    const n = full.length;
+    const h = Math.floor(n / 2);
+    const iqr = medianByCount(full, n - h, h) - medianByCount(full, 0, h);
+    if (Math.abs(iqr - k.iqr) > 1e-9) return false;
+    return near(partNum(answer, "mean"), full.reduce((s, v) => s + v, 0) / n, 0.005);
+  }
+  if (p.kind === "x-table") {
+    const miss = partNum(answer, "missing");
+    if (!Number.isInteger(miss) || miss < 0) return false;
+    const t = k.shown.map((r) => r.map((v) => (v === null ? miss : v)));
+    // every row and column must add up to its stated total
+    if (!t.every((r, i) => r.reduce((s, v) => s + v, 0) === k.rowT[i])) return false;
+    if (!k.colT.every((c, j) => t.reduce((s, r) => s + r[j], 0) === c)) return false;
+    if (k.colT.reduce((s, v) => s + v, 0) !== k.grand) return false;
+    const pA = partFrac(answer, "p");
+    const pB = partFrac(answer, "cond");
+    if (!pA || !pB) return false;
+    return pA[0] * k.grand === k.colT[k.c2] * pA[1] && pB[0] * k.colT[k.c3] === t[k.r3][k.c3] * pB[1];
+  }
+  if (p.kind === "x-pooled") {
+    const f = partFrac(answer, "p");
+    const e = partNum(answer, "expected");
+    if (!f || !Number.isInteger(e)) return false;
+    const N = k.n1 + k.n2;
+    const K = k.k1 + k.k2;
+    return f[0] * N === K * f[1] && e * N === k.M * K;
+  }
+  if (p.kind === "x-classes") {
+    const mB = partNum(answer, "meanB");
+    const after = partNum(answer, "after");
+    if (!Number.isFinite(mB)) return false;
+    const N = k.nA + k.nB;
+    if (Math.abs(k.nA * k.mA + k.nB * mB - k.M * N) > 1e-6) return false;
+    return Number.isFinite(after) && Math.abs(after * (N + 1) - (k.M * N + k.s)) <= 0.005 * (N + 1) + 1e-9;
+  }
+  if (p.kind === "x-weight") {
+    const w = partNum(answer, "weight");
+    const x = partNum(answer, "needed");
+    if (!Number.isInteger(w) || w <= 0 || w >= 100) return false;
+    if (Math.abs(k.c * (100 - w) + k.e * w - 100 * k.g) > 1e-6) return false;
+    // the true weight by search (0-100 in whole percents)
+    let w0 = -1;
+    for (let v = 1; v < 100; v++) if (Math.abs(k.c * (100 - v) + k.e * v - 100 * k.g) < 1e-6) w0 = v;
+    if (w0 < 0) return false;
+    return Number.isFinite(x) && x >= -0.005 && x <= 100.005 && Math.abs((100 - w0) * k.c2 + w0 * x - 100 * k.T) <= 0.005 * w0 + 1e-9;
+  }
+  if (p.kind === "x-blend") {
+    const y = partNum(answer, "kg");
+    const pct = partNum(answer, "pct");
+    if (!Number.isInteger(y) || y <= 0) return false;
+    if (Math.abs(k.x * k.a + y * k.b - k.m * (k.x + y)) > 1e-6) return false;
+    let y0 = -1;
+    for (let v = 1; v <= 500; v++) if (Math.abs(k.x * k.a + v * k.b - k.m * (k.x + v)) < 1e-6) y0 = v;
+    return y0 > 0 && near(pct, (100 * k.x) / (k.x + y0), 0.005);
+  }
+  return false;
 }

@@ -15,6 +15,7 @@ Work out what offspring to expect from a cross. Every question builds a fresh cr
 | Easy | Simple crosses, gametes, reading genotypes |
 | Medium | Ratios, expected numbers, blood groups, allele frequencies |
 | Hard | Working out parents' genotypes, probabilities, carrier frequencies, multi-part questions |
+| Expert | Reasoning in several steps: parents of uncertain genotype, updating a probability after seeing offspring (Bayes), repeated self-pollination, three genes at once, picking the cross that fits real counts, family trees for X-linked traits and blood groups, and Hardy–Weinberg risk and selection |
 
 **Answer formats:** type percentages without the % sign (`25` for 25%), and fractions in simplest form like `2/3`. Each question says how to round. Ratios are picked from a list, in the order the question gives (for example tall : short).
 

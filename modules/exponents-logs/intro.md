@@ -9,6 +9,8 @@ An exponent (or index) says how many times to multiply a number by itself: `2⁵
 | Solving equations | Solve `aˣ = b` exactly by matching bases, or with logs and rounding |
 | Growth & decay | Compound interest, depreciation, doubling, half-life, and how long things take |
 
+**Expert** questions take several steps: mixed fractional and negative powers, finding an unknown index, log equations where one root must be rejected, logs in different bases multiplied together, hidden quadratics like `4^(2x) − 3 × 4ˣ − 10 = 0`, different bases on each side, inequalities where dividing by a negative log flips the sign, and growth problems you set up yourself (a rate from two data points, when one investment overtakes another, and half-life worked backwards).
+
 **Answer formats**
 
 - **Exact answers** are a whole number or a fraction in simplest form, typed like `3/8`, `-1/2` or `9/4` (an improper fraction, not a mixed number). `6/16` counts as wrong when the answer is `3/8`.

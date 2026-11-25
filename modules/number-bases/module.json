@@ -7,8 +7,8 @@
   "calculator": false,
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "binary", "title": "Binary and decimal", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "hexadecimal", "title": "Hexadecimal", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "binary-arithmetic", "title": "Binary arithmetic", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "binary", "title": "Binary and decimal", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "hexadecimal", "title": "Hexadecimal", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "binary-arithmetic", "title": "Binary arithmetic", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

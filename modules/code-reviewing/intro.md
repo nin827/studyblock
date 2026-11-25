@@ -17,6 +17,11 @@ Read short functions the way a reviewer does: work out what they do, spot the li
 - **Returns too early**: a `return` inside the loop, so the function stops after the first pass.
 - **Infinite loop**: the loop variable never changes, so the loop never ends.
 
+## Levels
+
+- **Easy** to **Hard**: one bug per function, with short programs to predict.
+- **Expert**: longer programs that keep changing state (a list being sorted in place, a running total that resets, Euclid's remainder loop, loops over pairs). Bug questions may hide **two** bugs on different lines, and each one matters on its own. In *Fix the bug*, three examples are given and some replacements fix the first example but break another: the right fix has to work for all of them.
+
 ## Tip
 
 Every bug question gives an example input and the result it should produce. Trace the code with that input: write down each variable as it changes, line by line. The first place your trace goes wrong is usually the bug.

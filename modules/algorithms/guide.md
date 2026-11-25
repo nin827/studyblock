@@ -21,6 +21,8 @@ Example: find 31 in `[5, 12, 18, 23, 31, 40, 47]`. Step 1: mid = floor((0 + 6) /
 
 **Watch out:** mid rounds **down**, and the new range leaves out mid itself (mid - 1 or mid + 1).
 
+**Expert: binary search as a tree.** The first middle item is found in 1 comparison, the middles of the two halves in 2, then 4 items in 3, and so on; the last level holds the leftovers. To work backwards from a trace, each next value compared tells you whether the target was smaller (it moved left) or bigger (it moved right).
+
 ## Sorting
 
 1. **Bubble sort** (ascending): each pass goes left to right, comparing neighbours. Swap them when the left one is bigger. Pass 1 checks every pair; each later pass stops one place earlier, because the biggest items are already at the end.
@@ -32,6 +34,8 @@ Example: find 31 in `[5, 12, 18, 23, 31, 40, 47]`. Step 1: mid = floor((0 + 6) /
 Example: bubble sort, pass 1 on `[7, 3, 9, 2]`: 7 > 3, swap → `[3, 7, 9, 2]`; 7 < 9, no swap; 9 > 2, swap → `[3, 7, 2, 9]`. That is 2 swaps.
 
 **Watch out:** in bubble sort a swapped item keeps moving, so compare it again with its new right-hand neighbour.
+
+**Expert: working backwards and totals.** To find a starting list, run the given number of passes on each option. Insertion sort's total shifts equal the number of pairs where a bigger item comes before a smaller one. Selection sort skips the swap when the smallest item is already in place. Merging two sorted lists costs one comparison per item moved until one list is empty; the rest is copied free.
 
 ## Complexity
 
@@ -47,6 +51,8 @@ Example: an O(n²) algorithm takes 3 s at n = 1000. At n = 3000, n is 3 times bi
 
 **Watch out:** an inner loop that runs from 1 to i, not 1 to n, still makes the whole thing O(n²).
 
+**Expert: budgets and crossovers.** With O(n²), n times k means time times k²; with 2^n, n + 1 doubles the time. For the largest n in a budget, undo the power, round **down**, and check n + 1 goes over. For "when is A faster", solve the inequality and remember that equal is not faster.
+
 ## Stacks and queues
 
 1. A **stack** is last in, first out. Push adds to the top, and pop removes the top item (the newest).
@@ -57,3 +63,5 @@ Example: an O(n²) algorithm takes 3 s at n = 1000. At n = 3000, n is 3 times bi
 Example: on an empty stack, `push 4`, `push 9`, `pop`, `push 2` → the pop returns 9, and the stack ends as `[4, 2]` with 2 on top.
 
 **Watch out:** with the same operations, a queue would return 4, not 9. Check which structure the question uses.
+
+**Expert: stack orders, circular buffers, brackets.** If 1, 2, 3, … are pushed in order, a pop order is impossible when a number is needed while a smaller one sits on top of it. In a circular buffer, front moves once per dequeue and rear once per enqueue, wrapping from the last slot to 0 (count modulo the size). A bracket checker pushes openers and fails at the first closer that doesn't match the top.

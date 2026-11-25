@@ -631,8 +631,504 @@ function genPity(difficulty, rng) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Expert: multi-step questions that combine ideas (easy/medium/hard above are untouched).
+// Every template draws its rng values first (retry() redraws within the expert branch only);
+// hints and explanations use only values already drawn. Every params.kind starts with "x-".
+
+function choose(n, k) {
+  if (k < 0 || k > n) return 0;
+  let c = 1;
+  for (let i = 1; i <= k; i++) c = (c * (n - k + i)) / i;
+  return Math.round(c);
+}
+const pctPart = (id, label, ask, prob, hint) => numPart(id, label, `${ask}${PCT}`, prob * 100, true, hint);
+const ITEMS_X = ["dragon scale", "void shard", "star fragment", "phoenix feather", "ancient rune", "titan core"];
+
+// drop-rates / expert 0: needing k copies (binomial "at least k"), then the tries for a target.
+function xAtLeastK(rng) {
+  return retry(() => {
+    const boss = rng.pick(BOSSES);
+    const item = rng.pick(ITEMS_X);
+    const p = rng.pick([2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25]);
+    const k = rng.int(2, 3);
+    const n = rng.int(8, 40);
+    const T = rng.pick([50, 75, 90]);
+    const q = 1 - p / 100;
+    const term = (m, j) => choose(m, j) * (p / 100) ** j * q ** (m - j);
+    const atLeast = (m) => { let s = 0; for (let j = 0; j < k; j++) s += term(m, j); return 1 - s; };
+    const a1 = atLeast(n);
+    let need = k;
+    while (atLeast(need) < T / 100 && need < 2000) need++;
+    if (!okPct(a1 * 100) || need >= 2000 || need === n) return null;
+    if (Math.abs(atLeast(need) - T / 100) < 1e-9 || Math.abs(atLeast(need - 1) - T / 100) < 1e-9) return null;
+    const fewer = k === 2 ? "0 or 1 drop" : "0, 1 or 2 drops";
+    const terms = Array.from({ length: k }, (_, j) => `- ${j} drop${j === 1 ? "" : "s"}: \`C(${n}, ${j}) × ${num(p / 100)}^${j} × ${num(q)}^${n - j}\` ≈ ${term(n, j).toFixed(6)}`);
+    return {
+      prompt: `Each time you defeat ${boss}, there is ${aN(p)} ${pct(p)} chance it drops a ${item}, independently of every other try. A crafting recipe needs ${k} ${item}s.`,
+      answerType: "multi",
+      parts: [
+        pctPart("chance", `In ${n} tries`, `What is the chance of getting at least ${k} ${item}s in ${n} tries?`, a1, `1 minus the chances of exactly ${k === 2 ? "0 and 1" : "0, 1 and 2"} drops in ${n} tries.`),
+        numPart("tries", `${T}% target`, `What is the smallest number of tries that gives at least ${aN(T)} ${T}% chance of getting at least ${k}?${WHOLE}`, need, false, `There's no neat formula: work out P(at least ${k}) for more and more tries until it first reaches ${T}%.`),
+      ],
+      explanation:
+        `"At least ${k}" is the opposite of "${fewer}". Each count follows the binomial formula \`C(n, j) × p^j × (1 − p)^(n − j)\`.\n\n` +
+        `${terms.join("\n")}\n\n` +
+        `**In ${n} tries:** 1 minus those ≈ ${a1.toFixed(6)}, so ${result(a1 * 100)}%.\n\n` +
+        `**${T}% target:** repeat the same sum for other numbers of tries. ${need - 1} tries give ${(atLeast(need - 1) * 100).toFixed(2)}% and ${need} tries give ${(atLeast(need) * 100).toFixed(2)}%, so the answer is **${need}**.`,
+      hints: [
+        `"At least ${k}" is the opposite of "${fewer}", so P(at least ${k}) = 1 − P(${fewer}).`,
+        `P(exactly j drops in n tries) = C(n, j) × p^j × (1 − p)^(n − j), with p = ${num(p / 100)}. C(n, 0) = 1, C(n, 1) = n and C(n, 2) = n(n − 1)/2.`,
+        `For the target, try different numbers of tries: P(at least ${k}) grows with every extra try. Find where it first reaches ${T}%.`,
+      ],
+      given: [{ label: "_pct", value: p }, { label: "_n", value: n }, { label: "_k", value: k }, { label: "_target", value: T }],
+      params: { kind: "x-atleastk", p, n, k, T },
+    };
+  });
+}
+
+// drop-rates / expert 1: working backwards from a design target to the drop rate.
+function xDesignRate(rng) {
+  return retry(() => {
+    const boss = rng.pick(BOSSES);
+    const drop = rng.pick(DROPS);
+    const n = rng.pick([10, 15, 20, 25, 30, 40, 50, 60, 75, 100]);
+    const T = rng.pick([50, 63, 75, 80, 90, 95, 99]);
+    const miss = 1 - T / 100;
+    const pr = 1 - miss ** (1 / n);
+    const e = 1 / pr;
+    if (nearHalf(pr * 100) || nearHalf(e) || pr * 100 < 0.5) return null;
+    return {
+      prompt: `A designer wants players to have ${aN(T)} ${T}% chance of getting ${drop} from ${boss} at least once within ${n} kills. Each kill rolls independently with the same drop chance.`,
+      answerType: "multi",
+      parts: [
+        pctPart("rate", "Drop chance", "What drop chance per kill is needed?", pr, `Solve \`1 − (1 − p)^${n} = ${num(T / 100)}\` for p, undoing one step at a time.`),
+        numPart("tries", "Average kills", `With that drop chance (unrounded), what is the average number of kills to get the first drop?${DP2}`, e, true, "The average number of tries until the first success is 1 ÷ the chance per try (as a decimal)."),
+      ],
+      explanation:
+        `Chance of at least one drop in ${n} kills = \`1 − (1 − p)^${n}\`. Set it to ${num(T / 100)} and undo each step.\n\n` +
+        `- \`(1 − p)^${n} = 1 − ${num(T / 100)} = ${num(miss)}\`\n` +
+        `- \`1 − p = ${num(miss)}^(1/${n})\` ≈ ${(1 - pr).toFixed(6)}\n` +
+        `- \`p\` ≈ ${pr.toFixed(6)}, so ${result(pr * 100)}%\n` +
+        `- Average kills: \`1 / ${pr.toFixed(6)}\` ${result(e)}`,
+      hints: [
+        `Write the chance of at least one drop in ${n} kills: \`1 − (1 − p)^${n}\`, and set it equal to ${num(T / 100)}.`,
+        `Undo the steps in reverse: \`(1 − p)^${n} = ${num(miss)}\`, so 1 − p is the ${n}th root of ${num(miss)}: \`(1 - _target/100)^(1/_n)\`.`,
+        "Then p = 1 minus that. The average number of kills until the first drop is 1 / p, using the unrounded p.",
+      ],
+      given: [{ label: "_target", value: T }, { label: "_n", value: n }],
+      params: { kind: "x-designrate", n, T },
+    };
+  });
+}
+
+// drop-rates / expert 2: two independent drops; own both (product rule + expected maximum).
+function xTwoDrops(rng) {
+  return retry(() => {
+    const boss = rng.pick(BOSSES);
+    const pa = rng.pick([2, 3, 4, 5, 8, 10, 12, 15, 20, 25]);
+    let pb;
+    do pb = rng.pick([2, 3, 4, 5, 8, 10, 12, 15, 20, 25]); while (pb === pa);
+    const n = rng.int(5, 40);
+    const qa = 1 - pa / 100, qb = 1 - pb / 100;
+    const both = (1 - qa ** n) * (1 - qb ** n);
+    const either = 1 - qa * qb;
+    const e = 100 / pa + 100 / pb - 1 / either;
+    if (!okPct(both * 100) || nearHalf(e)) return null;
+    return {
+      prompt: `Each time you defeat ${boss}, it drops the **left gauntlet** with ${aN(pa)} ${pct(pa)} chance and, separately, the **right gauntlet** with ${aN(pb)} ${pct(pb)} chance. Every roll is independent, and one kill can give both.`,
+      answerType: "multi",
+      parts: [
+        pctPart("both", `Both in ${n} kills`, `What is the chance of owning both gauntlets after ${n} kills?`, both, "Find the chance of owning each gauntlet after that many kills, then multiply (they are independent)."),
+        numPart("expected", "Average kills", `What is the average number of kills until you own both?${DP2}`, e, true, "Average of the later of two waits = average wait for A + average wait for B − average wait for whichever comes first."),
+      ],
+      explanation:
+        `**Both in ${n} kills:** you own the left one with \`1 − ${num(qa)}^${n}\` ≈ ${(1 - qa ** n).toFixed(6)} and the right one with \`1 − ${num(qb)}^${n}\` ≈ ${(1 - qb ** n).toFixed(6)}. They are independent, so multiply: ≈ ${both.toFixed(6)}, which is ${result(both * 100)}%.\n\n` +
+        `**Average kills:** the wait for both is the later of the two waits, and later + earlier = wait A + wait B. A kill gives at least one gauntlet with \`1 − ${num(qa)} × ${num(qb)} = ${num(either)}\`, so the earlier wait averages \`1 / ${num(either)}\`.\n\n` +
+        `\`1 / ${num(pa / 100)} + 1 / ${num(pb / 100)} − 1 / ${num(either)}\` ${result(e)}.`,
+      hints: [
+        `Owning one gauntlet after n kills means "not all n kills missed it": \`1 − (1 − p)^n\`. Do that for each gauntlet.`,
+        "The two gauntlets drop independently, so the chance of owning both is the product of the two chances.",
+        "For the average: (later wait) + (earlier wait) = (wait for left) + (wait for right). The earlier wait ends on the first kill that gives at least one gauntlet, which happens with 1 − (1 − pa)(1 − pb) per kill.",
+      ],
+      given: [{ label: "_left", value: pa }, { label: "_right", value: pb }, { label: "_n", value: n }],
+      params: { kind: "x-twodrops", pa, pb, n },
+    };
+  });
+}
+
+// crits / expert 0: chance to defeat an enemy within k hits (hits needed + binomial crits).
+function xKillChance(rng) {
+  return retry(() => {
+    const hero = rng.pick(HEROES);
+    const D = rng.int(20, 120);
+    const m = rng.pick(MULTS);
+    const c = rng.int(10, 60);
+    const k = rng.int(2, 7);
+    const hi = Math.floor(k * m * D);
+    if (hi <= k * D + 1) return null;
+    const H = rng.int(k * D + 1, hi);
+    const crit2 = Math.round(2 * m * D); // crit damage × 2 (always whole)
+    let jmin = 0;
+    while (jmin <= k && 2 * (k - jmin) * D + jmin * crit2 < 2 * H) jmin++;
+    const need = Math.ceil(H / D);
+    const cp = c / 100;
+    let P = 0;
+    for (let j = jmin; j <= k; j++) P += choose(k, j) * cp ** j * (1 - cp) ** (k - j);
+    if (!okPct(P * 100)) return null;
+    return {
+      prompt: `${hero}'s attacks always hit for ${D} damage, with ${aN(c)} ${c}% chance of a critical hit. ${critRule(m)} An enemy has ${H} HP and is defeated when its HP reaches 0 or below.`,
+      answerType: "multi",
+      parts: [
+        numPart("hits", "No crits", `How many hits are needed if none of them is critical?${WHOLE}`, need, false, "Divide the HP by the damage per hit and round up: a part hit isn't possible."),
+        numPart("crits", `Crits in ${k} hits`, `What is the smallest number of critical hits among ${k} hits that defeats it?${WHOLE}`, jmin, false, `With j crits among ${k} hits the damage is (${k} − j) × ${D} + j × ${num(m * D)}. Find the smallest j that reaches ${H}.`),
+        pctPart("chance", `Within ${k} hits`, `What is the chance of defeating it within ${k} hits?`, P, "Defeated within those hits means at least that many crits. The number of crits is binomial: add P(exactly j) from that number up."),
+      ],
+      explanation:
+        `- Without crits: \`${H} / ${D}\` ≈ ${num(H / D)}, rounded up to **${need}** hits, so ${k} plain hits (${k * D} damage) are not enough.\n` +
+        `- A crit deals ${num(m * D)}, which is ${num(m * D - D)} more than a normal hit. ${k} hits with j crits deal \`${k * D} + j × ${num(m * D - D)}\`, which reaches ${H} first at **j = ${jmin}**.\n` +
+        `- The number of crits in ${k} hits is binomial with p = ${num(cp)}: \`P(at least ${jmin}) = ` +
+        Array.from({ length: k - jmin + 1 }, (_, i) => `C(${k}, ${jmin + i}) × ${num(cp)}^${jmin + i} × ${num(1 - cp)}^${k - jmin - i}`).join(" + ") +
+        `\` ≈ ${P.toFixed(6)}, so ${result(P * 100)}%.`,
+      hints: [
+        `Without crits each hit deals ${D}, so the hits needed are ${H} ÷ ${D}, rounded up.`,
+        `Each crit adds ${num(m * D - D)} on top of a normal hit. Work out how much extra damage ${k} hits need to reach ${H}, and how many crits give that much.`,
+        "The number of crits in a fixed number of hits is binomial: P(exactly j) = C(k, j) × c^j × (1 − c)^(k − j). Add these for every j from your answer up to k.",
+      ],
+      given: [{ label: "_dmg", value: D }, { label: "_crit", value: c }, { label: "_mult", value: m }, { label: "_hp", value: H }, { label: "_hits", value: k }],
+      params: { kind: "x-killchance", D, m, c, k, H },
+    };
+  });
+}
+
+// crits / expert 1: compare two upgrades when crit chance is capped at 100% (edge case).
+function xCritCap(rng) {
+  return retry(() => {
+    const hero = rng.pick(HEROES);
+    const D = rng.int(20, 150);
+    const c = rng.int(50, 90);
+    const m = rng.pick([1.5, 2, 2.5]);
+    const X = rng.pick([10, 15, 20, 25, 30, 40]);
+    const Y = rng.pick([25, 30, 40, 50, 60, 75]);
+    const cA = Math.min(100, c + X);
+    const mB = m + Y / 100;
+    const eA = D * (1 + (cA / 100) * (m - 1));
+    const eB = D * (1 + (c / 100) * (mB - 1));
+    if (nearHalf(eA) || nearHalf(eB) || Math.abs(eA - eB) < 0.01 * Math.max(eA, eB)) return null;
+    const better = eA > eB ? "Upgrade A" : "Upgrade B";
+    const capped = c + X > 100;
+    return {
+      prompt: `${hero}'s weapon deals ${D} damage per hit, with ${aN(c)} ${c}% chance of a critical hit and a ${num(m)}× critical multiplier (the total, not extra damage). Every attack hits. Crit chance can't go above 100%: any chance past 100% is wasted. Pick one upgrade:\n\n- **Upgrade A:** +${X}% crit chance (added to the ${c}%).\n- **Upgrade B:** +${num(Y / 100)} to the crit multiplier (${num(m)}× becomes ${num(mB)}×).`,
+      answerType: "multi",
+      parts: [
+        numPart("a", "With A", `Expected damage per hit with Upgrade A?${DP2}`, eA, true, `New crit chance = ${c}% + ${X}%, but never more than 100%. Then damage × (1 + crit chance × (multiplier − 1)).`),
+        numPart("b", "With B", `Expected damage per hit with Upgrade B?${DP2}`, eB, true, `Keep ${c}% crit chance and use the new multiplier ${num(mB)}.`),
+        { id: "best", label: "Choice", ask: "Which upgrade gives more expected damage?", answerType: "choice", answer: better, choices: ["Upgrade A", "Upgrade B"], hint: "Compare your two expected values." },
+      ],
+      explanation:
+        `Expected damage per hit = \`damage × (1 + crit chance × (multiplier − 1))\`.\n\n` +
+        `**Upgrade A:** crit chance ${c}% + ${X}% = ${c + X}%${capped ? `, which is capped at **100%** (${c + X - 100}% is wasted)` : ""}. \`${D} × (1 + ${num(cA / 100)} × ${num(m - 1)})\` ${result(eA)}.\n\n` +
+        `**Upgrade B:** \`${D} × (1 + ${num(c / 100)} × ${num(mB - 1)})\` ${result(eB)}.\n\n` +
+        `**${better}** gives more.`,
+      hints: [
+        `Expected damage per hit = damage × (1 + crit chance × (multiplier − 1)), with the crit chance as a decimal.`,
+        `Upgrade A: add ${X}% to ${c}%, and if that goes past 100%, use 100%: crits can't happen more often than every hit.`,
+        "Upgrade B keeps the crit chance and raises the multiplier. Work out both and compare.",
+      ],
+      given: [{ label: "_dmg", value: D }, { label: "_crit", value: c }, { label: "_mult", value: m }, { label: "_add_crit", value: X }, { label: "_add_mult", value: Y / 100 }],
+      params: { kind: "x-critcap", D, c, m, X, Y },
+    };
+  });
+}
+
+// crits / expert 2: flat armour with a 1-damage floor (edge case), then expected DPS.
+function xArmor(rng) {
+  return retry(() => {
+    const hero = rng.pick(HEROES);
+    const D = rng.int(10, 120);
+    const m = rng.pick(MULTS);
+    const c = rng.int(5, 60);
+    const h = 5 * rng.int(12, 19);
+    const aps = rng.int(5, 25) / 10;
+    const A = rng.next() < 0.3 ? rng.int(D, D + 40) : rng.int(3, D - 2);
+    const normal = Math.max(D - A, 1);
+    const crit = Math.max(m * D - A, 1);
+    if (crit <= 1 || crit === normal) return null;
+    const dps = aps * (h / 100) * ((c / 100) * crit + (1 - c / 100) * normal);
+    if (nearHalf(dps)) return null;
+    return {
+      prompt: `${hero}'s weapon deals ${D} damage per hit with ${aN(c)} ${c}% chance of a critical hit. ${critRule(m)} Attacks hit ${h}% of the time (a miss deals 0, and only hits can crit), at ${num(aps)} attacks per second. The enemy's armour removes ${A} damage from every hit, applied after the crit multiplier, but every hit always deals at least 1 damage.`,
+      answerType: "multi",
+      parts: [
+        numPart("normal", "Normal hit", `Damage of a normal hit after armour?${DP2}`, normal, true, `${D} minus the armour, but never less than 1.`),
+        numPart("crit", "Critical hit", `Damage of a critical hit after armour?${DP2}`, crit, true, `Multiply first (${D} × ${num(m)}), then subtract the armour; never less than 1.`),
+        numPart("dps", "DPS", `Expected damage per second?${DP2}`, dps, true, "Average a hit (crit chance × crit damage + the rest × normal damage), then × hit chance × attacks per second."),
+      ],
+      explanation:
+        `- Normal hit: \`${D} − ${A}\` = ${D - A}${D - A < 1 ? ", below 1, so it deals the minimum **1**" : ` ${result(normal).replace(/^= /, "→ ")}`}\n` +
+        `- Critical hit: \`${D} × ${num(m)} − ${A}\` = ${num(m * D - A)} → **${num(crit)}**\n` +
+        `- Average hit: \`${num(c / 100)} × ${num(crit)} + ${num(1 - c / 100)} × ${num(normal)}\` ≈ ${num((c / 100) * crit + (1 - c / 100) * normal)}\n` +
+        `- DPS: \`average hit × ${num(h / 100)} × ${num(aps)}\` ${result(dps)}`,
+      hints: [
+        "Armour is subtracted from each hit separately, after the crit multiplier, and a hit never deals less than 1.",
+        `So a normal hit deals max(${D} − ${A}, 1) and a crit deals max(${D} × ${num(m)} − ${A}, 1).`,
+        "Expected damage per attack = hit chance × (crit chance × crit damage + (1 − crit chance) × normal damage). Multiply by the attacks per second.",
+      ],
+      given: [{ label: "_dmg", value: D }, { label: "_crit", value: c }, { label: "_mult", value: m }, { label: "_hit", value: h }, { label: "_aps", value: aps }, { label: "_armour", value: A }],
+      params: { kind: "x-armor", D, m, c, h, aps, A },
+    };
+  });
+}
+
+const NEW_ITEMS = [["Mythic Relic", "relic"], ["Celestial Orb", "orb"], ["Ancient Egg", "egg"], ["Golden Idol", "idol"]];
+
+// loot / expert 0: working backwards to the weight a new item needs; it shifts everyone else.
+function xAddWeight(rng) {
+  return retry(() => {
+    const items = makeTable(rng, rng.int(4, 5));
+    const W = sum(items.map((x) => x.w));
+    const X = rng.pick([2, 3, 4, 5, 8, 10, 12, 15, 20]);
+    const [newName, newKey] = rng.pick(NEW_ITEMS);
+    const other = items[rng.int(0, items.length - 1)];
+    const w = Math.floor((X * W + (100 - X) - 1) / (100 - X)); // smallest whole w with w / (W + w) ≥ X%
+    const newChance = (other.w / (W + w)) * 100;
+    if (w < 1 || !okPct(newChance)) return null;
+    const exact = (X * W) % (100 - X) === 0;
+    return {
+      prompt: `${ROLL}\n\n${tableMd(items, false)}\n\nA designer adds a new item, the **${newName}**, with a whole-number weight. Its chance must be at least ${X}%.`,
+      answerType: "multi",
+      parts: [
+        numPart("weight", "Weight", `What is the smallest whole weight that gives the ${newName} at least ${aN(X)} ${X}% chance?${WHOLE}`, w, false, `The new chance is w ÷ (old total + w). Solve w ÷ (total + w) ≥ ${num(X / 100)} for w and round up.`),
+        pctPart("other", other.name, `With that weight added, what is the new chance of the ${other.name}?`, newChance / 100, `Its weight is unchanged, but the total weight grows by the new item's weight.`),
+      ],
+      explanation:
+        `The old total weight is \`${items.map((x) => x.w).join(" + ")} = ${W}\`.\n\n` +
+        `- The new chance is \`w / (${W} + w)\`. Solve \`w / (${W} + w) ≥ ${num(X / 100)}\`: \`w ≥ ${X} × ${W} / ${100 - X}\` ≈ ${num((X * W) / (100 - X))}.\n` +
+        `- ${exact ? `That is a whole number, so **w = ${w}** gives exactly ${X}%.` : `Round up to a whole number: **w = ${w}**. (Check: ${w - 1} gives ${(((w - 1) / (W + w - 1)) * 100).toFixed(2)}%, ${w} gives ${((w / (W + w)) * 100).toFixed(2)}%.)`}\n` +
+        `- The new total is ${W + w}, so the ${other.name} drops to \`${other.w} / ${W + w}\`, which is ${result(newChance)}%.`,
+      hints: [
+        `Add up the current weights first: \`${wSum(items)}\`.`,
+        `With weight w, the new item's chance is w ÷ (total + w). Set that ≥ ${num(X / 100)} and rearrange: w ≥ ${X} × total ÷ ${100 - X}.`,
+        "A weight must be whole, so round up. Every other item keeps its weight but now shares a bigger total.",
+      ],
+      given: [...items.map((x) => ({ label: `_${x.key}`, value: x.w })), { label: "_target", value: X }].slice(0, 8),
+      params: { kind: "x-addweight", items, X, other: other.key },
+    };
+  });
+}
+
+// loot / expert 1: two chests: the same item twice, and at least one high tier (pairs of rolls).
+function xSamePair(rng) {
+  return retry(() => {
+    const items = makeTable(rng, rng.int(4, 6));
+    const W = sum(items.map((x) => x.w));
+    const rank = rng.int(2, 3);
+    const tier = TIERS[rank];
+    const fav = sum(items.filter((x) => TIERS.indexOf(x.tier) >= rank).map((x) => x.w));
+    if (!fav) return null;
+    const same = sum(items.map((x) => (x.w / W) ** 2));
+    const one = 1 - (1 - fav / W) ** 2;
+    if (!okPct(same * 100) || !okPct(one * 100)) return null;
+    const better = andList(TIERS.slice(rank));
+    return {
+      prompt: `${ROLL}\n\n${tableMd(items, false)}\n\nYou open two chests; each rolls independently.`,
+      answerType: "multi",
+      parts: [
+        pctPart("same", "Same item", "What is the chance that both chests give the same item?", same, "For each item, the chance both chests give it is (its chance)². The items are separate cases, so add them."),
+        pctPart("tier", `${tier} or better`, `What is the chance that at least one chest gives an item of ${tier} rarity or better (${better} count)?`, one, "Use 1 − P(neither chest gives one)."),
+      ],
+      explanation:
+        `The total weight is ${W}.\n\n` +
+        `**Same item:** \`(${items.map((x) => `${x.w}²`).join(" + ")}) / ${W}²\` = \`${sum(items.map((x) => x.w * x.w))} / ${W * W}\` ≈ ${same.toFixed(6)}, so ${result(same * 100)}%.\n\n` +
+        `**${tier} or better:** one chest gives one with \`${fav} / ${W}\`. Neither chest: \`(1 − ${fav}/${W})²\` ≈ ${((1 - fav / W) ** 2).toFixed(6)}. At least one: ≈ ${one.toFixed(6)}, so ${result(one * 100)}%.`,
+      hints: [
+        `Add up the weights for the total: \`${wSum(items)}\`. Each item's chance is weight ÷ total.`,
+        "Both chests give item X with (chance of X)², because the chests are independent. \"The same item\" is any one of these cases, so add them up over all items.",
+        `For the second part, find the chance that one chest gives ${tier} or better, then use 1 − (1 − that)².`,
+      ],
+      given: items.map((x) => ({ label: `_${x.key}`, value: x.w })),
+      params: { kind: "x-samepair", items, rank },
+    };
+  });
+}
+
+// loot / expert 2: collect two specific items (inclusion–exclusion; expected chests).
+function xCollect(rng) {
+  return retry(() => {
+    const items = makeTable(rng, rng.int(4, 6));
+    const W = sum(items.map((x) => x.w));
+    const i = rng.int(0, items.length - 1);
+    let j;
+    do j = rng.int(0, items.length - 1); while (j === i);
+    const n = rng.int(5, 40);
+    const A = items[i], B = items[j];
+    const a = A.w / W, b = B.w / W;
+    const e = 1 / a + 1 / b - 1 / (a + b);
+    const both = 1 - (1 - a) ** n - (1 - b) ** n + (1 - a - b) ** n;
+    if (nearHalf(e) || !okPct(both * 100)) return null;
+    return {
+      prompt: `${ROLL}\n\n${tableMd(items, false)}\n\nA quest needs both the **${A.name}** and the **${B.name}**. You open chests one at a time; each rolls independently.`,
+      answerType: "multi",
+      parts: [
+        numPart("expected", "Average chests", `On average, how many chests does it take to have both?${DP2}`, e, true, "Later wait = wait for the first item + wait for the second − wait for whichever comes first."),
+        pctPart("both", `Both in ${n}`, `What is the chance of having both after ${n} chests?`, both, "1 − P(no first item) − P(no second item) + P(neither), because \"neither\" was subtracted twice."),
+      ],
+      explanation:
+        `The total weight is ${W}, so one chest gives the ${A.name} with a = \`${A.w}/${W}\` ≈ ${num(a)} and the ${B.name} with b = \`${B.w}/${W}\` ≈ ${num(b)} (never both at once).\n\n` +
+        `**Average chests:** waits average 1/a and 1/b; one of the two appears with \`a + b\` per chest, so the first of them comes after 1/(a + b) on average. \`1/a + 1/b − 1/(a + b)\` ${result(e)}.\n\n` +
+        `**Both in ${n}:** \`1 − (1 − a)^${n} − (1 − b)^${n} + (1 − a − b)^${n}\` ≈ ${both.toFixed(6)}, so ${result(both * 100)}%.`,
+      hints: [
+        `Add the weights for the total (\`${wSum(items)}\`); each item's chance is weight ÷ total. A chest gives only one item, so it can't give both at once.`,
+        "Average: the wait until you have both is the later of two waits, and later + earlier = wait for the first item + wait for the second. The earlier wait ends with chance a + b per chest.",
+        "Chance: count the ways to fail. P(no first item in n) = (1 − a)^n, likewise for b, and \"neither\" = (1 − a − b)^n was taken away twice, so add it back once.",
+      ],
+      given: [...items.map((x) => ({ label: `_${x.key}`, value: x.w })), { label: "_n", value: n }].slice(0, 8),
+      params: { kind: "x-collect", items, i, j, n },
+    };
+  });
+}
+
+// pity / expert 0: soft pity, the rate climbs after pull S until it reaches 100%.
+function xSoftPity(rng) {
+  return retry(() => {
+    const banner = rng.pick(BANNERS);
+    const prize = rng.pick(PRIZES);
+    const p = rng.pick([0.6, 0.8, 1, 1.5, 2]);
+    const S = rng.int(20, 75);
+    const s = rng.pick([6, 8, 10, 12, 15, 20]);
+    const rate = (k) => (k <= S ? p : Math.min(100, p + (k - S) * s));
+    const hard = S + Math.ceil((100 - p) / s);
+    const q = 1 - p / 100;
+    const reach = q ** S;
+    let surv = 1, e = 0;
+    const tail = [];
+    for (let k = 1; k <= hard; k++) {
+      e += surv; // P(T > k − 1)
+      if (k > S + 1) tail.push(surv);
+      surv *= 1 - rate(k) / 100;
+    }
+    if (!okPct(reach * 100) || nearHalf(e)) return null;
+    const geo = (1 - q ** (S + 1)) / (p / 100);
+    return {
+      prompt: `Each pull on ${banner} has ${aN(p)} ${num(p)}% chance to give ${prize}, up to and including pull ${S}. Soft pity: from pull ${S + 1} on, the chance rises by ${s} percentage points every pull (pull ${S + 1} has ${num(p + s)}%, pull ${S + 2} has ${num(p + 2 * s)}%, and so on) until it reaches 100%. You start from zero.`,
+      answerType: "multi",
+      parts: [
+        pctPart("reach", "Reach soft pity", `What is the chance that you reach pull ${S + 1} without the prize?`, reach, `Pulls 1 to ${S} must all miss.`),
+        numPart("hard", "Guaranteed", `On which pull is the prize certain (100%) if you still haven't got it?${WHOLE}`, hard, false, `Keep adding ${s} to ${num(p)}% until the chance is at least 100%.`),
+        numPart("expected", "Expected pulls", `What is the expected number of pulls to get it?${DP2}`, e, true, "Add up P(still waiting after k pulls) for k = 0, 1, 2, … until the guaranteed pull."),
+      ],
+      explanation:
+        `**Reach soft pity:** \`${num(q)}^${S}\` ≈ ${reach.toFixed(6)}, so ${result(reach * 100)}%.\n\n` +
+        `**Guaranteed:** pull ${S} + j has ${num(p)} + ${s}j %, which first reaches 100% at j = ${hard - S}: pull **${hard}**.\n\n` +
+        `**Expected pulls:** E[T] = P(T > 0) + P(T > 1) + … . For k ≤ ${S}, P(T > k) = ${num(q)}^k, and those ${S + 1} terms sum to \`(1 − ${num(q)}^${S + 1}) / ${num(p / 100)}\` ≈ ${num(geo)}.\n\n` +
+        `After that, each term is the previous one times the next pull's miss chance: ${tail.map((x) => num(x)).join(", ")}.\n\n` +
+        `Total ${result(e)}.`,
+      hints: [
+        `Reaching pull ${S + 1} means pulls 1 to ${S} all miss, each with chance ${num(q)}.`,
+        `E[T] = P(T > 0) + P(T > 1) + … , where P(T > k) is the chance of still waiting after k pulls. Up to k = ${S} that is \`${num(q)}^k\`: a geometric series, \`(1 - q^(_soft + 1)) / (_pct/100)\` with q = \`1 - _pct/100\`.`,
+        `After pull ${S}, multiply the previous term by the next pull's miss chance (1 − its rate) to get each new term. Stop when a pull's rate reaches 100%.`,
+      ],
+      given: [{ label: "_pct", value: p }, { label: "_soft", value: S }, { label: "_step", value: s }],
+      params: { kind: "x-softpity", p, S, s },
+    };
+  });
+}
+
+// pity / expert 1: the 50/50 featured rule on top of a hard pity (two prizes chained).
+function x5050(rng) {
+  return retry(() => {
+    const banner = rng.pick(BANNERS);
+    const p = rng.pick([0.6, 1, 1.5, 2, 3]);
+    const N = rng.int(20, 90);
+    const q = 1 - p / 100;
+    const d = (k) => (k < N ? q ** (k - 1) * (p / 100) : k === N ? q ** (N - 1) : 0);
+    const cdf = (k) => (k >= N ? 1 : 1 - q ** k);
+    const e1 = (1 - q ** N) / (p / 100);
+    const e = 1.5 * e1;
+    let two = 0;
+    for (let a = 1; a < N; a++) two += d(a) * cdf(N - a);
+    const within = 0.5 + 0.5 * two;
+    if (!okPct(within * 100) || nearHalf(e)) return null;
+    return {
+      prompt: `Each pull on ${banner} has ${aN(p)} ${num(p)}% chance to give a 5-star hero. Pity rule: if the first ${N - 1} pulls all miss, pull ${N} is guaranteed to give one; the counter resets after every 5-star. Each 5-star is the **featured** hero with 50% chance. If you lose that 50/50, your next 5-star is guaranteed to be the featured hero. You start from zero and want the featured hero.`,
+      answerType: "multi",
+      parts: [
+        numPart("worst", "Worst case", `What is the largest number of pulls you could ever need?${WHOLE}`, 2 * N, false, "Picture the unluckiest run: every 5-star comes as late as possible, and the first one isn't the featured hero."),
+        numPart("expected", "Expected pulls", `What is the expected number of pulls to get the featured hero?${DP2}`, e, true, "Average pulls per 5-star (with the pity), times the average number of 5-stars you need."),
+        pctPart("within", `Within ${N}`, `What is the chance of getting the featured hero within your first ${N} pulls?`, within, `Either you win the first 50/50 (the first 5-star always comes by pull ${N}), or you lose it and the second 5-star also arrives by pull ${N}.`),
+      ],
+      explanation:
+        `**Worst case:** the first 5-star can take ${N} pulls and lose the 50/50; the guaranteed one can take ${N} more: **${2 * N}**.\n\n` +
+        `**Expected pulls:** one 5-star takes \`(1 − ${num(q)}^${N}) / ${num(p / 100)}\` ≈ ${num(e1)} pulls on average. You need 1 five-star half the time and 2 the other half, 1.5 on average: \`1.5 × ${num(e1)}\` ${result(e)}.\n\n` +
+        `**Within ${N}:** the first 5-star always arrives by pull ${N}, so winning the 50/50 gives 0.5. Otherwise the first 5-star on pull a (chance \`${num(q)}^(a−1) × ${num(p / 100)}\`) must be followed by another within ${N} − a pulls (chance \`1 − ${num(q)}^(${N} − a)\`). Adding over a = 1 to ${N - 1} gives ≈ ${two.toFixed(6)}, so \`0.5 + 0.5 × ${two.toFixed(6)}\` ≈ ${within.toFixed(6)}, which is ${result(within * 100)}%.`,
+      hints: [
+        `One 5-star takes at most ${N} pulls. Think about how many 5-stars you might need in the worst case.`,
+        `The average number of pulls for one 5-star with pity is \`(1 - q^_pity) / (_pct/100)\` with q = \`1 - _pct/100\`. Half the time you need one 5-star, half the time two.`,
+        `For the chance within ${N} pulls: winning the first 50/50 always works. If you lose it on pull a, you need a second 5-star within the ${N} − a pulls that are left: add P(first on pull a) × P(another within ${N} − a) over a.`,
+      ],
+      given: [{ label: "_pct", value: p }, { label: "_pity", value: N }],
+      params: { kind: "x-5050", p, N },
+    };
+  });
+}
+
+// pity / expert 2: a part-used pity counter and a gem budget (certain if the pity is in reach).
+function xBudget(rng) {
+  return retry(() => {
+    const banner = rng.pick(BANNERS);
+    const prize = rng.pick(PRIZES);
+    const p = rng.pick([0.6, 1, 1.5, 2, 3, 5]);
+    const N = rng.int(20, 90);
+    const j = rng.int(0, N - 2);
+    const cost = rng.pick([150, 160, 180, 200, 300]);
+    const k = rng.int(2, 40);
+    const G = cost * k + rng.int(0, cost - 1);
+    const q = 1 - p / 100;
+    const left = N - j; // the guaranteed pull is this many pulls away
+    const sure = k >= left;
+    const chance = sure ? 1 : 1 - q ** k;
+    const e = (1 - q ** left) / (p / 100);
+    if ((!sure && !okPct(chance * 100)) || nearHalf(e)) return null;
+    return {
+      prompt: `Each pull on ${banner} costs ${cost} gems and has ${aN(p)} ${num(p)}% chance to give ${prize}. Pity rule: if ${N - 1} pulls in a row miss, pull ${N} of that run is guaranteed to give it. You have already missed ${j} pull${j === 1 ? "" : "s"} in a row (the counter is at ${j}) and you have ${G} gems.`,
+      answerType: "multi",
+      parts: [
+        numPart("pulls", "Pulls", `How many pulls can you afford?${WHOLE}`, k, false, "Divide the gems by the cost per pull and round down."),
+        pctPart("chance", "Chance", "What is the chance you get the prize with those pulls?", chance, `First check whether the guaranteed pull (pull ${N} of the run) is within reach of those pulls.`),
+        numPart("expected", "Expected pulls", `From here, what is the expected number of further pulls to get it?${DP2}`, e, true, "Only the pulls left before the guarantee matter: add P(still waiting) after 0, 1, 2, … further pulls."),
+      ],
+      explanation:
+        `- Pulls: \`${G} / ${cost}\` ≈ ${num(G / cost)}, rounded down to **${k}**.\n` +
+        `- The run is at ${j} misses, so the guaranteed pull is ${left} pull${left === 1 ? "" : "s"} away. ` +
+        (sure ? `${k} ≥ ${left}, so you are certain to reach it: **100%**.` : `${k} < ${left}, so the pity can't help: \`1 − ${num(q)}^${k}\` ≈ ${chance.toFixed(6)}, which is ${result(chance * 100)}%.`) +
+        `\n- Expected further pulls: past misses don't change the odds, only how close the guarantee is. \`(1 − ${num(q)}^${left}) / ${num(p / 100)}\` ${result(e)}.`,
+      hints: [
+        `Whole pulls only: ${G} ÷ ${cost}, rounded down.`,
+        `The counter is at ${j}, so the guaranteed pull is ${N} − ${j} pulls away. If you can afford that many, you are certain to get it; if not, use 1 − (miss chance)^pulls.`,
+        `Expected further pulls is like the usual pity formula, but with ${N} − ${j} pulls left before the guarantee: \`(1 - q^(_pity - _count)) / (_pct/100)\` with q = \`1 - _pct/100\`.`,
+      ],
+      given: [{ label: "_pct", value: p }, { label: "_pity", value: N }, { label: "_count", value: j }, { label: "_gems", value: G }, { label: "_cost", value: cost }],
+      params: { kind: "x-budget", p, N, j, cost, G },
+    };
+  });
+}
+
+const EXPERT = {
+  "drop-rates": [xAtLeastK, xDesignRate, xTwoDrops],
+  crits: [xKillChance, xCritCap, xArmor],
+  loot: [xAddWeight, xSamePair, xCollect],
+  pity: [xSoftPity, x5050, xBudget],
+};
+
+function genExpert(subtopic, rng) {
+  const list = EXPERT[subtopic];
+  if (!list) throw new Error(`Unknown subtopic: ${subtopic}`);
+  return list[rng.int(0, list.length - 1)](rng);
+}
+
+// ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   checkDifficulty(difficulty);
   if (subtopic === "drop-rates") return genDrops(difficulty, rng);
   if (subtopic === "crits") return genCrits(difficulty, rng);
@@ -795,9 +1291,193 @@ function checkSingle(p, x) {
   }
 }
 
+// ---- Expert verification: rebuild each situation and count it another way ----
+
+// Distribution of the remaining pulls R (1 … left), stepping a pity counter pull by pull.
+function pityFrom(p, left) {
+  const dist = new Array(left + 1).fill(0);
+  let waiting = 1;
+  for (let r = 1; r <= left; r++) {
+    const hit = r === left ? waiting : waiting * p;
+    dist[r] = hit;
+    waiting -= hit;
+  }
+  return dist;
+}
+
+// Collect-two-things chain: states [neither, A only, B only, both], stepped one try at a time.
+// pA / pB: chance per try of getting A / B; pAB: chance of both in one try (0 for one-item rolls).
+function collectChain(pA, pB, pAB, n) {
+  const onlyA = pA - pAB, onlyB = pB - pAB, none = 1 - pA - pB + pAB;
+  let s = [1, 0, 0, 0];
+  let e = 0;
+  let atN = 0;
+  for (let t = 1; t < 1e6; t++) {
+    e += 1 - s[3]; // P(not done after t − 1 tries)
+    s = [
+      s[0] * none,
+      s[0] * onlyA + s[1] * (1 - pB),
+      s[0] * onlyB + s[2] * (1 - pA),
+      s[3] + s[0] * pAB + s[1] * pB + s[2] * pA,
+    ];
+    if (t === n) atN = s[3];
+    if (t >= n && 1 - s[3] < 1e-14) break;
+  }
+  return { e, atN };
+}
+
+function verifyExpert(p, answer) {
+  if (!answer || typeof answer !== "object") return false;
+  const A = (id) => {
+    const v = answer[id];
+    if (v === "" || v === null || v === undefined || typeof v === "boolean" || typeof v === "object") return NaN;
+    return Number(v);
+  };
+  const whole = (id, truth) => Number.isInteger(A(id)) && A(id) === truth;
+  switch (p.kind) {
+    case "x-atleastk": {
+      const pr = p.p / 100;
+      // Grow the distribution of drops one try at a time; record the chance at n and the first target hit.
+      let d = [1], need = 0, atN = 0;
+      for (let m = 1; m <= 5000 && (!need || m <= p.n); m++) {
+        const next = new Array(d.length + 1).fill(0);
+        for (let i = 0; i < d.length; i++) { next[i] += d[i] * (1 - pr); next[i + 1] += d[i] * pr; }
+        d = next;
+        const al = sum(d.slice(p.k));
+        if (m === p.n) atN = al;
+        if (!need && al >= p.T / 100) need = m;
+      }
+      return pctOk(A("chance"), atN) && whole("tries", need);
+    }
+    case "x-designrate": {
+      // Substitution: n kills at the candidate rate (± rounding) must bracket the target.
+      const atLeast = (x) => { let none = 1; for (let i = 0; i < p.n; i++) none *= 1 - x / 100; return 1 - none; };
+      const r = A("rate");
+      if (!(r > 0 && r < 100)) return false;
+      if (!(atLeast(r - 0.005) <= p.T / 100 + 1e-12 && atLeast(r + 0.005) >= p.T / 100 - 1e-12)) return false;
+      let lo = 0, hi = 1;
+      for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (atLeast(m * 100) < p.T / 100) lo = m; else hi = m; }
+      return near(A("tries"), expTriesSeries((lo + hi) / 2), 0.005);
+    }
+    case "x-twodrops": {
+      const a = p.pa / 100, b = p.pb / 100;
+      const { e, atN } = collectChain(a, b, a * b, p.n);
+      return pctOk(A("both"), atN) && near(A("expected"), e, 0.005);
+    }
+    case "x-killchance": {
+      let hits = 0;
+      while (hits * p.D < p.H) hits++;
+      let crits = 0;
+      while (crits <= p.k && (p.k - crits) * p.D + crits * p.D * p.m < p.H) crits++;
+      // Every crit/no-crit sequence of k hits with its probability.
+      let win = 0;
+      for (let mask = 0; mask < 1 << p.k; mask++) {
+        let dmg = 0, pr = 1;
+        for (let i = 0; i < p.k; i++) {
+          const c = (mask >> i) & 1;
+          dmg += c ? p.D * p.m : p.D;
+          pr *= c ? p.c / 100 : 1 - p.c / 100;
+        }
+        if (dmg >= p.H) win += pr;
+      }
+      return whole("hits", hits) && whole("crits", crits) && pctOk(A("chance"), win);
+    }
+    case "x-critcap": {
+      // 100 crit tickets: a chance above 100% simply fills every ticket (the cap, counted directly).
+      const a = ticketDamage(p.D, p.c + p.X, p.m, 100);
+      const b = ticketDamage(p.D, p.c, p.m + p.Y / 100, 100);
+      return near(A("a"), a, 0.005) && near(A("b"), b, 0.005) && answer.best === (a > b ? "Upgrade A" : "Upgrade B");
+    }
+    case "x-armor": {
+      let total = 0;
+      for (let i = 0; i < 100; i++) {
+        if (i >= p.h) continue;
+        for (let j = 0; j < 100; j++) total += Math.max((j < p.c ? p.D * p.m : p.D) - p.A, 1);
+      }
+      const normal = p.D > p.A + 1 ? p.D - p.A : 1;
+      const crit = p.D * p.m > p.A + 1 ? p.D * p.m - p.A : 1;
+      return near(A("normal"), normal, 0.005) && near(A("crit"), crit, 0.005) && near(A("dps"), (total / 10000) * p.aps, 0.005);
+    }
+    case "x-addweight": {
+      const t = tickets(p.items);
+      let w = 1;
+      while (100 * w < p.X * (t.length + w)) w++;
+      const oi = p.items.findIndex((x) => x.key === p.other);
+      const t2 = t.concat(new Array(w).fill(-1));
+      return whole("weight", w) && pctOk(A("other"), t2.filter((i) => i === oi).length / t2.length);
+    }
+    case "x-samepair": {
+      const t = tickets(p.items);
+      let same = 0, tier = 0;
+      const hi = t.map((i) => TIERS.indexOf(p.items[i].tier) >= p.rank);
+      for (let x = 0; x < t.length; x++) {
+        for (let y = 0; y < t.length; y++) {
+          if (t[x] === t[y]) same++;
+          if (hi[x] || hi[y]) tier++;
+        }
+      }
+      return pctOk(A("same"), same / t.length ** 2) && pctOk(A("tier"), tier / t.length ** 2);
+    }
+    case "x-collect": {
+      const t = tickets(p.items);
+      const a = t.filter((i) => i === p.i).length / t.length;
+      const b = t.filter((i) => i === p.j).length / t.length;
+      const { e, atN } = collectChain(a, b, 0, p.n);
+      return near(A("expected"), e, 0.005) && pctOk(A("both"), atN);
+    }
+    case "x-softpity": {
+      let r = p.p, hard = p.S + 1;
+      for (r = p.p + p.s; r < 100; r += p.s) hard++;
+      // P(T = k) pull by pull, then the mean as the sum of k × P(T = k).
+      let waiting = 1, mean = 0;
+      for (let k = 1; k <= hard; k++) {
+        const rate = k <= p.S ? p.p : Math.min(100, p.p + (k - p.S) * p.s);
+        const hit = waiting * (rate / 100);
+        mean += k * hit;
+        waiting -= hit;
+      }
+      return pctOk(A("reach"), dropDist(p.p / 100, p.S)[0]) && whole("hard", hard) && near(A("expected"), mean, 0.005);
+    }
+    case "x-5050": {
+      // Markov chain over (pity counter, guarantee flag), stepped pull by pull.
+      const pr = p.p / 100;
+      let st = new Map([["0|0", 1]]);
+      const dist = [];
+      for (let t = 1; t <= 2 * p.N + 2; t++) {
+        const next = new Map();
+        const add = (key, v) => next.set(key, (next.get(key) || 0) + v);
+        let got = 0;
+        for (const [key, prob] of st) {
+          const [c, g] = key.split("|").map(Number);
+          const hit = prob * (c + 1 === p.N ? 1 : pr);
+          if (prob - hit > 0) add(`${c + 1}|${g}`, prob - hit);
+          if (g) got += hit;
+          else { got += hit / 2; add("0|1", hit / 2); }
+        }
+        dist[t] = got;
+        st = next;
+      }
+      let worst = 0, mean = 0, within = 0;
+      dist.forEach((v, t) => { if (v > 0) worst = t; mean += t * v; if (t <= p.N) within += v; });
+      return whole("worst", worst) && near(A("expected"), mean, 0.005) && pctOk(A("within"), within);
+    }
+    case "x-budget": {
+      let gems = p.G, pulls = 0;
+      while (gems >= p.cost) { gems -= p.cost; pulls++; }
+      const dist = pityFrom(p.p / 100, p.N - p.j);
+      const chance = sum(dist.slice(1, pulls + 1));
+      const mean = sum(dist.map((v, r) => v * r));
+      return whole("pulls", pulls) && pctOk(A("chance"), chance) && near(A("expected"), mean, 0.005);
+    }
+    default:
+      return false;
+  }
+}
+
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer);
 
   if (question.answerType === "choice") {
     const ch = question.choices;

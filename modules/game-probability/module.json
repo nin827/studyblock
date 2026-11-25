@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "drop-rates", "title": "Drop rates", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "crits", "title": "Critical hits and damage", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "loot", "title": "Loot tables", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "pity", "title": "Pity and streaks", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "drop-rates", "title": "Drop rates", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "crits", "title": "Critical hits and damage", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "loot", "title": "Loot tables", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pity", "title": "Pity and streaks", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

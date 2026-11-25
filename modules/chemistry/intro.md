@@ -22,5 +22,8 @@ Useful conversions: 1 dm³ = 1000 cm³ = 1 litre, so divide cm³ by 1000 to get 
 | Easy | Molar mass given, simple amounts, concentrations in dm³, short equations; exact answers |
 | Medium | Molar mass from atomic masses, volumes in cm³, dilution, combustion equations, percentage by mass |
 | Hard | Answers rounded as stated (often 2 or 3 decimal places), particles, solution preparation, larger equations, empirical and molecular formulae |
+| Expert | Multi-step problems in two to four parts, each rounded as stated |
 
 **Tip:** rounded answers are accepted within half a unit of the stated precision (for example ±0.0005 when rounding to 3 decimal places). Keep full precision in the calculator until the last step.
+
+**Expert** questions chain several steps: reacting masses from a balanced equation, the limiting reactant and the excess left over, percentage yield (and the starting mass needed for a target yield), titrations (including sulfuric acid's 1 : 2 ratio), making up and then diluting a solution, mixing two solutions, balancing a whole equation (every coefficient, lowest whole numbers), the molecular formula from percentages or masses plus the relative molecular mass, and water of crystallisation in hydrates such as CuSO₄·5H₂O. Use unrounded values from earlier parts.

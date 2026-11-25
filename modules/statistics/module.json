@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "mean-median-mode", "title": "Mean, median and mode", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "range-iqr", "title": "Range and IQR", "difficulties": ["medium", "hard"] },
-    { "id": "probability", "title": "Probability", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "weighted-average", "title": "Weighted average", "difficulties": ["medium", "hard"] }
+    { "id": "mean-median-mode", "title": "Mean, median and mode", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "range-iqr", "title": "Range and IQR", "difficulties": ["medium", "hard", "expert"] },
+    { "id": "probability", "title": "Probability", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "weighted-average", "title": "Weighted average", "difficulties": ["medium", "hard", "expert"] }
   ]
 }

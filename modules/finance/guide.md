@@ -18,6 +18,8 @@ Example: $10000 cost, $2000 salvage, 4-year life gives a charge of 8000 / 4 = $2
 
 **Watch out:** with reducing balance, the percentage applies to what's left, never to the original cost again.
 
+**Expert.** *Selling early:* find the straight-line book value on the sale date; gain or loss = sale price − book value (negative for a loss). *Working backwards:* cost = book value ÷ (1 − rate)^years. *Crossover year:* the reducing-balance charge in year y is cost × (1 − rate)^(y − 1) × rate; check the years in order until it drops below cost ÷ life.
+
 ## Loans
 
 1. Work out the monthly rate `_i` and the number of payments `_n`.
@@ -28,6 +30,8 @@ Example: $10000 cost, $2000 salvage, 4-year life gives a charge of 8000 / 4 = $2
 Example: $12000 at 6% for 3 years gives i = 0.005 and n = 36, so the payment is $365.06.
 
 **Watch out:** forgetting to divide the rate by 12 gives a far too big payment.
+
+**Expert.** *Paying off early:* interest saved = payment × remaining payments − balance. *Biggest loan for a budget:* loan = budget × (1 − (1 + i)^-n) ÷ i. *Interest in payment k:* the balance after k − 1 payments × i, rounded to the cent; the rest of the payment is principal. *Overpaying:* with a bigger payment, the number of payments is −ln(1 − loan × i ÷ payment) ÷ ln(1 + i), rounded up (the last one is smaller).
 
 ## Annuities and savings
 
@@ -40,3 +44,5 @@ Example: $12000 at 6% for 3 years gives i = 0.005 and n = 36, so the payment is 
 Example: $1000 a year for 3 years at 5% grows to 1000 × (1.05³ − 1) / 0.05 = $3152.50.
 
 **Watch out:** payment × number of periods ignores interest; it's only a rough check.
+
+**Expert.** *Save, then draw an income:* the pot from the deposits becomes the "loan" in the payment formula for the payout months. *Starting late:* the same deposit-for-a-goal formula with fewer months. *Deposits at the start of each month:* multiply the end-of-month answer by (1 + i). *How long a fund lasts:* n = −ln(1 − fund × i ÷ withdrawal) ÷ ln(1 + i), rounded down for full withdrawals; what's left = fund × (1 + i)^n − withdrawal × ((1 + i)^n − 1) ÷ i.

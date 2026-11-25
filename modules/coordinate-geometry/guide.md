@@ -18,6 +18,8 @@ Example: from (1, 2) to (4, 6) the steps are 3 and 4, so the distance is √(9 +
 
 **Watch out:** square each step before adding. √(3 + 4) is not the distance.
 
+**Expert: ratios and working backwards.** AP : PB = m : n puts P m/(m + n) of the way from A to B: take that fraction of each step and add it to A. For a point on an axis equally far from A and B, call it (t, 0) or (0, t), set PA² = PB² and expand; the t² terms cancel. For a triangle's height onto AB, find the area first, then height = 2 × area ÷ AB. For the fourth corner D of parallelogram ABCD, apply the B-to-A step to C.
+
 ## Gradient & lines
 
 1. Gradient m = (y2 − y1) ÷ (x2 − x1). Simplify the fraction.
@@ -28,6 +30,8 @@ Example: from (1, 2) to (4, 6) the steps are 3 and 4, so the distance is √(9 +
 Example: through (1, 3) and (3, 7), m = 4 ÷ 2 = 2; then 3 = 2 × 1 + c gives c = 1, so y = 2x + 1.
 
 **Watch out:** keep the subtraction order the same on top and bottom, or the sign of the gradient flips.
+
+**Expert: collinear points and models.** Three points lie on one line when every pair gives the same gradient, so set the gradient with the unknown equal to the known one and solve. For a real-life straight-line model, treat each data pair as a point (amount, cost): the gradient is the rate, the y-intercept is the fixed charge, and you can work backwards from a cost to the amount.
 
 ## Parallel & perpendicular
 
@@ -40,6 +44,8 @@ Example: perpendicular to y = 2x + 5 through (4, 1): m = -1/2, and 1 = -1/2 × 4
 
 **Watch out:** a perpendicular bisector must pass through the midpoint, not through one of the end points.
 
+**Expert: perpendiculars in action.** The shortest distance from P to a line runs at right angles to it: write the perpendicular through P, solve it with the line to get the foot F, then PF is the distance (or use |ax + by − c| ÷ √(a² + b²)). For a right angle at B with an unknown coordinate, set (gradient of BA) × (gradient of BC) = −1. The centre of the circle through three points is where two perpendicular bisectors meet.
+
 ## Intersections
 
 1. On the x-axis y = 0; on the y-axis x = 0. Substitute and solve.
@@ -50,3 +56,5 @@ Example: perpendicular to y = 2x + 5 through (4, 1): m = -1/2, and 1 = -1/2 × 4
 Example: y = 2x − 1 and y = −x + 5 meet where 2x − 1 = −x + 5, so x = 2 and y = 3.
 
 **Watch out:** check your meeting point in both equations, and remember to halve in the area formula.
+
+**Expert: curves, three lines and edge cases.** For a line and a parabola, set the two expressions for y equal, move everything to one side and factorise; each root is an x-coordinate. Three lines make a triangle whose corners are the three pairwise meeting points. Two lines with the same gradient either never meet (different right-hand sides in the same ratio) or are the same line (every coefficient, including the right-hand side, in the same ratio).

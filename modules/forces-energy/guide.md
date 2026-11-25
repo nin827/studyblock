@@ -17,6 +17,8 @@ Example: 80 N forward, 30 N friction, 10 kg gives `a = (80 - 30) / 10 = 5` m/s²
 
 **Watch out:** only the resultant force accelerates an object, so subtract friction first.
 
+**Expert:** for connected objects (a truck and trailer, a lift and passenger), first treat everything as one body to find the shared acceleration. Then apply `F = m × a` to one part alone to find an internal force: the tow bar tension, or the scale reading `R = m(g + a)`. To find a braking force from a speed and distance, get the deceleration from `v² = u² + 2as` first.
+
 ## Work & power
 
 1. Work done: `W = F × d`, with d in metres.
@@ -26,6 +28,8 @@ Example: 80 N forward, 30 N friction, 10 kg gives `a = (80 - 30) / 10 = 5` m/s²
 Example: 2 kJ in 40 s gives `P = 2000 / 40 = 50` W.
 
 **Watch out:** minutes and kJ must be converted first, or the answer is off by 60 or 1000.
+
+**Expert:** at a steady top speed the driving force equals the resistance, so `F = P / v`. A pull at an angle θ to the motion does work `F cos θ × d`. Working backwards with efficiency: energy supplied = useful energy ÷ (efficiency ÷ 100), which is always the bigger number.
 
 ## Energy
 
@@ -37,6 +41,8 @@ Example: 2 kg at 3 m/s gives `Ek = ½ × 2 × 3² = 9` J.
 
 **Watch out:** square the speed before multiplying, and don't forget the square root when finding v.
 
+**Expert:** use an energy balance: energy at the start = energy at the end + energy lost. Friction along a slope wastes `force × slope length`. A bounce that keeps a fraction k of the energy multiplies the height by k and the speed by √k. If a percentage is lost, divide by the fraction kept to work back to the start height.
+
 ## Momentum
 
 1. Momentum: `p = m × v`.
@@ -46,3 +52,5 @@ Example: 2 kg at 3 m/s gives `Ek = ½ × 2 × 3² = 9` J.
 Example: 2 kg at 6 m/s hits a still 1 kg trolley and they stick: `v = 12 / 3 = 4` m/s.
 
 **Watch out:** direction matters. A velocity the other way is negative, and a bounce changes velocity by `u + v`, not `u - v`.
+
+**Expert:** momentum is always conserved in a collision; kinetic energy is conserved only if it is elastic. Compare the total ½mv² before and after. For recoil, the total momentum is zero, so `M V = m v`. A force that stops the recoil over a distance d satisfies `F × d = ½MV²`.

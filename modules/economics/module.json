@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "supply-demand", "title": "Supply and demand", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "elasticity", "title": "Elasticity", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "macro", "title": "Macro measures", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "interventions", "title": "Taxes and price controls", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "supply-demand", "title": "Supply and demand", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "elasticity", "title": "Elasticity", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "macro", "title": "Macro measures", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "interventions", "title": "Taxes and price controls", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

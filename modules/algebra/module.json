@@ -6,7 +6,7 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "linear", "title": "Linear equations", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "quadratic-roots", "title": "Quadratic roots", "difficulties": ["medium", "hard"] }
+    { "id": "linear", "title": "Linear equations", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "quadratic-roots", "title": "Quadratic roots", "difficulties": ["medium", "hard", "expert"] }
   ]
 }

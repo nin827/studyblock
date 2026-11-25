@@ -22,5 +22,8 @@ Useful prefixes: 1 kHz = 10³ Hz, 1 MHz = 10⁶ Hz, 1 THz = 10¹² Hz, 1 ms = 10
 | Easy | Whole numbers in the wave equation, simple periods, refractive index from speeds or angles |
 | Medium | Unit prefixes (kHz, MHz, ms, μs, nm), oscilloscope traces, refraction angles and critical angles, real images from converging lenses |
 | Hard | Decimal values rounded as stated, refraction between two materials, virtual images, diverging lenses, image heights and lens power |
+| Expert | Multi-step problems in two or three parts, each rounded as stated |
 
 **Tip:** the calculator's trig functions work in degrees, so `asin(sin(40) / 1.5)` gives the refraction angle directly. Rounded answers are accepted within half a unit of the stated precision.
+
+**Expert** questions link several steps: sonar depths from an echo, waves crossing a boundary (the frequency stays the same), FM wavelengths and aerial lengths, a bobbing boat's period and wave speed, rpm to hertz and back, choosing an oscilloscope timebase, refraction from glass into water, finding a block's refractive index from measured angles, deciding whether a ray is totally internally reflected, designing a projector, a magnifying glass's virtual image, and the two lens positions between a fixed object and screen. Use unrounded values from earlier parts.

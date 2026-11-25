@@ -3,7 +3,7 @@ import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTIC
 import { saveAttempt, setCookie, getCookie, cleanWork, creditOf, roundScore } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
-import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
+import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel } from './ui.js';
 import { mountCalculator } from './calculator.js';
 import { isLang, langTitle } from '../lib/languages.js';
 
@@ -59,8 +59,10 @@ const SEG_CLASS = { correct: 'is-correct', partial: 'is-partial', wrong: 'is-wro
 // Plain-text parts; tag() escapes them.
 function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty, lang) {
   const where = [domainTitle, moduleTitle].filter(Boolean).join(' › ');
-  const rest = [subtopicTitle, difficulty ? cap(difficulty) : null].filter(Boolean).join(' · ');
-  return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '') + langTag({ lang });
+  // Expert gets its own pill (flame icon + label); other difficulties share the subtopic pill.
+  const expert = difficulty === 'expert';
+  const rest = [subtopicTitle, difficulty && !expert ? difficultyLabel(difficulty) : null].filter(Boolean).join(' · ');
+  return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '') + (expert ? difficultyTag(difficulty) : '') + langTag({ lang });
 }
 
 /*
@@ -320,7 +322,7 @@ export async function runQuiz(root, ctx, opts) {
 
   function partHtml(p, i, n) {
     const last = i === n - 1;
-    const head = `<p class="part-head"><span class="part-num" aria-hidden="true">${i + 1}</span><span class="part-label">${esc(p.label)}</span></p>`;
+    const head = `<p class="part-head"><span class="part-num" aria-hidden="true">${i + 1}</span><span class="part-label${String(p.label).trim().length <= 3 ? ' keep-case' : ''}">${esc(p.label)}</span></p>`;
     if (p.answerType === 'choice') {
       return `<div class="part" data-part="${esc(p.id)}">
         ${head}
@@ -1188,7 +1190,7 @@ async function renderCell(root, { moduleId, subtopic, difficulty }, ctx, guidedM
   const stTitle = subtopicLabel(st.id, st.title);
   await runQuiz(root, ctx, {
     build: () => buildQuiz(mod.id, st.id, difficulty),
-    title: `${esc(modTitle)} · ${esc(stTitle)} · ${esc(difficultyLabel(difficulty))}`,
+    title: `${esc(modTitle)} · ${esc(stTitle)} · ${difficultyHtml(difficulty)}`,
     cardTags: originTags(domain?.id, domain?.title, modTitle, stTitle, difficulty === ALL ? null : difficulty),
     // Whole-module quizzes tag each question with the subtopic/difficulty it came from.
     ...(whole ? { tagsFor: cellTag, breakdown: false } : {}),

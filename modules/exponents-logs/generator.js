@@ -819,8 +819,487 @@ function genGrowth(difficulty, rng) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Expert: multi-step questions. Easy/medium/hard above are untouched; these run only when
+// difficulty === "expert". Every template draws all of its rng values first, then builds text.
+// Hints use only values already drawn (no rng) and never state a final answer.
+
+const ROOT_NAME = { 2: "square", 3: "cube", 4: "fourth" };
+const ROOT_SIGN = { 2: "√", 3: "∛", 4: "∜" };
+// n/d as an exact typed answer: { answerType, answer, tolerance? }.
+function exactPart(n, d) {
+  const [a, b] = reduce(n, d);
+  return b === 1 ? { answerType: "number", answer: a, tolerance: 0 } : { answerType: "text", answer: `${a}/${b}` };
+}
+// "x + 3", "x − 2", "x"
+const xPlus = (c, v = "x") => (c === 0 ? v : `${v} ${c < 0 ? MINUS : "+"} ${Math.abs(c)}`);
+const EXP_E = (B) => (B === "e" ? Math.E : B);
+// Like pw, but a power of 1 is left bare ("y", not "y¹").
+const pw1 = (base, n) => (n === 1 ? String(base) : pw(base, n));
+
+// index-laws / expert 0: two or three fractional and negative powers multiplied and divided.
+function genIxEval(rng) {
+  const mk = () => {
+    const q = rng.pick([2, 2, 3, 3, 4]);
+    const r = rng.int(2, q === 2 ? 9 : q === 3 ? 5 : 3);
+    let p;
+    do p = nz(rng, -3, 3);
+    while (gcd(p, q) !== 1);
+    return { q, r, p, B: r ** q };
+  };
+  const o = draw(
+    () => {
+      const n = rng.int(2, 3);
+      const ts = [mk()];
+      while (ts.length < n) {
+        const t = mk();
+        if (!ts.some((u) => u.B === t.B || u.r === t.r)) ts.push(t);
+      }
+      const ops = ts.map((_, i) => (i === 0 ? "×" : rng.pick(["×", "÷"])));
+      let N = 1, D = 1;
+      ts.forEach((t, i) => {
+        const e = ops[i] === "÷" ? -t.p : t.p;
+        if (e > 0) N *= t.r ** e;
+        else D *= t.r ** -e;
+      });
+      const [a, b] = reduce(N, D);
+      return { ts, ops, a, b };
+    },
+    (v) => !(v.b === 1 && v.ts.some((t) => t.r === v.a)) && !(v.a === 1 && v.b === 1) && v.a <= 20000 && v.b <= 20000,
+  );
+  const { ts, ops, a, b } = o;
+  const expr = ts.map((t, i) => (i === 0 ? "" : ` ${ops[i]} `) + pw(t.B, t.p, t.q)).join("");
+  const each = ts.map((t, i) => {
+    const e = ops[i] === "÷" ? -t.p : t.p;
+    return `- \`${pw(t.B, t.p, t.q)}\`: ${ROOT_SIGN[t.q]}${t.B} = ${t.r}, then the power ${num(t.p)} gives ${fracShow(t.p > 0 ? t.r ** t.p : 1, t.p > 0 ? 1 : t.r ** -t.p)}${ops[i] === "÷" ? `; dividing by it multiplies by ${fracShow(e > 0 ? t.r ** e : 1, e > 0 ? 1 : t.r ** -e)}` : ""}.`;
+  });
+  return exactQ(
+    {
+      prompt: `Evaluate \`${expr}\`.`,
+      explanation: [`Work out each power on its own, then combine the fractions.`, each.join("\n"), `Multiply everything together and simplify: **${fracShow(a, b)}**.`].join("\n\n"),
+      hints: [
+        `${FRACI} ${NEG}`,
+        `Find each root first: ${ts.map((t) => `the ${ROOT_NAME[t.q]} root of ${t.B} is ${t.r}`).join(", ")}.`,
+        "Raise each root to its own power (a negative power flips it into a fraction). Dividing by a fraction means multiplying by its reciprocal. Then multiply and simplify.",
+      ],
+      params: { sub: "index-laws", kind: "x-ixEval", ts: ts.map((t) => ({ B: t.B, p: t.p, q: t.q })), ops },
+    },
+    a, b,
+  );
+}
+
+// index-laws / expert 1: working backwards, find an unknown (possibly fractional) index.
+function genIxUnknown(rng) {
+  const r = rng.pick([2, 2, 3, 3, 5]);
+  const es = r === 2 ? [2, 3, 4, 5] : r === 3 ? [2, 3, 4] : [2, 3];
+  const e1 = rng.pick(es);
+  let e2;
+  do e2 = rng.pick(es);
+  while (e2 === e1);
+  const a = nz(rng, -3, 4), b = nz(rng, -4, 5), c = rng.int(-3, 6);
+  const B1 = r ** e1, B2 = r ** e2;
+  const rhsShow = c >= 0 && r ** c <= 1000 ? String(r ** c) : c < 0 && r ** -c <= 1000 ? `1/${r ** -c}` : pw(r, c);
+  const [nn, nd] = reduce(c + b - e2 * a, e1);
+  const K = e2 * a - b;
+  const idx = K === 0 ? `${e1}n` : `${e1}n ${K < 0 ? MINUS : "+"} ${Math.abs(K)}`;
+  return exactQ(
+    {
+      prompt: `Find n if \`${B1}ⁿ × ${pw1(B2, a)} ÷ ${pw1(r, b)} = ${rhsShow}\`.`,
+      explanation: [
+        `Write everything as a power of ${r}: ${B1} = \`${pw(r, e1)}\`, ${B2} = \`${pw(r, e2)}\`${rhsShow !== pw(r, c) ? ` and ${rhsShow} = \`${pw(r, c)}\`` : ""}.`,
+        `The left side is \`${r}^(${idx})\`: ${e1}n + ${e2} × ${par(a)} − ${par(b)}.`,
+        `Set the indices equal: \`${idx} = ${c}\`, so \`${e1}n = ${c - e2 * a + b}\` and n = **${fracShow(nn, nd)}**.`,
+      ].join("\n\n"),
+      hints: [
+        `Rewrite every number as a power of ${r}: ${B1} = \`${pw(r, e1)}\` and ${B2} = \`${pw(r, e2)}\`${rhsShow !== pw(r, c) ? `, and the right side too` : ""}.`,
+        `Then \`${B1}ⁿ = ${r}^(${e1}n)\`. Combine the left side into one power of ${r} (multiply the indices, then add and subtract them).`,
+        `Set the two indices equal and solve the linear equation for n. The answer may be a fraction.`,
+      ],
+      given: [{ label: "_a", value: a }, { label: "_b", value: b }],
+      params: { sub: "index-laws", kind: "x-ixUnknown", r, B1, B2, a, b, c },
+    },
+    nn, nd,
+  );
+}
+
+// index-laws / expert 2: (c·vᵐ)^(p/q) ÷ (d·vᵏ)ⁿ = A·vᴮ, with A possibly a fraction (multi-part).
+function genIxMulti(rng) {
+  const v = rng.pick(["x", "y", "a", "t"]);
+  const q = rng.pick([2, 2, 3]);
+  const r = rng.int(2, q === 2 ? 6 : 4);
+  const p = q === 2 ? rng.pick([1, 3]) : rng.pick([1, 2]);
+  const m1 = nz(rng, -3, 4);
+  const d = rng.int(2, 5);
+  const n = rng.int(1, 3);
+  const k = nz(rng, -3, 4);
+  const c = r ** q, m = q * m1;
+  const [An, Ad] = reduce(r ** p, d ** n);
+  const Bi = m1 * p - k * n;
+  const second = n === 1 ? `${d}${pw1(v, k)}` : `(${d}${pw1(v, k)})${sup(n)}`;
+  const coefPart = exactPart(An, Ad);
+  return {
+    prompt: `Simplify \`(${c}${pw(v, m)})^(${p}/${q}) ÷ ${second}\` to the form \`A${v}ᴮ\`.`,
+    answerType: "multi",
+    parts: [
+      { id: "coef", label: "Coefficient A", ask: `The number A.${EXACT}`, ...coefPart,
+        hint: `The power ${p}/${q} acts on ${c} as well: take the ${ROOT_NAME[q]} root of ${c}, raise it to the power ${p}, then divide by ${d}${n === 1 ? "" : sup(n)}.` },
+      { id: "index", label: "Index B", ask: `The power of ${v}.${WHOLE}`, answerType: "number", answer: Bi, tolerance: 0,
+        hint: `Multiply the index of ${v} inside each bracket by the power outside that bracket, then subtract the second result from the first.` },
+    ],
+    explanation: [
+      `Deal with the numbers and the powers of ${v} separately.`,
+      `Numbers: \`${c}^(${p}/${q})\`: ${ROOT_SIGN[q]}${c} = ${r}, and ${r}${p === 1 ? "" : sup(p)} = ${r ** p}. The divisor is ${d}${n === 1 ? "" : `${sup(n)} = ${d ** n}`}. So A = ${r ** p}/${d ** n} = **${fracShow(An, Ad)}**.`,
+      `Powers: \`(${pw(v, m)})^(${p}/${q}) = ${pw(v, m1 * p)}\` and \`${n === 1 ? pw(v, k) : `(${pw(v, k)})${sup(n)} = ${pw(v, k * n)}`}\`. Subtract: ${num(m1 * p)} − ${par(k * n)} = **${num(Bi)}**.`,
+    ].join("\n\n"),
+    hints: [LAWS, "A power outside a bracket applies to the number and to the letter inside it."],
+    params: { sub: "index-laws", kind: "x-ixMulti", c, m, p, q, d, k, n },
+  };
+}
+
+// logarithms / expert 0: log equation that becomes a quadratic; one root must be rejected (multi-part).
+function genLogEq(rng) {
+  const b = rng.pick([2, 2, 3, 3, 5, 10]);
+  const k = b === 2 ? rng.int(3, 6) : b === 3 ? rng.int(2, 4) : b === 5 ? rng.int(2, 3) : 2;
+  const T = b ** k;
+  const divs = [];
+  for (let u = 1; u <= T; u++) if (T % u === 0 && u * u !== T) divs.push(u);
+  const { x0, u } = draw(
+    () => ({ x0: rng.int(-6, 10), u: rng.pick(divs) }),
+    (o) => o.u - o.x0 !== 0 && T / o.u - o.x0 !== 0,
+  );
+  const v = T / u;
+  const a = u - x0, c = v - x0;
+  const x1 = -(a + c) - x0;
+  const L = logb(b);
+  const sumC = a + c, prodC = a * c - T;
+  const quad = `x² ${sumC < 0 ? MINUS : "+"} ${Math.abs(sumC)}x ${prodC < 0 ? MINUS : "+"} ${Math.abs(prodC)} = 0`.replace(" + 0x", "").replace(" − 0x", "").replace(/ \+ 1x/, " + x").replace(/ − 1x/, " − x").replace(" + 0 = 0", " = 0");
+  return {
+    prompt: `Solve \`${L}(${xPlus(a)}) + ${L}(${xPlus(c)}) = ${k}\`. The quadratic you get has two roots, but only one is a solution.`,
+    answerType: "multi",
+    parts: [
+      { id: "x", label: "Solution", ask: `The value of x that solves the equation.${WHOLE}`, answerType: "number", answer: x0, tolerance: 0,
+        hint: `A log is only defined for a positive number: both \`${xPlus(a)}\` and \`${xPlus(c)}\` must be greater than 0.` },
+      { id: "rejected", label: "Rejected root", ask: `The other root of the quadratic, which must be rejected.${WHOLE}`, answerType: "number", answer: x1, tolerance: 0,
+        hint: "Put this root into the brackets: at least one of them comes out negative, so its log doesn't exist." },
+    ],
+    explanation: [
+      `Combine the logs: \`${L}((${xPlus(a)})(${xPlus(c)})) = ${k}\`, so \`(${xPlus(a)})(${xPlus(c)}) = ${pw(b, k)} = ${T}\`.`,
+      `Expand and rearrange: \`${quad}\`, which factorises as \`(${xPlus(-x0)})(${xPlus(-x1)}) = 0\`.`.replace("(x + 0)", "x").replace("(x − 0)", "x"),
+      `x = ${num(x0)} gives brackets ${num(x0 + a)} and ${num(x0 + c)}, both positive, so **x = ${num(x0)}** works.`,
+      `x = ${num(x1)} gives brackets ${num(x1 + a)} and ${num(x1 + c)}; a log of a negative number (or 0) does not exist, so **${num(x1)}** is rejected.`,
+    ].join("\n\n"),
+    hints: [
+      LOGLAWS,
+      `Combine the two logs into one, then write it in index form: \`(${xPlus(a)})(${xPlus(c)}) = ${pw(b, k)}\`.`,
+      "Expand, move everything to one side and solve the quadratic by factorising.",
+    ],
+    given: [{ label: "_a", value: a }, { label: "_c", value: c }, { label: "_k", value: k }],
+    params: { sub: "logarithms", kind: "x-logEq", b, k, a, c },
+  };
+}
+
+// logarithms / expert 1: product of logs in different bases (change of base, then cancel).
+function genLogChain(rng) {
+  const PR = [2, 3, 5, 7];
+  const o = draw(
+    () => {
+      const r = rng.pick(PR);
+      let s;
+      do s = rng.pick(PR);
+      while (s === r);
+      return { r, s, a: rng.int(1, 3), b: rng.int(1, 4), c: rng.int(1, 3), d: rng.int(1, 4) };
+    },
+    (v) => (v.a > 1 || v.c > 1) && v.r ** v.a <= 343 && v.s ** v.c <= 343 && v.s ** v.b <= 2401 && v.r ** v.d <= 2401 && (v.b * v.d) % (v.a * v.c) !== 0,
+  );
+  const { r, s, a, b, c, d } = o;
+  const B1 = r ** a, X1 = s ** b, B2 = s ** c, X2 = r ** d;
+  const [nn, nd] = reduce(b * d, a * c);
+  return exactQ(
+    {
+      prompt: `Evaluate \`${logb(B1)} ${X1} × ${logb(B2)} ${X2}\` exactly.`,
+      explanation: [
+        `Change both logs to one base (ln, say): \`${logb(B1)} ${X1} = ln ${X1} / ln ${B1}\` and \`${logb(B2)} ${X2} = ln ${X2} / ln ${B2}\`.`,
+        `Write each number as a power of a prime: ${X1} = \`${pw(s, b)}\`, ${B1} = \`${pw(r, a)}\`, ${X2} = \`${pw(r, d)}\`, ${B2} = \`${pw(s, c)}\`. So the product is \`(${b} ln ${s} / ${a} ln ${r}) × (${d} ln ${r} / ${c} ln ${s})\`.`,
+        `ln ${s} and ln ${r} cancel, leaving ${b} × ${d} / (${a} × ${c}) = ${b * d}/${a * c} = **${fracShow(nn, nd)}**.`,
+      ].join("\n\n"),
+      hints: [
+        "Change of base: `log_b x = ln x / ln b`. Write both logs this way.",
+        `Every number here is a power of ${r} or ${s}. Use \`ln(aⁿ) = n ln a\` on each one.`,
+        `The ln ${r} and ln ${s} terms cancel between the two fractions; multiply what is left and simplify.`,
+      ],
+      params: { sub: "logarithms", kind: "x-logChain", B1, X1, B2, X2 },
+    },
+    nn, nd,
+  );
+}
+
+// logarithms / expert 2: given log_b x = u, find the log of a related expression.
+function genLogGiven(rng) {
+  const b = rng.pick([2, 3, 5, 10]);
+  const o = draw(
+    () => ({ u: rng.int(11, 59), m: rng.pick([2, 3, 4, 0.5]), n: rng.int(1, 3), op: rng.pick(["mul", "div"]) }),
+    (v) => v.u % 10 !== 0 && b ** v.n <= 1000 && !Number.isInteger((v.u / 10) * v.m),
+  );
+  const u = o.u / 10, { m, n, op } = o;
+  const B = b ** n;
+  const xp = m === 0.5 ? "√x" : `x${sup(m)}`;
+  const expr = op === "mul" ? `${B}${xp}` : `${xp} / ${B}`;
+  const ans = Math.round((m * u + (op === "mul" ? n : -n)) * 10000) / 10000;
+  const L = logb(b);
+  return {
+    prompt: `Given that \`${L} x = ${u}\`, find \`${L}(${expr})\`. Give the exact decimal value.`,
+    answerType: "number", answer: ans, tolerance: 0,
+    explanation: [
+      `Split with the log laws: \`${L}(${expr}) = ${L} ${op === "mul" ? `${B} + ${L} ${xp}` : `${xp} − ${L} ${B}`}\`.`,
+      `${B} = \`${pw(b, n)}\`, so \`${L} ${B} = ${n}\`. ${m === 0.5 ? "√x = x^(1/2), so `" + L + " √x = ½ " + L + " x`" : "`" + L + " " + xp + " = " + m + " " + L + " x`"} = ${num(m * u)}.`,
+      `${num(m * u)} ${op === "mul" ? "+" : MINUS} ${n} = **${num(ans)}**.`,
+    ].join("\n\n"),
+    hints: [
+      LOGLAWS,
+      `Split the log into two: ${op === "mul" ? "a product becomes a sum" : "a quotient becomes a difference"}. ${m === 0.5 ? "A square root is the power 1/2" : `The power ${m} comes down in front`}.`,
+      `${B} is a power of ${b}, so its log is a whole number. Replace \`${L} x\` by ${u} in the other term.`,
+    ],
+    given: [{ label: "_u", value: u }],
+    params: { sub: "logarithms", kind: "x-logGiven", b, u, m, n, op },
+  };
+}
+
+// solving / expert 0: a quadratic in Bˣ with one negative root to reject (multi-part).
+function genSolveQuad(rng) {
+  const o = draw(
+    () => ({ B: rng.pick([2, 3, 4, 5, 10, "e"]), y1: rng.int(2, 30), s: rng.int(1, 9) }),
+    (v) => v.y1 !== v.s && !nearHalf(Math.log(v.y1) / Math.log(EXP_E(v.B))),
+  );
+  const { B, y1, s } = o;
+  const pC = y1 - s; // y² − pC·y − y1·s = 0
+  const qC = y1 * s;
+  const ex = Math.log(y1) / Math.log(EXP_E(B));
+  const Bx = `${B}ˣ`;
+  const midT = `${pC > 0 ? MINUS : "+"} ${Math.abs(pC) === 1 ? "" : Math.abs(pC) + " × "}${Bx}`;
+  const eq = `${B}^(2x) ${midT} ${MINUS} ${qC} = 0`;
+  const yEq = `y² ${pC > 0 ? MINUS : "+"} ${Math.abs(pC) === 1 ? "" : Math.abs(pC)}y ${MINUS} ${qC} = 0`;
+  const lg = B === "e" ? `ln ${y1}` : `log ${y1} / log ${B}`;
+  return {
+    prompt: `Solve \`${eq}\`.`,
+    answerType: "multi",
+    parts: [
+      { id: "y", label: `Value of ${Bx}`, ask: `The value of \`${Bx}\` that gives a real solution.${WHOLE}`, answerType: "number", answer: y1, tolerance: 0,
+        hint: `Let y = \`${Bx}\`, so \`${B}^(2x) = y²\`. Factorise \`${yEq}\`.` },
+      { id: "x", label: "x", ask: `The solution x.${DP2}`, answerType: "number", answer: round2(ex), tolerance: 0.005,
+        hint: B === "e" ? "`eˣ = N` gives `x = ln N`." : TAKELOG },
+    ],
+    explanation: [
+      `Let y = \`${Bx}\`. Then \`${B}^(2x) = (${Bx})² = y²\`, so the equation is \`${yEq}\`.`,
+      `Factorise: \`(y ${MINUS} ${y1})(y + ${s}) = 0\`, so y = ${y1} or y = ${MINUS}${s}.`,
+      `\`${Bx}\` is always positive, so y = ${MINUS}${s} is rejected and **${Bx} = ${y1}**.`,
+      `x = \`${lg}\` ${result(ex)}.`,
+    ].join("\n\n"),
+    hints: [
+      `Spot the hidden quadratic: \`${B}^(2x)\` is \`(${Bx})²\`. Substitute y = \`${Bx}\`.`,
+      "Solve the quadratic in y. A power of a positive base can never be negative, so reject any negative y.",
+    ],
+    given: [{ label: "_q", value: qC }],
+    params: { sub: "solving", kind: "x-solveQuad", B, pC, qC },
+  };
+}
+
+// solving / expert 1: different bases on each side, a^(x + m) = c^(x + n).
+function genSolveTwo(rng) {
+  const o = draw(
+    () => {
+      const a = rng.int(2, 9);
+      let c;
+      do c = rng.int(2, 9);
+      while (c === a);
+      const m = nz(rng, -4, 4), n = rng.int(-4, 4);
+      const la = Math.log(a), lc = Math.log(c);
+      return { a, c, m, n, ex: (n * lc - m * la) / (la - lc) };
+    },
+    (v) => Math.log(v.a) / Math.log(v.c) !== 2 && Math.log(v.c) / Math.log(v.a) !== 2 && !nearHalf(v.ex) && Math.abs(v.ex) < 60 && Math.abs(v.ex - Math.round(v.ex)) > 1e-6 && !isPowOf(v.a, v.c) && !isPowOf(v.c, v.a),
+  );
+  const { a, c, m, n, ex } = o;
+  const lhs = `${a}^(${xPlus(m)})`;
+  const rhs = n === 0 ? `${c}ˣ` : `${c}^(${xPlus(n)})`;
+  return dpQ(
+    {
+      prompt: `Solve \`${lhs} = ${rhs}\`.`,
+      explanation: [
+        `The bases ${a} and ${c} are not powers of one number, so take logs of both sides: \`(${xPlus(m)}) log ${a} = (${xPlus(n)}) log ${c}\`.`,
+        `Expand and collect the x terms: \`x(log ${a} − log ${c}) = ${n} log ${c} − ${par(m)} log ${a}\`.`,
+        `\`x = (${n} log ${c} − ${par(m)} log ${a}) / (log ${a} − log ${c})\` ${result(ex)}.`,
+      ].join("\n\n"),
+      hints: [
+        `Take logs of both sides and bring the powers down: \`(${xPlus(m)}) log ${a} = (${xPlus(n)}) log ${c}\`.`,
+        "Expand both brackets. log a and log c are just numbers: collect every x term on one side and factor out x.",
+        "In the calculator: `(_n*log(_c) - _m*log(_a)) / (log(_a) - log(_c))`, then round to 2 decimal places.",
+      ],
+      given: [{ label: "_a", value: a }, { label: "_m", value: m }, { label: "_c", value: c }, { label: "_n", value: n }],
+      params: { sub: "solving", kind: "x-solveTwo", a, c, m, n },
+    },
+    ex,
+  );
+}
+
+// solving / expert 2: smallest whole n with (p/q)ⁿ < T. Dividing by a negative log flips the sign.
+function genSolveIneq(rng) {
+  const o = draw(
+    () => {
+      const q = rng.int(2, 12);
+      const p = rng.int(1, q - 1);
+      const T = rng.pick([0.1, 0.05, 0.02, 0.01, 0.005, 0.001, 0.25, 0.2]);
+      return { p, q, T, ex: Math.log(T) / Math.log(p / q) };
+    },
+    (v) => gcd(v.p, v.q) === 1 && v.ex > 1.05 && v.ex < 80 && Math.abs(v.ex - Math.round(v.ex)) > 0.02,
+  );
+  const { p, q, T, ex } = o;
+  const n = Math.ceil(ex);
+  return {
+    prompt: `Find the smallest whole number n for which \`(${p}/${q})ⁿ < ${T}\`.${WHOLE}`,
+    answerType: "number", answer: n, tolerance: 0,
+    explanation: [
+      `Take logs of both sides: \`n log(${p}/${q}) < log ${T}\`.`,
+      `\`log(${p}/${q})\` is negative (${p}/${q} is less than 1), so dividing by it **reverses** the inequality: \`n > log ${T} / log(${p}/${q})\` ≈ ${num(ex)}.`,
+      `The smallest whole number above ${num(ex)} is **${n}**. Check: \`(${p}/${q})${sup(n)}\` ≈ ${num((p / q) ** n)} < ${T}, but \`(${p}/${q})${sup(n - 1)}\` ≈ ${num((p / q) ** (n - 1))}.`,
+    ].join("\n\n"),
+    hints: [
+      "Take logs of both sides and bring the power n down in front.",
+      `\`log(${p}/${q})\` is a negative number. Dividing an inequality by a negative number reverses its sign.`,
+      "In the calculator: `log(_T) / log(_p/_q)`. n must be a whole number bigger than that, so round up.",
+    ],
+    given: [{ label: "_p", value: p }, { label: "_q", value: q }, { label: "_T", value: T }],
+    params: { sub: "solving", kind: "x-solveIneq", p, q, T },
+  };
+}
+
+const TWO_POINT_THINGS = [
+  ["A town's population", "people"],
+  ["A charity's membership", "members"],
+  ["The number of electric buses in a region", "buses"],
+  ["The number of nesting birds on a reserve", "birds"],
+  ["A website's monthly visitors", "visitors"],
+  ["A city's number of bike-share bikes", "bikes"],
+];
+
+// growth-decay / expert 0: find the yearly rate from two data points, then predict (multi-part).
+function genTwoPoints(rng) {
+  const o = draw(
+    () => {
+      const N1 = rng.int(20, 900) * 10, r0 = rng.int(15, 140) / 10, d = rng.int(2, 8), e = rng.int(1, 6), y1 = 2008 + rng.int(0, 10);
+      const N2 = Math.round(N1 * (1 + r0 / 100) ** d);
+      const g = (N2 / N1) ** (1 / d);
+      const rate = 100 * (g - 1);
+      const pred = N2 * g ** e;
+      return { N1, N2, d, e, y1, rate, pred };
+    },
+    (v) => !nearHalf(v.rate) && Math.abs((v.pred % 1) - 0.5) > 0.02 && v.N2 > v.N1,
+  );
+  const { N1, N2, d, e, y1, rate, pred } = o;
+  const [what, unit] = rng.pick(TWO_POINT_THINGS);
+  const y2 = y1 + d, y3 = y2 + e;
+  const P = Math.round(pred);
+  return {
+    prompt: `${what} grows by the same percentage each year. It was ${N1} ${unit} in ${y1} and ${N2} ${unit} in ${y2}.`,
+    answerType: "multi",
+    parts: [
+      { id: "rate", label: "Yearly growth rate", ask: `The yearly growth rate, as a percentage (without the % sign).${DP2}`, answerType: "number", answer: round2(rate), tolerance: 0.005,
+        hint: `${y2} − ${y1} = ${d} years. The yearly multiplier is the ${d}-th root of ${N2} ÷ ${N1}.` },
+      { id: "pred", label: `Prediction for ${y3}`, ask: `The predicted number in ${y3}, to the nearest whole number. Use the unrounded rate.`, answerType: "number", answer: P, tolerance: 0,
+        hint: `Start from ${N2} in ${y2} and multiply by the yearly multiplier once for each year up to ${y3}.` },
+    ],
+    explanation: [
+      `Model: \`N = N₀ × gᵗ\`. From ${y1} to ${y2} is ${d} years, so \`g${sup(d)} = ${N2} / ${N1}\` and \`g = (${N2}/${N1})^(1/${d})\` ≈ ${num((N2 / N1) ** (1 / d))}.`,
+      `Rate = 100 × (g − 1) ${result(rate)}%.`,
+      `${y3} is ${e} year${e === 1 ? "" : "s"} after ${y2}: \`${N2} × g${e === 1 ? "" : sup(e)}\` ≈ ${num(pred)}, so about **${P}** ${unit}.`,
+    ].join("\n\n"),
+    hints: ["Growth by the same percentage each year means `N = N₀ × gᵗ`, where g is the yearly multiplier. Find g first."],
+    given: [{ label: "_N1", value: N1 }, { label: "_N2", value: N2 }, { label: "_d", value: d }, { label: "_e", value: e }],
+    params: { sub: "growth-decay", kind: "x-gTwoPoints", N1, N2, d, e },
+  };
+}
+
+// growth-decay / expert 1: when does a smaller, faster-growing investment overtake a bigger one?
+function genCross(rng) {
+  const o = draw(
+    () => {
+      const P1 = rng.int(20, 100) * 100;
+      const P2 = Math.round((P1 * rng.int(50, 90)) / 100 / 100) * 100;
+      const r1 = rng.int(4, 12) / 2;
+      const r2 = r1 + rng.int(2, 10) / 2;
+      const t = Math.log(P1 / P2) / Math.log((1 + r2 / 100) / (1 + r1 / 100));
+      return { P1, P2, r1, r2, t };
+    },
+    (v) => v.P2 > 0 && v.P2 < v.P1 && v.t < 60 && !nearHalf(v.t) && Math.abs(v.t - Math.round(v.t)) > 0.02,
+  );
+  const { P1, P2, r1, r2, t } = o;
+  const nA = rng.pick(NAMES);
+  let nB;
+  do nB = rng.pick(NAMES);
+  while (nB === nA);
+  const year = Math.ceil(t);
+  const g1 = num(1 + r1 / 100), g2 = num(1 + r2 / 100);
+  return {
+    prompt: `${nA} invests ${money(P1)} at ${pct(r1)} a year and ${nB} invests ${money(P2)} at ${pct(r2)} a year, both compounded yearly.`,
+    answerType: "multi",
+    parts: [
+      { id: "t", label: "Equal value", ask: `Treating time as continuous, after how many years are the two investments worth the same?${DP2}`, answerType: "number", answer: round2(t), tolerance: 0.005,
+        hint: `Set \`${P1} × ${g1}ᵗ = ${P2} × ${g2}ᵗ\`, collect the powers on one side and take logs.` },
+      { id: "year", label: "First year ahead", ask: `After how many whole years is ${nB}'s investment first worth more than ${nA}'s?${WHOLE}`, answerType: "number", answer: year, tolerance: 0,
+        hint: "Interest is only added at the end of each year, so round the equal-value time up." },
+    ],
+    explanation: [
+      `Set the values equal: \`${P1} × ${g1}ᵗ = ${P2} × ${g2}ᵗ\`, so \`(${g2} / ${g1})ᵗ = ${P1} / ${P2}\`.`,
+      `Take logs: \`t = log(${P1}/${P2}) / log(${g2}/${g1})\` ${result(t)} years.`,
+      `Interest is added at the end of each year, so ${nB} is first ahead after **${year}** years.`,
+    ].join("\n\n"),
+    hints: ["Write each value after t years as `P × (1 + r/100)ᵗ` and set them equal."],
+    given: [{ label: "_P1", value: P1 }, { label: "_r1", value: r1 }, { label: "_P2", value: P2 }, { label: "_r2", value: r2 }],
+    params: { sub: "growth-decay", kind: "x-gCross", P1, r1, P2, r2 },
+  };
+}
+
+// growth-decay / expert 2: half-life backwards (how much was there?) and forwards (multi-part).
+function genHalfBack(rng) {
+  const o = draw(
+    () => {
+      const T = rng.int(2, 40), t = rng.int(1, 120), N = rng.int(5, 400), Pc = rng.pick([1, 2, 5, 10, 15, 20, 30, 40, 60, 70, 80, 90]);
+      return { T, t, N, Pc, N0: N * 2 ** (t / T), tt: (T * Math.log(100 / Pc)) / Math.log(2) };
+    },
+    (v) => v.t % v.T !== 0 && !nearHalf(v.N0) && !nearHalf(v.tt) && v.N0 < 1e6,
+  );
+  const { T, t, N, Pc, N0, tt } = o;
+  const [what, unit, per] = rng.pick(HALF_THINGS);
+  return {
+    prompt: `${what} has a half-life of ${T} ${per}. After ${t} ${per}, ${N} ${unit} of it remain.`,
+    answerType: "multi",
+    parts: [
+      { id: "start", label: "Starting amount", ask: `How much was there at the start, in ${unit}?${DP2}`, answerType: "number", answer: round2(N0), tolerance: 0.005,
+        hint: `Work backwards: \`${N} = N₀ × (1/2)^(${t}/${T})\`, so divide ${N} by \`(1/2)^(${t}/${T})\`.` },
+      { id: "time", label: `Time to ${Pc}%`, ask: `From the start, how long until only ${Pc}% of the original amount remains, in ${per}?${DP2}`, answerType: "number", answer: round2(tt), tolerance: 0.005,
+        hint: `The starting amount cancels: solve \`(1/2)^(t/${T}) = ${Pc / 100}\` with logs.` },
+    ],
+    explanation: [
+      `Model: \`N = N₀ × (1/2)^(t/T)\` with T = ${T}.`,
+      `Backwards: \`N₀ = ${N} × 2^(${t}/${T})\` ${result(N0)} ${unit}.`,
+      `${Pc}% left: \`(1/2)^(t/${T}) = ${Pc / 100}\`, so \`t = ${T} × log(${Pc / 100}) / log(0.5)\` ${result(tt)} ${per}.`,
+    ].join("\n\n"),
+    hints: ["Half-life model: `N = N₀ × (1/2)^(t/T)`. Dividing by (1/2)^(t/T) is the same as multiplying by 2^(t/T)."],
+    given: [{ label: "_half", value: T }, { label: "_time", value: t }, { label: "_N", value: N }, { label: "_pct", value: Pc }],
+    params: { sub: "growth-decay", kind: "x-gHalfBack", T, t, N, Pc },
+  };
+}
+
+function genExpert(subtopic, rng) {
+  const t = rng.int(0, 2);
+  if (subtopic === "index-laws") return [genIxEval, genIxUnknown, genIxMulti][t](rng);
+  if (subtopic === "logarithms") return [genLogEq, genLogChain, genLogGiven][t](rng);
+  if (subtopic === "solving") return [genSolveQuad, genSolveTwo, genSolveIneq][t](rng);
+  if (subtopic === "growth-decay") return [genTwoPoints, genCross, genHalfBack][t](rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "index-laws") return genIndexLaws(difficulty, rng);
   if (subtopic === "logarithms") return genLogarithms(difficulty, rng);
   if (subtopic === "solving") return genSolving(difficulty, rng);
@@ -1037,6 +1516,7 @@ export function verify(question, answer) {
   if (answer === "" || answer === null || answer === undefined) return false;
   if (question.answerType === "choice" && !fourChoices(question, answer)) return false;
   try {
+    if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(question, answer, p);
     if (p.sub === "index-laws") return verifyIndex(question, answer, p);
     if (p.sub === "logarithms") return verifyLogs(question, answer, p);
     if (p.sub === "solving") return verifySolving(question, answer, p);
@@ -1045,4 +1525,92 @@ export function verify(question, answer) {
     return false;
   }
   return false;
+}
+
+// ---- Expert verification: substitute the candidate back into the problem as written ----
+
+const partVal = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+
+function verifyExpert(q, answer, p) {
+  switch (p.kind) {
+    case "x-ixEval": {
+      const x = parseExact(answer);
+      if (x === null) return false;
+      const v = p.ts.reduce((acc, t, i) => (p.ops[i] === "÷" ? acc / Math.pow(t.B, t.p / t.q) : acc * Math.pow(t.B, t.p / t.q)), 1);
+      return rclose(x, v);
+    }
+    case "x-ixUnknown": {
+      const n = parseExact(answer);
+      if (n === null) return false;
+      return rclose((Math.pow(p.B1, n) * Math.pow(p.B2, p.a)) / Math.pow(p.r, p.b), Math.pow(p.r, p.c));
+    }
+    case "x-ixMulti": {
+      const A = parseExact(partVal(answer, "coef"));
+      const B = partVal(answer, "index");
+      if (A === null || !isInt(B)) return false;
+      return [1.3, 2.2].every((v) => rclose(Math.pow(p.c * v ** p.m, p.p / p.q) / (p.d * v ** p.k) ** p.n, A * v ** Number(B)));
+    }
+    case "x-logEq": {
+      const x = partVal(answer, "x"), y = partVal(answer, "rejected");
+      if (!isInt(x) || !isInt(y)) return false;
+      const X = Number(x), Y = Number(y);
+      if (X === Y || !(X + p.a > 0 && X + p.c > 0)) return false;
+      const lhs = Math.log(X + p.a) / Math.log(p.b) + Math.log(X + p.c) / Math.log(p.b);
+      if (Math.abs(lhs - p.k) > 1e-9) return false;
+      // The rejected root satisfies the combined (product) equation but makes a log undefined.
+      return (Y + p.a) * (Y + p.c) === Math.round(Math.pow(p.b, p.k)) && (Y + p.a <= 0 || Y + p.c <= 0);
+    }
+    case "x-logChain": {
+      const x = parseExact(answer);
+      if (x === null) return false;
+      return Math.abs(x - (Math.log(p.X1) / Math.log(p.B1)) * (Math.log(p.X2) / Math.log(p.B2))) < 1e-9;
+    }
+    case "x-logGiven": {
+      const x = Number(answer);
+      if (!Number.isFinite(x) || Math.abs(x * 1e4 - Math.round(x * 1e4)) > 1e-6) return false;
+      const X = Math.pow(p.b, p.u);
+      const inner = (p.m === 0.5 ? Math.sqrt(X) : X ** p.m);
+      const val = p.op === "mul" ? p.b ** p.n * inner : inner / p.b ** p.n;
+      return Math.abs(Math.log(val) / Math.log(p.b) - x) < 1e-6;
+    }
+    case "x-solveQuad": {
+      const y = partVal(answer, "y");
+      if (!isInt(y)) return false;
+      const Y = Number(y);
+      const f = (v) => v * v - p.pC * v - p.qC;
+      if (Y <= 0 || f(Y) !== 0) return false;
+      let pos = 0;
+      for (let v = 1; v <= 2000; v++) if (f(v) === 0) pos++;
+      if (pos !== 1) return false;
+      const base = p.B === "e" ? Math.E : p.B;
+      return bracket((x) => (p.B === "e" ? Math.exp(x) : Math.pow(base, x)), Number(partVal(answer, "x")), Y);
+    }
+    case "x-solveTwo":
+      return bracket((x) => (x + p.m) * Math.log10(p.a) - (x + p.n) * Math.log10(p.c), Number(answer), 0);
+    case "x-solveIneq": {
+      if (!isInt(answer)) return false;
+      let v = 1, n = 0;
+      while (!(v < p.T) && n < 1000) { v = (v * p.p) / p.q; n++; }
+      return Number(answer) === n;
+    }
+    case "x-gTwoPoints": {
+      if (!bracket((r) => p.N1 * Math.pow(1 + r / 100, p.d), Number(partVal(answer, "rate")), p.N2)) return false;
+      const pr = partVal(answer, "pred");
+      // Log-linear extrapolation from the two data points.
+      const truth = Math.exp(Math.log(p.N1) + ((p.d + p.e) / p.d) * (Math.log(p.N2) - Math.log(p.N1)));
+      return isInt(pr) && Math.abs(Number(pr) - truth) < 0.5;
+    }
+    case "x-gCross": {
+      if (!bracket((t) => p.P2 * Math.pow(1 + p.r2 / 100, t) - p.P1 * Math.pow(1 + p.r1 / 100, t), Number(partVal(answer, "t")), 0)) return false;
+      let a = p.P1, b = p.P2, years = 0;
+      while (!(b > a) && years < 1000) { a = grow(a, p.r1, 1); b = grow(b, p.r2, 1); years++; }
+      const yr = partVal(answer, "year");
+      return isInt(yr) && Number(yr) === years;
+    }
+    case "x-gHalfBack":
+      return bracket((x) => x * Math.pow(0.5, p.t / p.T), Number(partVal(answer, "start")), p.N)
+        && bracket((s) => 100 * Math.pow(0.5, s / p.T), Number(partVal(answer, "time")), p.Pc);
+    default:
+      return false;
+  }
 }

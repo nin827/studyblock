@@ -24,5 +24,8 @@ Use the ratios between sides and angles to find missing lengths and angles: exac
 | Easy | Exact values, one multiplication for a side, whole-number sides |
 | Medium | Dividing by sin, cos or tan to find a side, decimal lengths, the sine rule, the cosine rule for a side, triangle area |
 | Hard | Angles of elevation and depression, ladders and slopes, angles from the sine and cosine rules, two-step problems |
+| Expert | Multi-part problems with several steps: two angles of elevation, a triangle split by its height, 3D angles in a cuboid, bearings, a moved ladder, the ambiguous case of the sine rule, and sine/cosine-rule chains |
+
+**Expert** questions have several answer boxes, one per step you are asked for. Exact values stays at Easy, as a quick recall topic. Bearings are typed as degrees clockwise from north, from 0 up to 360, like `306.82`.
 
 **How to type answers.** Lengths and angles are rounded to 2 decimal places (answers within 0.005 are accepted). Type angles as plain numbers without the ° sign. Keep full precision in your working: store each step in a calculator row (`_angle`, `_hyp`, …) instead of retyping rounded values. Exact values like √3/2 are always multiple choice; √2/2 is the same as 1/√2, and √3/3 the same as 1/√3.

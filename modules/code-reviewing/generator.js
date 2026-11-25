@@ -506,6 +506,56 @@ T['increases'] = {
   },
 };
 
+// Expert only: nested loops over pairs. count = 0; for i in 0..len: for j in i+1..len: if xs[i] + xs[j] == t: count += 1
+T['pair-count'] = {
+  make(rng) {
+    const [xs, acc, t, i, j] = names(rng, [LISTS, COUNTS, THRESH, ['i', 'a', 'p'], ['j', 'b', 'q']]);
+    return { f: rng.pick(['count_pairs', 'pair_count', 'pairs_to']), xs, acc, t, i, j };
+  },
+  params: c => [{ name: c.xs, type: 'list' }, c.t],
+  body(c, v) {
+    const i = V(c.i), j = V(c.j), n = LEN(c.xs), t = V(c.t);
+    const d = e => () => S.decl(c.acc, e, null, 'init');
+    const init = sel(v, 'init', { ok: d(0), start: d(1), o2: d(2), o3: d(-1), o4: d(n) });
+    const [a, b] = sel(v, 'outer', { ok: () => [0, n], late: () => [1, n], short: () => [0, B('-', n, 2)], eq: () => [0, B('-', n, 1)], late2: () => [2, n] });
+    const js = sel(v, 'inner', { ok: () => B('+', i, 1), self: () => i, zero: () => 0, skip: () => B('+', i, 2), one: () => 1 });
+    const cond = sel(v, 'cond', {
+      ok: () => B('==', B('+', IX(c.xs, i), IX(c.xs, j)), t), same: () => B('==', B('+', IX(c.xs, i), IX(c.xs, i)), t),
+      ge: () => B('>=', B('+', IX(c.xs, i), IX(c.xs, j)), t), minus: () => B('==', B('-', IX(c.xs, j), IX(c.xs, i)), t),
+      first: () => B('==', B('+', IX(c.xs, 0), IX(c.xs, j)), t),
+    });
+    const inc = sel(v, 'inc', {
+      ok: () => S.augAssign(c.acc, '+', 1, 'inc'), assign: () => S.assign(c.acc, 1, 'inc'), two: () => S.augAssign(c.acc, '+', 2, 'inc'),
+      val: () => S.augAssign(c.acc, '+', IX(c.xs, i), 'inc'), sub: () => S.augAssign(c.acc, '-', 1, 'inc'),
+    });
+    return [init, S.forRange(c.i, a, b, 1, [S.forRange(c.j, js, n, 1, [S.if(cond, [inc], [], null, 'cond')], 'inner')], 'outer'),
+      S.return(V(c.acc), 'ret')];
+  },
+  slots: () => ({
+    init: { start: 'start', o2: 'other', o3: 'other', o4: 'other' },
+    outer: { late: 'off-by-one', short: 'off-by-one', eq: 'other', late2: 'other' },
+    inner: { self: 'off-by-one', zero: 'other', skip: 'off-by-one', one: 'other' },
+    cond: { same: 'index', ge: 'comparison', minus: 'operator', first: 'index' },
+    inc: { assign: 'assign', two: 'other', val: 'other', sub: 'operator' },
+  }),
+  input(c, rng) {
+    const xs = randList(rng, 5, 7, 1, 9);
+    const a = rng.int(0, xs.length - 2), b = rng.int(a + 1, xs.length - 1);
+    return [xs, xs[a] + xs[b]];
+  },
+  ref(c, [xs, t]) {
+    let k = 0;
+    for (let a = 0; a < xs.length; a++) for (let b = a + 1; b < xs.length; b++) if (xs[a] + xs[b] === t) k++;
+    return k;
+  },
+  desc: (c, L) => `how many pairs of positions ${code(c.i, L)} < ${code(c.j, L)} in ${code(c.xs, L)} have numbers that add up to ${code(c.t, L)} (each pair counted once)`,
+  work(c, [xs, t]) {
+    const ps = [];
+    for (let a = 0; a < xs.length; a++) for (let b = a + 1; b < xs.length; b++) if (xs[a] + xs[b] === t) ps.push(`${xs[a]} + ${xs[b]}`);
+    return ps.length ? `the pairs adding to ${t} are ${ps.join(', ')}, so ${ps.length}` : `no pair adds to ${t}, so 0`;
+  },
+};
+
 const fnProg = (tpl, c, v = {}) => program([S.fn(c.f, tpl.params(c).map(p => (typeof p === 'string' ? p : p)), tpl.body(c, v), 'int', 'fn')], []);
 const paramNames = (tpl, c) => tpl.params(c).map(p => (typeof p === 'string' ? p : p.name));
 
@@ -694,6 +744,7 @@ function trackNames(tplId, c) {
     case 'min-max': return [c.best, c.style === 'index' ? c.i : c.x];
     case 'digit-sum': return [c.acc, c.n];
     case 'find-index': return [c.i];
+    case 'pair-count': return [c.acc, c.i, c.j];
     default: return [];
   }
 }
@@ -1013,11 +1064,400 @@ function presentPredict(m, L) {
   return { lang: L, prompt: `${codeBlock}\n\n${q}`, answerType: 'number', answer: ans.one, tolerance: 0, explanation: expl, meta, hints: H.hints };
 }
 
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+// Expert. Only reached from difficulty 'expert', so easy/medium/hard draw exactly as before.
+//   predict-output: longer programs that keep state across many steps (Euclid's loop, a bubble-sort
+//                   pass that swaps list items, a running best with resets, nested pair loops).
+//   find-the-bug / bug-types: TWO bugs on different lines; each one matters on its own.
+//   fix-the-bug: one bug, three examples, and at least one tempting fix that repairs the first
+//                example but breaks another.
+// ════════════════════════════════════════════════════════════════════════════════════════════════
+
+P.gcd = {
+  plan(rng) {
+    const [a, b] = rng.pick([['a', 'b'], ['big', 'small'], ['x', 'y'], ['left', 'right']]);
+    const [steps, keep] = names(rng, [['steps', 'moves', 'rounds'], ['tmp', 'old', 'keep']]);
+    const g = rng.int(2, 12), p = rng.int(3, 15);
+    let q = rng.int(2, 14);
+    if (q === p) q = p - 1;
+    return { a, b, steps, keep, va: g * p, vb: g * q };
+  },
+  build(c) {
+    return program([], [
+      S.decl(c.a, c.va), S.decl(c.b, c.vb), S.decl(c.steps, 0),
+      S.while(B('!=', V(c.b), 0), [S.decl(c.keep, V(c.b)), S.assign(c.b, B('%', V(c.a), V(c.b))), S.assign(c.a, V(c.keep)), S.augAssign(c.steps, '+', 1)]),
+      S.print(V(c.a)), S.print(V(c.steps)),
+    ]);
+  },
+  ref(c) {
+    let a = c.va, b = c.vb, steps = 0;
+    const seq = [[a, b]];
+    while (b !== 0) { const k = b; b = a % b; a = k; steps++; seq.push([a, b]); }
+    return { lines: [a, steps], seq };
+  },
+};
+
+P.bubble = {
+  plan(rng) {
+    const [xs, n, swaps, keep] = names(rng, [['xs', 'nums', 'cards', 'heights'], ['n', 'size', 'count'], ['swaps', 'moves', 'flips'], ['tmp', 'held', 'spare']]);
+    const [i, j] = rng.pick([['i', 'j'], ['p', 'k'], ['pass_no', 'pos']]);
+    const items = Array.from({ length: rng.int(5, 6) }, () => rng.int(1, 30));
+    const ks = rng.shuffle(Array.from({ length: items.length }, (_, k) => k)).slice(0, 2).sort((x, y) => x - y);
+    return { xs, n, swaps, keep, i, j, items, passes: rng.int(1, 2), k1: ks[0], k2: ks[1] };
+  },
+  build(c) {
+    const j = V(c.j), j1 = B('+', j, 1);
+    return program([], [
+      S.decl(c.xs, E.list(c.items)), S.decl(c.n, LEN(c.xs)), S.decl(c.swaps, 0),
+      S.forRange(c.i, 0, c.passes, 1, [S.forRange(c.j, 0, B('-', B('-', V(c.n), 1), V(c.i)), 1, [
+        S.if(B('>', IX(c.xs, j), IX(c.xs, j1)), [
+          S.decl(c.keep, IX(c.xs, j)), S.setIndex(c.xs, j, IX(c.xs, j1)), S.setIndex(c.xs, j1, V(c.keep)), S.augAssign(c.swaps, '+', 1),
+        ]),
+      ])]),
+      S.print(V(c.swaps)), S.print(IX(c.xs, c.k1)), S.print(IX(c.xs, c.k2)),
+    ]);
+  },
+  ref(c) {
+    const xs = c.items.slice(), after = [];
+    let swaps = 0;
+    for (let i = 0; i < c.passes; i++) {
+      for (let j = 0; j < xs.length - 1 - i; j++) if (xs[j] > xs[j + 1]) { const k = xs[j]; xs[j] = xs[j + 1]; xs[j + 1] = k; swaps++; }
+      after.push(xs.slice());
+    }
+    return { lines: [swaps, xs[c.k1], xs[c.k2]], after };
+  },
+};
+
+P.kadane = {
+  plan(rng) {
+    const [xs, best, run, x] = names(rng, [['xs', 'gains', 'changes', 'steps'], ['best', 'record', 'top'], ['run', 'current', 'streak'], ELEMS]);
+    const items = Array.from({ length: rng.int(6, 8) }, () => rng.int(-9, 9));
+    items[rng.int(0, 2)] = -rng.int(3, 9);
+    items[rng.int(3, items.length - 1)] = -rng.int(3, 9);
+    return { xs, best, run, x, items };
+  },
+  build(c) {
+    return program([], [
+      S.decl(c.xs, E.list(c.items)), S.decl(c.best, 0), S.decl(c.run, 0),
+      S.forEach(c.x, c.xs, [
+        S.augAssign(c.run, '+', V(c.x)),
+        S.if(B('<', V(c.run), 0), [S.assign(c.run, 0)]),
+        S.if(B('>', V(c.run), V(c.best)), [S.assign(c.best, V(c.run))]),
+      ]),
+      S.print(V(c.best)), S.print(V(c.run)),
+    ]);
+  },
+  ref(c) {
+    let best = 0, run = 0;
+    const trace = [];
+    for (const x of c.items) { run += x; if (run < 0) run = 0; if (run > best) best = run; trace.push(run); }
+    return { lines: [best, run], trace };
+  },
+};
+
+const X_PREDICT_TPLS = ['pair-count', 'increases', 'min-max', 'find-index', 'count-if'];
+function planPredictX(rng) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    let m;
+    if (rng.next() < 0.6) {
+      const form = rng.pick(['gcd', 'bubble', 'kadane']);
+      m = { form, c: P[form].plan(rng), ask: form === 'bubble' ? 'three' : 'two' };
+    } else {
+      const tplId = rng.pick(X_PREDICT_TPLS), tpl = T[tplId], c = tpl.make(rng, 'hard');
+      const calls = [tpl.input(c, rng), tpl.input(c, rng)];
+      m = { form: 'call', tpl: tplId, c, calls, listNames: rng.shuffle(MAIN_LISTS).slice(0, 2), ask: 'two' };
+      if (tpl.ref(c, calls[0]) === tpl.ref(c, calls[1])) continue;
+    }
+    const want = predictRef(m), out = runLines(predictProgram(m));
+    if (!out || out.length !== want.length || out.some((s, j) => s !== String(want[j]))) continue;
+    if (m.form === 'bubble' && want[0] === 0) continue;
+    return m;
+  }
+  throw new Error('could not plan an expert predict question');
+}
+
+function presentPredictX(m, L) {
+  const prog = predictProgram(m);
+  const R = render(prog, L, { lineNumbers: true });
+  const codeBlock = '```' + fence(L) + '\n' + R.code + '\n```';
+  const lines = predictRef(m), c = m.c;
+  let expl, hint;
+  if (m.form === 'call') {
+    const tpl = T[m.tpl];
+    expl = m.calls.map((a, j) => `${exampleText(tpl, c, a, L).replace(/^`/, 'For `')}: ${tpl.work(c, a)}, so it prints **${lines[j]}**.`).join('\n\n');
+    expl = `${sig(tpl, c, L)} returns ${tpl.desc(c, L)}.\n\n${expl}`;
+    const vars = trackNames(m.tpl, c), body = fnProg(tpl, c).fns[0].body;
+    const callH = (a, j) => `Trace ${exampleText(tpl, c, a, L)}${a.some(Array.isArray) ? ` (the program passes ${code(m.listNames[j], L)})` : ''}: write down ${nameList(vars, L)} every time they change.${loopNote(body, L)}`;
+    hint = { first: `${callH(m.calls[0], 0)} The first line is what this call returns.`, second: `${callH(m.calls[1], 1)} The second call starts from scratch: nothing carries over from the first.` };
+  } else if (m.form === 'gcd') {
+    const r = P.gcd.ref(c), A = code(c.a, L), Bn = code(c.b, L);
+    expl = `Each pass sets ${Bn} to the remainder of ${A} ÷ ${Bn}, and ${A} to the old ${Bn}. (${A}, ${Bn}) goes ${r.seq.map(([x, y]) => `(${x}, ${y})`).join(' → ')}. ` +
+      `The loop stops when ${Bn} is 0, so it prints ${A} = **${lines[0]}** and then **${lines[1]}** passes. (This is Euclid's method: the result is the greatest common divisor.)`;
+    hint = {
+      first: `${code(c.keep, L)} holds the old ${Bn} so it is not lost. Each pass: new ${Bn} = ${A} % ${Bn}, new ${A} = old ${Bn}. Write (${A}, ${Bn}) after every pass until ${Bn} is 0; the first line is ${A} then.`,
+      second: `${code(c.steps, L)} goes up once per pass. Count the passes in your table (not the rows: the first row is before any pass).`,
+    };
+  } else if (m.form === 'bubble') {
+    const r = P.bubble.ref(c), X = code(c.xs, L);
+    expl = `Each pass walks along the list and swaps neighbours that are in the wrong order (left bigger than right). ${X} starts as ${listText(c.items)}. ` +
+      r.after.map((a, k) => `After pass ${k + 1}: ${listText(a)}.`).join(' ') + ` There were **${lines[0]}** swaps; ${X}[${c.k1}] is **${lines[1]}** and ${X}[${c.k2}] is **${lines[2]}**.`;
+    hint = {
+      first: `The outer loop runs ${c.passes} time${c.passes === 1 ? '' : 's'}. In each pass ${code(c.j, L)} goes from 0 up to ${code(c.n, L)} − 2 − ${code(c.i, L)}, comparing positions ${code(c.j, L)} and ${code(c.j, L)} + 1, and swaps them when the left one is bigger. Write the list out again after every swap, and count the swaps.`,
+      second: `The swaps change the list itself. Use your list after the last pass, counting positions from 0: read position ${c.k1}.`,
+      third: `Same final list: read position ${c.k2}, counting from 0.`,
+    };
+  } else {
+    const r = P.kadane.ref(c), Rn = code(c.run, L), Bn = code(c.best, L);
+    expl = `${Rn} adds each number, but drops back to 0 whenever it goes negative; ${Bn} keeps the highest ${Rn} seen. ` +
+      `After each number ${Rn} is ${r.trace.join(', ')}. So ${Bn} is **${lines[0]}** and the final ${Rn} is **${lines[1]}**.`;
+    hint = {
+      first: `Make two columns, ${Rn} and ${Bn}. For each number: add it to ${Rn}; if ${Rn} is now below 0, set it to 0; then if ${Rn} beats ${Bn}, copy it into ${Bn}. The first line is ${Bn} at the end.`,
+      second: `The second line is ${Rn} after the last number, with any reset to 0 already applied.`,
+    };
+  }
+  const num = (id, label, ask, answer) => ({ id, label, ask, answerType: 'number', answer, tolerance: 0, hint: hint[id] });
+  const parts = m.ask === 'three'
+    ? [num('first', 'First output', 'What is the first line printed?', lines[0]), num('second', 'Second output', 'What is the second line printed?', lines[1]), num('third', 'Third output', 'What is the third line printed?', lines[2])]
+    : [num('first', 'First output', 'What is the first line printed?', lines[0]), num('second', 'Second output', 'What is the second line printed?', lines[1])];
+  return { lang: L, prompt: `${codeBlock}\n\nThis program prints ${parts.length} lines. What are they?`, answerType: 'multi', parts, explanation: expl, meta: { mode: 'predict', ...m } };
+}
+
+// ---- expert bug plans ----
+const X_BUG_POOL = ['pair-count', 'pair-count', 'count-if', 'min-max', 'sum-while', 'find-index', 'increases', 'digit-sum'];
+const realBugs = slots => {
+  const out = [];
+  for (const [slot, alts] of Object.entries(slots)) {
+    for (const [key, kind] of Object.entries(alts)) if (!['other', 'early', 'infinite'].includes(kind)) out.push({ slot, key, kind });
+  }
+  return out;
+};
+const passesAll = (tpl, c, prog, tests) => tests.every(a => { const r = exec(prog, c.f, a); return r.ok && r.value === tpl.ref(c, a); });
+const kindPair = ks => ks.slice().sort((x, y) => CAT_KINDS.indexOf(x) - CAT_KINDS.indexOf(y));
+
+// Two bugs on different lines. sub 'bug-types' also needs two different, clearly separate kinds.
+function planTwoBugs(rng, sub) {
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const tplId = rng.pick(X_BUG_POOL), tpl = T[tplId], c = tpl.make(rng, 'hard');
+    const bugs = realBugs(tpl.slots(c));
+    if (!bugs.length) continue;
+    const b1 = rng.pick(bugs);
+    const rest = bugs.filter(b => b.slot !== b1.slot && (sub !== 'bug-types' || (b.kind !== b1.kind && typeOk(b1.kind, b.kind))));
+    if (!rest.length) continue;
+    const b2 = rng.pick(rest);
+    const good = fnProg(tpl, c), bad = fnProg(tpl, c, { [b1.slot]: b1.key, [b2.slot]: b2.key });
+    let ex = null, actual = null;
+    for (let t = 0; t < 30 && !ex; t++) {
+      const a = tpl.input(c, rng), want = tpl.ref(c, a);
+      const g = exec(good, c.f, a);
+      if (!g.ok || g.value !== want) continue;
+      const r = exec(bad, c.f, a);
+      if (r.ok && r.value !== want) { ex = a; actual = r.value; }
+    }
+    if (!ex) continue;
+    const tests = [ex];
+    for (let t = 0; t < 6; t++) tests.push(tpl.input(c, rng));
+    if (!passesAll(tpl, c, good, tests)) continue;
+    // Each bug matters on its own: fixing just one of them still fails a test.
+    if (passesAll(tpl, c, fnProg(tpl, c, { [b1.slot]: b1.key }), tests) || passesAll(tpl, c, fnProg(tpl, c, { [b2.slot]: b2.key }), tests)) continue;
+    const order = stmtIds(bad.fns[0].body);
+    const pair = (x, y) => [x, y].sort((u, v) => order.indexOf(u) - order.indexOf(v));
+    const others = order.filter(id => id !== b1.slot && id !== b2.slot);
+    if (others.length < 3) continue;
+    const [o0, o1, o2] = rng.shuffle(others).slice(0, 3);
+    const linePairs = rng.shuffle([pair(b1.slot, b2.slot), pair(b1.slot, o0), pair(b2.slot, o1), pair(o1, o2)]);
+    let typePairs = null;
+    if (sub === 'bug-types') {
+      const xs = rng.shuffle(CAT_KINDS.filter(k => typeOk(b1.kind, k) && typeOk(b2.kind, k)));
+      if (xs.length < 2) continue;
+      typePairs = rng.shuffle([kindPair([b1.kind, b2.kind]), kindPair([b1.kind, xs[0]]), kindPair([b2.kind, xs[1]]), kindPair([xs[0], xs[1]])]);
+    }
+    const two = [b1, b2].sort((u, v) => order.indexOf(u.slot) - order.indexOf(v.slot));
+    return { tpl: tplId, c, bugs: two, ex, want: tpl.ref(c, ex), actual, tests, linePairs, typePairs };
+  }
+  throw new Error('could not plan a two-bug question');
+}
+
+// One bug, three shown examples; the fix options include at least one trap that repairs the
+// first example but breaks another one.
+function planFixTrap(rng) {
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const tplId = rng.pick(X_BUG_POOL), tpl = T[tplId], c = tpl.make(rng, 'hard'), slots = tpl.slots(c);
+    const bugs = realBugs(slots);
+    if (!bugs.length) continue;
+    const bug = rng.pick(bugs);
+    const good = fnProg(tpl, c), bad = fnProg(tpl, c, { [bug.slot]: bug.key });
+    const shown = [];
+    for (let t = 0; t < 40 && shown.length < 3; t++) {
+      const a = tpl.input(c, rng), want = tpl.ref(c, a);
+      const g = exec(good, c.f, a);
+      if (!g.ok || g.value !== want || shown.some(s => tpl.ref(c, s) === want)) continue;
+      if (!shown.length) { const r = exec(bad, c.f, a); if (!(r.ok && r.value !== want)) continue; }
+      shown.push(a);
+    }
+    if (shown.length < 3) continue;
+    const tests = [...shown];
+    for (let t = 0; t < 4; t++) tests.push(tpl.input(c, rng));
+    if (!passesAll(tpl, c, good, tests)) continue;
+    const traps = [], plain = [];
+    for (const k of Object.keys(slots[bug.slot])) {
+      if (k === bug.key || slots[bug.slot][k] === 'early') continue;
+      const p = fnProg(tpl, c, { [bug.slot]: k });
+      const rs = shown.map(a => exec(p, c.f, a));
+      if (rs.some(r => r.threw)) continue;
+      const okAt = rs.map((r, j) => r.ok && r.value === tpl.ref(c, shown[j]));
+      if (okAt.every(Boolean)) continue;
+      (okAt[0] ? traps : plain).push(k);
+    }
+    if (!traps.length || traps.length + plain.length < 3) continue;
+    const tr = rng.shuffle(traps), t2 = tr.slice(0, 2);
+    const wrong = [...t2, ...rng.shuffle(plain).slice(0, 3 - t2.length)];
+    if (wrong.length < 3) { wrong.push(...tr.slice(2, 2 + 3 - wrong.length)); t2.push(...wrong.filter(k => traps.includes(k) && !t2.includes(k))); }
+    if (wrong.length !== 3) continue;
+    const fixKeys = rng.shuffle(['ok', ...wrong]);
+    const others = stmtIds(bad.fns[0].body).filter(id => id !== bug.slot);
+    if (others.length < 3) continue;
+    const lineIds = rng.shuffle([bug.slot, ...rng.shuffle(others).slice(0, 3)]);
+    const ex = shown[0];
+    return { tpl: tplId, c, slot: bug.slot, key: bug.key, kind: bug.kind, ex, want: tpl.ref(c, ex), actual: exec(bad, c.f, ex).value, shown, tests, fixKeys, lineIds, traps: t2 };
+  }
+  throw new Error('could not plan a fix-trap question');
+}
+
+// Everything an expert bug question shows (used by generate and verify).
+function bugViewX(p, L) {
+  const tpl = T[p.tpl], c = p.c;
+  const vars = p.bugs ? Object.fromEntries(p.bugs.map(b => [b.slot, b.key])) : { [p.slot]: p.key };
+  const bad = fnProg(tpl, c, vars), good = fnProg(tpl, c);
+  const R = render(bad, L, { lineNumbers: true }), Rg = render(good, L);
+  const ln = id => R.lineOf.get(id);
+  const pairText = ([x, y]) => `Lines ${ln(x)} and ${ln(y)}`;
+  const fixText = k => '`' + lineAt(render(fnProg(tpl, c, k === 'ok' ? {} : { [p.slot]: k }), L), p.slot) + '`';
+  return {
+    tpl, c, bad, good, R, Rg, ln,
+    lineChoices: p.linePairs ? p.linePairs.map(pairText) : p.lineIds.map(id => `Line ${ln(id)}`),
+    typeChoices: p.typePairs ? p.typePairs.map(ks => ks.map(k => CAT[k]).join(' + ')) : null,
+    fixChoices: p.fixKeys ? p.fixKeys.map(fixText) : null,
+    pairText,
+  };
+}
+
+function presentTwoBugs(p, sub, L) {
+  const w = bugViewX(p, L), { tpl, c } = w;
+  const codeBlock = '```' + fence(L) + '\n' + w.R.code + '\n```';
+  const spec = `${sig(tpl, c, L)} should return ${tpl.desc(c, L)}. For example, ${exampleText(tpl, c, p.ex, L)} should return **${p.want}**.`;
+  const [b1, b2] = p.bugs;
+  const linesAns = w.pairText([b1.slot, b2.slot]);
+  const typesAns = kindPair([b1.kind, b2.kind]).map(k => CAT[k]).join(' + ');
+  const isRange = slot => w.bad.fns[0].body.some(function f(s) { return (s.id === slot && s.k === 'forRange') || (s.body || []).some(f); });
+  const one = b => `Line ${w.ln(b.slot)}: \`${lineAt(w.R, b.slot)}\` should be \`${lineAt(w.Rg, b.slot)}\`. ${WHY[b.kind](L, isRange(b.slot))} (**${CAT[b.kind]}**)`;
+  const expl = [
+    'There are two bugs.', one(b1), one(b2),
+    `For the example the function should return **${p.want}** (${tpl.work(c, p.ex)}). With both bugs it returns **${p.actual}**. Fixing only one of the two lines is not enough: some input still comes out wrong.`,
+  ].join('\n\n');
+  const vars = trackNames(p.tpl, c), body = w.bad.fns[0].body;
+  const specH = `Work out the right answer first: for ${exampleText(tpl, c, p.ex, L)} it is ${p.want}.`;
+  const part = {
+    lines: () => ({ id: 'lines', label: 'Bug lines', ask: 'Which two lines have bugs?', answerType: 'choice', answer: linesAns, choices: w.lineChoices,
+      hint: `${specH} Then check every line against the spec on its own: the starting values, the first and last pass of each loop, the condition and the update. Two separate lines are wrong; finding one does not mean the other line is fine.` }),
+    actual: () => ({ id: 'actual', label: 'Actual result', ask: 'What does this buggy version return for the example?', answerType: 'number', answer: p.actual, tolerance: 0,
+      hint: `Run the code exactly as written, both bugs included. Trace ${exampleText(tpl, c, p.ex, L)} and write down ${nameList(vars, L)} as they change.${loopNote(body, L)}` }),
+    types: () => ({ id: 'types', label: 'Bug types', ask: 'Which two kinds of bug are they?', answerType: 'choice', answer: typesAns, choices: w.typeChoices,
+      hint: `Find both wrong lines first, then name each mistake separately. ${CHECKLIST}` }),
+  };
+  const ids = sub === 'bug-types' ? ['lines', 'types'] : ['lines', 'actual'];
+  return { lang: L, explanation: expl, prompt: `${spec}\n\n${codeBlock}\n\nThis version has **two** bugs, on different lines. Answer each part.`,
+    answerType: 'multi', parts: ids.map(id => part[id]()), meta: { mode: 'bug2', ask: 'multi', parts: ids, ...p } };
+}
+
+function presentFixTrap(p, L) {
+  const w = bugViewX(p, L), { tpl, c } = w;
+  const codeBlock = '```' + fence(L) + '\n' + w.R.code + '\n```';
+  const exs = p.shown.map(a => `${exampleText(tpl, c, a, L)} should return **${tpl.ref(c, a)}**`);
+  const spec = `${sig(tpl, c, L)} should return ${tpl.desc(c, L)}. For example, ${exs.slice(0, -1).join('; ')}; and ${exs[exs.length - 1]}.`;
+  const bugLine = w.ln(p.slot), fixAns = '`' + lineAt(w.Rg, p.slot) + '`';
+  const trapWhy = p.traps.map(k => {
+    const prog = fnProg(tpl, c, { [p.slot]: k });
+    const j = p.shown.findIndex(a => { const r = exec(prog, c.f, a); return !(r.ok && r.value === tpl.ref(c, a)); });
+    const r = exec(prog, c.f, p.shown[j]);
+    return `${w.fixChoices[p.fixKeys.indexOf(k)]} fixes the first example but returns ${r.ok ? r.value : 'nothing'} for ${exampleText(tpl, c, p.shown[j], L)}, which should be ${tpl.ref(c, p.shown[j])}.`;
+  });
+  const isRange = w.bad.fns[0].body.some(function f(s) { return (s.id === p.slot && s.k === 'forRange') || (s.body || []).some(f); });
+  const expl = [
+    `The bug is on line ${bugLine}: \`${lineAt(w.R, p.slot)}\`. It should be ${fixAns}.`,
+    WHY[p.kind](L, isRange),
+    `For the first example the buggy version returns **${p.actual}** instead of **${p.want}**.`,
+    `A fix has to work for every example, not just the first: ${trapWhy.join(' ')}`,
+  ].join('\n\n');
+  const vars = trackNames(p.tpl, c);
+  return { lang: L, explanation: expl, prompt: `${spec}\n\n${codeBlock}\n\nThis version has one bug. Answer each part.`, answerType: 'multi',
+    parts: [
+      { id: 'line', label: 'Bug line', ask: 'Which line has the bug?', answerType: 'choice', answer: `Line ${bugLine}`, choices: w.lineChoices,
+        hint: `Trace the first example, ${exampleText(tpl, c, p.ex, L)}, writing down ${nameList(vars, L)} as they change. The first line where the trace stops matching the spec is the bug.` },
+      { id: 'fix', label: 'Fix', ask: 'Which replacement line makes the function right for all three examples?', answerType: 'choice', answer: fixAns, choices: w.fixChoices,
+        hint: `Several replacements may fix the first example. Put each one in and run all three examples; the right fix also has to make sense for any input, not just these.` },
+    ],
+    meta: { mode: 'fix2', ask: 'multi', parts: ['line', 'fix'], ...p } };
+}
+
+function generateExpert(subtopic, rng, L) {
+  if (subtopic === 'predict-output') return presentPredictX(planPredictX(rng), L);
+  if (subtopic === 'fix-the-bug') return presentFixTrap(planFixTrap(rng), L);
+  return presentTwoBugs(planTwoBugs(rng, subtopic), subtopic, L);
+}
+
+// Verify an expert bug question from its plan: rebuild, re-render, re-run against the plain-JS refs.
+function verifyBugX(q, m, answer) {
+  const L = q.lang, tpl = T[m.tpl], c = m.c;
+  if (!tpl || q.answerType !== 'multi' || !Array.isArray(q.parts) || q.parts.map(p => p.id).join() !== m.parts.join()) return false;
+  const slots = tpl.slots(c);
+  const bugs = m.mode === 'bug2' ? m.bugs : [{ slot: m.slot, key: m.key, kind: m.kind }];
+  if (!Array.isArray(bugs) || !bugs.length || new Set(bugs.map(b => b.slot)).size !== bugs.length) return false;
+  if (bugs.some(b => slots[b.slot]?.[b.key] !== b.kind || ['other', 'early', 'infinite'].includes(b.kind))) return false;
+  const want = a => tpl.ref(c, a);
+  if (!m.tests.length || JSON.stringify(m.tests[0]) !== JSON.stringify(m.ex) || want(m.ex) !== m.want) return false;
+  const good = fnProg(tpl, c);
+  if (!passesAll(tpl, c, good, m.tests)) return false;
+  const bad = fnProg(tpl, c, Object.fromEntries(bugs.map(b => [b.slot, b.key])));
+  const rb = exec(bad, c.f, m.ex);
+  if (!(rb.ok && rb.value !== m.want)) return false;
+  if (m.mode === 'bug2' && bugs.some(b => passesAll(tpl, c, fnProg(tpl, c, { [b.slot]: b.key }), m.tests))) return false;
+  const w = bugViewX(m, L);
+  // Exactly the bug lines differ from the correct version (ignoring Rust `mut`).
+  if (w.R.lines.length !== w.Rg.lines.length) return false;
+  const norm = l => l.replace(/\bmut /g, '');
+  const diff = w.R.lines.map((l, j) => (norm(l) !== norm(w.Rg.lines[j]) ? j + 1 : 0)).filter(Boolean);
+  const bugLines = bugs.map(b => w.ln(b.slot)).sort((x, y) => x - y);
+  if (diff.join() !== bugLines.join()) return false;
+  const expect = {
+    line: () => [`Line ${bugLines[0]}`, w.lineChoices],
+    lines: () => [`Lines ${bugLines[0]} and ${bugLines[1]}`, w.lineChoices],
+    actual: () => [rb.value, null],
+    types: () => {
+      const right = kindPair(bugs.map(b => b.kind));
+      // Every other option names at least one kind that describes neither bug.
+      const okPairs = m.typePairs.every(ks => ks.join() === right.join() || ks.some(k => bugs.every(b => typeOk(b.kind, k))));
+      return okPairs ? [right.map(k => CAT[k]).join(' + '), w.typeChoices] : [NaN, null];
+    },
+    fix: () => {
+      if (new Set(w.fixChoices).size !== 4) return [NaN, null];
+      const pass = m.fixKeys.filter(k => passesAll(tpl, c, fnProg(tpl, c, k === 'ok' ? {} : { [m.slot]: k }), m.tests));
+      return pass.length === 1 ? [w.fixChoices[m.fixKeys.indexOf(pass[0])], w.fixChoices] : [NaN, null];
+    },
+  };
+  const a = answer && typeof answer === 'object' ? answer : {};
+  return q.parts.every(p => {
+    const [ans, choices] = expect[p.id]();
+    if (choices) return choiceSetOk(choices, ans) && JSON.stringify(p.choices) === JSON.stringify(choices) && String(a[p.id]) === ans;
+    return typeof ans === 'number' && Number.isFinite(ans) && String(a[p.id] ?? '').trim() !== '' && Number(a[p.id]) === ans;
+  });
+}
+
 // ---- generate ----
 const SUBS = ['predict-output', 'find-the-bug', 'fix-the-bug', 'bug-types'];
 
 export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
   if (!SUBS.includes(subtopic)) throw new Error(`Unknown subtopic: ${subtopic}`);
+  if (difficulty === 'expert') return generateExpert(subtopic, rng, lang);
   if (!['easy', 'medium', 'hard'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === 'predict-output') return presentPredict(planPredict(rng, difficulty), lang);
   const p = planBug(rng, difficulty, { needFix: subtopic === 'fix-the-bug' });
@@ -1089,6 +1529,7 @@ function verifyPredict(q, m, answer) {
   else if (m.ask === 'total') exp = { one: nums.reduce((a, b) => a + b, 0) };
   else if (m.ask === 'count-last') exp = { count: out.length, last: nums[nums.length - 1] };
   else if (m.ask === 'two') exp = { first: nums[0], second: nums[1] };
+  else if (m.ask === 'three') exp = { first: nums[0], second: nums[1], third: nums[2] };
   else exp = { one: nums[0] };
   const eq = (given, e) => String(given ?? '').trim() !== '' && Number(given) === e;
   if ('one' in exp) return q.answerType === 'number' && eq(answer, exp.one);
@@ -1102,6 +1543,7 @@ export function verify(question, answer) {
     if (!m || typeof question.lang !== 'string') return false;
     if (m.mode === 'predict') return verifyPredict(question, m, answer);
     if (m.mode === 'bug') return verifyBug(question, m, answer);
+    if (m.mode === 'bug2' || m.mode === 'fix2') return verifyBugX(question, m, answer);
     return false;
   } catch {
     return false;

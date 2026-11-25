@@ -7,9 +7,9 @@
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [
-    { "id": "searching", "title": "Searching", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "sorting", "title": "Sorting", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "complexity", "title": "Complexity", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "data-structures", "title": "Stacks and queues", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "searching", "title": "Searching", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "sorting", "title": "Sorting", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "complexity", "title": "Complexity", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "data-structures", "title": "Stacks and queues", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

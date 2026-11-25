@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "pressure", "title": "Pressure", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "liquid-pressure", "title": "Liquid pressure", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "gas-laws", "title": "Gas laws", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "pressure-context", "title": "Pressure in context", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "pressure", "title": "Pressure", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "liquid-pressure", "title": "Liquid pressure", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "gas-laws", "title": "Gas laws", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pressure-context", "title": "Pressure in context", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

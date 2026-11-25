@@ -18,6 +18,8 @@ Example: `Tt × tt` gives `Tt, Tt, tt, tt`, so 50% are short and the ratio tall 
 
 **Watch out:** "of the tall offspring, what fraction are `Tt`?" only counts the tall boxes, so for `Tt × Tt` it is 2/3, not 1/2.
 
+**Expert: uncertain parents and new evidence.** A dominant-looking parent from `Tt × Tt` is `Tt` with probability 2/3. Multiply the chances that each parent is a carrier by 1/4 for a recessive offspring. Evidence updates these chances: one recessive offspring proves both parents are `Tt`; after n dominant test-cross offspring, use Bayes' rule, `prior × (1/2)^n ÷ (prior × (1/2)^n + (1 - prior))`. Self-pollinating halves the heterozygous share every generation.
+
 ## Dihybrid crosses
 
 1. Check that the genes assort independently (they are on different chromosomes).
@@ -28,6 +30,8 @@ Example: `Tt × tt` gives `Tt, Tt, tt, tt`, so 50% are short and the ratio tall 
 Example: `RrYy × RrYy` gives round 3/4 and green 1/4, so round green = 3/16, and the full ratio is 9 : 3 : 3 : 1.
 
 **Watch out:** a gamete has one allele per gene: `RY` is a gamete, `Rr` is not.
+
+**Expert: one gene at a time.** To identify a cross from counts, split them by trait: about 3 : 1 for a gene means both parents are heterozygous for it, 1 : 1 means heterozygous × homozygous recessive, no recessives means a homozygous dominant parent. With three genes, do three one-gene crosses and multiply the probabilities.
 
 ## Sex-linked & blood groups
 
@@ -40,6 +44,8 @@ Example: carrier mother `X^H X^h` × father `X^H Y`: half the sons are `X^h Y` (
 
 **Watch out:** "probability a son is affected" counts sons only; "probability a child is an affected son" counts all children.
 
+**Expert: family trees.** An affected male got his recessive X from his mother, so she is a carrier. Walk down the tree: each unaffected daughter of a carrier (and an unaffected father) is a carrier with probability 1/2. For two sons of a possible carrier, add the cases (not a carrier; carrier and both sons unaffected) instead of squaring. For blood groups, find each parent's possible genotypes first, then the chance of passing on `I^A`, `I^B` or `i`.
+
 ## Population genetics
 
 1. The recessive phenotype frequency is q². Turn percentages or "1 in N" into a decimal first.
@@ -50,3 +56,5 @@ Example: carrier mother `X^H X^h` × father `X^H Y`: half the sons are `X^h Y` (
 Example: 16% recessive phenotype → q² = 0.16, q = 0.4, p = 0.6, carriers 2pq = 0.48 = 48%.
 
 **Watch out:** the dominant phenotype is p² + 2pq, so never take the square root of it. Work from the recessive phenotype.
+
+**Expert: risk and selection.** Among people without the recessive trait, the carrier share is `2pq ÷ (1 - q²)`; two such parents have a recessive child with probability `(that)² × 1/4`. When every recessive individual is removed before breeding, `q → q ÷ (1 + q)`, which means 1/q goes up by exactly 1 per generation.

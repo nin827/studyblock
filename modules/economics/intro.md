@@ -21,3 +21,5 @@ The textbook models behind prices and the wider economy, worked out with numbers
 - **Money and quantities:** type the number only, no `$`. Each question says whether to round to 2 decimal places (answers within 0.005 count).
 - **Percentages:** type the number without the `%` sign, with a minus for a fall.
 - Each question says which method to use, for example the midpoint method for elasticity.
+
+**Levels.** Easy and Medium use one formula at a time; Hard adds multi-step and multi-part questions. **Expert** questions need you to set up the problem and combine ideas: find a supply curve from its equilibrium then shift demand, consumer and producer surplus, both curves shifting at once, point elasticity and the revenue-maximising price, the price change needed for a sales target, cross and income elasticity, exact real interest rates, average yearly inflation, GDP by expenditure, years for GDP per person to double, the tax that raises a target revenue, subsidies, and the black-market price and deadweight loss under a price ceiling.

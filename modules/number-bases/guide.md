@@ -18,6 +18,12 @@ Example: `1101` = 8 + 4 + 1 = 13.
 
 **Watch out:** reading the remainders top to bottom gives the bits backwards.
 
+**Expert: bitwise operations.** Write the two bytes one above the other and work each column on its own, with no carries: AND gives 1 only where both bits are 1, OR where at least one is, XOR where they differ.
+
+**Expert: binary fractions.** After the point the places are worth 1/2, 1/4, 1/8, 1/16. To convert a decimal fraction to binary, keep doubling it: each time it reaches 1, write 1 and subtract 1, otherwise write 0. Example: 0.625 → 1.25 (1), 0.5 (0), 1 (1), so 0.625 = `0.101`.
+
+**Expert: counters that wrap.** An n-bit counter holds 0 to 2^n − 1; one step past the top gives 0. Add normally, then take away 2^n as many times as needed.
+
 ## Hexadecimal
 
 1. **Hex to decimal:** multiply each digit by its place value (1, 16, 256, 4096 from the right) and add. Turn letters into 10–15 first.
@@ -29,6 +35,10 @@ Example: `2F` = 2 × 16 + 15 = 47, and `2F` = `0010 1111` = `101111` in binary.
 
 **Watch out:** group binary digits from the **right**, not the left.
 
+**Expert: hex arithmetic.** Work column by column from the right. A column total of 16 or more writes total − 16 and carries 1; when subtracting, a column that is too small borrows 16.
+
+**Expert: colour codes and addresses.** `#RRGGBB` is three 2-digit hex numbers (left digit × 16 + right digit). A buffer of n bytes starting at address S ends at S + n − 1, not S + n. A 16-byte boundary is an address ending in hex 0.
+
 ## Binary arithmetic
 
 1. **Adding:** line the numbers up on the right and add column by column from the right.
@@ -39,3 +49,7 @@ Example: `2F` = 2 × 16 + 15 = 47, and `2F` = `0010 1111` = `101111` in binary.
 Example: `11111011` = −128 + 64 + 32 + 16 + 8 + 2 + 1 = −5.
 
 **Watch out:** inverting the bits is only half the job. You still need to add 1.
+
+**Expert: overflow.** Add the 8-bit patterns as ordinary binary and drop any carry out of the 8th bit. Overflow happens only when both inputs have the same sign and the result's sign is different; a carry out on its own is not overflow.
+
+**Expert: subtraction.** To work out A − B, negate B (invert, add 1) and add it to A, keeping 8 bits.

@@ -8,10 +8,10 @@
   "calculator": false,
   "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
   "subtopics": [
-    { "id": "expressions", "title": "Expressions", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "conditionals", "title": "Conditionals", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "loops", "title": "Loops", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "lists-strings", "title": "Lists and strings", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "functions", "title": "Functions", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "expressions", "title": "Expressions", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "conditionals", "title": "Conditionals", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "loops", "title": "Loops", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "lists-strings", "title": "Lists and strings", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "functions", "title": "Functions", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

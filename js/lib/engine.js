@@ -59,6 +59,37 @@ export async function loadDomains() {
   return parseRegistry(idx);
 }
 
+/*
+ * Archived modules (modules/index.json top-level "archived": [{ id, title }]): never loaded, shown
+ * or sampled. Only their titles are kept, so stored attempts can still show a name instead of the
+ * raw id. Returns Map(id -> title). Invalid ids are dropped; an id that is still listed in a
+ * domain stays active (that listing wins, with a warning). A missing list yields an empty Map.
+ */
+export async function loadArchived() {
+  let idx;
+  try { idx = await loadJSON('modules/index.json'); } catch { return new Map(); }
+  const active = new Set(parseRegistry(idx).flatMap(d => d.modules));
+  const out = new Map();
+  if (idx?.archived === undefined) return out;
+  if (!Array.isArray(idx.archived)) { console.warn('StudyBlock: "archived" in modules/index.json must be a list; ignoring it'); return out; }
+  for (const a of idx.archived) {
+    const id = a && typeof a === 'object' ? a.id : a;
+    if (!isValidId(id)) { console.warn(`StudyBlock: ignoring invalid archived module id ${JSON.stringify(id)}`); continue; }
+    if (active.has(id)) { console.warn(`StudyBlock: module ${id} is both active and archived; keeping it active`); continue; }
+    if (out.has(id)) continue;
+    const title = a && typeof a === 'object' && typeof a.title === 'string' && a.title.trim() ? a.title.trim().slice(0, 80) : id;
+    out.set(id, title);
+  }
+  return out;
+}
+
+// Title lookup for stored attempts: loaded modules first, then archived titles, else the raw id.
+// `modules` = loaded module objects; returns id => title (plain text, escape when displaying).
+export function titleLookup(modules, archived) {
+  const byId = new Map((modules || []).map(m => [m.id, String(m.title ?? m.id)]));
+  return id => byId.get(id) ?? archived?.get(id) ?? String(id ?? '');
+}
+
 // Flat list of every registered module id (all domains).
 export async function loadIndex() {
   const domains = await loadDomains();
@@ -94,7 +125,7 @@ export async function loadModule(id) {
   const subtopics = (Array.isArray(m.subtopics) ? m.subtopics : []).filter(s => {
     if (s && s.id === ALL) { console.warn(`StudyBlock: module ${id} has a subtopic called "${ALL}", which is reserved; skipping it`); return false; }
     return true;
-  });
+  }).map(s => cleanDifficulties(s, id)).filter(Boolean);
   return {
     ...m,
     id,
@@ -105,6 +136,40 @@ export async function loadModule(id) {
     // Code languages the module can show its snippets in ([] = not language-aware).
     languages: parseLanguages(m, id),
   };
+}
+
+// ---- difficulties ----
+
+// Every difficulty, easiest first. Modules list the ones each subtopic offers.
+export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard', 'expert'];
+export const isDifficulty = d => DIFFICULTY_ORDER.includes(d);
+
+const diffWarned = new Set();
+
+// A subtopic with its "difficulties" list cleaned: unknown values and duplicates dropped (one
+// console.warn per module), kept in the module's own order. A subtopic without a list is unchanged
+// (it counts as "medium"); one whose list has nothing valid left is skipped. Never mutates `s`.
+function cleanDifficulties(s, moduleId) {
+  if (!s || typeof s !== 'object' || s.difficulties === undefined) return s;
+  const raw = Array.isArray(s.difficulties) ? s.difficulties : [];
+  const list = [];
+  const bad = [];
+  for (const d of raw) {
+    if (isDifficulty(d)) { if (!list.includes(d)) list.push(d); } else bad.push(d);
+  }
+  if ((bad.length || !Array.isArray(s.difficulties)) && !diffWarned.has(moduleId)) {
+    diffWarned.add(moduleId);
+    console.warn(`StudyBlock: module ${moduleId}: ignoring unknown difficulty value(s) ${JSON.stringify(Array.isArray(s.difficulties) ? bad : s.difficulties)} (known: ${DIFFICULTY_ORDER.join(', ')})`);
+  }
+  if (!list.length) {
+    const key = `${moduleId}|${String(s.id)}`;
+    if (!diffWarned.has(key)) {
+      diffWarned.add(key);
+      console.warn(`StudyBlock: module ${moduleId}: subtopic ${JSON.stringify(s.id)} has no valid difficulties; skipping it`);
+    }
+    return null;
+  }
+  return { ...s, difficulties: list };
 }
 
 // ---- code languages (Code Writing / Code Reviewing; see js/lib/languages.js) ----
@@ -524,7 +589,6 @@ export async function regenerate(moduleId, subtopic, difficulty, seed, lang) {
 
 // ---- multi-domain mix ----
 
-export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard'];
 export const MIX_MAX_COUNT = 50;
 const MAX_WEIGHT = 1000;
 

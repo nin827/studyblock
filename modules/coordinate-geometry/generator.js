@@ -1009,8 +1009,566 @@ function genIntersections(difficulty, rng) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Expert: multi-step questions (easy/medium/hard above are untouched)
+//
+// Every template draws all of its rng values first, then builds text. Hints use only values already
+// drawn (no rng) and never state a final answer. Specs use kinds starting "x-", checked by okExpert().
+
+const cross3 = (A, B, C) => (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]);
+const signed = (n) => (n < 0 ? ` - ${num(-n)}` : ` + ${num(n)}`);
+const money = (p) => `£${(p / 100).toFixed(2)}`;
+
+// points-distance / expert: P divides AB in the ratio m : n (multi-part: x, y, AP).
+function xRatio(rng) {
+  const o = draw(
+    () => {
+      const m = rng.int(1, 4), n = rng.int(1, 4);
+      const A = [rng.int(-10, 10), rng.int(-10, 10)];
+      const u = [nz(rng, -4, 4), nz(rng, -4, 4)];
+      return { m, n, A, u };
+    },
+    ({ m, n, A, u }) => {
+      const s = m + n;
+      const B = [A[0] + s * u[0], A[1] + s * u[1]];
+      return m !== n && gcd(m, n) === 1 && Math.abs(B[0]) <= 20 && Math.abs(B[1]) <= 20 && !nearHalf(m * Math.hypot(u[0], u[1]));
+    }
+  );
+  const { m, n, A, u } = o;
+  const s = m + n;
+  const B = [A[0] + s * u[0], A[1] + s * u[1]];
+  const P = [A[0] + m * u[0], A[1] + m * u[1]];
+  const dx = B[0] - A[0], dy = B[1] - A[1];
+  const ap = m * Math.hypot(u[0], u[1]);
+  const ap2 = (P[0] - A[0]) ** 2 + (P[1] - A[1]) ** 2;
+  const prompt = `A = ${pt(A)} and B = ${pt(B)}. The point P lies on the segment AB with AP : PB = ${m} : ${n}.`;
+  const explanation = [
+    `AP : PB = ${m} : ${n} means P is ${m}/${s} of the way from A to B.`,
+    `The step from A to B is (${dx}, ${dy}). ${m}/${s} of it is (${num(P[0] - A[0])}, ${num(P[1] - A[1])}).`,
+    `So P = (${num(A[0])} + ${par(P[0] - A[0])}, ${num(A[1])} + ${par(P[1] - A[1])}) = **${pt(P)}**.`,
+    `AP = √(${(P[0] - A[0]) ** 2} + ${(P[1] - A[1]) ** 2}) = √${ap2} ≈ ${ap.toFixed(4)}, which rounds to **${fmt2(ap)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x", label: "P: x", ask: `x-coordinate of P.${WHOLE}`, answerType: "number", answer: P[0], tolerance: 0, hint: `Take ${m}/${s} of the x-step (\`_x1 + ${m}/${s} * (_x2 - _x1)\`).` },
+    { id: "y", label: "P: y", ask: `y-coordinate of P.${WHOLE}`, answerType: "number", answer: P[1], tolerance: 0, hint: `Take ${m}/${s} of the y-step (\`_y1 + ${m}/${s} * (_y2 - _y1)\`).` },
+    { id: "ap", label: "Length AP", ask: `Length of AP.${DP2}`, answerType: "number", answer: round2(ap), tolerance: 0.005, hint: "Use Pythagoras on the steps from A to P (or take the right fraction of AB)." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts([A, B]),
+    hints: [
+      `The ratio ${m} : ${n} splits AB into ${s} equal pieces, and P is ${m} of them along from A.`,
+      `Work out the step from A to B in x and in y, take ${m}/${s} of each, and add it to A.`,
+    ],
+    params: { multi: true, parts: [{ id: "x", kind: "x-ratio", A, B, m, n, axis: 0 }, { id: "y", kind: "x-ratio", A, B, m, n, axis: 1 }, { id: "ap", kind: "x-ratioLen", A, B, m, n }] },
+  };
+}
+
+// points-distance / expert: the point on an axis that is equally far from A and B (working backwards).
+function xEquidistant(rng) {
+  const axis = rng.pick(["x", "y"]);
+  const o = draw(
+    () => {
+      const t = rng.int(-8, 8);
+      const a = rng.int(1, 8), b = rng.int(0, 8);
+      const V = [[a, b], [b, a], [-a, b], [a, -b], [-b, a], [b, -a], [-a, -b], [-b, -a]];
+      return { t, a, b, u: rng.pick(V), v: rng.pick(V) };
+    },
+    ({ a, b, u, v }) => {
+      const i = axis === "x" ? 0 : 1;
+      return !(u[0] === v[0] && u[1] === v[1]) && !(u[0] === -v[0] && u[1] === -v[1]) && u[i] !== v[i] && !nearHalf(Math.hypot(a, b));
+    }
+  );
+  const { t, a, b, u, v } = o;
+  const P = axis === "x" ? [t, 0] : [0, t];
+  const A = [P[0] + u[0], P[1] + u[1]], B = [P[0] + v[0], P[1] + v[1]];
+  const d = Math.hypot(a, b);
+  const other = axis === "x" ? "y" : "x";
+  const Pg = axis === "x" ? "(t, 0)" : "(0, t)";
+  const sqA = axis === "x" ? `(t − ${par(A[0])})² + ${par(A[1])}²` : `${par(A[0])}² + (t − ${par(A[1])})²`;
+  const sqB = axis === "x" ? `(t − ${par(B[0])})² + ${par(B[1])}²` : `${par(B[0])}² + (t − ${par(B[1])})²`;
+  const i = axis === "x" ? 0 : 1, j = 1 - i;
+  const coef = 2 * (B[i] - A[i]);
+  const rhs = B[i] ** 2 + B[j] ** 2 - A[i] ** 2 - A[j] ** 2;
+  const prompt = `The point P lies on the ${axis}-axis and is the same distance from A = ${pt(A)} and B = ${pt(B)}.`;
+  const explanation = [
+    `Write P = ${Pg} and set PA² = PB²: \`${sqA} = ${sqB}\`.`,
+    `Expand: the t² terms cancel, leaving \`${coef}t = ${rhs}\`, so t = ${rhs} ÷ ${par(coef)} = ${t}. P = **${pt(P)}**.`,
+    `PA = √(${(A[0] - P[0]) ** 2} + ${(A[1] - P[1]) ** 2}) = √${a * a + b * b} ≈ ${d.toFixed(4)}, which rounds to **${fmt2(d)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "t", label: `P: ${axis}`, ask: `The ${axis}-coordinate of P (its ${other}-coordinate is 0).${WHOLE}`, answerType: "number", answer: t, tolerance: 0, hint: "Set the two squared distances equal; the t² terms cancel and leave a linear equation." },
+    { id: "d", label: "Distance PA", ask: `The distance PA.${DP2}`, answerType: "number", answer: round2(d), tolerance: 0.005, hint: "Once you know P, use Pythagoras from P to A (PB is the same)." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts([A, B]),
+    hints: [
+      `Call the point ${Pg}. "Same distance" means PA² = PB²; no square roots needed.`,
+      `Write PA² = ${sqA} and PB² the same way with B, set them equal and expand both sides.`,
+      `The t² terms cancel. Collect the t terms on one side and the numbers on the other, then divide.`,
+    ],
+    params: { multi: true, parts: [{ id: "t", kind: "x-equi", A, B, axis }, { id: "d", kind: "x-equiLen", A, B, axis }] },
+  };
+}
+
+// points-distance / expert: triangle area, then the perpendicular height onto AB.
+function xTriHeight(rng) {
+  const pts = draw(
+    () => [0, 1, 2].map(() => [rng.int(-9, 9), rng.int(-9, 9)]),
+    (p) => {
+      const c = Math.abs(cross3(p[0], p[1], p[2]));
+      const ab = Math.hypot(p[1][0] - p[0][0], p[1][1] - p[0][1]);
+      return c >= 8 && ab > 0 && !nearHalf(c / ab) && !Number.isInteger(ab);
+    }
+  );
+  const [A, B, C] = pts;
+  const cr = cross3(A, B, C);
+  const area = Math.abs(cr) / 2;
+  const ab2 = (B[0] - A[0]) ** 2 + (B[1] - A[1]) ** 2;
+  const ab = Math.sqrt(ab2);
+  const h = (2 * area) / ab;
+  const [[x1, y1], [x2, y2], [x3, y3]] = pts;
+  const prompt = `Triangle ABC has A = ${pt(A)}, B = ${pt(B)} and C = ${pt(C)}. Take AB as the base.`;
+  const explanation = [
+    `**Area** (shoelace): |${x1} × ${par(y2 - y3)} + ${x2} × ${par(y3 - y1)} + ${x3} × ${par(y1 - y2)}| ÷ 2 = |${cr}| ÷ 2 = **${num(area)}**.`,
+    `**Base** AB = √(${(B[0] - A[0]) ** 2} + ${(B[1] - A[1]) ** 2}) = √${ab2} ≈ ${ab.toFixed(4)}.`,
+    `**Height:** Area = ½ × base × height, so height = 2 × ${num(area)} ÷ √${ab2} ≈ ${h.toFixed(4)}, which rounds to **${fmt2(h)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "area", label: "Area", ask: `Area of the triangle.${EXACT}`, answerType: "number", answer: area, tolerance: 0, hint: "Shoelace: |x1(y2 − y3) + x2(y3 − y1) + x3(y1 − y2)| ÷ 2." },
+    { id: "h", label: "Height", ask: `Perpendicular height from C to the line AB.${DP2}`, answerType: "number", answer: round2(h), tolerance: 0.005, hint: "Area = ½ × AB × height. Find AB with Pythagoras and rearrange for the height (use the unrounded AB)." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts(pts),
+    hints: [
+      "Find the area first with the shoelace formula (`abs(_x1*(_y2 - _y3) + _x2*(_y3 - _y1) + _x3*(_y1 - _y2)) / 2`).",
+      "The same area is ½ × AB × height, where the height is measured from C at right angles to AB. Find AB, then rearrange: height = 2 × area ÷ AB.",
+    ],
+    params: { multi: true, parts: [{ id: "area", kind: "area", pts }, { id: "h", kind: "x-height", pts }] },
+  };
+}
+
+// points-distance / expert: the fourth corner of a parallelogram, then a diagonal.
+function xParallelogram(rng) {
+  const pts = draw(
+    () => [0, 1, 2].map(() => [rng.int(-8, 8), rng.int(-8, 8)]),
+    ([A, B, C]) => {
+      const D = [A[0] + C[0] - B[0], A[1] + C[1] - B[1]];
+      const bd = Math.hypot(D[0] - B[0], D[1] - B[1]);
+      return Math.abs(cross3(A, B, C)) >= 6 && Math.abs(D[0]) <= 16 && Math.abs(D[1]) <= 16 && !nearHalf(bd) && !Number.isInteger(bd);
+    }
+  );
+  const [A, B, C] = pts;
+  const D = [A[0] + C[0] - B[0], A[1] + C[1] - B[1]];
+  const bd2 = (D[0] - B[0]) ** 2 + (D[1] - B[1]) ** 2;
+  const bd = Math.sqrt(bd2);
+  const prompt = `ABCD is a parallelogram, with its corners in that order. A = ${pt(A)}, B = ${pt(B)} and C = ${pt(C)}.`;
+  const explanation = [
+    `In a parallelogram, the step from B to A is the same as the step from C to D (opposite sides are equal and parallel).`,
+    `B to A: (${num(A[0] - B[0])}, ${num(A[1] - B[1])}). So D = (${num(C[0])} + ${par(A[0] - B[0])}, ${num(C[1])} + ${par(A[1] - B[1])}) = **${pt(D)}**.`,
+    `Check: the diagonals bisect each other, and AC and BD both have midpoint (${num((A[0] + C[0]) / 2)}, ${num((A[1] + C[1]) / 2)}).`,
+    `BD = √(${(D[0] - B[0]) ** 2} + ${(D[1] - B[1]) ** 2}) = √${bd2} ≈ ${bd.toFixed(4)}, which rounds to **${fmt2(bd)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x", label: "D: x", ask: `x-coordinate of D.${WHOLE}`, answerType: "number", answer: D[0], tolerance: 0, hint: "Apply the B-to-A step to C, in x (`_x3 + _x1 - _x2`)." },
+    { id: "y", label: "D: y", ask: `y-coordinate of D.${WHOLE}`, answerType: "number", answer: D[1], tolerance: 0, hint: "Apply the B-to-A step to C, in y (`_y3 + _y1 - _y2`)." },
+    { id: "bd", label: "Diagonal BD", ask: `Length of the diagonal BD.${DP2}`, answerType: "number", answer: round2(bd), tolerance: 0.005, hint: "Pythagoras from B to your D." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts(pts),
+    hints: [
+      "Going round ABCD, side DC is parallel and equal to AB, so the step from B to A equals the step from C to D.",
+      "Or use the diagonals: they bisect each other, so the midpoint of AC is also the midpoint of BD.",
+    ],
+    params: { multi: true, parts: [{ id: "x", kind: "x-para", pts, axis: 0 }, { id: "y", kind: "x-para", pts, axis: 1 }, { id: "bd", kind: "x-paraLen", pts }] },
+  };
+}
+
+// gradient-lines / expert: C = (k, yC) on the line through A and B; then the y-intercept.
+function xCollinear(rng) {
+  const [A, B, yC] = draw(
+    () => [[rng.int(-9, 9), rng.int(-9, 9)], [rng.int(-9, 9), rng.int(-9, 9)], rng.int(-12, 12)],
+    ([P, Q, y]) => Q[0] !== P[0] && Q[1] !== P[1] && y !== P[1] && y !== Q[1] && lineThrough(P, Q).c !== 0
+  );
+  const dx = B[0] - A[0], dy = B[1] - A[1];
+  const m = frac(dy, dx);
+  const k = frac(A[0] * dy + (yC - A[1]) * dx, dy);
+  const L = lineThrough(A, B);
+  const c = yIntOf(L);
+  const prompt = `The points A = ${pt(A)}, B = ${pt(B)} and C = (k, ${yC}) lie on one straight line.`;
+  const explanation = [
+    gradExplain(A, B),
+    `C is on the same line, so the gradient from A to C is the same: \`(${yC} − ${par(A[1])}) / (k − ${par(A[0])}) = ${fracStr(m)}\`.`,
+    `So k − ${par(A[0])} = ${yC - A[1]} ÷ ${fracStr(m)} = ${fracStr(frac((yC - A[1]) * dx, dy))}, and k = **${fracStr(k)}**.`,
+    `y-intercept: c = y − mx = ${num(A[1])} − ${fracStr(m)} × ${par(A[0])} = **${fracStr(c)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "k", label: "k", ask: `The value of k.${FRAC}`, answerType: "text", answer: fracStr(k), hint: `Set the gradient from A to C equal to the gradient from A to B, then solve for k.` },
+    { id: "c", label: "y-intercept", ask: `The y-intercept of the line.${FRAC}`, answerType: "text", answer: fracStr(c), hint: `Put A into y = mx + c: c = ${num(A[1])} − m × ${par(A[0])}.` },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: [...givenPts([A, B]), { label: "_y3", value: yC }],
+    hints: [
+      "Points on one straight line all give the same gradient, whichever two you pick.",
+      `Find the gradient from A to B as a fraction. The gradient from A to C is (${yC} − ${par(A[1])}) / (k − ${par(A[0])}); set the two equal.`,
+    ],
+    params: { multi: true, parts: [{ id: "k", kind: "x-colK", A, B, yC }, { id: "c", kind: "x-colC", A, B }] },
+  };
+}
+
+// gradient-lines / expert: line through two points -> both intercepts -> triangle with the axes.
+function xAxisTriangle(rng) {
+  const o = draw(
+    () => {
+      const xi = nz(rng, -9, 9), yi = nz(rng, -9, 9);
+      const g = gcd(xi, yi);
+      const t1 = rng.int(-3, g + 3), t2 = rng.int(-3, g + 3);
+      return { xi, yi, g, t1, t2 };
+    },
+    ({ xi, yi, g, t1, t2 }) => {
+      if (t1 === t2 || [0, g].includes(t1) || [0, g].includes(t2) || Math.abs(xi) === Math.abs(yi) && g === 1) return false;
+      const P = [xi - (t1 * xi) / g, (t1 * yi) / g], Q = [xi - (t2 * xi) / g, (t2 * yi) / g];
+      return [...P, ...Q].every((v) => Math.abs(v) <= 20);
+    }
+  );
+  const { xi, yi, g, t1, t2 } = o;
+  const P0 = [xi - (t1 * xi) / g, (t1 * yi) / g], Q0 = [xi - (t2 * xi) / g, (t2 * yi) / g];
+  const [P, Q] = P0[0] < Q0[0] ? [P0, Q0] : [Q0, P0];
+  const L = lineThrough(P, Q);
+  const m = slopeOf(L);
+  const area = Math.abs(xi * yi) / 2;
+  const prompt = `A straight line passes through ${pt(P)} and ${pt(Q)}. Together with the x- and y-axes it encloses a triangle.`;
+  const explanation = [
+    gradExplain(P, Q),
+    `Through ${pt(P)}: c = ${num(P[1])} − ${fracStr(m)} × ${par(P[0])} = ${num(yi)}, so the line is \`${fmtLine(L)}\` (or \`${fmtGeneral(L)}\`).`,
+    `- y-axis (x = 0): y = **${yi}**\n- x-axis (y = 0): ${L.a}x = ${L.c}, so x = **${xi}**`,
+    `The triangle has its right angle at the origin, with legs ${Math.abs(xi)} and ${Math.abs(yi)}: area = ${Math.abs(xi)} × ${Math.abs(yi)} ÷ 2 = **${num(area)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "xi", label: "x-intercept", ask: `x-coordinate where the line crosses the x-axis.${WHOLE}`, answerType: "number", answer: xi, tolerance: 0, hint: "With the equation of the line, set y = 0 and solve for x." },
+    { id: "yi", label: "y-intercept", ask: `y-coordinate where the line crosses the y-axis.${WHOLE}`, answerType: "number", answer: yi, tolerance: 0, hint: "Set x = 0 (this is c in y = mx + c)." },
+    { id: "area", label: "Area", ask: `Area of the triangle.${EXACT}`, answerType: "number", answer: area, tolerance: 0, hint: "Right triangle at the origin: half of base × height, using the sizes of the two intercepts." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts([P, Q]),
+    hints: [
+      "Find the equation of the line first: the gradient from the two points, then c by substituting one point.",
+      "The triangle's corners are the origin and the two points where the line crosses the axes.",
+    ],
+    params: { multi: true, parts: [{ id: "xi", kind: "x-axInt", P, Q, axis: "x" }, { id: "yi", kind: "x-axInt", P, Q, axis: "y" }, { id: "area", kind: "x-axArea", P, Q }] },
+  };
+}
+
+const FARES = [
+  { who: "A taxi firm", item: "km", items: "km", fee: "fixed charge", job: "journey" },
+  { who: "A plumber", item: "hour", items: "hours", fee: "call-out charge", job: "job" },
+  { who: "A bike hire shop", item: "hour", items: "hours", fee: "booking fee", job: "hire" },
+  { who: "A print shop", item: "poster", items: "posters", fee: "set-up charge", job: "order" },
+  { who: "A courier", item: "kg", items: "kg", fee: "base charge", job: "parcel" },
+];
+
+// gradient-lines / expert: realistic straight-line model from two data points (multi-part).
+function xFare(rng) {
+  const ctx = rng.pick(FARES);
+  const rp = rng.int(8, 40) * 10; // pence per unit
+  const fp = rng.int(2, 16) * 50; // fixed charge in pence
+  const d1 = rng.int(2, 6);
+  const d2 = d1 + rng.int(2, 8);
+  const d3 = d2 + rng.int(1, 15);
+  const C1 = fp + rp * d1, C2 = fp + rp * d2, C3 = fp + rp * d3;
+  const prompt = `${ctx.who} charges a ${ctx.fee} plus a fixed price per ${ctx.item}. A ${ctx.job} of ${d1} ${ctx.items} costs ${money(C1)} and a ${ctx.job} of ${d2} ${ctx.items} costs ${money(C2)}. The cost is a straight-line function of the number of ${ctx.items}.`;
+  const explanation = [
+    `Treat the two ${ctx.job}s as points (${d1}, ${(C1 / 100).toFixed(2)}) and (${d2}, ${(C2 / 100).toFixed(2)}) on the line cost = m × n + c.`,
+    `**Gradient** (price per ${ctx.item}): (${(C2 / 100).toFixed(2)} − ${(C1 / 100).toFixed(2)}) ÷ (${d2} − ${d1}) = ${((C2 - C1) / 100).toFixed(2)} ÷ ${d2 - d1} = **${(rp / 100).toFixed(2)}**.`,
+    `**Intercept** (the ${ctx.fee}): c = ${(C1 / 100).toFixed(2)} − ${(rp / 100).toFixed(2)} × ${d1} = **${(fp / 100).toFixed(2)}**.`,
+    `**Working backwards:** ${(C3 / 100).toFixed(2)} = ${(fp / 100).toFixed(2)} + ${(rp / 100).toFixed(2)}n, so n = (${(C3 / 100).toFixed(2)} − ${(fp / 100).toFixed(2)}) ÷ ${(rp / 100).toFixed(2)} = **${d3}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "rate", label: `Price per ${ctx.item}`, ask: `Price per ${ctx.item}, in £ (exact, like 1.25).`, answerType: "number", answer: rp / 100, tolerance: 0.001, hint: "Gradient = change in cost ÷ change in amount (`(_c2 - _c1) / (_n2 - _n1)`)." },
+    { id: "fee", label: ctx.fee[0].toUpperCase() + ctx.fee.slice(1), ask: `The ${ctx.fee}, in £ (exact, like 4.50).`, answerType: "number", answer: fp / 100, tolerance: 0.001, hint: `Take ${d1} times the price per ${ctx.item} off the first cost.` },
+    { id: "n", label: "Working back", ask: `How many ${ctx.items} does a ${money(C3)} ${ctx.job} cover?${WHOLE}`, answerType: "number", answer: d3, tolerance: 0, hint: `Subtract the ${ctx.fee} from ${money(C3)}, then divide by the price per ${ctx.item}.` },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    given: [{ label: "_n1", value: d1 }, { label: "_c1", value: C1 / 100 }, { label: "_n2", value: d2 }, { label: "_c2", value: C2 / 100 }, { label: "_c3", value: C3 / 100 }],
+    hints: [
+      `Think of each ${ctx.job} as a point (amount, cost). The price per ${ctx.item} is the gradient and the ${ctx.fee} is the intercept.`,
+      "Find the gradient from the two points, then substitute one point into cost = m × n + c to find c.",
+    ],
+    params: { multi: true, parts: [{ id: "rate", kind: "x-fareRate", d1, d2, C1, C2 }, { id: "fee", kind: "x-fareFee", d1, d2, C1, C2 }, { id: "n", kind: "x-fareN", d1, d2, C1, C2, C3 }] },
+  };
+}
+
+// parallel-perpendicular / expert: foot of the perpendicular from P to a line, and the shortest distance.
+function xFoot(rng) {
+  const o = draw(
+    () => ({ F: [rng.int(-6, 6), rng.int(-6, 6)], dir: [rng.int(0, 4), rng.int(-4, 4)], t: nz(rng, -3, 3) }),
+    ({ F, dir, t }) => {
+      if (gcd(dir[0], dir[1]) !== 1) return false;
+      const P = [F[0] + t * dir[1], F[1] - t * dir[0]];
+      const d = Math.abs(t) * Math.hypot(dir[0], dir[1]);
+      return Math.abs(P[0]) <= 15 && Math.abs(P[1]) <= 15 && !nearHalf(d);
+    }
+  );
+  const { F, dir, t } = o;
+  const L = normLine(dir[1], -dir[0], dir[1] * F[0] - dir[0] * F[1]);
+  const P = [F[0] + t * dir[1], F[1] - t * dir[0]];
+  const d = Math.abs(t) * Math.hypot(dir[0], dir[1]);
+  const d2 = (P[0] - F[0]) ** 2 + (P[1] - F[1]) ** 2;
+  const shown = fmtGeneral(L);
+  const horiz = L.a === 0, vert = L.b === 0;
+  const perpTxt = horiz ? "The line is horizontal, so the perpendicular through P is vertical: x stays the same."
+    : vert ? "The line is vertical, so the perpendicular through P is horizontal: y stays the same."
+    : `The line has gradient ${fracStr(slopeOf(L))}, so the perpendicular through P has gradient ${fracStr(perpOf(slopeOf(L)))}: \`${fmtGeneral(lineSlopePoint(perpOf(slopeOf(L)), P))}\`.`;
+  const prompt = `P = ${pt(P)} and the line ℓ is \`${shown}\`. The foot of the perpendicular F is the point on ℓ closest to P.`;
+  const explanation = [
+    perpTxt,
+    `Solve it together with \`${shown}\`: they meet at F = **${pt(F)}**.`,
+    `The shortest distance is PF = √(${(P[0] - F[0]) ** 2} + ${(P[1] - F[1]) ** 2}) = √${d2} ≈ ${d.toFixed(4)}, which rounds to **${fmt2(d)}**.`,
+    `Check with the formula |ax + by − c| ÷ √(a² + b²) = |${L.a} × ${par(P[0])} + ${par(L.b)} × ${par(P[1])} − ${par(L.c)}| ÷ √${L.a * L.a + L.b * L.b}.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x", label: "F: x", ask: `x-coordinate of F.${WHOLE}`, answerType: "number", answer: F[0], tolerance: 0, hint: "Solve the perpendicular line and ℓ together (substitute one into the other)." },
+    { id: "y", label: "F: y", ask: `y-coordinate of F.${WHOLE}`, answerType: "number", answer: F[1], tolerance: 0, hint: "Put your x back into either line; F must fit ℓ." },
+    { id: "d", label: "Distance", ask: `Shortest distance from P to ℓ.${DP2}`, answerType: "number", answer: round2(d), tolerance: 0.005, hint: "The shortest distance is the length PF (Pythagoras), or |ax + by − c| ÷ √(a² + b²) with P." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    given: [{ label: "_x1", value: P[0] }, { label: "_y1", value: P[1] }, { label: "_a", value: L.a }, { label: "_b", value: L.b }, { label: "_c", value: L.c }],
+    hints: [
+      "The shortest path from a point to a line meets the line at right angles.",
+      horiz || vert ? "ℓ is parallel to an axis, so the perpendicular through P is parallel to the other axis." : `Find ℓ's gradient, take the negative reciprocal, and write the line through P with that gradient.`,
+      "F is where that perpendicular meets ℓ: solve the two equations together.",
+    ],
+    params: { multi: true, parts: [{ id: "x", kind: "x-foot", L, P, axis: 0 }, { id: "y", kind: "x-foot", L, P, axis: 1 }, { id: "d", kind: "x-footLen", L, P }] },
+  };
+}
+
+// parallel-perpendicular / expert: angle ABC = 90°, find the missing coordinate k, then the area.
+function xRightK(rng) {
+  const o = draw(
+    () => ({ B: [rng.int(-6, 6), rng.int(-6, 6)], u: [nz(rng, -5, 5), nz(rng, -5, 5)], s: rng.pick([1, 2, -1, -2]) }),
+    ({ B, u, s }) => {
+      const A = [B[0] + u[0], B[1] + u[1]], C = [B[0] - s * u[1], B[1] + s * u[0]];
+      return gcd(u[0], u[1]) === 1 && [...A, ...C].every((v) => Math.abs(v) <= 14) && Math.abs(u[0]) !== Math.abs(u[1]);
+    }
+  );
+  const { B, u, s } = o;
+  const A = [B[0] + u[0], B[1] + u[1]], C = [B[0] - s * u[1], B[1] + s * u[0]];
+  const k = C[0];
+  const area = (Math.abs(s) * (u[0] * u[0] + u[1] * u[1])) / 2;
+  const mBA = frac(u[1], u[0]);
+  const prompt = `A = ${pt(A)}, B = ${pt(B)} and C = (k, ${C[1]}). The angle ABC is a right angle.`;
+  const explanation = [
+    `BA and BC must be perpendicular. BA has gradient ${u[1]} / ${par(u[0])} = ${fracStr(mBA)}, so BC needs gradient ${fracStr(perpOf(mBA))}.`,
+    `Gradient of BC: \`(${C[1]} − ${par(B[1])}) / (k − ${par(B[0])}) = ${fracStr(perpOf(mBA))}\`, so k − ${par(B[0])} = ${num(C[1] - B[1])} ÷ ${fracStr(perpOf(mBA))} = ${num(k - B[0])} and k = **${k}**.`,
+    `(Or use the dot product: (${u[0]})(k − ${par(B[0])}) + (${u[1]})(${C[1]} − ${par(B[1])}) = 0.)`,
+    `With the right angle at B, the area is ½ × BA × BC = ½ × √${u[0] ** 2 + u[1] ** 2} × √${s * s * (u[0] ** 2 + u[1] ** 2)} = **${num(area)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "k", label: "k", ask: `The value of k.${WHOLE}`, answerType: "number", answer: k, tolerance: 0, hint: "Write the gradient of BC with k in it and set (gradient of BA) × (gradient of BC) = −1." },
+    { id: "area", label: "Area", ask: `Area of triangle ABC.${EXACT}`, answerType: "number", answer: area, tolerance: 0, hint: "The two sides at the right angle are the base and height: ½ × BA × BC." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    given: [{ label: "_x1", value: A[0] }, { label: "_y1", value: A[1] }, { label: "_x2", value: B[0] }, { label: "_y2", value: B[1] }, { label: "_y3", value: C[1] }],
+    hints: [
+      "The right angle is at B, so the sides BA and BC are perpendicular: their gradients multiply to −1.",
+      `BA has gradient ${fracStr(mBA)}. Write BC's gradient as (${C[1]} − ${par(B[1])}) / (k − ${par(B[0])}) and set it equal to the negative reciprocal.`,
+    ],
+    params: { multi: true, parts: [{ id: "k", kind: "x-rightK", A, B, yC: C[1] }, { id: "area", kind: "x-rightArea", A, B, yC: C[1] }] },
+  };
+}
+
+// parallel-perpendicular / expert: circle through three points = where two perpendicular bisectors meet.
+function xCircumcentre(rng) {
+  const r2 = rng.pick(R2S);
+  const O = [rng.int(-6, 6), rng.int(-6, 6)];
+  // No pair of points is a diameter, so no chord's midpoint is the centre itself.
+  const tri = draw(() => rng.shuffle(latticeCircle(r2)).slice(0, 3), (p) => Math.abs(cross3(p[0], p[1], p[2])) >= 10 && [[0, 1], [1, 2], [0, 2]].every(([i, j]) => p[i][0] !== -p[j][0] || p[i][1] !== -p[j][1]));
+  const [A, B, C] = tri.map(([x, y]) => [x + O[0], y + O[1]]);
+  const r = Math.sqrt(r2);
+  const MA = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], MB = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2];
+  const bis = (P, Q) => {
+    const M = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
+    const dx = Q[0] - P[0], dy = Q[1] - P[1];
+    // dx·x + dy·y = dx·Mx + dy·My, doubled to stay whole.
+    return normLine(2 * dx, 2 * dy, dx * (P[0] + Q[0]) + dy * (P[1] + Q[1]));
+  };
+  const L1 = bis(A, B), L2 = bis(B, C);
+  const prompt = `A circle passes through A = ${pt(A)}, B = ${pt(B)} and C = ${pt(C)}. Find its centre and radius.`;
+  const explanation = [
+    `The centre is the same distance from all three points, so it lies on the perpendicular bisector of AB and on that of BC.`,
+    `- AB: midpoint ${pt(MA)}, perpendicular bisector \`${fmtGeneral(L1)}\`\n- BC: midpoint ${pt(MB)}, perpendicular bisector \`${fmtGeneral(L2)}\``,
+    `Solving these together gives the centre **${pt(O)}**.`,
+    `Radius = distance from the centre to A = √(${(A[0] - O[0]) ** 2} + ${(A[1] - O[1]) ** 2}) = √${r2} ≈ ${r.toFixed(4)}, so it is **${fmt2(r)}** to 2 decimal places.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x", label: "Centre x", ask: `x-coordinate of the centre.${WHOLE}`, answerType: "number", answer: O[0], tolerance: 0, hint: "Solve the two perpendicular bisector equations together." },
+    { id: "y", label: "Centre y", ask: `y-coordinate of the centre.${WHOLE}`, answerType: "number", answer: O[1], tolerance: 0, hint: "Put your x back into one of the bisectors; check the centre is equally far from A, B and C." },
+    { id: "r", label: "Radius", ask: `Radius of the circle.${DP2}`, answerType: "number", answer: round2(r), tolerance: 0.005, hint: "Pythagoras from the centre to any one of the three points." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation, given: givenPts([A, B, C]),
+    hints: [
+      "Every point on the perpendicular bisector of AB is equally far from A and B. The centre is equally far from all three points.",
+      "So find two perpendicular bisectors: AB's goes through the midpoint of AB at right angles to AB, and BC's goes through the midpoint of BC at right angles to BC.",
+      "The centre is where the two bisectors meet: solve their equations together.",
+    ],
+    params: { multi: true, parts: [{ id: "x", kind: "x-circ", pts: [A, B, C], axis: 0 }, { id: "y", kind: "x-circ", pts: [A, B, C], axis: 1 }, { id: "r", kind: "x-circR", pts: [A, B, C] }] },
+  };
+}
+
+// "x² - 3x + 2"
+const quadStr = (b, d) => `x²${b === 0 ? "" : ` ${b < 0 ? "-" : "+"} ${Math.abs(b) === 1 ? "" : Math.abs(b)}x`}${d === 0 ? "" : signed(d)}`;
+const parabStr = (b, d) => `y = ${quadStr(b, d)}`;
+
+// intersections / expert: a line meets a parabola at two points (multi-part).
+function xParabola(rng) {
+  const [r1, r2] = draw(() => [rng.int(-6, 6), rng.int(-6, 6)], ([p, q]) => p < q);
+  const b = rng.int(-6, 6), d = rng.int(-9, 9);
+  const m = r1 + r2 + b, c = d - r1 * r2;
+  const yAt = (x) => x * x + b * x + d;
+  const shownL = fmtSI([m, 1], [c, 1]);
+  const shownP = parabStr(b, d);
+  const qb = b - m, qc = d - c; // x² + qb·x + qc = 0
+  const prompt = `The line \`${shownL}\` meets the curve \`${shownP}\` at two points.`;
+  const fac = (r) => (r === 0 ? "x" : `(x ${r < 0 ? "+" : "-"} ${Math.abs(r)})`);
+  const explanation = [
+    `Where they meet, the y-values are equal: \`${quadStr(b, d)} = ${shownL.slice(4)}\`.`,
+    `Move everything to one side: \`${quadStr(qb, qc)} = 0\`, which factorises as \`${fac(r1)}${fac(r2)} = 0\`.`,
+    `So x = **${r1}** or x = **${r2}**.`,
+    `At x = ${r2}, the line gives y = ${m} × ${par(r2)}${signed(c)} = **${m * r2 + c}** (the curve gives the same).`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x1", label: "Smaller x", ask: `The smaller x-coordinate.${WHOLE}`, answerType: "number", answer: r1, tolerance: 0, hint: "Set the two expressions for y equal and rearrange to a quadratic = 0, then factorise." },
+    { id: "x2", label: "Larger x", ask: `The larger x-coordinate.${WHOLE}`, answerType: "number", answer: r2, tolerance: 0, hint: "The quadratic has two roots; this part wants the bigger one." },
+    { id: "y2", label: "y at larger x", ask: `The y-coordinate of the point with the larger x.${WHOLE}`, answerType: "number", answer: m * r2 + c, tolerance: 0, hint: "Substitute that x into the line (the easier of the two equations)." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    given: [{ label: "_m", value: m }, { label: "_c", value: c }, { label: "_b", value: b }, { label: "_d", value: d }],
+    hints: [
+      "At a meeting point both equations give the same y, so set the right-hand sides equal.",
+      `Move every term to one side to get x² + px + q = 0. Its two roots are the x-coordinates.`,
+    ],
+    params: { multi: true, parts: [{ id: "x1", kind: "x-parab", m, c, b, d, which: 0 }, { id: "x2", kind: "x-parab", m, c, b, d, which: 1 }, { id: "y2", kind: "x-parabY", m, c, b, d }] },
+  };
+}
+
+// intersections / expert: three lines make a triangle: one corner, then its area.
+function xThreeLines(rng) {
+  const pts = draw(
+    () => [0, 1, 2].map(() => [rng.int(-7, 7), rng.int(-7, 7)]),
+    (p) => {
+      if (Math.abs(cross3(p[0], p[1], p[2])) < 8) return false;
+      // No vertical lines, so each one can be shown as y = mx + c or ax + by = c with b ≠ 0.
+      return p[0][0] !== p[1][0] && p[1][0] !== p[2][0] && p[2][0] !== p[0][0];
+    }
+  );
+  const order = rng.shuffle([0, 1, 2]);
+  const edges = [[0, 1], [1, 2], [2, 0]];
+  const lines = order.map((e) => lineThrough(pts[edges[e][0]], pts[edges[e][1]]));
+  // The corner shared by the first two listed lines.
+  const e1 = edges[order[0]], e2 = edges[order[1]];
+  const Vi = e1.find((i) => e2.includes(i));
+  const V = pts[Vi];
+  const area = Math.abs(cross3(pts[0], pts[1], pts[2])) / 2;
+  const show = lines.map((L) => (isWhole(slopeOf(L)) && isWhole(yIntOf(L)) ? fmtLine(L) : fmtGeneral(L)));
+  const others = pts.filter((_, i) => i !== Vi);
+  const [[x1, y1], [x2, y2], [x3, y3]] = [V, ...others];
+  const s = x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2);
+  const prompt = `The lines ℓ1: \`${show[0]}\`, ℓ2: \`${show[1]}\` and ℓ3: \`${show[2]}\` enclose a triangle.`;
+  const explanation = [
+    `Each corner is where two of the lines meet. Solve each pair of equations together:`,
+    `- ℓ1 and ℓ2 meet at **${pt(V)}**\n- the other corners are ${pt(others[0])} and ${pt(others[1])}`,
+    `Area (shoelace) = |${x1} × ${par(y2 - y3)} + ${x2} × ${par(y3 - y1)} + ${x3} × ${par(y1 - y2)}| ÷ 2 = |${s}| ÷ 2 = **${num(area)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "x", label: "Corner x", ask: `x-coordinate where ℓ1 and ℓ2 meet.${WHOLE}`, answerType: "number", answer: V[0], tolerance: 0, hint: "Solve ℓ1 and ℓ2 together: substitute or eliminate one variable." },
+    { id: "y", label: "Corner y", ask: `y-coordinate where ℓ1 and ℓ2 meet.${WHOLE}`, answerType: "number", answer: V[1], tolerance: 0, hint: "Put your x into ℓ1 or ℓ2; check it fits the other." },
+    { id: "area", label: "Area", ask: `Area of the triangle.${EXACT}`, answerType: "number", answer: area, tolerance: 0, hint: "You need all three corners: also solve ℓ2 with ℓ3 and ℓ3 with ℓ1, then use the shoelace formula." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    hints: [
+      "A corner of the triangle is where two of the lines cross. Three lines, three pairs, three corners.",
+      "Solve each pair of equations simultaneously. Then the shoelace formula gives the area: |x1(y2 − y3) + x2(y3 − y1) + x3(y1 − y2)| ÷ 2.",
+    ],
+    params: { multi: true, parts: [{ id: "x", kind: "x-tri", lines, axis: 0 }, { id: "y", kind: "x-tri", lines, axis: 1 }, { id: "area", kind: "x-triArea", lines }] },
+  };
+}
+
+const SHARE = ["None", "Exactly one", "Exactly two", "Infinitely many"];
+
+// intersections / expert: edge cases: which k makes the lines parallel, and when are they the same line?
+function xParallelEdge(rng) {
+  const o = draw(
+    () => ({ a1: nz(rng, -6, 6), a2: nz(rng, -6, 6), b2: nz(rng, -6, 6), c1: rng.int(-12, 12), c2: nz(rng, -12, 12) }),
+    ({ a1, a2, b2, c1, c2 }) => gcd(gcd(a2, b2), c2) === 1 && a1 * c2 !== a2 * c1 && Math.abs(a1) !== Math.abs(a2)
+  );
+  const { a1, a2, b2, c1, c2 } = o;
+  const k = frac(a1 * b2, a2);
+  const cs = frac(a1 * c2, a2);
+  const line1 = `${term(a1, "x", true)} + ky = ${c1}`;
+  const line2 = fmtGeneral({ a: a2, b: b2, c: c2 });
+  const prompt = `Consider the lines \`${line1}\` and \`${line2}\`, where k is a constant.`;
+  const ratio = frac(a1, a2);
+  const explanation = [
+    `Two lines are parallel when their x and y coefficients are in the same ratio. The x coefficients are ${a1} and ${a2}, a ratio of ${fracStr(ratio)}.`,
+    `So k = ${fracStr(ratio)} × ${par(b2)} = **${fracStr(k)}**. (Check: both lines then have gradient ${fracStr(frac(-a2, b2))}.)`,
+    `With that k, the right-hand sides are ${c1} and ${c2}. ${c1} is not ${fracStr(ratio)} × ${par(c2)}, so the lines are parallel but different: they share **none** of their points.`,
+    `To make them the same line, the right-hand side ${c1} would have to be ${fracStr(ratio)} × ${par(c2)} = **${fracStr(cs)}**.`,
+  ].join("\n\n");
+  const parts = [
+    { id: "k", label: "k", ask: `The value of k that makes the lines parallel.${FRAC}`, answerType: "text", answer: fracStr(k), hint: "Parallel means equal gradients; write both gradients in terms of the coefficients (the first is −(x coefficient) ÷ k)." },
+    { id: "n", label: "Shared points", ask: "With that k, how many points do the two lines have in common?", answerType: "choice", answer: "None", choices: SHARE.slice(), hint: "Same gradient: either they never meet, or they are the same line. Compare the right-hand sides in the same ratio." },
+    { id: "c", label: "Same line", ask: `With that k, what would the right-hand side ${c1} have to become for the two equations to describe the same line?${FRAC}`, answerType: "text", answer: fracStr(cs), hint: "For the same line, every term of the first equation is the same multiple of the second, including the right-hand side." },
+  ];
+  return {
+    prompt, answerType: "multi", parts, explanation,
+    given: [{ label: "_a1", value: a1 }, { label: "_c1", value: c1 }, { label: "_a2", value: a2 }, { label: "_b2", value: b2 }, { label: "_c2", value: c2 }],
+    hints: [
+      "Two straight lines either meet once, never meet (parallel), or are the same line (every point shared).",
+      guard(guard(`Compare the equations term by term: the first x coefficient is ${fracStr(ratio)} times the second. Parallel lines need the y coefficients in that same ratio.`,
+        "Compare the equations term by term: divide the first x coefficient by the second. Parallel lines need the y coefficients in that same ratio.", fracStr(k), prompt),
+        "Compare the equations term by term: divide the first x coefficient by the second. Parallel lines need the y coefficients in that same ratio.", fracStr(cs), prompt),
+    ],
+    params: { multi: true, parts: [{ id: "k", kind: "x-edgeK", a1, a2, b2 }, { id: "n", kind: "x-edgeN", a1, a2, b2, c1, c2 }, { id: "c", kind: "x-edgeC", a1, a2, b2, c2 }] },
+  };
+}
+
+function genExpert(subtopic, rng) {
+  if (subtopic === "points-distance") {
+    const t = rng.int(0, 3);
+    if (t === 0) return xRatio(rng);
+    if (t === 1) return xEquidistant(rng);
+    if (t === 2) return xTriHeight(rng);
+    return xParallelogram(rng);
+  }
+  if (subtopic === "gradient-lines") {
+    const t = rng.int(0, 2);
+    if (t === 0) return xCollinear(rng);
+    if (t === 1) return xAxisTriangle(rng);
+    return xFare(rng);
+  }
+  if (subtopic === "parallel-perpendicular") {
+    const t = rng.int(0, 2);
+    if (t === 0) return xFoot(rng);
+    if (t === 1) return xRightK(rng);
+    return xCircumcentre(rng);
+  }
+  if (subtopic === "intersections") {
+    const t = rng.int(0, 2);
+    if (t === 0) return xParabola(rng);
+    if (t === 1) return xThreeLines(rng);
+    return xParallelEdge(rng);
+  }
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "points-distance") return genPoints(difficulty, rng);
   if (subtopic === "gradient-lines") return genGradient(difficulty, rng);
@@ -1226,7 +1784,7 @@ function okValue(p, v) {
       return Math.abs(2 * x - Math.abs(xi) * Math.abs(yi)) < 1e-9;
     }
     default:
-      return false;
+      return typeof p.kind === "string" && p.kind.startsWith("x-") ? okExpert(p, v) : false;
   }
 }
 
@@ -1252,4 +1810,185 @@ export function verify(question, answer) {
     });
   }
   return checkOne(p, answer, question.answerType, question.choices);
+}
+
+// ---- Expert verification (independent of the expert generators above) ----
+
+// Intersection of a1x + b1y = c1 and a2x + b2y = c2 by Cramer's rule (null when parallel).
+function cramer(l1, l2) {
+  const det = l1.a * l2.b - l2.a * l1.b;
+  if (Math.abs(det) < 1e-12) return null;
+  return [(l1.c * l2.b - l2.c * l1.b) / det, (l1.a * l2.c - l2.a * l1.c) / det];
+}
+// |v - truth| within a 2-dp rounding window.
+const near2 = (v, truth) => Number.isFinite(v) && Number.isFinite(truth) && Math.abs(v - truth) <= 0.005 + 1e-9;
+const isInt = (v) => Number.isInteger(v);
+// Line through two points as { a, b, c } straight from the two-point form (no normalising).
+const thru = (P, Q) => ({ a: Q[1] - P[1], b: P[0] - Q[0], c: (Q[1] - P[1]) * P[0] + (P[0] - Q[0]) * P[1] });
+// Heron in whole numbers: 16·Area² from the squared sides.
+function heron16(A, B, C) {
+  const a2 = sqd(B, C), b2 = sqd(A, C), c2 = sqd(A, B);
+  return 2 * (a2 * b2 + b2 * c2 + c2 * a2) - (a2 * a2 + b2 * b2 + c2 * c2);
+}
+
+function okExpert(p, v) {
+  const x = numVal(v);
+  switch (p.kind) {
+    case "x-ratio": {
+      // P between A and B with n·AP = m·PB along this axis: n(x - a) = m(b - x).
+      const a = p.A[p.axis], b = p.B[p.axis];
+      return isInt(x) && p.n * (x - a) === p.m * (b - x);
+    }
+    case "x-ratioLen":
+      // AP is m/(m+n) of AB: AP² = m²·AB² / (m+n)².
+      return near2(x, Math.sqrt((p.m * p.m * sqd(p.A, p.B)) / (p.m + p.n) ** 2));
+    case "x-equi": {
+      if (!isInt(x)) return false;
+      const P = p.axis === "x" ? [x, 0] : [0, x];
+      return sqd(P, p.A) === sqd(P, p.B);
+    }
+    case "x-equiLen": {
+      // Search the axis for the equidistant whole-number point, then measure.
+      for (let t = -80; t <= 80; t++) {
+        const P = p.axis === "x" ? [t, 0] : [0, t];
+        if (sqd(P, p.A) === sqd(P, p.B)) return near2(x, Math.sqrt(sqd(P, p.A)));
+      }
+      return false;
+    }
+    case "x-height": {
+      // Foot of the perpendicular from C by projection onto AB, then |CF|.
+      const [A, B, C] = p.pts;
+      const u = [B[0] - A[0], B[1] - A[1]];
+      const t = ((C[0] - A[0]) * u[0] + (C[1] - A[1]) * u[1]) / (u[0] * u[0] + u[1] * u[1]);
+      const F = [A[0] + t * u[0], A[1] + t * u[1]];
+      return near2(x, Math.hypot(C[0] - F[0], C[1] - F[1]));
+    }
+    case "x-para": {
+      // Diagonals of a parallelogram bisect each other: mid(AC) = mid(BD).
+      const [A, B, C] = p.pts;
+      const i = p.axis;
+      return isInt(x) && A[i] + C[i] === B[i] + x;
+    }
+    case "x-paraLen": {
+      // D from AB = DC as vectors: D = C - (B - A).
+      const [A, B, C] = p.pts;
+      const D = [C[0] - (B[0] - A[0]), C[1] - (B[1] - A[1])];
+      return near2(x, Math.sqrt(sqd(B, D)));
+    }
+    case "x-colK": {
+      const f = parseFracAnswer(v);
+      if (!f) return false;
+      // Cross product of AB and AC is zero, with C = (f0/f1, yC), scaled by f1.
+      const dx = p.B[0] - p.A[0], dy = p.B[1] - p.A[1];
+      return dx * (p.yC - p.A[1]) * f[1] === dy * (f[0] - p.A[0] * f[1]);
+    }
+    case "x-colC": {
+      const f = parseFracAnswer(v);
+      if (!f) return false;
+      // (0, c) collinear with A and B.
+      const dx = p.B[0] - p.A[0], dy = p.B[1] - p.A[1];
+      return dx * (f[0] - p.A[1] * f[1]) === dy * (0 - p.A[0] * f[1]);
+    }
+    case "x-axInt": {
+      if (!Number.isFinite(x)) return false;
+      const X = p.axis === "x" ? [x, 0] : [0, x];
+      return Math.abs(cross3(p.P, p.Q, X)) < 1e-9;
+    }
+    case "x-axArea": {
+      if (!(x > 0)) return false;
+      const l = thru(p.P, p.Q);
+      const X = cramer(l, { a: 0, b: 1, c: 0 }), Y = cramer(l, { a: 1, b: 0, c: 0 });
+      if (!X || !Y) return false;
+      return Math.abs(2 * x - Math.abs(X[0] * Y[1])) < 1e-9;
+    }
+    case "x-fareRate": {
+      if (!Number.isFinite(x)) return false;
+      const pence = Math.round(x * 100);
+      return Math.abs(x * 100 - pence) < 1e-6 && p.C2 - p.C1 === pence * (p.d2 - p.d1);
+    }
+    case "x-fareFee": {
+      if (!Number.isFinite(x)) return false;
+      const pence = Math.round(x * 100);
+      // Fixed charge f solves f(d2 - d1) = C1·d2 - C2·d1 (eliminating the rate).
+      return Math.abs(x * 100 - pence) < 1e-6 && pence * (p.d2 - p.d1) === p.C1 * p.d2 - p.C2 * p.d1;
+    }
+    case "x-fareN":
+      // The third point lies on the line through the first two.
+      return isInt(x) && (p.C3 - p.C1) * (p.d2 - p.d1) === (p.C2 - p.C1) * (x - p.d1);
+    case "x-foot": {
+      if (!Number.isFinite(x)) return false;
+      // F on ℓ, and PF along ℓ's normal (a, b): F = P + s(a, b) with a·Fx + b·Fy = c.
+      const { a, b, c } = p.L;
+      const s = (c - a * p.P[0] - b * p.P[1]) / (a * a + b * b);
+      const F = [p.P[0] + s * a, p.P[1] + s * b];
+      return isInt(x) && Math.abs(x - F[p.axis]) < 1e-9;
+    }
+    case "x-footLen": {
+      const { a, b, c } = p.L;
+      return near2(x, Math.abs(a * p.P[0] + b * p.P[1] - c) / Math.sqrt(a * a + b * b));
+    }
+    case "x-rightK":
+      // Dot product of BA and BC is zero.
+      return isInt(x) && (p.A[0] - p.B[0]) * (x - p.B[0]) + (p.A[1] - p.B[1]) * (p.yC - p.B[1]) === 0;
+    case "x-rightArea": {
+      if (!(x > 0)) return false;
+      const u = [p.A[0] - p.B[0], p.A[1] - p.B[1]];
+      if (u[0] === 0) return false;
+      const k = p.B[0] - (u[1] * (p.yC - p.B[1])) / u[0];
+      return Math.abs(16 * x * x - heron16(p.A, p.B, [k, p.yC])) < 1e-6;
+    }
+    case "x-circ":
+    case "x-circR": {
+      // Centre from two perpendicular bisectors by Cramer's rule.
+      const [A, B, C] = p.pts;
+      const bis = (P, Q) => ({ a: Q[0] - P[0], b: Q[1] - P[1], c: (Q[0] * Q[0] + Q[1] * Q[1] - P[0] * P[0] - P[1] * P[1]) / 2 });
+      const O = cramer(bis(A, B), bis(B, C));
+      if (!O || !Number.isFinite(x)) return false;
+      if (p.kind === "x-circR") return near2(x, Math.hypot(A[0] - O[0], A[1] - O[1]));
+      return isInt(x) && Math.abs(x - O[p.axis]) < 1e-9;
+    }
+    case "x-parab":
+    case "x-parabY": {
+      // Quadratic formula on x² + (b - m)x + (d - c) = 0.
+      const B = p.b - p.m, C = p.d - p.c;
+      const disc = B * B - 4 * C;
+      if (!(disc > 0)) return false;
+      const roots = [(-B - Math.sqrt(disc)) / 2, (-B + Math.sqrt(disc)) / 2];
+      if (p.kind === "x-parab") return isInt(x) && Math.abs(x - roots[p.which]) < 1e-9;
+      const r = roots[1];
+      return isInt(x) && Math.abs(x - (r * r + p.b * r + p.d)) < 1e-9;
+    }
+    case "x-tri":
+    case "x-triArea": {
+      const [l1, l2, l3] = p.lines;
+      const V = [cramer(l1, l2), cramer(l2, l3), cramer(l3, l1)];
+      if (V.some((q) => !q) || !Number.isFinite(x)) return false;
+      if (p.kind === "x-tri") return isInt(x) && Math.abs(x - V[0][p.axis]) < 1e-9;
+      if (!(x > 0)) return false;
+      const a2 = sqd(V[1], V[2]), b2 = sqd(V[0], V[2]), c2 = sqd(V[0], V[1]);
+      const s16 = 2 * (a2 * b2 + b2 * c2 + c2 * a2) - (a2 * a2 + b2 * b2 + c2 * c2);
+      return Math.abs(16 * x * x - s16) < 1e-6 * Math.max(1, s16);
+    }
+    case "x-edgeK": {
+      const f = parseFracAnswer(v);
+      // Normals (a1, k) and (a2, b2) parallel: a1·b2 = k·a2, times f1.
+      return !!f && p.a1 * p.b2 * f[1] === f[0] * p.a2;
+    }
+    case "x-edgeN": {
+      // Solve for k from the parallel condition, then test the right-hand sides for consistency.
+      const k = (p.a1 * p.b2) / p.a2;
+      const det = p.a1 * p.b2 - k * p.a2;
+      let truth;
+      if (Math.abs(det) > 1e-12) truth = "Exactly one";
+      else truth = Math.abs(p.a1 * p.c2 - p.a2 * p.c1) < 1e-9 && Math.abs(k * p.c2 - p.b2 * p.c1) < 1e-9 ? "Infinitely many" : "None";
+      return String(v) === truth;
+    }
+    case "x-edgeC": {
+      const f = parseFracAnswer(v);
+      // Same line: (a1, k, c) proportional to (a2, b2, c2), so a1·c2 = a2·c.
+      return !!f && p.a1 * p.c2 * f[1] === p.a2 * f[0];
+    }
+    default:
+      return false;
+  }
 }

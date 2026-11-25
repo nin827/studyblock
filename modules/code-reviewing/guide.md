@@ -20,6 +20,8 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 
 **Watch out:** a value that changes inside the loop carries over to the next pass. Don't restart it.
 
+**Expert:** keep a full table. For a list that is changed in place (swaps), rewrite the whole list after each change. For a remainder loop such as `b = a % b`, save the old value before it is overwritten, exactly as the code does.
+
 ## Find the bug
 
 1. Work out what the function should return for the example (the question tells you).
@@ -29,6 +31,8 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 
 **Watch out:** the bug is the line that is *wrong*, not the line where the wrong number first shows up later.
 
+**Expert (two bugs):** after you find one wrong line, keep checking the rest. Fix the first bug in your head and trace again: if the answer is still wrong, there is a second bug.
+
 ## Fix the bug
 
 1. Find the wrong line, as in *Find the bug*.
@@ -37,6 +41,8 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 4. Keep the one that gives the right answer **and** would work for any input.
 
 **Watch out:** a replacement can match the example by luck. Test it on a second, different input in your head.
+
+**Expert:** three examples are given on purpose. Some replacements fix the first example and break the second or third; run every example before you choose.
 
 ## Bug types
 
@@ -55,3 +61,5 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 | Infinite loop | the loop variable never moves towards the end |
 
 **Watch out:** a changed loop *end* is usually an off-by-one error, even though it is written with a comparison or a `+ 1`.
+
+**Expert (two bugs):** name each bug on its own line. A changed inner-loop start (such as `j` starting at `i` instead of `i + 1`) is an off-by-one error too.

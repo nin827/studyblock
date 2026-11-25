@@ -1,6 +1,6 @@
-import { loadAllModules, loadDomains } from '../lib/engine.js';
+import { loadAllModules, loadDomains, loadArchived, titleLookup } from '../lib/engine.js';
 import { getAttempts, getModuleRecords, percent, MIX_MODULE } from '../lib/storage.js';
-import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
+import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
 import { reviewItem, moduleBreakdown, cellTag } from './quiz.js';
 
 export async function render(root, params, ctx) {
@@ -9,11 +9,14 @@ export async function render(root, params, ctx) {
   let domains = [];
   try { domains = await loadDomains(); } catch { /* grouped under "Other" */ }
   try { modules = await loadAllModules(); } catch { /* titles fall back to ids */ }
+  // Archived modules are never loaded; their stored attempts show the archived title (no link).
+  let archived = new Map();
+  try { archived = await loadArchived(); } catch { /* titles fall back to ids */ }
   if (!ctx.alive()) return;
   const byId = Object.fromEntries(modules.map(m => [m.id, m]));
   const domainOfId = new Map();
   for (const d of domains) for (const mid of d.modules) domainOfId.set(mid, d);
-  const modTitle = id => byId[id]?.title ?? id;
+  const modTitle = titleLookup(modules, archived);
   const subTitle = (mid, sid) => subtopicLabel(sid, byId[mid]?.subtopics.find(s => s.id === sid)?.title);
 
   if (!attempts.length) {
@@ -56,7 +59,10 @@ export async function render(root, params, ctx) {
     const rows = d.modules.filter(mid => seenModules.has(mid)).map(moduleRow).join('');
     if (rows) summaryRows += groupHead(d.title, `#/d/${hashPart(d.id)}`) + rows;
   }
-  const others = [...seenModules].filter(mid => !domainOfId.has(mid)).map(moduleRow).join('');
+  const unlisted = [...seenModules].filter(mid => !domainOfId.has(mid));
+  const archivedRows = unlisted.filter(mid => archived.has(mid)).map(moduleRow).join('');
+  if (archivedRows) summaryRows += groupHead('Archived') + archivedRows;
+  const others = unlisted.filter(mid => !archived.has(mid)).map(moduleRow).join('');
   if (others) summaryRows += groupHead('Other') + others;
   const mixed = attempts.filter(a => a.module === MIX_MODULE);
   if (mixed.length) summaryRows += groupHead('Mixed') + statRow('<a href="#/mix">Mixed quizzes</a>', mixed);
@@ -68,10 +74,10 @@ export async function render(root, params, ctx) {
     const isMix = a.module === MIX_MODULE;
     const isAll = !isMix && (a.subtopic === 'all' || a.difficulty === 'all');
     const dom = isMix ? null : domainOfId.get(a.module);
-    const chip = isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : 'Other', domClass(dom?.id));
+    const chip = isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(dom?.id));
     const title = isMix
-      ? `<strong>Mixed quiz</strong> · ${esc(a.difficulty === 'any' ? 'Any difficulty' : cap(a.difficulty))}`
-      : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${esc(difficultyLabel(a.difficulty))}`;
+      ? `<strong>Mixed quiz</strong> · ${a.difficulty === 'any' ? 'Any difficulty' : difficultyHtml(a.difficulty)}`
+      : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${difficultyHtml(a.difficulty)}`;
     const qs = isMix
       ? a.questions.map(q => (typeof q.module === 'string'
         ? { ...q, moduleTitle: modTitle(q.module), domain: domainOfId.get(q.module)?.id, domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }

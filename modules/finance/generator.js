@@ -547,6 +547,471 @@ function genAnnuities(difficulty, rng) {
   return finish(base, exact, fmt, candidates, rng);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert: multi-step, multi-part questions (easy/medium/hard above are untouched).
+// Each template draws all of its rng values first, then builds text. Expert questions carry their
+// own `given` and `hints` (built from values already drawn, never calling the rng), so they skip
+// withGiven/withHints. Every 2-decimal part is checked to sit clearly away from a half cent.
+
+const xNum = (id, label, ask, exact, fmt, hint) => ({
+  id, label, ask, answerType: "number",
+  answer: fmt === "2dp" ? round2(exact) : exact,
+  tolerance: fmt === "2dp" ? 0.005 : 0,
+  hint,
+});
+const xGiven = (pairs) => pairs.map(([label, value]) => ({ label, value }));
+const xQ = (kind, values, prompt, parts, intro, lines, given, hints) => ({
+  prompt, answerType: "multi", parts, explanation: explain(intro, lines), given, hints, params: { kind, values, fmt: "multi" },
+});
+const KEEP = " Keep full precision between steps and round each answer to 2 decimal places.";
+
+// depreciation / expert 0: straight-line book value at the date of sale, then the gain or loss.
+function xDisposal(rng) {
+  const a = rng.pick(ASSETS);
+  let C, S, n, k, X, book;
+  for (let t = 0; t < 60; t++) {
+    C = 100 * rng.int(30, 900);
+    S = 100 * rng.int(0, Math.floor(C / 400));
+    n = rng.int(4, 12);
+    k = rng.int(2, n - 1);
+    book = C - (k * (C - S)) / n;
+    X = 50 * Math.max(1, Math.round((book * rng.int(60, 140)) / 100 / 50));
+    if (tieFree(book) && Math.abs(X - book) >= 1) break;
+  }
+  const charge = (C - S) / n;
+  const gain = X - book;
+  const prompt =
+    `${a.biz} bought ${a.asset} for ${cash(C)}, expecting to use it for ${years(n)} and then sell it for ${cash(S)} (its salvage value). ` +
+    `It uses straight-line depreciation. After ${years(k)} it sells the asset early, for ${cash(X)}.${KEEP}`;
+  const lines = [
+    given("_cost", mv(C)), given("_salvage", mv(S)), given("_life", n), given("_used", k), given("_sale", mv(X)),
+    step("_charge", "(_cost - _salvage) / _life", num(charge)),
+    step("_book", "_cost - _charge * _used", final(book, "2dp", "money")),
+    step("_gain", "_sale - _book", `${final(gain, "2dp", "money")}${gain < 0 ? " (a loss)" : " (a gain)"}`),
+  ];
+  return xQ("x-disposal", { C, S, n, k, X }, prompt, [
+    xNum("book", "Book value", "Book value on the day it is sold, in dollars", book, "2dp",
+      "Book value = cost minus the depreciation charged so far: the yearly charge times the years used."),
+    xNum("gain", "Gain or loss", "Gain on disposal = sale price − book value, in dollars (negative for a loss)", gain, "2dp",
+      "Compare the sale price with the book value, not with the original cost or the salvage value."),
+  ], "Find the book value on the day of the sale, then compare it with the sale price.", lines,
+  xGiven([["_cost", C], ["_salvage", S], ["_life", n], ["_used", k], ["_sale", X]]), [
+    "First the yearly straight-line charge: `_charge = (_cost - _salvage) / _life`.",
+    "The book value after the years used is `_cost - _charge * _used`.",
+    "Gain or loss = sale price − book value. A sale below book value is a loss, so the answer is negative.",
+  ]);
+}
+
+// depreciation / expert 1: work backwards from a reducing-balance book value to the cost.
+function xRbBackwards(rng) {
+  const a = rng.pick(ASSETS);
+  let r, k, BV, cost;
+  for (let t = 0; t < 60; t++) {
+    const C0 = rng.int(500000, 8000000) / 100;
+    r = rng.int(8, 40);
+    k = rng.int(2, 7);
+    BV = round2(C0 * Math.pow(1 - r / 100, k));
+    cost = BV / Math.pow(1 - r / 100, k);
+    if (tieFree(cost) && tieFree((cost * r) / 100)) break;
+  }
+  const f = 1 - r / 100;
+  const dep = cost - BV;
+  const first = (cost * r) / 100;
+  const prompt =
+    `${a.biz} depreciates ${a.asset} by the reducing-balance method at ${r}% a year (each year's charge is ${r}% of the book value at the start of that year). ` +
+    `After ${years(k)} its book value is ${cash(BV)}.${KEEP}`;
+  const lines = [
+    given("_book", mv(BV)), given("_rate", num(r / 100)), given("_years", k),
+    step("_cost", "_book / (1 - _rate)^_years", final(cost, "2dp", "money")),
+    step("_dep", "_cost - _book", final(dep, "2dp", "money")),
+    step("_first", "_cost * _rate", final(first, "2dp", "money")),
+  ];
+  return xQ("x-rbback", { r, k, BV }, prompt, [
+    xNum("cost", "Original cost", "What did the asset cost, in dollars?", cost, "2dp",
+      "Book value = cost × (1 - rate)^years. Rearrange: divide the book value by (1 - rate)^years."),
+    xNum("dep", "Total depreciation", `Total depreciation charged over the ${years(k)}, in dollars`, dep, "2dp",
+      "Everything the asset has lost: cost minus the book value now."),
+    xNum("first", "Year 1 charge", "Depreciation charged in year 1, in dollars", first, "2dp",
+      "In year 1 the book value at the start of the year is the cost itself."),
+  ], "Undo the reducing balance to recover the cost, then work forwards again.", lines,
+  xGiven([["_book", BV], ["_rate", r / 100], ["_years", k]]), [
+    `Each year the book value is multiplied by (1 - rate) = ${num(f)}. Work backwards: divide instead of multiply.`,
+    "`_cost = _book / (1 - _rate)^_years`. Don't subtract rate × years from the book value: that is a straight-line shortcut and is wrong here.",
+    "Total depreciation is the cost minus today's book value; the year 1 charge is the rate times the cost.",
+  ]);
+}
+
+// depreciation / expert 2: compare straight-line and reducing balance, and find the crossover year.
+function xCompare(rng) {
+  const a = rng.pick(ASSETS);
+  let C, n, r, k, y;
+  for (let t = 0; t < 80; t++) {
+    C = 100 * rng.int(50, 800);
+    n = rng.int(4, 10);
+    r = rng.int(15, 45);
+    k = rng.int(2, n - 1);
+    if (r / 100 <= 1.05 / n) continue;
+    const ratio = (yy) => (Math.pow(1 - r / 100, yy - 1) * (r / 100) * n); // RB charge ÷ SL charge
+    y = 1;
+    while (ratio(y) >= 1) y++;
+    const sl = C - (k * C) / n;
+    if (y <= n && Math.abs(ratio(y) - 1) > 0.01 && Math.abs(ratio(y - 1) - 1) > 0.01 && tieFree(sl) && tieFree(C * Math.pow(1 - r / 100, k))) break;
+  }
+  const sl = C - (k * C) / n;
+  const rb = C * Math.pow(1 - r / 100, k);
+  const prompt =
+    `${a.biz} buys ${a.asset} for ${cash(C)}, with a life of ${years(n)} and no salvage value. Its accountant compares two methods: ` +
+    `straight-line (the same charge every year) and reducing balance at ${r}% a year (${r}% of the book value at the start of each year).` +
+    ` Round money answers to 2 decimal places.`;
+  const lines = [
+    given("_cost", mv(C)), given("_life", n), given("_rate", num(r / 100)), given("_years", k),
+    step("_sl_book", "_cost - _cost / _life * _years", final(sl, "2dp", "money")),
+    step("_rb_book", "_cost * (1 - _rate)^_years", final(rb, "2dp", "money")),
+    step("_sl_charge", "_cost / _life", num(C / n)),
+    `- Reducing-balance charge in year y: \`_cost * (1 - _rate)^(y - 1) * _rate\`. It is first below the straight-line charge in year **${y}**.`,
+  ];
+  return xQ("x-compare", { C, n, r, k }, prompt, [
+    xNum("sl", "Straight-line book", `Straight-line book value after ${years(k)}, in dollars`, sl, "2dp",
+      "Straight-line charge = cost ÷ life (no salvage). Subtract it once for each year used."),
+    xNum("rb", "Reducing-balance book", `Reducing-balance book value after ${years(k)}, in dollars`, rb, "2dp",
+      "Multiply the cost by (1 - rate) once for each year."),
+    xNum("year", "Crossover year", "In which year is the reducing-balance charge first smaller than the straight-line charge?", y, "int",
+      "Work out the reducing-balance charge year by year (rate × book value at the start of the year) and compare each with cost ÷ life."),
+  ], "Work out both book values, then compare the yearly charges.", lines,
+  xGiven([["_cost", C], ["_life", n], ["_rate", r / 100], ["_years", k]]), [
+    "Straight-line: the yearly charge is `_cost / _life`, the same every year.",
+    "Reducing balance: book value after k years = `_cost * (1 - _rate)^k`, and the charge in year y = `_cost * (1 - _rate)^(y - 1) * _rate`.",
+    "Reducing balance charges more at first and less later. Check the years in order, starting with the first, until its charge drops below the straight-line one.",
+  ]);
+}
+
+const XLOAN_RULE =
+  " Payments are made at the end of each month, with monthly rate i = annual rate ÷ 12 and payment = loan × i ÷ (1 - (1 + i)^-n). " +
+  "Round the payment to the cent and use that rounded payment in every later step.";
+
+function xLoanBase(rng, small) {
+  return {
+    P: small ? 1000 * rng.int(5, 200) : 1000 * rng.int(20, 500),
+    rate: rng.int(250, 950) / 100,
+    yrs: rng.pick(small ? [3, 4, 5, 7, 10, 15] : [5, 10, 15, 20, 25, 30]),
+  };
+}
+
+// loans / expert 0: pay the loan off early; balance and the interest saved.
+function xPayoff(rng) {
+  let P, rate, yrs, n, i, M, Mr, k, bal;
+  for (let t = 0; t < 60; t++) {
+    ({ P, rate, yrs } = xLoanBase(rng, false));
+    n = 12 * yrs;
+    i = rate / 1200;
+    M = payment(P, i, n);
+    Mr = round2(M);
+    k = rng.int(12, n - 12);
+    const g = Math.pow(1 + i, k);
+    bal = P * g - (Mr * (g - 1)) / i;
+    if (tieFree(M) && tieFree(bal)) break;
+  }
+  const purpose = rng.pick(P >= 100000 ? BIG_PURPOSES : PURPOSES);
+  const saved = Mr * (n - k) - bal;
+  const prompt =
+    `A borrower takes out a ${cash(P)} loan to ${purpose} at ${num(rate)}% a year over ${years(yrs)} (${n} monthly payments).${XLOAN_RULE} ` +
+    `Right after payment number ${k}, the borrower pays off everything still owed in one go.`;
+  const lines = [
+    given("_loan", mv(P)), given("_rate", num(rate)), given("_years", yrs), given("_k", k),
+    step("_i", "_rate / 100 / 12", num(i, 6)), step("_n", "_years * 12", n),
+    step("_payment", "round(_loan * _i / (1 - (1 + _i)^(-_n)), 2)", mv(Mr)),
+    step("_balance", "_loan * (1 + _i)^_k - _payment * ((1 + _i)^_k - 1) / _i", final(bal, "2dp", "money")),
+    step("_saved", "_payment * (_n - _k) - _balance", final(saved, "2dp", "money")),
+  ];
+  return xQ("x-payoff", { P, rate, yrs, k }, prompt, [
+    xNum("balance", "Payoff amount", `How much is owed right after payment ${k}, in dollars?`, bal, "2dp",
+      "Use the balance formula with the rounded payment: interest keeps building, so it is not loan − k × payment."),
+    xNum("saved", "Interest saved", "How much interest does paying off early save, compared with making every remaining scheduled payment, in dollars?", saved, "2dp",
+      "The remaining scheduled payments add up to payment × (n − k). Paying off early costs only the balance; the difference is interest saved."),
+  ], "Find the rounded payment, the balance after k payments, then compare with the payments that are no longer needed.", lines,
+  xGiven([["_loan", P], ["_rate", rate], ["_years", yrs], ["_k", k]]), [
+    "Set up `_i = _rate / 100 / 12` and `_n = _years * 12`, then the payment, rounded with `round(…, 2)`.",
+    "Balance after k payments: `_loan * (1 + _i)^_k - _payment * ((1 + _i)^_k - 1) / _i`.",
+    "Without the payoff the borrower would still make n − k payments. Their total minus the payoff amount is the interest saved.",
+  ]);
+}
+
+// loans / expert 1: work backwards from a monthly budget to the biggest affordable loan.
+function xAfford(rng) {
+  let Mb, rate, yrs, n, i, PV;
+  for (let t = 0; t < 60; t++) {
+    Mb = 25 * rng.int(8, 160);
+    rate = rng.int(250, 950) / 100;
+    yrs = rng.pick([3, 4, 5, 7, 10, 15, 20, 25, 30]);
+    n = 12 * yrs;
+    i = rate / 1200;
+    PV = Mb * pvFactor(i, n);
+    if (tieFree(PV)) break;
+  }
+  const who = rng.pick(SAVERS);
+  const interest = Mb * n - PV;
+  const prompt =
+    `${who} can afford ${cash(Mb)} a month and is offered a loan at ${num(rate)}% a year over ${years(yrs)} (${n} monthly payments, ` +
+    `made at the end of each month, with monthly rate = annual rate ÷ 12).${KEEP}`;
+  const lines = [
+    given("_budget", mv(Mb)), given("_rate", num(rate)), given("_years", yrs),
+    step("_i", "_rate / 100 / 12", num(i, 6)), step("_n", "_years * 12", n),
+    step("_loan", "_budget * (1 - (1 + _i)^(-_n)) / _i", final(PV, "2dp", "money")),
+    step("_interest", "_budget * _n - _loan", final(interest, "2dp", "money")),
+  ];
+  return xQ("x-afford", { Mb, rate, yrs }, prompt, [
+    xNum("loan", "Largest loan", "What is the largest loan the budget can repay, in dollars?", PV, "2dp",
+      "The loan is the present value of the payments: payment × (1 - (1 + i)^-n) ÷ i."),
+    xNum("interest", "Total interest", "How much interest would that loan cost in total, in dollars?", interest, "2dp",
+      "Total interest = everything paid (budget × number of payments) minus the amount borrowed."),
+  ], "The payment formula run backwards: the loan is the present value of the monthly payments.", lines,
+  xGiven([["_budget", Mb], ["_rate", rate], ["_years", yrs]]), [
+    "Here the payment is known and the loan is not. Rearrange payment = loan × i ÷ (1 - (1 + i)^-n) for the loan.",
+    "`_loan = _budget * (1 - (1 + _i)^(-_n)) / _i`, with `_i = _rate / 100 / 12` and `_n = _years * 12`.",
+    "Then compare what is paid in total with what was borrowed.",
+  ]);
+}
+
+// loans / expert 2: split one payment into interest and principal.
+function xSplit(rng) {
+  let P, rate, yrs, n, i, M, Mr, k, before, intK;
+  for (let t = 0; t < 60; t++) {
+    ({ P, rate, yrs } = xLoanBase(rng, false));
+    n = 12 * yrs;
+    i = rate / 1200;
+    M = payment(P, i, n);
+    Mr = round2(M);
+    k = rng.int(2, n - 1);
+    const g = Math.pow(1 + i, k - 1);
+    before = P * g - (Mr * (g - 1)) / i;
+    intK = before * i;
+    if (tieFree(M) && tieFree(intK)) break;
+  }
+  const purpose = rng.pick(P >= 100000 ? BIG_PURPOSES : PURPOSES);
+  const intR = round2(intK);
+  const prin = Mr - intR;
+  const prompt =
+    `A borrower takes out a ${cash(P)} loan to ${purpose} at ${num(rate)}% a year over ${years(yrs)} (${n} monthly payments).${XLOAN_RULE} ` +
+    `Each payment first covers that month's interest (the balance before the payment × i, rounded to the cent); the rest repays principal. Look at payment number ${k}.`;
+  const lines = [
+    given("_loan", mv(P)), given("_rate", num(rate)), given("_years", yrs), given("_k", k),
+    step("_i", "_rate / 100 / 12", num(i, 6)), step("_n", "_years * 12", n),
+    step("_payment", "round(_loan * _i / (1 - (1 + _i)^(-_n)), 2)", final(M, "2dp", "money")),
+    step("_before", "_loan * (1 + _i)^(_k - 1) - _payment * ((1 + _i)^(_k - 1) - 1) / _i", num(before)),
+    step("_interest", "round(_before * _i, 2)", final(intK, "2dp", "money")),
+    step("_principal", "_payment - _interest", final(prin, "2dp", "money")),
+  ];
+  return xQ("x-split", { P, rate, yrs, k }, prompt, [
+    xNum("payment", "Payment", "Monthly payment, in dollars (2 decimal places)", M, "2dp",
+      "Use the payment formula with the monthly rate and the number of months."),
+    xNum("interest", "Interest part", `Interest part of payment ${k}, in dollars`, intK, "2dp",
+      `You need the balance after payment ${k - 1} (the balance before payment ${k}); multiply it by i and round.`),
+    xNum("principal", "Principal part", `Principal repaid by payment ${k}, in dollars`, prin, "2dp",
+      "Principal = the rounded payment minus the rounded interest part."),
+  ], "Find the payment, the balance just before the payment, then split the payment.", lines,
+  xGiven([["_loan", P], ["_rate", rate], ["_years", yrs], ["_k", k]]), [
+    "Payment: `round(_loan * _i / (1 - (1 + _i)^(-_n)), 2)` with `_i = _rate / 100 / 12` and `_n = _years * 12`.",
+    "The balance before payment k is the balance after k − 1 payments: use the balance formula with k − 1 in place of k.",
+    "Interest part = that balance × i, rounded to the cent. Whatever is left of the payment repays principal.",
+  ]);
+}
+
+// loans / expert 3: overpaying every month; how many payments until the loan is cleared.
+function xExtra(rng) {
+  let P, rate, yrs, n, i, M, Mr, E, pay, N, Nx;
+  for (let t = 0; t < 80; t++) {
+    ({ P, rate, yrs } = xLoanBase(rng, true));
+    n = 12 * yrs;
+    i = rate / 1200;
+    M = payment(P, i, n);
+    Mr = round2(M);
+    E = 25 * rng.int(1, 20);
+    pay = Mr + E;
+    Nx = -Math.log(1 - (P * i) / pay) / Math.log(1 + i);
+    N = Math.ceil(Nx);
+    const fr = Nx - Math.floor(Nx);
+    if (tieFree(M) && fr > 0.02 && fr < 0.98 && N < n) break;
+  }
+  const purpose = rng.pick(PURPOSES);
+  const prompt =
+    `A borrower takes out a ${cash(P)} loan to ${purpose} at ${num(rate)}% a year over ${years(yrs)} (${n} monthly payments).${XLOAN_RULE} ` +
+    `The borrower decides to pay ${cash(E)} more than the scheduled payment every month, from the first payment on. The last payment may be smaller, just enough to clear the loan.`;
+  const lines = [
+    given("_loan", mv(P)), given("_rate", num(rate)), given("_years", yrs), given("_extra", mv(E)),
+    step("_i", "_rate / 100 / 12", num(i, 6)), step("_n", "_years * 12", n),
+    step("_payment", "round(_loan * _i / (1 - (1 + _i)^(-_n)), 2)", final(M, "2dp", "money")),
+    step("_pay", "_payment + _extra", mv(pay)),
+    step("_months", "-ln(1 - _loan * _i / _pay) / ln(1 + _i)", num(Nx)),
+    `- Round up (the last, smaller payment still counts): **${N} payments**, instead of ${n}.`,
+  ];
+  return xQ("x-extra", { P, rate, yrs, E }, prompt, [
+    xNum("payment", "Scheduled payment", "Scheduled monthly payment, in dollars (2 decimal places)", M, "2dp",
+      "Use the payment formula with the monthly rate and the number of months."),
+    xNum("months", "Payments", "How many payments (including the last, smaller one) does it take to clear the loan?", N, "int",
+      "Solve loan = pay × (1 - (1 + i)^-m) ÷ i for m with logarithms, then round up."),
+  ], "Find the scheduled payment, add the extra, then solve the payment formula for the number of months.", lines,
+  xGiven([["_loan", P], ["_rate", rate], ["_years", yrs], ["_extra", E]]), [
+    "First the scheduled payment, rounded to the cent. The new monthly payment is that plus the extra.",
+    "Rearranging the payment formula for the number of payments m gives `m = -ln(1 - _loan * _i / _pay) / ln(1 + _i)`.",
+    "m will not be a whole number: the part-month is the final, smaller payment, so round up.",
+  ]);
+}
+
+// annuities-savings / expert 0: save, then draw an income from the pot.
+function xRetire(rng) {
+  let D, r, y1, y2, i, FV, W;
+  for (let t = 0; t < 60; t++) {
+    D = 25 * rng.int(4, 60);
+    r = rng.int(20, 80) / 10;
+    y1 = rng.int(10, 40);
+    y2 = rng.int(10, 30);
+    i = r / 1200;
+    FV = D * fvFactor(i, 12 * y1);
+    W = FV / pvFactor(i, 12 * y2);
+    if (tieFree(FV) && tieFree(W)) break;
+  }
+  const who = rng.pick(SAVERS);
+  const prompt =
+    `${who} saves ${cash(D)} at the end of every month for ${years(y1)} in an account paying ${num(r)}% a year, compounded monthly ` +
+    `(monthly rate = annual rate ÷ 12). Then the deposits stop and the pot pays out the same amount at the end of every month for ${years(y2)}, ` +
+    `still earning the same rate, until the last payment empties it.${KEEP}`;
+  const lines = [
+    given("_deposit", mv(D)), given("_rate", num(r)), given("_save_years", y1), given("_pay_years", y2),
+    step("_i", "_rate / 100 / 12", num(i, 6)),
+    step("_pot", "_deposit * ((1 + _i)^(_save_years * 12) - 1) / _i", final(FV, "2dp", "money")),
+    step("_income", "_pot * _i / (1 - (1 + _i)^(-_pay_years * 12))", final(W, "2dp", "money")),
+  ];
+  return xQ("x-retire", { D, r, y1, y2 }, prompt, [
+    xNum("pot", "Pot", "How much is in the account right after the last deposit, in dollars?", FV, "2dp",
+      "Future value of the monthly deposits: deposit × ((1 + i)^n - 1) ÷ i, with n = saving years × 12."),
+    xNum("income", "Monthly income", "How much can it pay out each month, in dollars?", W, "2dp",
+      "The pot is now a present value. Use the unrounded pot in the payment formula over the payout months."),
+  ], "Two phases: grow the deposits into a pot, then turn the pot into a stream of equal payments.", lines,
+  xGiven([["_deposit", D], ["_rate", r], ["_save_years", y1], ["_pay_years", y2]]), [
+    "Phase 1 is a future value of regular deposits; phase 2 is a loan-style payment out of a lump sum.",
+    "`_i = _rate / 100 / 12`. The pot is `_deposit * ((1 + _i)^(_save_years * 12) - 1) / _i`.",
+    "For the payout, the pot plays the part of the loan: `_pot * _i / (1 - (1 + _i)^(-_pay_years * 12))`.",
+  ]);
+}
+
+// annuities-savings / expert 1: the cost of starting late.
+function xDelay(rng) {
+  let G, r, Y, k, i, A, B, extra;
+  for (let t = 0; t < 60; t++) {
+    G = 1000 * rng.int(10, 300);
+    r = rng.int(20, 90) / 10;
+    Y = rng.int(10, 40);
+    k = rng.int(2, Math.min(15, Y - 3));
+    i = r / 1200;
+    A = G / fvFactor(i, 12 * Y);
+    B = G / fvFactor(i, 12 * (Y - k));
+    extra = B * 12 * (Y - k) - A * 12 * Y;
+    if (tieFree(A) && tieFree(B) && tieFree(extra)) break;
+  }
+  const prompt =
+    `Two friends each want ${cash(G)} in ${years(Y)}. Both save the same amount at the end of every month in accounts paying ${num(r)}% a year, compounded monthly ` +
+    `(monthly rate = annual rate ÷ 12). Saver A starts now. Saver B waits ${years(k)} before the first deposit, but must reach the same total on the same date.${KEEP}`;
+  const lines = [
+    given("_goal", mv(G)), given("_rate", num(r)), given("_years", Y), given("_wait", k),
+    step("_i", "_rate / 100 / 12", num(i, 6)),
+    step("_a", "_goal * _i / ((1 + _i)^(_years * 12) - 1)", final(A, "2dp", "money")),
+    step("_b", "_goal * _i / ((1 + _i)^((_years - _wait) * 12) - 1)", final(B, "2dp", "money")),
+    step("_extra", "_b * (_years - _wait) * 12 - _a * _years * 12", final(extra, "2dp", "money")),
+  ];
+  return xQ("x-delay", { G, r, Y, k }, prompt, [
+    xNum("a", "Saver A", "Saver A's monthly deposit, in dollars", A, "2dp",
+      "Deposit for a goal: goal × i ÷ ((1 + i)^n - 1), with n = all the months."),
+    xNum("b", "Saver B", "Saver B's monthly deposit, in dollars", B, "2dp",
+      "Same formula, but B has fewer months to save."),
+    xNum("extra", "Extra paid in", "How much more does B pay in altogether than A, using the unrounded deposits, in dollars?", extra, "2dp",
+      "Total paid in = monthly deposit × number of deposits. Subtract A's total from B's."),
+  ], "Same goal and rate, different number of months: compare the deposits and what each saver pays in.", lines,
+  xGiven([["_goal", G], ["_rate", r], ["_years", Y], ["_wait", k]]), [
+    "Both use deposit = goal × i ÷ ((1 + i)^n - 1); only n changes. A saves for all the months, B for (years − wait) × 12 months.",
+    "`_i = _rate / 100 / 12`. B's n is `(_years - _wait) * 12`.",
+    "B pays more each month and in total, because B's money has less time to earn interest. Multiply each deposit by its number of months.",
+  ]);
+}
+
+// annuities-savings / expert 2: deposits at the start vs the end of each month (annuity due).
+function xDue(rng) {
+  let D, r, yrs, i, n, end, due;
+  for (let t = 0; t < 60; t++) {
+    D = 25 * rng.int(2, 40);
+    r = rng.int(10, 90) / 10;
+    yrs = rng.int(2, 30);
+    n = 12 * yrs;
+    i = r / 1200;
+    end = D * fvFactor(i, n);
+    due = end * (1 + i);
+    if (tieFree(end) && tieFree(due)) break;
+  }
+  const who = rng.pick(SAVERS);
+  const prompt =
+    `${who} puts ${cash(D)} a month into an account paying ${num(r)}% a year, compounded monthly (monthly rate = annual rate ÷ 12), for ${years(yrs)} (${n} deposits). ` +
+    `Compare depositing at the **end** of each month with depositing at the **start** of each month. In both cases, measure the balance at the end of the last month.${KEEP}`;
+  const lines = [
+    given("_deposit", mv(D)), given("_rate", num(r)), given("_years", yrs),
+    step("_i", "_rate / 100 / 12", num(i, 6)), step("_n", "_years * 12", n),
+    step("_end", "_deposit * ((1 + _i)^_n - 1) / _i", final(end, "2dp", "money")),
+    step("_start", "_end * (1 + _i)", final(due, "2dp", "money")),
+  ];
+  return xQ("x-due", { D, r, yrs }, prompt, [
+    xNum("end", "End of month", "Balance with deposits at the end of each month, in dollars", end, "2dp",
+      "This is the ordinary future value of regular deposits."),
+    xNum("start", "Start of month", "Balance with deposits at the start of each month, in dollars", due, "2dp",
+      "Each deposit now earns one extra month of interest."),
+  ], "The usual formula assumes end-of-month deposits; moving every deposit a month earlier adds one month's interest to all of them.", lines,
+  xGiven([["_deposit", D], ["_rate", r], ["_years", yrs]]), [
+    "End of month: `_deposit * ((1 + _i)^_n - 1) / _i`, with `_i = _rate / 100 / 12` and `_n = _years * 12`.",
+    "Start of month: every deposit is in the account one month longer than before, so every deposit's value is multiplied by (1 + i).",
+  ]);
+}
+
+// annuities-savings / expert 3: how long a fund lasts, and what is left.
+function xDrawdown(rng) {
+  let F, r, W, i, N, left;
+  for (let t = 0; t < 80; t++) {
+    F = 1000 * rng.int(20, 500);
+    r = rng.int(20, 80) / 10;
+    i = r / 100;
+    W = 100 * rng.int(Math.ceil((F * i * 1.2) / 100), Math.ceil((F * i * 4) / 100));
+    N = Math.floor(drawYears(F, i, W));
+    left = F * Math.pow(1 + i, N) - W * fvFactor(i, N);
+    if (N >= 3 && N <= 60 && left >= 1 && W - left * (1 + i) >= 1 && tieFree(left)) break;
+  }
+  const who = rng.pick(["A retired teacher", "A charity", "A scholarship fund", "A family trust", "A retired builder"]);
+  const prompt =
+    `${who} has ${cash(F)} invested at ${num(r)}% a year, compounded yearly, and takes out ${cash(W)} at the end of every year, ` +
+    `as long as there is enough for a full withdrawal.`;
+  const lines = [
+    given("_fund", mv(F)), given("_rate", num(r)), given("_draw", mv(W)),
+    step("_i", "_rate / 100", num(i)),
+    step("_n_exact", "-ln(1 - _fund * _i / _draw) / ln(1 + _i)", num(drawYears(F, i, W))),
+    `- Round down for full withdrawals: **${N}**.`,
+    step("_left", `_fund * (1 + _i)^${N} - _draw * ((1 + _i)^${N} - 1) / _i`, final(left, "2dp", "money")),
+  ];
+  return xQ("x-drawdown", { F, r, W }, prompt, [
+    xNum("count", "Full withdrawals", "How many full withdrawals can it make?", N, "int",
+      "Solve fund = withdrawal × (1 - (1 + i)^-n) ÷ i for n with logarithms, then round down."),
+    xNum("left", "Left over", "How much is left right after the last full withdrawal, in dollars? Round to 2 decimal places.", left, "2dp",
+      "Use the balance formula: fund grown for n years minus the withdrawals grown to the same date."),
+  ], "Solve for the number of years the fund lasts, then find the remainder after the last full withdrawal.", lines,
+  xGiven([["_fund", F], ["_rate", r], ["_draw", W]]), [
+    "This is a loan in reverse: the fund is the present value of the withdrawals. Rearranging gives `n = -ln(1 - _fund * _i / _draw) / ln(1 + _i)`.",
+    "n won't be whole. Only whole withdrawals count, so round it down.",
+    "The leftover is the fund grown for that many years minus the withdrawals' future value: `_fund * (1 + _i)^n - _draw * ((1 + _i)^n - 1) / _i`.",
+  ]);
+}
+const drawYears = (F, i, W) => -Math.log(1 - (F * i) / W) / Math.log(1 + i);
+
+function generateExpert(subtopic, rng) {
+  if (subtopic === "depreciation") return [xDisposal, xRbBackwards, xCompare][rng.int(0, 2)](rng);
+  if (subtopic === "loans") return [xPayoff, xAfford, xSplit, xExtra][rng.int(0, 3)](rng);
+  if (subtopic === "annuities-savings") return [xRetire, xDelay, xDue, xDrawdown][rng.int(0, 3)](rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
 // Given values for the calculator: the explanation's given rows (`- \`_loan = 25000\``, no "→"),
 // which are exactly the numbers stated in the prompt, under the same labels. Read after the question
 // is built, so it never touches the rng. Max 8, unique ignoring case; omitted when there are none.
@@ -572,6 +1037,7 @@ function generateRaw(subtopic, difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return generateExpert(subtopic, rng);
   return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
 }
 
@@ -644,6 +1110,7 @@ function withHints(q) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.values) return false; // regenerate from the seed to get params back
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(question, answer);
   if (question.answerType === "choice") {
     const ch = question.choices;
     if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
@@ -774,4 +1241,134 @@ function verifyValue(kind, fmt, k, answer) {
   if (!Number.isFinite(residual)) return false;
   if (fmt === "2dp") return Math.abs(residual) <= 0.005 * sens + 1e-6;
   return Number.isInteger(x) && Math.abs(residual) <= 1e-6 * Math.max(1, sens);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expert verification: every part is rebuilt period by period (loops, no closed forms) or
+// substituted back into its defining relation. 2-decimal parts must be within 0.005 of the
+// rebuilt value (scaled by sensitivity where the part is solved for); whole-number parts exact.
+
+function verifyExpert(question, answer) {
+  const p = question.params;
+  const k = p.values;
+  const parts = question.parts;
+  if (question.answerType !== "multi" || !Array.isArray(parts) || !answer || typeof answer !== "object") return false;
+  const val = (id) => {
+    const v = answer[id];
+    if (v === "" || v === null || v === undefined || typeof v === "boolean") return NaN;
+    return Number(v);
+  };
+  const close = (x, ref) => Number.isFinite(x) && Number.isFinite(ref) && Math.abs(x - ref) <= 0.005 + 1e-6;
+  const res = (r, sens) => Number.isFinite(r) && Math.abs(r) <= 0.005 * Math.abs(sens) + 1e-6;
+  const whole = (x, ref) => Number.isInteger(x) && x === ref;
+  const ids = parts.map((pt) => pt.id).join(",");
+  const loanPay = (P, rate, yrs) => {
+    const M = P / discountSum(rate / 1200, 12 * yrs);
+    return tieFree(M) ? round2(M) : NaN;
+  };
+  const balanceAfter = (P, i, pay, m) => {
+    let b = P;
+    for (let t = 0; t < m; t++) b = b * (1 + i) - pay;
+    return b;
+  };
+
+  switch (p.kind) {
+    case "x-disposal": {
+      if (ids !== "book,gain") return false;
+      const bookRes = (b) => (k.C - b) * k.n - k.k * (k.C - k.S); // (cost - book) × life = years × (cost - salvage)
+      return res(bookRes(val("book")), k.n) && res(bookRes(k.X - val("gain")), k.n);
+    }
+    case "x-rbback": {
+      if (ids !== "cost,dep,first") return false;
+      const fwd = (c) => { let v = c; for (let t = 0; t < k.k; t++) v -= (v * k.r) / 100; return v - k.BV; };
+      const sens = Math.pow(1 - k.r / 100, k.k);
+      return res(fwd(val("cost")), sens) && res(fwd(k.BV + val("dep")), sens) && res(fwd((val("first") * 100) / k.r), (sens * 100) / k.r);
+    }
+    case "x-compare": {
+      if (ids !== "sl,rb,year") return false;
+      let v = k.C;
+      for (let t = 0; t < k.k; t++) v -= (v * k.r) / 100;
+      let year = 0;
+      let w = k.C;
+      for (let y = 1; y <= 200; y++) {
+        const ch = (w * k.r) / 100;
+        if (ch * k.n < k.C) { year = y; break; }
+        w -= ch;
+      }
+      return res((k.C - val("sl")) * k.n - k.k * k.C, k.n) && close(val("rb"), v) && whole(val("year"), year);
+    }
+    case "x-payoff": {
+      if (ids !== "balance,saved") return false;
+      const i = k.rate / 1200;
+      const n = 12 * k.yrs;
+      const Mr = loanPay(k.P, k.rate, k.yrs);
+      const b = balanceAfter(k.P, i, Mr, k.k);
+      let rest = 0;
+      for (let t = k.k; t < n; t++) rest += Mr;
+      return close(val("balance"), b) && close(val("saved"), rest - b);
+    }
+    case "x-afford": {
+      if (ids !== "loan,interest") return false;
+      const i = k.rate / 1200;
+      const n = 12 * k.yrs;
+      const grow = Math.pow(1 + i, n);
+      const left = (L) => balanceAfter(L, i, k.Mb, n); // must end at 0
+      return res(left(val("loan")), grow) && res(left(k.Mb * n - val("interest")), grow);
+    }
+    case "x-split": {
+      if (ids !== "payment,interest,principal") return false;
+      const i = k.rate / 1200;
+      const Mr = loanPay(k.P, k.rate, k.yrs);
+      const before = balanceAfter(k.P, i, Mr, k.k - 1);
+      const intExact = before * i;
+      if (!tieFree(intExact)) return false;
+      const intR = round2(intExact);
+      return close(val("payment"), Mr) && close(val("interest"), intExact) && close(val("principal"), Mr - intR);
+    }
+    case "x-extra": {
+      if (ids !== "payment,months") return false;
+      const i = k.rate / 1200;
+      const Mr = loanPay(k.P, k.rate, k.yrs);
+      const pay = Mr + k.E;
+      let b = k.P;
+      let m = 0;
+      while (b > 1e-9 && m < 1000) { b = b * (1 + i) - pay; m++; }
+      return close(val("payment"), Mr) && whole(val("months"), m);
+    }
+    case "x-retire": {
+      if (ids !== "pot,income") return false;
+      const i = k.r / 1200;
+      const pot = growDeposits(0, k.D, i, 12 * k.y1);
+      const S = growDeposits(0, 1, i, 12 * k.y2);
+      return close(val("pot"), pot) && res(balanceAfter(pot, i, val("income"), 12 * k.y2), S);
+    }
+    case "x-delay": {
+      if (ids !== "a,b,extra") return false;
+      const i = k.r / 1200;
+      const SA = growDeposits(0, 1, i, 12 * k.Y);
+      const SB = growDeposits(0, 1, i, 12 * (k.Y - k.k));
+      let tot = 0;
+      for (let t = 0; t < 12 * (k.Y - k.k); t++) tot += k.G / SB;
+      for (let t = 0; t < 12 * k.Y; t++) tot -= k.G / SA;
+      return res(val("a") * SA - k.G, SA) && res(val("b") * SB - k.G, SB) && close(val("extra"), tot);
+    }
+    case "x-due": {
+      if (ids !== "end,start") return false;
+      const i = k.r / 1200;
+      let e = 0;
+      let s = 0;
+      for (let t = 0; t < 12 * k.yrs; t++) { e = e * (1 + i) + k.D; s = (s + k.D) * (1 + i); }
+      return close(val("end"), e) && close(val("start"), s);
+    }
+    case "x-drawdown": {
+      if (ids !== "count,left") return false;
+      const i = k.r / 100;
+      let b = k.F;
+      let c = 0;
+      while (b * (1 + i) >= k.W && c < 1000) { b = b * (1 + i) - k.W; c++; }
+      return whole(val("count"), c) && close(val("left"), b);
+    }
+    default:
+      return false;
+  }
 }

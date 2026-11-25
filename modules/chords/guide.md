@@ -18,6 +18,8 @@ Example: D major needs a major 3rd above D. D to F is only 3 semitones, so raise
 
 **Watch out:** a diminished triad has a minor 3rd **and** a diminished 5th: B, D, F.
 
+**Expert: working backwards and altering.** If a note is the 3rd of a triad, the root is 3 letters below it; if it is the 5th, 5 letters below. Then choose the accidental that gives the right size (G♯ as the 3rd of a major triad: E). When one note moves a semitone with the same letter, the letters still stack in thirds, so remeasure from the bottom letter: raising the root of C major gives C♯, E, G, which is C♯ diminished.
+
 ## Identify
 
 1. Rearrange the notes so they stack in thirds (every other letter).
@@ -28,6 +30,8 @@ Example: D major needs a major 3rd above D. D to F is only 3 semitones, so raise
 Example: E, G, C restacks as C, E, G. The root is C, it is major, and E (the 3rd) is in the bass, so it is **C major, 1st inversion**.
 
 **Watch out:** the lowest note is not always the root. Only in root position is the bass the root.
+
+**Expert: sevenths and working backwards.** Seventh chords have a 3rd inversion too: the 7th in the bass. B, D, F, G restacks as G, B, D, F, so it is G7, 1st inversion. Given only the bass of an inversion, go down from it: in 1st inversion the bass is the 3rd, in 2nd the 5th, in 3rd the 7th. Augmented triads sound the same in every inversion, so only the spelling shows the root: E, G♯, C is C augmented, 1st inversion.
 
 ## Chords in a key
 
@@ -40,6 +44,8 @@ Example: in G major (G A B C D E F♯), vi is E, G, B: **E minor**.
 
 **Watch out:** keep the key signature: in D major the iii chord is F♯ minor, not F minor.
 
+**Expert: keys and minor keys.** To find the key of a chord with a given numeral, the chord's root is that degree of the scale: go down the letters to the tonic and check the interval (ii is a major 2nd above the tonic, vi a major 6th). An inverted chord's numeral comes from its root, not its bass. In a minor key, use the harmonic minor: i, ii°, III+, iv, V, VI, vii°.
+
 ## Seventh chords
 
 1. Stack four letters in thirds from the root: G, B, D, F.
@@ -50,3 +56,5 @@ Example: in G major (G A B C D E F♯), vi is E, G, B: **E minor**.
 Example: G7 is G, B, D plus a minor 7th, F: **G, B, D, F**. It is V7 in C major.
 
 **Watch out:** the 7th of a dominant 7th is a whole tone below the root (G7 has F, not F♯); maj7 is only a semitone below.
+
+**Expert: diatonic sevenths and V7 backwards.** Stacking four scale notes on each degree of a major key gives Imaj7, ii7, iii7, IVmaj7, V7, vi7 (m7 on ii, iii and vi). If a chord is V7, its key's tonic is a perfect 5th below the root (D7 is V7 in G major and in G minor); the chord's 3rd is the leading note.

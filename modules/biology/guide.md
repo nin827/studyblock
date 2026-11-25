@@ -51,3 +51,40 @@ Watch out: a recessive trait only shows with **two** recessive alleles (aa).
 5. Levels of grouping: population (one species) → community (all species) → ecosystem (plus the non-living parts).
 
 Watch out: decomposers break down *dead* material; they are not the same as consumers.
+
+## Skeleton
+1. Place the bone: head, chest, arm, hip or leg.
+2. Upper limb: humerus (upper arm), then radius and ulna (forearm; the radius is on the thumb side).
+3. Lower limb: femur (thigh), then tibia and fibula (lower leg; the tibia is the shinbone).
+4. Remember the record holders: 206 bones in an adult, longest is the femur, smallest is the stapes in the middle ear.
+
+Everyday names have anatomical twins: kneecap = patella, collarbone = clavicle, shoulder blade = scapula, breastbone = sternum, shinbone = tibia.
+
+Example: "the bone between the shoulder and the elbow" is the humerus.
+
+Watch out: the clavicle (collarbone) is at the front; the scapula (shoulder blade) is at the back.
+
+## Organs and body systems
+1. Decide which job is described: pumping, breathing, digesting, filtering, controlling or covering.
+2. Follow food in order: mouth, oesophagus, stomach, small intestine (absorbs nutrients), large intestine (absorbs water).
+3. Helpers: the liver makes bile, the gallbladder stores it. Kidneys filter blood into urine; the ureters carry it to the bladder.
+4. For a "which system" question, ask what the part does, then name the system that does that job (see the table below).
+5. Heart: two atria on top receive blood, two ventricles below pump it out; valves stop backflow.
+6. Route: body, venae cavae, right atrium, right ventricle, pulmonary artery, lungs, pulmonary veins, left atrium, left ventricle, aorta, body.
+
+Example: the thyroid gland releases hormones, so it is in the endocrine system.
+
+| System | Main parts | Job |
+| --- | --- | --- |
+| Circulatory | heart, blood, blood vessels | carries oxygen and nutrients |
+| Respiratory | trachea, bronchi, lungs | gas exchange |
+| Digestive | stomach, intestines, liver | breaks down and absorbs food |
+| Nervous | brain, spinal cord, nerves | carries signals |
+| Skeletal | bones, joints | support and protection |
+| Muscular | muscles | movement |
+| Urinary | kidneys, ureters, bladder | removes waste as urine |
+| Endocrine | thyroid, pituitary, other glands | hormones |
+| Immune and lymphatic | lymph nodes, white blood cells | fights infection |
+| Integumentary | skin, hair, nails | outer covering |
+
+Watch out: the skin is the largest organ overall, but the liver is the largest organ inside the body. The pulmonary artery carries oxygen-poor blood, and the pulmonary veins carry oxygen-rich blood.

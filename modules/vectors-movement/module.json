@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "vectors", "title": "Vectors", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "movement", "title": "Movement", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "interpolation", "title": "Interpolation", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "angles", "title": "Angles & direction", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "vectors", "title": "Vectors", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "movement", "title": "Movement", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "interpolation", "title": "Interpolation", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "angles", "title": "Angles & direction", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

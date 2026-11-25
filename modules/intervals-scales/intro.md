@@ -20,5 +20,8 @@ Music theory on paper: no audio, just note names. You'll count semitones on a pi
 | Easy | White keys, simple intervals, keys with up to 2–3 sharps or flats |
 | Medium | Sharps and flats, all major, minor and perfect intervals, natural minor scales |
 | Hard | Augmented and diminished intervals, harmonic minor, keys up to 7 sharps or flats, two-part questions |
+| Expert | Multi-step: working backwards, unusual spellings like E♯ and C♭, inversions, compound intervals, parallel and enharmonic keys |
+
+**Expert** asks you to combine ideas: find the note *below* a given one, spell a key with a set letter (E♯, B♯, C♭, F♭), turn an interval upside down, name intervals bigger than an octave (9th to 13th), work out which scale a note belongs to, and read a key from its signature plus a raised 7th.
 
 There's no calculator here: counting on the keyboard is the point.

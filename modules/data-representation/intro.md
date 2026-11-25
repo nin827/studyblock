@@ -25,3 +25,6 @@ Everything a computer stores is bits. Here you work out how many: pixels and col
 | Easy | Colours from bits, small images and clips in bytes, ASCII codes, simple run-length encoding |
 | Medium | Sizes in KB, MiB and so on, bit rates, binary codes, percentage savings |
 | Hard | Working backwards, how many files fit, UTF-8 byte counts, questions with several parts |
+| Expert | Indexed (palette) images, video, image sizes from an aspect ratio; sample rates and the Nyquist limit, recording time on a card; encoding and decoding UTF-8 bytes, UTF-8 vs UTF-16; Huffman coding, compress-or-send decisions, run-length encoding with a 255 limit |
+
+In Expert, single bytes are typed as 2 hex digits, like `C3`.

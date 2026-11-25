@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "images", "title": "Images", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "sound", "title": "Sound", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "characters", "title": "Characters", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "compression", "title": "Compression and storage", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "images", "title": "Images", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "sound", "title": "Sound", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "characters", "title": "Characters", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "compression", "title": "Compression and storage", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

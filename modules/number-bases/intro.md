@@ -35,3 +35,6 @@ Add column by column from the right: 0 + 0 = 0, 0 + 1 = 1, and 1 + 1 = 10, so yo
 | Easy | up to 4 bits | 1–2 hex digits | add two numbers of up to 4 bits |
 | Medium | up to 8 bits | 3 hex digits | add two 8-bit numbers |
 | Hard | up to 12 bits | 4 hex digits | 8-bit two's complement |
+| Expert | bitwise AND/OR/XOR, binary fractions, counters that wrap | hex sums and differences, colour codes, memory addresses | signed addition with overflow, subtraction by adding the negative |
+
+**Expert** questions have several parts. Binary fractions are written like `110.101`, with no zeros at the end after the point.

@@ -17,6 +17,8 @@ Example: 600 N on 300 cm² = 0.03 m² gives `P = 600 / 0.03 = 20000` Pa.
 
 **Watch out:** 1 cm² is 1/10 000 of a m², not 1/100. Square the length factor.
 
+**Expert: worst cases.** Walking puts all the weight on one foot, so the pressure doubles. For a smallest safe area, divide the force by the maximum pressure and round **up**. For a block, the weight is the same on every face: the smallest face gives the largest pressure (`P = ρ × g × height` of the upright edge).
+
 ## Liquid pressure
 
 1. Use `P = ρ × g × h` with ρ in kg/m³, g = 9.8 N/kg and h in metres.
@@ -26,6 +28,8 @@ Example: 600 N on 300 cm² = 0.03 m² gives `P = 600 / 0.03 = 20000` Pa.
 Example: water (1000 kg/m³) at 5 m: `1000 × 9.8 × 5 = 49000` Pa.
 
 **Watch out:** h is the depth below the surface, not the height from the bottom.
+
+**Expert: layers and U-tubes.** With one liquid floating on another, add `ρ × g × h` for each layer in turn; a point below the top layer gets the whole top layer plus part of the next. In a U-tube, pressures are equal at equal levels in the same liquid, so at the boundary level `ρ1 × h1 = ρ2 × h2`.
 
 ## Gas laws
 
@@ -38,6 +42,8 @@ Example: 300 cm³ at 100 kPa squeezed to 150 kPa at constant temperature: `V2 = 
 
 **Watch out:** doubling the °C temperature does not double the volume. Only kelvin temperatures are proportional.
 
+**Expert: stages and leaks.** Do one change at a time with the law for what stays fixed (constant T: `p × V`; constant V: `p / T`). At a fixed volume the amount of gas is proportional to `p / T`, so the fraction left after a leak is the measured pressure ÷ the pressure you'd expect with no leak.
+
 ## Pressure in context
 
 1. Hydraulics: the pressure is the same on both pistons, so `F1 / A1 = F2 / A2` and `F2 = F1 × A2 / A1`, with both areas in the same unit.
@@ -48,3 +54,5 @@ Example: 300 cm³ at 100 kPa squeezed to 150 kPa at constant temperature: `V2 = 
 Example: 50 N on 5 cm², large piston 100 cm²: `F2 = 50 × 100 / 5 = 1000` N.
 
 **Watch out:** atmospheric pressure acts on both sides of a hatch with air inside, so only the liquid's pressure gives a resultant force.
+
+**Expert: jacks and limits.** The liquid's volume is conserved: `A1 × d1 = A2 × d2`, so the load rises only a little per stroke; a part-stroke still has to be made, so round the number of strokes up. To find a greatest safe depth, work backwards: rated force ÷ area gives the largest pressure difference, then solve `ρ × g × h` for h.

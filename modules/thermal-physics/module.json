@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "specific-heat", "title": "Specific heat capacity", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "latent-heat", "title": "Latent heat", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "temperature-scales", "title": "Temperature scales", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "mixing-heat", "title": "Mixing & heat transfer", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "specific-heat", "title": "Specific heat capacity", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "latent-heat", "title": "Latent heat", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "temperature-scales", "title": "Temperature scales", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "mixing-heat", "title": "Mixing & heat transfer", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

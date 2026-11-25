@@ -33,5 +33,8 @@ A $12000 loan at 6% a year is repaid over 3 years with monthly payments. What is
 | Easy | Straight-line depreciation with whole numbers, short loans, yearly deposits |
 | Medium | Reducing balance, longer loans and total interest, monthly deposits and withdrawals |
 | Hard | Finding a depreciation rate, remaining loan balances, saving toward a goal |
+| Expert | Multi-part problems that combine steps: see below |
+
+**Expert** questions have two or three answers each: selling an asset early (book value, then gain or loss), working back from a book value to the cost, straight-line versus reducing balance, paying a loan off early, the biggest loan a budget allows, splitting a payment into interest and principal, overpaying a loan, saving then drawing an income, the cost of starting to save late, deposits at the start versus the end of the month, and how long a fund lasts. Keep full precision between steps and round each answer at the end.
 
 **Tip:** the calculator handles `^`, `ln` and `round(x, 2)`. Store the rate and the number of periods in their own rows (`_i`, `_n`) and reuse them: most of these questions use both twice.

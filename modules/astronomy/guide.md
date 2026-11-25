@@ -22,6 +22,8 @@ Example: 2 AU at light speed: `2 × 1.5e8 / 3e5 = 1000` s, about 16.7 minutes.
 
 **Watch out:** a radio "round trip" (there and back) covers the distance twice.
 
+**Expert: parallax and planet distances.** Distance in parsecs = 1 ÷ parallax (arcseconds); multiply by 3.26 for light-years. For two planets on circular orbits, they are closest on the same side of the Sun (subtract the orbit radii) and farthest on opposite sides (add them).
+
 ## Orbits
 
 1. For the Sun, use T² = a³ (T in years, a in AU). Another star of mass M: T² = a³ ÷ M.
@@ -33,6 +35,8 @@ Example: a = 4 AU gives T² = 64, so T = 8 years.
 
 **Watch out:** the cube root of x is `x^(1/3)` in the calculator; don't use `x^1/3`, which divides by 3.
 
+**Expert: other stars and ellipses.** Around a star of mass M, `T² = a³ ÷ M` (T in years), so `M = a³ ÷ T²`; for two planets of the same star, compare them with `T² ∝ a³` and the mass cancels. For an ellipse, a is the average of the closest and farthest distances, so they add up to 2a.
+
 ## Scale models
 
 1. Find the scale: model size ÷ real size, in the same units.
@@ -42,6 +46,8 @@ Example: a = 4 AU gives T² = 64, so T = 8 years.
 Example: if 1 cm stands for 2 million km, Mars at 228 million km goes `228 / 2 = 114` cm from the Sun.
 
 **Watch out:** a scale of 1 : N needs both sides in the same unit, so convert km to m or cm first.
+
+**Expert: one length fixes the scale.** Whatever is given on both sides (the farthest planet at the end of a field, or the size of the model Earth) gives model length per real length. Multiply every other real length by that, keeping units matched, then convert to the unit asked for.
 
 ## Apparent size & gravity
 
@@ -53,3 +59,5 @@ Example: if 1 cm stands for 2 million km, Mars at 228 million km goes `228 / 2 =
 Example: twice Earth's mass and twice its radius gives `2 / 2² = 0.5` times Earth's gravity.
 
 **Watch out:** mass (kg) stays the same everywhere; only weight (N) changes.
+
+**Expert: eclipses and G × M ÷ R².** Work out the Moon's and the Sun's angular sizes the same way; if the Moon looks bigger the eclipse is total, if smaller it is annular. For gravity, use `g = G × M ÷ R²` with R in metres; backwards, `R = √(G × M ÷ g)`.

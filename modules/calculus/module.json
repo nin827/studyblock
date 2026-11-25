@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "derivatives", "title": "Derivatives", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "tangents", "title": "Gradients & tangents", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "stationary", "title": "Stationary points", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "integration", "title": "Integration", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "derivatives", "title": "Derivatives", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "tangents", "title": "Gradients & tangents", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "stationary", "title": "Stationary points", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "integration", "title": "Integration", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

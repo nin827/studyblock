@@ -37,3 +37,6 @@ To count how many rows give 1, go through the rows one by one and evaluate the e
 | Easy | AND, OR, NOT | 2 inputs, one AND/OR, maybe a NOT | single gates and 2-input expressions; up to 4 inputs |
 | Medium | adds XOR, NAND, NOR | 3 inputs, 2 operators including XOR | 3-input expressions; up to 6 inputs |
 | Hard | three-input gates | 3–4 inputs, 3–4 operators including NAND and NOR | 3–4 input expressions; up to 10 inputs |
+| Expert | circuits built only from NAND or NOR; when an input stops mattering | simplifying, checking a De Morgan rewrite | truth table to expression, word rules to tables |
+
+**Expert** questions combine ideas: you build small truth tables yourself and compare them. Expressions in the options use the same bracket style, and `NOT` still applies only to the letter or bracket right after it.

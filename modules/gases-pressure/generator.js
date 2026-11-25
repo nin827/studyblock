@@ -985,6 +985,7 @@ function contextMulti(rng) {
 const GENS = { pressure: genPressure, "liquid-pressure": genLiquid, "gas-laws": genGas, "pressure-context": genContext };
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (difficulty !== "easy" && difficulty !== "medium" && difficulty !== "hard") throw new Error(`Unknown difficulty: ${difficulty}`);
   const fn = GENS[subtopic];
   if (!fn) throw new Error(`Unknown subtopic: ${subtopic}`);
@@ -1058,6 +1059,7 @@ function checkOne(spec, answer) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.expert) return xVerify(question, answer);
   if (p.multi) {
     if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
     return p.parts.length === question.parts.length && p.parts.every((spec) => checkOne(spec, answer[spec.id]));
@@ -1069,3 +1071,559 @@ export function verify(question, answer) {
   }
   return checkOne(p, answer);
 }
+
+// =============================================================================================
+// Expert. A separate branch: generate() sends "expert" here before anything else, so easy, medium
+// and hard questions never see an extra rng draw. Each part carries a check name and the values
+// stated in the prompt (in SI). verify() substitutes the candidate into the un-rearranged law,
+// recomputing any intermediate from the stated values (never from an earlier part), and accepts it
+// when the law changes sign inside the answer ± half a unit in the last place.
+
+class XRetry extends Error {}
+const xRound = (n, dp) => {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+};
+const xTie = (x, dp) => {
+  const f = Math.abs(x) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 1e-6;
+};
+const xFix = (x, dp) => xRound(x, dp).toFixed(dp);
+const xN = (n) => String(xRound(n, 6));
+const xDP = (dp) => (dp === 0 ? " Round to the nearest whole number." : ` Round to ${dp} decimal place${dp === 1 ? "" : "s"}.`);
+const xG = (label, value) => ({ label, value });
+
+function xNum(id, label, ask, exact, dp, hint, check) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  return {
+    part: { id, label, ask: ask + xDP(dp), answerType: "number", answer: xRound(exact, dp), tolerance: 0.5 * 10 ** -dp, hint },
+    spec: { id, check, dp },
+  };
+}
+// A whole-number part that must be exact (counts, "round up" answers): tolerance 0.
+function xInt(id, label, ask, answer, hint, check) {
+  if (!Number.isInteger(answer)) throw new XRetry();
+  return { part: { id, label, ask, answerType: "number", answer, tolerance: 0, hint }, spec: { id, check, int: true } };
+}
+function xPick(id, label, ask, answer, choices, hint, check) {
+  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+}
+function xMulti(prompt, list, steps, values, given, hints) {
+  const q = {
+    prompt,
+    answerType: "multi",
+    parts: list.map((p) => p.part),
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, parts: list.map((p) => p.spec) },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+function xSingle(prompt, exact, dp, steps, values, check, given, hints) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  const q = {
+    prompt: prompt + xDP(dp),
+    answer: xRound(exact, dp),
+    answerType: "number",
+    choices: undefined,
+    tolerance: 0.5 * 10 ** -dp,
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, check, dp },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+// "≈ 12.3456, which rounds to **12.35**" (or "= **12.35**" when exact).
+function xRes(exact, dp, unit) {
+  const u = unit ? (unit.startsWith("°") ? unit : ` ${unit}`) : "";
+  const shown = xFix(exact, dp);
+  if (Math.abs(exact - Number(shown)) < 1e-9) return `= **${shown}${u}**`;
+  return `≈ ${Number(exact.toPrecision(7))}${u}, which rounds to **${shown}${u}**`;
+}
+function xRun(make, rng) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      return make(rng);
+    } catch (e) {
+      if (!(e instanceof XRetry)) throw e;
+    }
+  }
+  return make(rng);
+}
+
+// Root of f strictly inside (x - h, x + h): a sign change across the window.
+function xBracket(f, x, h) {
+  if (!Number.isFinite(x)) return false;
+  const lo = f(x - h);
+  const hi = f(x + h);
+  return Number.isFinite(lo) && Number.isFinite(hi) && lo * hi < 0;
+}
+const xNumOf = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+
+function xVerify(question, answer) {
+  const p = question.params;
+  const v = p.values;
+  if (!v || typeof v !== "object") return false;
+  const one = (spec, a, q) => {
+    const fn = X_CHECKS[spec.check];
+    if (!fn) return false;
+    if (q.answerType === "choice") {
+      if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
+      if (!q.choices.includes(String(a))) return false;
+      return fn(v, String(a)) === true;
+    }
+    const x = xNumOf(a);
+    if (!Number.isFinite(x)) return false;
+    if (spec.int) return Number.isInteger(x) && fn(v, x, 0) === true;
+    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+  };
+  if (question.answerType === "multi") {
+    if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;
+    if (!answer || typeof answer !== "object") return false;
+    return p.parts.every((spec, i) => spec.id === question.parts[i].id && one(spec, answer[spec.id], question.parts[i]));
+  }
+  return one(p, answer, question);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expert questions. g = 9.8 N/kg and K = °C + 273, as in the rest of the module; each part states its rounding.
+
+const X_WALKERS = ["A hiker", "A skier", "A climber", "A park ranger", "A wildlife photographer", "A mountain guide", "A polar researcher"];
+
+// Pressure, expert 1: standing vs walking on snow (all the weight on one foot), then the smallest
+// snowshoe that keeps the pressure under the snow's limit (rounded up).
+function xPressureSnow(rng) {
+  const who = rng.pick(X_WALKERS);
+  const m = rng.int(50, 110);
+  const mb = rng.int(5, 25);
+  const A = rng.int(150, 350); // cm² per boot
+  const Pmax = rng.int(40, 150) / 10; // kPa
+  const W = (m + mb) * G;
+  const both = W / (2 * A * 1e-4) / 1000;
+  const one = W / (A * 1e-4) / 1000;
+  const shoeExact = (W / (Pmax * 1000)) * 1e4;
+  if (Math.abs(shoeExact - Math.round(shoeExact)) < 1e-6) throw new XRetry();
+  const shoe = Math.ceil(shoeExact);
+  const values = { m, mb, A, Pmax };
+  return xMulti(
+    `${who} of mass ${m} kg carries a rucksack of mass ${mb} kg. Each boot touches the ground over an area of ${A} cm². Fresh snow can take a pressure of at most ${num(Pmax)} kPa before a foot sinks in. Take g = 9.8 N/kg.`,
+    [
+      xNum("both", "Standing", "What pressure is on the ground when standing still on both boots, in kPa?", both, 2,
+        "The weight (person + rucksack) × g is shared between two boots, so the area is 2 × the area of one boot, in m².", "sn-both"),
+      xNum("one", "Walking", "While walking, all the weight is on one boot at a time. What pressure is on the ground then, in kPa?", one, 2,
+        "Same weight, but only one boot's area.", "sn-one"),
+      xInt("shoe", "Snowshoe", "What is the smallest area each snowshoe needs, in cm², so the walker never sinks? Round up to the next whole cm².", shoe,
+        `Walking puts the whole weight on one snowshoe. Area = weight ÷ ${num(Pmax)} kPa (in Pa), in m², then × 10 000 for cm².`, "sn-shoe"),
+    ],
+    [
+      `Weight: \`(${m} + ${mb}) × 9.8 = ${num(W)}\` N. One boot: ${A} cm² = ${num(A / 1e4)} m².`,
+      `Standing: \`${num(W)} / (2 × ${num(A / 1e4)}) / 1000\` ${xRes(both, 2, "kPa")}.`,
+      `Walking, one boot carries everything: \`${num(W)} / ${num(A / 1e4)} / 1000\` ${xRes(one, 2, "kPa")}. That is the case to design for.`,
+      `Snowshoe: \`A = F / P = ${num(W)} / ${num(Pmax * 1000)}\` = ${num(shoeExact / 1e4)} m² = ${Number(shoeExact.toPrecision(7))} cm². Any smaller and the pressure is too high, so round **up**: **${shoe} cm²**. In the calculator: \`(_m + _mb) * _g / (_Pmax_kPa * 1000) * 10000\`.`,
+    ],
+    values,
+    [xG("_m", m), xG("_mb", mb), xG("_A_cm2", A), xG("_Pmax_kPa", Pmax), xG("_g", G)],
+    [
+      "Pressure = force ÷ area, with force in N (mass × g, including the rucksack) and area in m² (cm² ÷ 10 000).",
+      "Standing uses two boots' area. Walking puts all the weight on one foot at a time, which doubles the pressure.",
+      "For the snowshoe, rearrange to area = force ÷ the snow's maximum pressure, and think about which way to round.",
+    ],
+  );
+}
+
+const X_SOLIDS = [
+  { mat: "concrete", rho: 2400 }, { mat: "granite", rho: 2700 }, { mat: "steel", rho: 7800 }, { mat: "brick", rho: 1900 },
+  { mat: "ice", rho: 920 }, { mat: "marble", rho: 2600 }, { mat: "lead", rho: 11300 }, { mat: "oak", rho: 750 },
+];
+
+// Pressure, expert 2: a rectangular block of known density; mass from the volume, then the largest and
+// smallest pressure it can put on the floor (which face?).
+function xPressureBlock(rng) {
+  const s = rng.pick(X_SOLIDS);
+  const dims = [];
+  while (dims.length < 3) {
+    const v = rng.int(4, 60);
+    if (!dims.includes(v)) dims.push(v);
+  }
+  const [l, w, h] = dims;
+  const mass = (s.rho * l * w * h) / 1e6;
+  const sorted = [...dims].sort((a, b) => a - b);
+  const Pmax = s.rho * G * sorted[2] / 100;
+  const Pmin = s.rho * G * sorted[0] / 100;
+  const values = { rho: s.rho, l, w, h };
+  return xMulti(
+    `A solid ${s.mat} block measures ${l} cm × ${w} cm × ${h} cm. The density of ${s.mat} is ${s.rho} kg/m³. It can be stood on any of its faces on a flat floor. Take g = 9.8 N/kg.`,
+    [
+      xNum("mass", "Mass", "What is the mass of the block, in kg?", mass, 2,
+        "Volume in m³ (each length in m, or cm³ ÷ 1 000 000), then mass = density × volume.", "bk-mass"),
+      xNum("max", "Largest", "What is the largest pressure it can exert on the floor, in Pa?", Pmax, 0,
+        "The weight never changes, so the largest pressure comes from the face with the smallest area.", "bk-max"),
+      xNum("min", "Smallest", "What is the smallest pressure it can exert on the floor, in Pa?", Pmin, 0,
+        "The smallest pressure comes from the face with the largest area.", "bk-min"),
+    ],
+    [
+      `Volume: \`${l} × ${w} × ${h} = ${l * w * h}\` cm³ = ${num(l * w * h / 1e6)} m³. Mass: \`${s.rho} × ${num(l * w * h / 1e6)}\` ${xRes(mass, 2, "kg")}.`,
+      `Weight: \`${num(mass)} × 9.8\` = ${num(mass * G)} N. The faces are ${l * w}, ${l * h} and ${w * h} cm².`,
+      `Largest pressure on the smallest face (${sorted[0] * sorted[1]} cm² = ${num(sorted[0] * sorted[1] / 1e4)} m²): \`${num(mass * G)} / ${num(sorted[0] * sorted[1] / 1e4)}\` ${xRes(Pmax, 0, "Pa")}.`,
+      `Smallest pressure on the largest face (${sorted[1] * sorted[2]} cm²): \`${num(mass * G)} / ${num(sorted[1] * sorted[2] / 1e4)}\` ${xRes(Pmin, 0, "Pa")}.`,
+      `Shortcut: for a block, \`P = ρ × g × height\`, where the height is the edge standing upright.`,
+    ],
+    values,
+    [xG("_l_cm", l), xG("_w_cm", w), xG("_h_cm", h), xG("_rho", s.rho), xG("_g", G)],
+    [
+      "Find the volume in m³ first: turn each length into metres, or divide cm³ by 1 000 000.",
+      "Weight = mass × g stays the same on every face. Only the contact area changes.",
+      "Work out all three face areas (in m²). Pressure = weight ÷ area: small area, big pressure.",
+    ],
+  );
+}
+
+const X_OILS = [{ name: "paraffin oil", rho: 800 }, { name: "vegetable oil", rho: 920 }, { name: "engine oil", rho: 880 }, { name: "light oil", rho: 850 }, { name: "olive oil", rho: 910 }];
+const X_TANKS = ["a storage tank", "a tall glass tank", "a settling tank", "a demonstration tank", "a drum"];
+
+// Liquid pressure, expert 1: oil floating on water; pressure at the bottom (with and without the
+// atmosphere), then the depth where the liquids' pressure reaches a given value (inside the water layer).
+function xLiquidLayers(rng) {
+  const oil = rng.pick(X_OILS);
+  const tank = rng.pick(X_TANKS);
+  const ho = rng.int(10, 150) / 100;
+  const hw = rng.int(20, 400) / 100;
+  const Patm = rng.pick([100, 101, 101.3]);
+  const rw = 1000;
+  const Po = oil.rho * G * ho;
+  const bottom = (Po + rw * G * hw) / 1000;
+  const total = bottom + Patm;
+  const Pt = Math.round((Po + rw * G * hw * rng.int(20, 85) / 100) / 100) / 10; // kPa, 1 dp
+  const depth = ho + (Pt * 1000 - Po) / (rw * G);
+  if (Pt * 1000 <= Po || depth >= ho + hw) throw new XRetry();
+  if (xRound(xRound(bottom, 2) + Patm, 2) !== xRound(total, 2)) throw new XRetry();
+  const values = { ro: oil.rho, ho, rw, hw, Patm, Pt };
+  return xMulti(
+    `${cap(tank)} holds ${num(hw)} m of water (density ${rw} kg/m³) with a ${num(ho)} m layer of ${oil.name} (density ${oil.rho} kg/m³) floating on top. The top is open to the air; atmospheric pressure is ${num(Patm)} kPa. Take g = 9.8 N/kg.`,
+    [
+      xNum("bottom", "Liquids only", "What is the pressure at the bottom due to the two liquids, in kPa?", bottom, 2,
+        "Each layer adds its own ρ × g × h: the oil with its thickness and density, then the water with its depth and density.", "ly-bottom"),
+      xNum("total", "Total", "What is the total pressure at the bottom, in kPa?", total, 2,
+        "The air pushes down on the top surface too: add atmospheric pressure.", "ly-total"),
+      xNum("depth", "Depth", `How far below the top surface is the pressure due to the liquids ${num(Pt)} kPa, in m?`, depth, 2,
+        `First check whether ${num(Pt)} kPa is reached inside the oil layer or below it, in the water.`, "ly-depth"),
+    ],
+    [
+      `Oil layer: \`${oil.rho} × 9.8 × ${num(ho)}\` = ${num(Po)} Pa. Water layer: \`${rw} × 9.8 × ${num(hw)}\` = ${num(rw * G * hw)} Pa.`,
+      `Liquids only: \`(${num(Po)} + ${num(rw * G * hw)}) / 1000\` ${xRes(bottom, 2, "kPa")}.`,
+      `Total: \`${num(bottom)} + ${num(Patm)}\` ${xRes(total, 2, "kPa")}.`,
+      `At the bottom of the oil the pressure is only ${num(Po / 1000)} kPa, less than ${num(Pt)} kPa, so the point is in the water. Extra depth of water: \`(${num(Pt * 1000)} - ${num(Po)}) / (${rw} × 9.8)\` = ${num((Pt * 1000 - Po) / (rw * G))} m.`,
+      `Depth below the top: \`${num(ho)} + ${num((Pt * 1000 - Po) / (rw * G))}\` ${xRes(depth, 2, "m")}.`,
+    ],
+    values,
+    [xG("_rho_oil", oil.rho), xG("_h_oil", ho), xG("_rho_w", rw), xG("_h_w", hw), xG("_Patm_kPa", Patm), xG("_Pt_kPa", Pt), xG("_g", G)],
+    [
+      "Pressure from a liquid is `ρ × g × h`. With two layers, add the contribution of each layer, each with its own density and thickness.",
+      "Atmospheric pressure acts on the top surface, so it adds to the pressure everywhere below.",
+      "For the depth: find the pressure at the bottom of the oil first. Whatever is still needed comes from water below it.",
+    ],
+  );
+}
+
+// Liquid pressure, expert 2: a U-tube with water and an oil column in one arm. Balance the pressures at
+// the level of the interface (forwards: water height; backwards: the oil's density).
+function xLiquidUTube(rng) {
+  const oil = rng.pick(X_OILS);
+  const rw = 1000;
+  const backwards = rng.next() < 0.45;
+  const intro = "A U-tube open at both ends contains water (density 1000 kg/m³).";
+  if (!backwards) {
+    const hoc = rng.int(50, 300) / 10; // cm
+    const hwc = (oil.rho * hoc) / rw;
+    const diff = hoc - hwc;
+    if (xRound(hoc - xRound(hwc, 2), 2) !== xRound(diff, 2)) throw new XRetry();
+    const values = { mode: "fwd", ro: oil.rho, rw, ho: hoc };
+    return xMulti(
+      `${intro} ${cap(oil.name)} (density ${oil.rho} kg/m³) is poured into the left arm until it forms a column ${num(hoc)} cm tall resting on the water. The oil and water don't mix. Take g = 9.8 N/kg.`,
+      [
+        xNum("water", "Water column", "How high is the water in the right arm above the oil-water boundary, in cm?", hwc, 2,
+          "At the level of the boundary, the pressure is the same in both arms: the oil column on the left balances a water column on the right.", "ut-hw"),
+        xNum("diff", "Level difference", "How much higher is the top of the oil than the top of the water, in cm?", diff, 2,
+          "Compare the two column heights measured from the boundary level.", "ut-diff"),
+      ],
+      [
+        "Pressure in a liquid at rest is the same at the same level, so at the boundary level: `ρ_oil × g × h_oil = ρ_water × g × h_water`. g cancels.",
+        `\`h_water = ${oil.rho} × ${num(hoc)} / ${rw}\` ${xRes(hwc, 2, "cm")}. In the calculator: \`_rho_oil * _h_oil_cm / _rho_w\`.`,
+        `The oil is less dense, so its column is taller: \`${num(hoc)} - ${num(hwc)}\` ${xRes(diff, 2, "cm")}.`,
+      ],
+      values,
+      [xG("_rho_oil", oil.rho), xG("_h_oil_cm", hoc), xG("_rho_w", rw)],
+      [
+        "Pick the level of the oil-water boundary. Below that level both arms contain only water, so the pressures there must match.",
+        "Set `ρ × g × h` for the oil column equal to `ρ × g × h` for the water above the same level in the other arm. g cancels, and the heights can stay in cm.",
+      ],
+    );
+  }
+  const hoc = rng.int(50, 300) / 10;
+  const hwc = Math.round(((oil.rho + rng.int(-40, 40)) * hoc) / rw * 10) / 10;
+  const rho = (rw * hwc) / hoc;
+  const P = rw * G * hwc / 100;
+  const values = { mode: "back", rw, ho: hoc, hw: hwc };
+  return xMulti(
+    `${intro} An unknown oil that doesn't mix with water is poured into the left arm. It forms a column ${num(hoc)} cm tall, which holds the water in the right arm ${num(hwc)} cm above the oil-water boundary. Take g = 9.8 N/kg.`,
+    [
+      xNum("rho", "Density", "What is the density of the oil, in kg/m³?", rho, 0,
+        "Balance the pressures at the level of the boundary: `ρ_oil × h_oil = ρ_water × h_water`.", "ut-rho"),
+      xNum("press", "Pressure", "What pressure does the oil column add at the boundary level, in Pa?", P, 0,
+        "That pressure equals the pressure of the water column on the other side, which you can work out without the oil's density.", "ut-P"),
+    ],
+    [
+      "At the boundary level the pressures in both arms are equal: `ρ_oil × g × h_oil = ρ_water × g × h_water`.",
+      `\`ρ_oil = ${rw} × ${num(hwc)} / ${num(hoc)}\` ${xRes(rho, 0, "kg/m³")}. In the calculator: \`_rho_w * _h_w_cm / _h_oil_cm\`.`,
+      `Pressure of the oil column = pressure of the water column: \`${rw} × 9.8 × ${num(hwc / 100)}\` ${xRes(P, 0, "Pa")} (heights in m).`,
+    ],
+    values,
+    [xG("_rho_w", rw), xG("_h_oil_cm", hoc), xG("_h_w_cm", hwc), xG("_g", G)],
+    [
+      "Liquids at rest have equal pressure at equal levels. Use the level of the oil-water boundary.",
+      "The oil column on one side balances the water column on the other: `ρ_oil × h_oil = ρ_water × h_water`. Rearrange for the oil's density.",
+      "For the pressure, use `ρ × g × h` with h in metres.",
+    ],
+  );
+}
+
+const X_PISTONS = ["A gas syringe", "A bicycle pump with its outlet blocked", "A cylinder with a sliding piston", "A sealed piston engine cylinder", "A glass syringe with its tip sealed"];
+
+// Gas laws, expert 1: two stages (squeeze at constant temperature, then heat at constant volume), then
+// work backwards to the temperature at which a valve opens.
+function xGasTwoStage(rng) {
+  const ctx = rng.pick(X_PISTONS);
+  const gas = rng.pick(GASES);
+  const L = rng.next() < 0.5;
+  const V1 = L ? rng.int(20, 120) / 10 : rng.int(100, 600);
+  const V2 = L ? Math.round(V1 * rng.int(25, 80)) / 100 : Math.round((V1 * rng.int(25, 80)) / 100);
+  const vu = L ? "litres" : "cm³";
+  const p1 = rng.int(90, 120);
+  const T1 = rng.int(5, 30);
+  const T3 = rng.int(40, 150);
+  const p2 = (p1 * V1) / V2;
+  const p3 = (p2 * (T3 + 273)) / (T1 + 273);
+  const pv = Math.round(p3 * rng.int(110, 150) / 100);
+  const Tv = ((T1 + 273) * pv) / p2 - 273;
+  // A learner who carries the rounded p2 forward must get the same answers.
+  const p2r = xRound(p2, 2);
+  if (xRound((p2r * (T3 + 273)) / (T1 + 273), 2) !== xRound(p3, 2)) throw new XRetry();
+  if (xRound(((T1 + 273) * pv) / p2r - 273, 2) !== xRound(Tv, 2)) throw new XRetry();
+  const values = { V1, V2, p1, T1, T3, pv };
+  return xMulti(
+    `${ctx} holds ${num(V1)} ${vu} of ${gas} at ${p1} kPa and ${T1} °C. It is squeezed slowly, so the temperature stays at ${T1} °C, until the volume is ${num(V2)} ${vu}. Then the volume is held fixed and the gas is heated to ${T3} °C. Use K = °C + 273.`,
+    [
+      xNum("p2", "After squeezing", "What is the pressure after it has been squeezed, in kPa?", p2, 2,
+        "Constant temperature: `p1 × V1 = p2 × V2` (Boyle's law).", "g2-p2"),
+      xNum("p3", "After heating", `What is the pressure at ${T3} °C, in kPa?`, p3, 2,
+        "Constant volume: `p / T` stays the same, with T in kelvin. Start from the pressure after squeezing.", "g2-p3"),
+      xNum("Tv", "Valve", `A safety valve opens at ${pv} kPa. If the heating continued, at what temperature would it open, in °C?`, Tv, 2,
+        "Same constant-volume rule, now solving for T. Convert the kelvin answer back to °C.", "g2-Tv"),
+    ],
+    [
+      `Stage 1, constant temperature: \`p2 = ${p1} × ${num(V1)} / ${num(V2)}\` ${xRes(p2, 2, "kPa")}.`,
+      `Stage 2, constant volume, in kelvin: ${T1} °C = ${T1 + 273} K and ${T3} °C = ${T3 + 273} K. \`p3 = ${num(p2)} × ${T3 + 273} / ${T1 + 273}\` ${xRes(p3, 2, "kPa")}.`,
+      `Valve: \`T = ${T1 + 273} × ${pv} / ${num(p2)}\` = ${num(((T1 + 273) * pv) / p2)} K. In °C: subtract 273 ${xRes(Tv, 2, "°C")}.`,
+      `Check with the combined law: \`p1 × V1 / T1 = p × V / T\` holds at every stage. In the calculator: \`_p1_kPa * _V1 / _V2 * (_T3_C + 273) / (_T1_C + 273)\`.`,
+    ],
+    values,
+    [xG("_V1", V1), xG("_V2", V2), xG("_p1_kPa", p1), xG("_T1_C", T1), xG("_T3_C", T3), xG("_pv_kPa", pv)],
+    [
+      "Take it one stage at a time. In the first stage the temperature is fixed, so pressure × volume stays the same.",
+      "In the second stage the volume is fixed, so pressure ÷ temperature stays the same, with temperatures in kelvin (°C + 273).",
+      "For the valve, use the same pressure ÷ temperature rule but solve for the temperature, then turn kelvin back into °C.",
+    ],
+  );
+}
+
+const X_LEAKS = [
+  { what: "A car tyre", event: "After a long drive" },
+  { what: "A bicycle tyre", event: "After a ride in the sun" },
+  { what: "A rigid gas cylinder", event: "After a day in a hot storeroom" },
+  { what: "A football", event: "After a match on a hot afternoon" },
+  { what: "A sealed steel drum", event: "After standing in the sun" },
+];
+
+// Gas laws, expert 2: a fixed volume where some gas has leaked. Predict the no-leak pressure, then use
+// "amount ∝ p / T" to find the percentage that escaped.
+function xGasLeak(rng) {
+  const c = rng.pick(X_LEAKS);
+  const p1 = rng.int(150, 350);
+  const T1 = rng.int(2, 25);
+  const T2 = rng.int(T1 + 10, 60);
+  const lost = rng.int(3, 25);
+  const pExp = (p1 * (T2 + 273)) / (T1 + 273);
+  const p2 = Math.round(pExp * (1 - lost / 100) * 10) / 10;
+  const pct = (1 - (p2 / (T2 + 273)) / (p1 / (T1 + 273))) * 100;
+  if (pct <= 0.5) throw new XRetry();
+  const values = { p1, T1, T2, p2 };
+  return xMulti(
+    `${c.what} has an absolute pressure of ${p1} kPa at ${T1} °C. ${c.event}, it is at ${T2} °C and its absolute pressure is ${num(p2)} kPa. Its volume does not change, but it has a slow leak. Use K = °C + 273.`,
+    [
+      xNum("expected", "No leak", `What would the pressure be at ${T2} °C if no gas had escaped, in kPa?`, pExp, 2,
+        "Constant volume and no gas lost: `p1 / T1 = p2 / T2` with T in kelvin.", "lk-exp"),
+      xNum("lost", "Escaped", "What percentage of the gas has escaped? (Type the number without the % sign.)", pct, 2,
+        "At a fixed volume, the amount of gas is proportional to p ÷ T. Compare p ÷ T now with p ÷ T at the start.", "lk-pct"),
+    ],
+    [
+      `In kelvin: ${T1 + 273} K and ${T2 + 273} K.`,
+      `No leak: \`${p1} × ${T2 + 273} / ${T1 + 273}\` ${xRes(pExp, 2, "kPa")}. The measured ${num(p2)} kPa is lower, so gas has escaped.`,
+      `At a fixed volume, the amount of gas is proportional to p ÷ T. Fraction left: \`(${num(p2)} / ${T2 + 273}) / (${p1} / ${T1 + 273})\` = ${Number(((p2 / (T2 + 273)) / (p1 / (T1 + 273))).toPrecision(6))}, which is the same as measured ÷ no-leak pressure.`,
+      `Escaped: \`(1 - fraction left) × 100\` ${xRes(pct, 2, "%")}. In the calculator: \`(1 - _p2_kPa / (_p1_kPa * (_T2_C + 273) / (_T1_C + 273))) * 100\`.`,
+    ],
+    values,
+    [xG("_p1_kPa", p1), xG("_T1_C", T1), xG("_T2_C", T2), xG("_p2_kPa", p2)],
+    [
+      "First pretend nothing leaked: at constant volume, pressure ÷ temperature (in kelvin) stays the same.",
+      "The real pressure is lower than that. At a fixed volume and temperature, pressure is proportional to the amount of gas inside.",
+      "So the fraction of gas left = measured pressure ÷ the no-leak pressure. The percentage escaped is what's missing from 100%.",
+    ],
+  );
+}
+
+const X_JACKS = ["car jack", "hydraulic lift", "workshop press", "trolley jack", "bottle jack"];
+
+// Pressure in context, expert 1: a hydraulic jack. Force needed, how far the load rises per pump
+// (volume is conserved), and how many full strokes lift it far enough (round up).
+function xContextJack(rng) {
+  const dev = rng.pick(X_JACKS);
+  const A1 = rng.int(2, 12);
+  const A2 = rng.int(80, 600);
+  const M = rng.int(30, 250) * 10;
+  const d1 = rng.int(5, 20);
+  const H = rng.int(5, 30);
+  const F1 = (M * G * A1) / A2;
+  const rise = (d1 * A1 / A2) * 10; // mm
+  const nExact = (H * 10) / rise;
+  if (Math.abs(nExact - Math.round(nExact)) < 1e-6) throw new XRetry();
+  const n = Math.ceil(nExact);
+  if (Math.ceil((H * 10) / xRound(rise, 2)) !== n) throw new XRetry();
+  const values = { A1, A2, M, d1, H };
+  return xMulti(
+    `A ${dev} has a small piston of area ${A1} cm² and a large piston of area ${A2} cm². It is used to lift a load of mass ${M} kg. Each stroke pushes the small piston down ${d1} cm. Take g = 9.8 N/kg and ignore friction and the pistons' weight.`,
+    [
+      xNum("force", "Force", "What force on the small piston just supports the load, in N?", F1, 2,
+        "The pressure is the same throughout the liquid: `F1 / A1 = F2 / A2`, with F2 the load's weight.", "jk-F"),
+      xNum("rise", "Per stroke", "How far does the load rise with each stroke, in mm?", rise, 2,
+        "The liquid pushed out of the small cylinder fills the large one: `A1 × d1 = A2 × d2`.", "jk-rise"),
+      xInt("strokes", "Strokes", `How many full strokes are needed to lift the load by at least ${H} cm?`, n,
+        "Divide the height needed by the rise per stroke (same units), then think about whether to round up or down.", "jk-n"),
+    ],
+    [
+      `Load: \`${M} × 9.8\` = ${num(M * G)} N. Same pressure everywhere: \`F1 = ${num(M * G)} × ${A1} / ${A2}\` ${xRes(F1, 2, "N")}. (Areas can stay in cm² because only their ratio matters.)`,
+      `Volume moved per stroke: \`${A1} × ${d1}\` = ${A1 * d1} cm³. Spread over the big piston: \`${A1 * d1} / ${A2}\` = ${num(A1 * d1 / A2)} cm, ${xRes(rise, 2, "mm")}.`,
+      `Strokes: \`${H * 10} / ${num(rise)}\` = ${Number(nExact.toPrecision(6))}. A part-stroke doesn't finish the lift, so round **up**: **${n}** strokes.`,
+      "The jack trades distance for force: a small force over a long distance on the small piston gives a big force over a short distance.",
+    ],
+    values,
+    [xG("_A1_cm2", A1), xG("_A2_cm2", A2), xG("_M", M), xG("_d1_cm", d1), xG("_H_cm", H), xG("_g", G)],
+    [
+      "The pressure in the liquid is the same everywhere, so force ÷ area is the same at both pistons. The load's weight is mass × g.",
+      "The liquid is incompressible: the volume leaving the small cylinder (area × distance) equals the volume entering the large one.",
+      "For the number of strokes, use the same units for both heights. A fraction of a stroke still has to be made as a full stroke.",
+    ],
+  );
+}
+
+const X_DEEP = [
+  { what: "A research submarine", liq: "seawater", rho: 1025 },
+  { what: "A small submarine", liq: "seawater", rho: 1030 },
+  { what: "An underwater observatory", liq: "seawater", rho: 1025 },
+  { what: "A lake-survey submersible", liq: "fresh water", rho: 1000 },
+];
+
+// Pressure in context, expert 2: a hatch on a submarine kept at atmospheric pressure inside (so the
+// atmosphere cancels), the force on it, and the deepest dive its rating allows.
+function xContextHatch(rng) {
+  const s = rng.pick(X_DEEP);
+  const h = rng.int(20, 400);
+  const dcm = rng.int(50, 120);
+  const Patm = rng.pick([100, 101, 101.3]);
+  const dP = (s.rho * G * h) / 1000; // kPa
+  const area = Math.PI * (dcm / 100) ** 2 / 4;
+  const F = dP * area; // kN
+  const Fmax = Math.round(F * rng.int(120, 250) / 100);
+  const hMax = (Fmax * 1000) / (s.rho * G * area);
+  if (xRound(xRound(dP, 2) * area, 2) !== xRound(F, 2)) throw new XRetry();
+  const values = { rho: s.rho, h, d: dcm, Patm, Fmax };
+  return xMulti(
+    `${s.what} is ${h} m below the surface of the ${s.liq} (density ${s.rho} kg/m³). Inside, the air is kept at atmospheric pressure, ${num(Patm)} kPa, the same as at the surface. A circular hatch has a diameter of ${dcm} cm. Take g = 9.8 N/kg and area of a circle = π × d² / 4.`,
+    [
+      xNum("dp", "Pressure difference", "What is the difference between the pressures on the outside and the inside of the hatch, in kPa?", dP, 2,
+        "Outside: atmosphere + the water above. Inside: atmosphere. What is left after you subtract?", "hc-dp"),
+      xNum("force", "Force", "What is the overall force pushing the hatch inwards, in kN?", F, 2,
+        "Force = pressure difference × area, with the pressure in Pa and the area in m² (diameter in m).", "hc-F"),
+      xNum("depth", "Deepest", `The hatch is rated for an overall force of ${Fmax} kN. What is the greatest depth it can safely go to, in m?`, hMax, 2,
+        "Work backwards: the largest pressure difference allowed is the rated force ÷ area. Then rearrange `ρ × g × h` for h.", "hc-depth"),
+    ],
+    [
+      `Outside: \`${num(Patm)} kPa + ρ × g × h\`. Inside: ${num(Patm)} kPa. The atmosphere cancels, so \`Δp = ${s.rho} × 9.8 × ${h} / 1000\` ${xRes(dP, 2, "kPa")}.`,
+      `Area: \`π × ${num(dcm / 100)}² / 4\` = ${Number(area.toPrecision(6))} m². Force: \`${num(dP * 1000)} × ${Number(area.toPrecision(6))} / 1000\` ${xRes(F, 2, "kN")}.`,
+      `Deepest: \`h = ${Fmax * 1000} / (${s.rho} × 9.8 × ${Number(area.toPrecision(6))})\` ${xRes(hMax, 2, "m")}. In the calculator: \`_Fmax_kN * 1000 / (_rho * _g * pi * (_d_cm / 100)^2 / 4)\`.`,
+    ],
+    values,
+    [xG("_rho", s.rho), xG("_h", h), xG("_d_cm", dcm), xG("_Patm_kPa", Patm), xG("_Fmax_kN", Fmax), xG("_g", G)],
+    [
+      "Write down the pressure on each side of the hatch. The air inside is at the same pressure as the air above the water's surface.",
+      "Force = pressure difference × area. Use Pa and m² to get N, then divide by 1000 for kN.",
+      "For the deepest dive, reverse the steps: rated force ÷ area gives the biggest pressure difference, then solve `ρ × g × h` for h.",
+    ],
+  );
+}
+
+function xGenerate(subtopic, rng) {
+  if (subtopic === "pressure") return xRun(rng.next() < 0.5 ? xPressureSnow : xPressureBlock, rng);
+  if (subtopic === "liquid-pressure") return xRun(rng.next() < 0.5 ? xLiquidLayers : xLiquidUTube, rng);
+  if (subtopic === "gas-laws") return xRun(rng.next() < 0.55 ? xGasTwoStage : xGasLeak, rng);
+  if (subtopic === "pressure-context") return xRun(rng.next() < 0.5 ? xContextJack : xContextHatch, rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Expert checks: (values, x, h) for numbers, (values, answer) for choices. Each law is written the
+// "forwards" way and every intermediate is rebuilt from the stated values.
+const X_CHECKS = {
+  "sn-both": (v, x, h) => xBracket((P) => P * 1000 * 2 * v.A * 1e-4 - (v.m + v.mb) * 9.8, x, h),
+  "sn-one": (v, x, h) => xBracket((P) => P * 1000 * v.A * 1e-4 - (v.m + v.mb) * 9.8, x, h),
+  // Smallest whole cm² that keeps the pressure at or under the limit.
+  "sn-shoe": (v, x) => {
+    const W = (v.m + v.mb) * 9.8;
+    const ok = (a) => W / (a * 1e-4) <= v.Pmax * 1000;
+    return x > 0 && ok(x) && !ok(x - 1);
+  },
+  "bk-mass": (v, x, h) => xBracket((m) => m - v.rho * (v.l / 100) * (v.w / 100) * (v.h / 100), x, h),
+  // Enumerate the three faces: weight ÷ area for each.
+  "bk-max": (v, x, h) => {
+    const W = v.rho * (v.l * v.w * v.h) / 1e6 * 9.8;
+    const Ps = [v.l * v.w, v.l * v.h, v.w * v.h].map((a) => W / (a / 1e4));
+    return xBracket((P) => P - Math.max(...Ps), x, h);
+  },
+  "bk-min": (v, x, h) => {
+    const W = v.rho * (v.l * v.w * v.h) / 1e6 * 9.8;
+    const Ps = [v.l * v.w, v.l * v.h, v.w * v.h].map((a) => W / (a / 1e4));
+    return xBracket((P) => P - Math.min(...Ps), x, h);
+  },
+  "ly-bottom": (v, x, h) => xBracket((P) => P * 1000 - v.ro * 9.8 * v.ho - v.rw * 9.8 * v.hw, x, h),
+  "ly-total": (v, x, h) => xBracket((P) => (P - v.Patm) * 1000 - v.ro * 9.8 * v.ho - v.rw * 9.8 * v.hw, x, h),
+  // Pressure as a function of depth through both layers (oil first, then water).
+  "ly-depth": (v, x, h) => xBracket((d) => (d <= v.ho ? v.ro * 9.8 * d : v.ro * 9.8 * v.ho + v.rw * 9.8 * (d - v.ho)) - v.Pt * 1000, x, h),
+  "ut-hw": (v, x, h) => xBracket((hw) => v.rw * 9.8 * hw - v.ro * 9.8 * v.ho, x, h),
+  "ut-diff": (v, x, h) => xBracket((dd) => v.rw * (v.ho - dd) - v.ro * v.ho, x, h),
+  "ut-rho": (v, x, h) => xBracket((r) => r * 9.8 * v.ho - v.rw * 9.8 * v.hw, x, h),
+  "ut-P": (v, x, h) => xBracket((P) => P - v.rw * 9.8 * (v.hw / 100), x, h),
+  "g2-p2": (v, x, h) => xBracket((p) => p * v.V2 - v.p1 * v.V1, x, h),
+  "g2-p3": (v, x, h) => xBracket((p) => p * v.V2 * (v.T1 + 273) - v.p1 * v.V1 * (v.T3 + 273), x, h),
+  "g2-Tv": (v, x, h) => xBracket((T) => v.pv * v.V2 * (v.T1 + 273) - v.p1 * v.V1 * (T + 273), x, h),
+  "lk-exp": (v, x, h) => xBracket((p) => p * (v.T1 + 273) - v.p1 * (v.T2 + 273), x, h),
+  // If x% escaped, the gas left at T2 would have pressure p1 × (1 - x/100) × T2 / T1: compare with the reading.
+  "lk-pct": (v, x, h) => xBracket((pc) => v.p1 * (1 - pc / 100) * (v.T2 + 273) / (v.T1 + 273) - v.p2, x, h),
+  "jk-F": (v, x, h) => xBracket((F) => F * v.A2 - v.M * 9.8 * v.A1, x, h),
+  "jk-rise": (v, x, h) => xBracket((mm) => (mm / 10) * v.A2 - v.d1 * v.A1, x, h),
+  // Volume pumped after n strokes must fill the big cylinder to the height H; n - 1 strokes must not.
+  "jk-n": (v, x) => x >= 1 && x * v.d1 * v.A1 >= v.H * v.A2 && (x - 1) * v.d1 * v.A1 < v.H * v.A2,
+  "hc-dp": (v, x, h) => xBracket((p) => (v.Patm + p) - (v.Patm + v.rho * 9.8 * v.h / 1000), x, h),
+  "hc-F": (v, x, h) => xBracket((F) => F * 1000 - v.rho * 9.8 * v.h * Math.PI * (v.d / 200) ** 2, x, h),
+  "hc-depth": (v, x, h) => xBracket((d) => v.Fmax * 1000 - v.rho * 9.8 * d * Math.PI * (v.d / 200) ** 2, x, h),
+};

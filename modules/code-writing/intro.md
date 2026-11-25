@@ -13,6 +13,12 @@ Code is shown in the language you pick: **Python, C#, C++, GDScript or Rust**. C
 - When a question asks for the **smallest** number, several values would work. Give the lowest one (0 or more).
 - Two-part questions ask for the blank **and** what the finished program prints.
 
+## Levels
+
+- **Easy** and **Medium**: one blank in a short program, with the goal spelled out.
+- **Hard**: longer snippets, conditions joined with and/or, nested loops, and two-part questions.
+- **Expert**: longer programs you have to trace over many steps, then work **backwards** from the output. Expect nested loops with `break`, functions that call other functions or themselves, `if`/`elif` chains where the order of the checks matters, and edge cases such as the first and last position. Most Expert questions have two parts: the blank, then what the finished program prints.
+
 ## Things that often trip people up
 
 - **Positions start at 0.** The first item of a list, or the first letter of a word, is at position 0. The last is at length − 1.

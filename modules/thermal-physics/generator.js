@@ -1189,6 +1189,7 @@ function mixingMulti(rng) {
 const GENS = { "specific-heat": genSpecific, "latent-heat": genLatent, "temperature-scales": genScales, "mixing-heat": genMixing };
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (difficulty !== "easy" && difficulty !== "medium" && difficulty !== "hard") throw new Error(`Unknown difficulty: ${difficulty}`);
   const fn = GENS[subtopic];
   if (!fn) throw new Error(`Unknown subtopic: ${subtopic}`);
@@ -1296,6 +1297,7 @@ function toKelvin(txt, off) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.expert) return xVerify(question, answer);
   if (p.multi) {
     if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
     return p.parts.length === question.parts.length && p.parts.every((spec) => checkOne(spec, answer[spec.id]));
@@ -1313,3 +1315,600 @@ export function verify(question, answer) {
   }
   return checkOne(p, answer);
 }
+
+// =============================================================================================
+// Expert. A separate branch: generate() sends "expert" here before anything else, so easy, medium
+// and hard questions never see an extra rng draw. Each part carries a check name and the values
+// stated in the prompt (in SI). verify() substitutes the candidate into the un-rearranged law,
+// recomputing any intermediate from the stated values (never from an earlier part), and accepts it
+// when the law changes sign inside the answer ± half a unit in the last place.
+
+class XRetry extends Error {}
+const xRound = (n, dp) => {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+};
+const xTie = (x, dp) => {
+  const f = Math.abs(x) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 1e-6;
+};
+const xFix = (x, dp) => xRound(x, dp).toFixed(dp);
+const xN = (n) => String(xRound(n, 6));
+const xDP = (dp) => (dp === 0 ? " Round to the nearest whole number." : ` Round to ${dp} decimal place${dp === 1 ? "" : "s"}.`);
+const xG = (label, value) => ({ label, value });
+
+function xNum(id, label, ask, exact, dp, hint, check) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  return {
+    part: { id, label, ask: ask + xDP(dp), answerType: "number", answer: xRound(exact, dp), tolerance: 0.5 * 10 ** -dp, hint },
+    spec: { id, check, dp },
+  };
+}
+function xPick(id, label, ask, answer, choices, hint, check) {
+  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+}
+function xMulti(prompt, list, steps, values, given, hints) {
+  const q = {
+    prompt,
+    answerType: "multi",
+    parts: list.map((p) => p.part),
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, parts: list.map((p) => p.spec) },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+function xSingle(prompt, exact, dp, steps, values, check, given, hints) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  const q = {
+    prompt: prompt + xDP(dp),
+    answer: xRound(exact, dp),
+    answerType: "number",
+    choices: undefined,
+    tolerance: 0.5 * 10 ** -dp,
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, check, dp },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+// "≈ 12.3456, which rounds to **12.35**" (or "= **12.35**" when exact).
+function xRes(exact, dp, unit) {
+  const u = unit ? (unit.startsWith("°") ? unit : ` ${unit}`) : "";
+  const shown = xFix(exact, dp);
+  if (Math.abs(exact - Number(shown)) < 1e-9) return `= **${shown}${u}**`;
+  return `≈ ${Number(exact.toPrecision(7))}${u}, which rounds to **${shown}${u}**`;
+}
+function xRun(make, rng) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      return make(rng);
+    } catch (e) {
+      if (!(e instanceof XRetry)) throw e;
+    }
+  }
+  return make(rng);
+}
+
+// Root of f strictly inside (x - h, x + h): a sign change across the window.
+function xBracket(f, x, h) {
+  if (!Number.isFinite(x)) return false;
+  const lo = f(x - h);
+  const hi = f(x + h);
+  return Number.isFinite(lo) && Number.isFinite(hi) && lo * hi < 0;
+}
+const xNumOf = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+
+function xVerify(question, answer) {
+  const p = question.params;
+  const v = p.values;
+  if (!v || typeof v !== "object") return false;
+  const one = (spec, a, q) => {
+    const fn = X_CHECKS[spec.check];
+    if (!fn) return false;
+    if (q.answerType === "choice") {
+      if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
+      if (!q.choices.includes(String(a))) return false;
+      return fn(v, String(a)) === true;
+    }
+    const x = xNumOf(a);
+    if (!Number.isFinite(x)) return false;
+    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+  };
+  if (question.answerType === "multi") {
+    if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;
+    if (!answer || typeof answer !== "object") return false;
+    return p.parts.every((spec, i) => spec.id === question.parts[i].id && one(spec, answer[spec.id], question.parts[i]));
+  }
+  return one(p, answer, question);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expert questions (all answers rounded as each part says; every constant is stated).
+
+const XC = { water: 4200, ice: 2100, Lf: 334, Lv: 2260 };
+const X_METALS = [
+  { mat: "aluminium", c: 900 }, { mat: "copper", c: 385 }, { mat: "iron", c: 450 }, { mat: "lead", c: 130 },
+  { mat: "silver", c: 235 }, { mat: "magnesium", c: 1020 }, { mat: "titanium", c: 520 }, { mat: "brass", c: 380 },
+];
+const X_VESSELS = [{ mat: "aluminium", c: 900 }, { mat: "copper", c: 385 }, { mat: "steel", c: 490 }, { mat: "iron", c: 450 }];
+const X_POTS = ["kettle", "saucepan", "tea urn", "pan", "boiling pot"];
+const X_STUDENTS = ["A student", "A technician", "Priya", "Tom", "A lab group", "Mei", "Kofi", "Sara"];
+
+// Specific heat capacity, expert 1: find c from a heating experiment, correct it for heat lost, then
+// identify the metal from a list (the uncorrected value can point at the wrong one).
+function xSpecificExperiment(rng) {
+  const who = rng.pick(X_STUDENTS);
+  const metal = rng.pick(X_METALS);
+  const m = rng.int(4, 30) / 10;
+  const dTt = rng.int(80, 300) / 10;
+  const t = rng.int(4, 20);
+  const loss = rng.int(4, 30);
+  const P = Math.round((metal.c * m * dTt) / (t * 60 * (1 - loss / 100)));
+  if (P < 10 || P > 3000) throw new XRetry();
+  const T1 = rng.int(150, 250) / 10;
+  const dT = Math.round(((P * t * 60 * (1 - loss / 100)) / (m * metal.c)) * 10) / 10;
+  const T2 = fix(T1 + dT);
+  const E = P * t * 60;
+  const cRaw = E / (m * (T2 - T1));
+  const cCorr = cRaw * (1 - loss / 100);
+  // Four options, every pair at least 15% apart, so "nearest" is never close.
+  const opts = [metal];
+  for (const o of rng.shuffle(X_METALS.filter((x) => x !== metal))) {
+    if (opts.length < 4 && opts.every((y) => Math.abs(y.c - o.c) / Math.max(y.c, o.c) >= 0.15)) opts.push(o);
+  }
+  if (opts.length < 4) throw new XRetry();
+  const nearest = opts.reduce((a, b) => (Math.abs(b.c - cCorr) < Math.abs(a.c - cCorr) ? b : a));
+  if (nearest !== metal) throw new XRetry();
+  const listed = [...opts].sort((a, b) => a.c - b.c);
+  const values = { P, t, m, T1, T2, loss, opts: listed.map((o) => [cap(o.mat), o.c]) };
+  const keep = 100 - loss;
+  return xMulti(
+    `${who} heats a ${num(m)} kg block of an unknown metal with a ${P} W electrical heater for ${t} minutes. Its temperature rises from ${num(T1)} °C to ${num(T2)} °C. Afterwards ${who === "A lab group" ? "they estimate" : "it is estimated"} that ${loss}% of the heater's energy was lost to the surroundings. The metal is one of these: ${listed.map((o) => `${o.mat} (${o.c} J/kg °C)`).join(", ")}.`,
+    [
+      xNum("raw", "Ignoring losses", "What specific heat capacity do the results give if no energy were lost, in J/kg °C?", cRaw, 0,
+        "All the heater's energy is assumed to go into the block: `c = E / (m × ΔT)` with `E = P × t` (t in seconds).", "c-raw"),
+      xNum("corrected", "Allowing for losses", `What is the specific heat capacity once the ${loss}% lost is allowed for, in J/kg °C?`, cCorr, 0,
+        `Only ${keep}% of the supplied energy heated the block. In the calculator: \`_P * _t_min * 60 * (100 - _loss) / 100 / (_m * (_T2 - _T1))\`.`, "c-loss"),
+      xPick("metal", "Identify", "Which metal is the block most likely made of?", cap(metal.mat), rng.shuffle(listed.map((o) => cap(o.mat))),
+        "Compare the listed values with the specific heat capacity that allows for the losses.", "c-metal"),
+    ],
+    [
+      "This is an experiment run backwards: you know the energy supplied and the temperature rise, and want c.",
+      `Energy supplied: \`E = P × t = ${P} × ${t} × 60 = ${E}\` J. Temperature rise: \`ΔT = ${num(T2)} - ${num(T1)} = ${num(dT)}\` °C.`,
+      `Ignoring losses: \`c = E / (m × ΔT) = ${E} / (${num(m)} × ${num(dT)})\` ${xRes(cRaw, 0, "J/kg °C")}.`,
+      `Only ${keep}% of the energy stayed in the block: \`c = ${keep / 100} × ${E} / (${num(m)} × ${num(dT)})\` ${xRes(cCorr, 0, "J/kg °C")}.`,
+      `The nearest listed value is ${metal.mat} (${metal.c} J/kg °C): **${cap(metal.mat)}**. Ignoring the losses makes c look too big, because the block seems to need more energy per degree than it really did.`,
+    ],
+    values,
+    [xG("_P", P), xG("_t_min", t), xG("_m", m), xG("_T1", T1), xG("_T2", T2), xG("_loss", loss)],
+    [
+      "Find the energy the heater supplied with `E = P × t`, turning minutes into seconds.",
+      "Rearrange `E = m × c × ΔT` to `c = E / (m × ΔT)`. That gives c as if no energy were lost.",
+      `For the corrected value, only ${keep}% of E actually heated the block. Then compare with the listed metals.`,
+    ],
+  );
+}
+
+// Specific heat capacity, expert 2: a heater with an efficiency warms water and its container; find the
+// energy and the time, then the time if the container were (wrongly) ignored.
+function xSpecificHeater(rng) {
+  const ves = rng.pick(X_VESSELS);
+  const pot = rng.pick(X_POTS);
+  const mk = rng.int(30, 150) / 100;
+  const mw = rng.int(50, 400) / 100;
+  const T1 = rng.int(8, 25);
+  const T2 = rng.int(45, 95);
+  const PkW = rng.pick([1.2, 1.5, 1.8, 2, 2.2, 2.4, 2.5, 2.8, 3]);
+  const eff = rng.int(70, 95);
+  const cw = XC.water;
+  const useful = PkW * 1000 * eff / 100; // W
+  const E = ((mw * cw + mk * ves.c) * (T2 - T1)) / 1000; // kJ
+  const tMin = (E * 1000) / useful / 60;
+  const tAlone = (mw * cw * (T2 - T1)) / useful / 60;
+  // Someone who uses the rounded energy from part 1 must still land on the same time.
+  if (xRound((xRound(E, 2) * 1000) / useful / 60, 2) !== xRound(tMin, 2)) throw new XRetry();
+  const values = { mw, cw, mk, ck: ves.c, T1, T2, P: PkW * 1000, eff };
+  return xMulti(
+    `${An(ves.mat)} ${pot} of mass ${num(mk)} kg holds ${num(mw)} kg of water at ${T1} °C. A ${num(PkW)} kW heater that is ${eff}% efficient heats the water and the ${pot} together to ${T2} °C. Take c = ${cw} J/kg °C for water and c = ${ves.c} J/kg °C for ${ves.mat}.`,
+    [
+      xNum("energy", "Energy", `How much energy must the water and the ${pot} gain together, in kJ?`, E, 2,
+        `Both warm through the same ΔT: \`E = (m_w × c_w + m_k × c_k) × ΔT\`, then ÷ 1000 for kJ.`, "sh-E"),
+      xNum("time", "Time", "How long does the heater take, in minutes?", tMin, 2,
+        `Only ${eff}% of ${num(PkW)} kW is useful. Time = energy needed ÷ useful power, in seconds, then ÷ 60.`, "sh-t"),
+      xNum("alone", "Water only", `How many minutes would you have predicted if you forgot to heat the ${pot}?`, tAlone, 2,
+        "Same method, but with only the water's `m × c × ΔT`.", "sh-t-alone"),
+    ],
+    [
+      `The water and the ${pot} both warm by ΔT = ${T2} - ${T1} = ${T2 - T1} °C.`,
+      `Energy: \`(${num(mw)} × ${cw} + ${num(mk)} × ${ves.c}) × ${T2 - T1} / 1000\` ${xRes(E, 2, "kJ")}. In the calculator: \`(_mw * _cw + _mk * _ck) * (_T2 - _T1) / 1000\`.`,
+      `Useful power: \`${num(PkW * 1000)} × ${eff} / 100 = ${num(useful)}\` W.`,
+      `Time: \`${num(E * 1000)} / ${num(useful)} / 60\` ${xRes(tMin, 2, "min")}.`,
+      `Water only: \`${num(mw)} × ${cw} × ${T2 - T1} / ${num(useful)} / 60\` ${xRes(tAlone, 2, "min")}. Forgetting the ${pot} underestimates the time.`,
+    ],
+    values,
+    [xG("_mw", mw), xG("_cw", cw), xG("_mk", mk), xG("_ck", ves.c), xG("_T1", T1), xG("_T2", T2), xG("_P_kW", PkW), xG("_eff", eff)],
+    [
+      `Two things warm up here: the water and the ${pot}. Each needs its own \`m × c × ΔT\`.`,
+      `The heater's useful power is ${eff}% of ${num(PkW)} kW. Convert kW to W.`,
+      "Time = energy ÷ useful power gives seconds; divide by 60 for minutes.",
+    ],
+  );
+}
+
+// Latent heat, expert 1: ice below 0 °C heated to warm water or all the way to steam by a heater;
+// find the total energy, when the ice has finished melting and when the process ends.
+function xLatentCurve(rng) {
+  const m = rng.int(100, 1500) / 1000;
+  const inG = rng.next() < 0.5;
+  const Ti = rng.int(3, 25);
+  const steam = rng.next() < 0.5;
+  const T2 = rng.int(20, 90);
+  const P = rng.pick([500, 750, 800, 1000, 1200, 1500, 2000, 2400, 3000]);
+  const Tend = steam ? 100 : T2;
+  const E1 = m * XC.ice * Ti, E2 = m * XC.Lf * 1000, E3 = m * XC.water * Tend, E4 = steam ? m * XC.Lv * 1000 : 0;
+  const tot = (E1 + E2 + E3 + E4) / 1000;
+  const tMelt = (E1 + E2) / P / 60;
+  const tEnd = (tot * 1000) / P / 60;
+  if (xRound((xRound(tot, 2) * 1000) / P / 60, 2) !== xRound(tEnd, 2)) throw new XRetry();
+  const mTxt = inG ? `${num(m * 1000)} g` : `${num(m)} kg`;
+  const values = { m, T0: -Ti, steam, T2: Tend, P, ci: XC.ice, cw: XC.water, Lf: XC.Lf, Lv: XC.Lv };
+  const mCalc = inG ? "(_m_g / 1000)" : "_m";
+  const stageLines = [
+    `1. Warm the ice from -${Ti} °C to 0 °C: \`${num(m)} × ${XC.ice} × ${Ti}\` = ${num(E1)} J.`,
+    `2. Melt it at 0 °C: \`${num(m)} × ${XC.Lf} × 1000\` = ${num(E2)} J.`,
+    `3. Warm the water from 0 °C to ${Tend} °C: \`${num(m)} × ${XC.water} × ${Tend}\` = ${num(E3)} J.`,
+    ...(steam ? [`4. Boil it away at 100 °C: \`${num(m)} × ${XC.Lv} × 1000\` = ${num(E4)} J.`] : []),
+  ];
+  return xMulti(
+    `A ${P} W heater is used on ${mTxt} of ice that starts at -${Ti} °C. It keeps heating until ${steam ? "all of it has boiled away at 100 °C" : `the melted ice is water at ${Tend} °C`}. Take c = ${XC.ice} J/kg °C for ice, c = ${XC.water} J/kg °C for water, L = ${XC.Lf} kJ/kg for melting${steam ? ` and L = ${XC.Lv} kJ/kg for boiling` : ""}. Assume all the heater's energy goes into the ice and water.`,
+    [
+      xNum("total", "Total energy", "How much energy is needed altogether, in kJ?", tot, 2,
+        `Split it into stages: ${steam ? "warm the ice, melt it, warm the water, boil it" : "warm the ice, melt it, warm the water"}. Add the stage energies.`, "lh-total"),
+      xNum("melted", "Melted", "How many minutes after switching on has the last of the ice just melted?", tMelt, 2,
+        "Only the first two stages (warming the ice and melting it) have happened by then. Time = energy ÷ power.", "lh-tmelt"),
+      xNum("end", "Finished", "How many minutes does the whole process take?", tEnd, 2,
+        "Time = total energy (in J) ÷ power, then ÷ 60 for minutes.", "lh-tend"),
+    ],
+    [
+      `A heating curve has a stage for each temperature change (\`E = m × c × ΔT\`) and each change of state (\`E = m × L\`). Mass: ${inG ? `${num(m * 1000)} g = ${num(m)} kg` : `${num(m)} kg`}.`,
+      ...stageLines,
+      `Total: ${xRes(tot, 2, "kJ")}.`,
+      `The ice has melted after stages 1 and 2: \`(${num(E1)} + ${num(E2)}) / ${P} / 60\` ${xRes(tMelt, 2, "min")}.`,
+      `The whole process: \`${num(tot * 1000)} / ${P} / 60\` ${xRes(tEnd, 2, "min")}. In the calculator: \`${mCalc} * (_ci * _Ti + _Lf_kJkg * 1000 + _cw * _Tend${steam ? " + _Lv_kJkg * 1000" : ""}) / _P / 60\`.`,
+    ],
+    values,
+    [xG(inG ? "_m_g" : "_m", inG ? m * 1000 : m), xG("_Ti", Ti), xG("_Tend", Tend), xG("_P", P), xG("_ci", XC.ice), xG("_cw", XC.water), xG("_Lf_kJkg", XC.Lf), ...(steam ? [xG("_Lv_kJkg", XC.Lv)] : [])],
+    [
+      "List the stages in order. The temperature only changes between changes of state; during melting and boiling it stays fixed.",
+      "Use `m × c × ΔT` for each warming stage and `m × L` (L × 1000 for J/kg) for each change of state. Work in J and kg.",
+      "A heater of power P supplies P joules every second, so time = energy ÷ P. Divide by 60 for minutes.",
+    ],
+  );
+}
+
+// Latent heat, expert 2: measure L from a boiling kettle, correct it for heat lost to the room, then
+// predict how long the rest takes to boil away.
+function xLatentKettle(rng) {
+  const P = rng.pick([1500, 1800, 2000, 2200, 2400, 2500, 2800, 3000]);
+  const t = rng.int(2, 8);
+  const Ploss = rng.int(4, 30) * 10;
+  const dm = Math.round(((P - Ploss) * t * 60) / (XC.Lv * 1000) * 1000);
+  const M = rng.int(10, 90) * 10;
+  const Lraw = (P * t * 60) / (dm / 1000) / 1000;
+  const Lcor = ((P - Ploss) * t * 60) / (dm / 1000) / 1000;
+  const tRest = (M * t) / dm;
+  const values = { P, t, Ploss, dm, M };
+  return xMulti(
+    `A ${P} W kettle with its lid off is kept boiling. In ${t} minutes the mass of water in it falls by ${dm} g. The whole time, the kettle loses energy to the room at a rate of ${Ploss} W. ${M} g of water is still left in it.`,
+    [
+      xNum("raw", "Ignoring losses", "What specific latent heat of vaporisation do these results give if you ignore the energy lost, in kJ/kg?", Lraw, 0,
+        "`L = E / m` with `E = P × t` (t in seconds) and m in kg. Divide by 1000 for kJ/kg.", "lv-raw"),
+      xNum("corrected", "Allowing for losses", "What is the specific latent heat once the losses are allowed for, in kJ/kg?", Lcor, 0,
+        `Only ${P} - ${Ploss} W actually boils the water. In the calculator: \`(_P - _Ploss) * _t_min * 60 / (_dm_g / 1000) / 1000\`.`, "lv-loss"),
+      xNum("rest", "Time left", "Boiling at the same rate, how many more minutes until the kettle boils dry?", tRest, 2,
+        `The water boils off at a steady rate: ${dm} g every ${t} minutes.`, "lv-rest"),
+    ],
+    [
+      "Once the water is boiling, the energy that stays in the water goes into turning it to steam: `E = m × L`.",
+      `Ignoring losses: \`L = ${P} × ${t} × 60 / ${num(dm / 1000)} / 1000\` ${xRes(Lraw, 0, "kJ/kg")}.`,
+      `Only ${P - Ploss} W boils water, the rest heats the room: \`L = ${P - Ploss} × ${t} × 60 / ${num(dm / 1000)} / 1000\` ${xRes(Lcor, 0, "kJ/kg")}. Ignoring the losses overestimates L.`,
+      `The rate is steady, so the time is proportional to the mass: \`${M} × ${t} / ${dm}\` ${xRes(tRest, 2, "min")}.`,
+    ],
+    values,
+    [xG("_P", P), xG("_t_min", t), xG("_dm_g", dm), xG("_Ploss", Ploss), xG("_M_g", M)],
+    [
+      "When water is already boiling, the energy that reaches it changes liquid to steam without changing the temperature: `E = m × L`.",
+      "Energy supplied: `E = P × t` with t in seconds. Mass in kg. The answer comes out in J/kg; divide by 1000 for kJ/kg.",
+      `For the correction, only the power that is not lost (P minus ${Ploss} W) boils water. For the time left, compare ${M} g with the ${dm} g that boiled off in ${t} minutes.`,
+    ],
+  );
+}
+
+const X_SCALES = ["Zeta", "Nova", "Orion", "Vega", "Lyra", "Polaris", "Atlas", "Draco"];
+
+// Temperature scales, expert 1: a made-up linear scale with its own fixed points (sometimes reversed).
+function xScaleCustom(rng) {
+  const name = rng.pick(X_SCALES);
+  const u = `°${name[0]}`;
+  const a = rng.int(-30, 30);
+  const rev = rng.next() < 0.2;
+  const b = a + (rev ? -1 : 1) * rng.int(50, 250);
+  const C = rng.int(-300, 1200) / 10;
+  const y = fix(Math.round((a + ((b - a) * rng.int(-20, 120)) / 100) * 10) / 10);
+  const x = a + ((b - a) * C) / 100;
+  const F = ((y - a) / (b - a)) * 180 + 32;
+  const values = { a, b, C, y };
+  return xMulti(
+    `On the ${name} scale (${u}), pure water freezes at ${a} ${u} and boils at ${b} ${u} (at normal pressure), and the scale is linear between and beyond these points.${rev ? ` Notice that the numbers go down as it gets hotter.` : ""} Use °F = °C × 9/5 + 32.`,
+    [
+      xNum("toX", `To ${u}`, `What is ${num(C)} °C on the ${name} scale?`, x, 2,
+        `Find what fraction of the way from freezing to boiling ${num(C)} °C is (÷ 100), then go the same fraction of the way from ${a} to ${b} ${u}.`, "sx-to"),
+      xNum("toF", "To °F", `What is ${num(y)} ${u} in °F?`, F, 2,
+        `Fraction of the way: \`(${num(y)} - ${a}) / (${b} - ${a})\`. On the Fahrenheit scale, freezing is 32 and boiling is 212.`, "sx-f"),
+    ],
+    [
+      `Every linear scale can be matched by the fraction of the way from the freezing point to the boiling point. On this scale that gap is ${b} - ${a} = ${b - a} ${u} (100 °C, or 180 °F).`,
+      `${num(C)} °C is ${num(C)} / 100 = ${num(C / 100)} of the way, so \`${a} + ${b - a} × ${num(C / 100)}\` ${xRes(x, 2, u)}. In the calculator: \`_a + (_b - _a) * _C / 100\`.`,
+      `${num(y)} ${u} is \`(${num(y)} - ${a}) / ${b - a}\` = ${Number(((y - a) / (b - a)).toPrecision(7))} of the way. In °F: \`32 + 180 × that\` ${xRes(F, 2, "°F")}.`,
+    ],
+    values,
+    [xG("_a", a), xG("_b", b), xG("_C", C), xG("_y", y)],
+    [
+      `Linear scales line up by their fixed points: freezing (0 °C, 32 °F, ${a} ${u}) and boiling (100 °C, 212 °F, ${b} ${u}).`,
+      "Turn a reading into the fraction of the way from freezing to boiling, then turn that fraction into a reading on the other scale.",
+      rev ? `Here the gap ${b} - ${a} is negative; keep the sign and the formula still works.` : "Readings below freezing or above boiling just give a fraction below 0 or above 1.",
+    ],
+  );
+}
+
+const X_THERMO = [
+  { what: "A liquid-in-glass thermometer has no markings yet. Its liquid column", unit: "cm", qty: "length", lo: [20, 60], gap: [100, 250] },
+  { what: "An uncalibrated resistance thermometer", unit: "Ω", qty: "resistance", lo: [950, 1050], gap: [300, 420] },
+  { what: "A homemade gas thermometer", unit: "kPa", qty: "pressure", lo: [900, 1050], gap: [300, 400] },
+];
+
+// Temperature scales, expert 2: calibrate a thermometer from its ice and steam points (readings may be
+// outside 0-100 °C), then work backwards to a reading.
+function xScaleCalibrate(rng) {
+  const th = rng.pick(X_THERMO);
+  const X0 = rng.int(th.lo[0], th.lo[1]) / 10;
+  const X100 = fix(X0 + rng.int(th.gap[0], th.gap[1]) / 10);
+  const Xr = fix(Math.round((X0 + ((X100 - X0) * rng.int(-15, 115)) / 100) * 10) / 10);
+  let T2;
+  do T2 = rng.int(-20, 120); while (T2 === 0 || T2 === 100);
+  const T = ((Xr - X0) / (X100 - X0)) * 100;
+  const X2 = X0 + ((X100 - X0) * T2) / 100;
+  if (Xr <= 0 || X2 <= 0) throw new XRetry();
+  const verb = th.qty === "length" ? "is" : "reads";
+  const values = { X0, X100, Xr, T2 };
+  return xMulti(
+    `${th.what} ${verb} ${num(X0)} ${th.unit} in melting ice (0 °C) and ${num(X100)} ${th.unit} in steam above boiling water (100 °C). Assume the ${th.qty} changes linearly with temperature.`,
+    [
+      xNum("temp", "Temperature", `What temperature does a ${th.qty} of ${num(Xr)} ${th.unit} show, in °C?`, T, 2,
+        `How far is ${num(Xr)} along the gap from ${num(X0)} to ${num(X100)}? That fraction × 100 is the temperature.`, "cal-T"),
+      xNum("reading", "Reading", `What ${th.qty} would it show at ${T2} °C, in ${th.unit}?`, X2, 2,
+        `Start at the 0 °C value and add ${T2} / 100 of the gap.`, "cal-X"),
+    ],
+    [
+      `Between the fixed points the ${th.qty} changes by ${num(X100)} - ${num(X0)} = ${num(X100 - X0)} ${th.unit} for 100 °C.`,
+      `\`T = (${num(Xr)} - ${num(X0)}) / ${num(X100 - X0)} × 100\` ${xRes(T, 2, "°C")}. In the calculator: \`(_Xr - _X0) / (_X100 - _X0) * 100\`.${T < 0 || T > 100 ? " The reading is outside the fixed points, so the temperature is outside 0-100 °C; the linear rule still applies." : ""}`,
+      `Backwards: \`${num(X0)} + ${num(X100 - X0)} × ${T2} / 100\` ${xRes(X2, 2, th.unit)}.`,
+    ],
+    values,
+    [xG("_X0", X0), xG("_X100", X100), xG("_Xr", Xr), xG("_T2", T2)],
+    [
+      `The two fixed points give the scale: ${num(X0)} ${th.unit} means 0 °C and ${num(X100)} ${th.unit} means 100 °C.`,
+      "Temperature = (reading - ice-point reading) ÷ (steam-point reading - ice-point reading) × 100.",
+      "To go backwards, rearrange the same rule for the reading.",
+    ],
+  );
+}
+
+const X_KS = [-4, -3, -2, -1, 0.5, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+
+// Temperature scales, expert 3: when is the °F reading k times the °C reading (or equal to the K reading)?
+function xScaleMultiple(rng) {
+  if (rng.next() < 0.15) {
+    const K = (273.15 * 1.8 - 32) / 0.8;
+    return xSingle(
+      "At what temperature do a Fahrenheit thermometer and a kelvin thermometer show the same number? Give the answer in K. Use K = °C + 273.15 and °F = °C × 9/5 + 32.",
+      K, 2,
+      [
+        "Call the shared number x. Then x K means x - 273.15 °C, and that in °F must also be x.",
+        "`(x - 273.15) × 9/5 + 32 = x`, so `1.8x - 491.67 + 32 = x` and `0.8x = 459.67`.",
+        `\`x = 459.67 / 0.8\` ${xRes(K, 2, "K")}.`,
+      ],
+      { off: 273.15 }, "fk-same", [xG("_off", 273.15)],
+      [
+        "Call the shared reading x. Write the Celsius temperature in terms of x using the kelvin rule.",
+        "Turn that Celsius temperature into °F and set it equal to x. Collect the x terms on one side.",
+      ],
+    );
+  }
+  const k = rng.pick(X_KS);
+  const askF = rng.next() < 0.5;
+  const C = 32 / (k - 1.8);
+  const F = k * C;
+  const kTxt = k === -1 ? "the same number as the Celsius reading but with the opposite sign" : `exactly ${num(k)} times the Celsius reading`;
+  return xSingle(
+    `One day a Fahrenheit thermometer shows ${kTxt}. What is the temperature in ${askF ? "°F" : "°C"}? Use °F = °C × 9/5 + 32.`,
+    askF ? F : C, 2,
+    [
+      `Call the Celsius reading C. The Fahrenheit reading is \`C × 9/5 + 32\`, and it must equal \`${num(k)} × C\`.`,
+      `\`1.8C + 32 = ${num(k)}C\`, so \`(${num(k)} - 1.8)C = 32\` and \`C = 32 / ${num(k - 1.8)}\` ${xRes(C, 2, "°C")}.`,
+      ...(askF ? [`In °F: \`${num(k)} × C\` ${xRes(F, 2, "°F")} (from the unrounded C).`] : []),
+    ],
+    { k, askF }, "fk-mult", [xG("_k", k)],
+    [
+      "Call the Celsius reading C and write the Fahrenheit reading two ways: from the conversion rule, and from the condition in the question.",
+      `Set \`1.8C + 32\` equal to \`${num(k)} × C\` and solve for C.${askF ? " Then convert to °F." : ""}`,
+    ],
+  );
+}
+
+// Mixing, expert 1: ice cubes dropped in a drink. Either it all melts (find the final temperature) or it
+// doesn't (the mix sits at 0 °C; find how much ice is left). The learner has to check which.
+function xMixIce(rng) {
+  const mi = rng.int(5, 70) * 2; // g
+  const Ti = rng.int(0, 18);
+  const mw = rng.int(15, 50) / 100; // kg
+  const Tw = rng.int(8, 40);
+  const ci = XC.ice, cw = XC.water, Lf = XC.Lf;
+  const have = mw * cw * Tw; // J released cooling the drink to 0 °C
+  const needWarm = (mi / 1000) * ci * Ti;
+  const needMelt = (mi / 1000) * Lf * 1000;
+  let Tf, left;
+  if (have >= needWarm + needMelt) {
+    Tf = (have - needWarm - needMelt) / ((mw + mi / 1000) * cw);
+    left = 0;
+    if (Tf < 0.05) throw new XRetry();
+  } else {
+    if (have <= needWarm) throw new XRetry(); // the drink would freeze: out of scope
+    Tf = 0;
+    left = mi - ((have - needWarm) / (Lf * 1000)) * 1000;
+    if (left < 0.5) throw new XRetry();
+  }
+  const drink = rng.pick(["a glass of lemonade", "a jug of water", "a glass of juice", "a cup of iced tea", "a bottle of water", "a glass of cola"]);
+  const values = { mi, Ti, mw, Tw, ci, cw, Lf };
+  const all = left === 0;
+  return xMulti(
+    `${mi} g of ice at ${Ti === 0 ? "0" : `-${Ti}`} °C is dropped into ${drink}: ${num(mw)} kg of liquid at ${Tw} °C. Treat the drink as water: c = ${cw} J/kg °C. For ice, c = ${ci} J/kg °C and L = ${Lf} kJ/kg. No energy is exchanged with the container or the air. If some ice is left at the end, the mixture settles at 0 °C.`,
+    [
+      xNum("temp", "Final temperature", "What is the final temperature of the drink, in °C?", Tf, 2,
+        "First check whether cooling the drink to 0 °C releases enough energy to warm and melt all the ice.", "ice-T"),
+      xNum("left", "Ice left", "How much ice is left unmelted, in g? (Type 0 if it all melts.)", left, 2,
+        "If the drink can't melt all of it, the energy it gives out cooling to 0 °C melts only part of the ice (after warming it to 0 °C).", "ice-left"),
+    ],
+    [
+      `Energy the drink gives out cooling to 0 °C: \`${num(mw)} × ${cw} × ${Tw}\` = ${num(have)} J.`,
+      `Energy to warm all the ice to 0 °C: \`${num(mi / 1000)} × ${ci} × ${Ti}\` = ${num(needWarm)} J. Energy to melt it: \`${num(mi / 1000)} × ${Lf} × 1000\` = ${num(needMelt)} J.`,
+      all
+        ? `${num(have)} J is more than ${num(needWarm + needMelt)} J, so all the ice melts and the leftover ${num(have - needWarm - needMelt)} J warms all ${num(mw + mi / 1000)} kg of water: \`T = ${num(have - needWarm - needMelt)} / (${num(mw + mi / 1000)} × ${cw})\` ${xRes(Tf, 2, "°C")}. No ice is left: **0** g.`
+        : `${num(have)} J is less than ${num(needWarm + needMelt)} J, so not all the ice melts and the mixture sits at **0** °C. The ${num(have - needWarm)} J left after warming the ice melts \`${num(have - needWarm)} / (${Lf} × 1000)\` kg, so the ice left is \`${mi} - that × 1000\` ${xRes(left, 2, "g")}.`,
+    ],
+    values,
+    [xG("_mi_g", mi), xG("_Ti", Ti), xG("_mw", mw), xG("_Tw", Tw), xG("_ci", ci), xG("_cw", cw), xG("_Lf_kJkg", Lf)],
+    [
+      "Compare two energies: what the drink can give out by cooling to 0 °C, and what the ice needs to warm to 0 °C and melt completely.",
+      "If the drink has more, all the ice melts: the spare energy warms the whole lot of water (drink + melted ice) above 0 °C.",
+      "If the drink has less, the mixture stays at 0 °C and the spare energy after warming the ice melts only part of it: mass melted = energy ÷ L.",
+    ],
+  );
+}
+
+const X_BLOCKS = [{ mat: "aluminium", c: 900 }, { mat: "copper", c: 385 }, { mat: "iron", c: 450 }, { mat: "brass", c: 380 }, { mat: "steel", c: 490 }, { mat: "lead", c: 130 }];
+const X_CUPS = [{ mat: "copper", c: 385 }, { mat: "aluminium", c: 900 }];
+
+// Mixing, expert 2: hot block into water in a calorimeter cup (three bodies), then work backwards to the
+// starting temperature needed for a target final temperature.
+function xMixCalorimeter(rng) {
+  const blk = rng.pick(X_BLOCKS);
+  const cup = rng.pick(X_CUPS);
+  const mm = rng.int(10, 100) / 100;
+  const Tm = rng.int(60, 300);
+  const mw = rng.int(10, 50) / 100;
+  const mk = rng.int(5, 25) / 100;
+  const Tw = rng.int(10, 25);
+  const cw = XC.water;
+  const hot = mm * blk.c;
+  const cold = mw * cw + mk * cup.c;
+  const Tf = (hot * Tm + cold * Tw) / (hot + cold);
+  if (Tf >= 95 || Tf - Tw < 1) throw new XRetry();
+  const Tf2 = Math.round(Tf) + rng.int(3, 15);
+  if (Tf2 >= 99) throw new XRetry();
+  const Tm2 = Tf2 + (cold * (Tf2 - Tw)) / hot;
+  const values = { mm, cm: blk.c, Tm, mw, cw, mk, ck: cup.c, Tw, Tf2 };
+  return xMulti(
+    `${An(blk.mat)} block of mass ${num(mm)} kg is heated to ${Tm} °C and dropped into ${num(mw)} kg of water at ${Tw} °C. The water is in ${an(cup.mat)} calorimeter cup of mass ${num(mk)} kg, also at ${Tw} °C. Take c = ${blk.c} J/kg °C for ${blk.mat}, ${cw} J/kg °C for water and ${cup.c} J/kg °C for ${cup.mat}. No energy is lost to the air.`,
+    [
+      xNum("final", "Final temperature", "What is the final temperature of the block, water and cup, in °C?", Tf, 2,
+        "Energy lost by the block = energy gained by the water + energy gained by the cup. The water and cup start at the same temperature.", "cal-Tf"),
+      xNum("start", "Backwards", `To what temperature would the block have to be heated for a final temperature of ${Tf2} °C, in °C?`, Tm2, 2,
+        `Now the final temperature is known (${Tf2} °C) and the block's starting temperature is the unknown. Use the same energy balance.`, "cal-Tm"),
+    ],
+    [
+      `Energy balance: \`m_b × c_b × (T_b - T) = (m_w × c_w + m_c × c_c) × (T - T_w)\`.`,
+      `Block: ${num(mm)} × ${blk.c} = ${num(hot)} J/°C. Water + cup: ${num(mw)} × ${cw} + ${num(mk)} × ${cup.c} = ${num(cold)} J/°C.`,
+      `\`T = (${num(hot)} × ${Tm} + ${num(cold)} × ${Tw}) / (${num(hot)} + ${num(cold)})\` ${xRes(Tf, 2, "°C")}. In the calculator: \`(_mm * _cm * _Tm + (_mw * _cw + _mk * _ck) * _Tw) / (_mm * _cm + _mw * _cw + _mk * _ck)\`.`,
+      `Backwards, with T = ${Tf2} °C: \`T_b = ${Tf2} + ${num(cold)} × (${Tf2} - ${Tw}) / ${num(hot)}\` ${xRes(Tm2, 2, "°C")}.`,
+    ],
+    values,
+    [xG("_mm", mm), xG("_cm", blk.c), xG("_Tm", Tm), xG("_mw", mw), xG("_cw", cw), xG("_mk", mk), xG("_ck", cup.c), xG("_Tw", Tw)],
+    [
+      "Three things share energy: the hot block cools, and the water and the cup both warm up to the same final temperature T.",
+      "Write `energy lost by block = energy gained by water + energy gained by cup`, each as `m × c × (temperature change)`.",
+      "Collect the T terms on one side to solve for T. For the second part, T is known and the block's starting temperature is the unknown.",
+    ],
+  );
+}
+
+function xGenerate(subtopic, rng) {
+  if (subtopic === "specific-heat") return xRun(rng.next() < 0.5 ? xSpecificExperiment : xSpecificHeater, rng);
+  if (subtopic === "latent-heat") return xRun(rng.next() < 0.55 ? xLatentCurve : xLatentKettle, rng);
+  if (subtopic === "temperature-scales") {
+    const r = rng.next();
+    return xRun(r < 0.4 ? xScaleCustom : r < 0.8 ? xScaleCalibrate : xScaleMultiple, rng);
+  }
+  if (subtopic === "mixing-heat") return xRun(rng.next() < 0.5 ? xMixIce : xMixCalorimeter, rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Expert checks. Numbers: (values, x, h) -> true when the law has its root inside x ± h.
+// Choices: (values, answer) -> true when the answer is the right option, found independently.
+function xIceWalk(v, stop) {
+  let E = v.m * v.ci * (0 - v.T0);
+  E += v.m * v.Lf * 1000;
+  if (stop === "melted") return E;
+  E += v.m * v.cw * (v.T2 - 0);
+  if (v.steam) E += v.m * v.Lv * 1000;
+  return E;
+}
+const X_CHECKS = {
+  "c-raw": (v, x, h) => xBracket((c) => v.P * v.t * 60 - v.m * c * (v.T2 - v.T1), x, h),
+  "c-loss": (v, x, h) => xBracket((c) => (v.P * v.t * 60 * (100 - v.loss)) / 100 - v.m * c * (v.T2 - v.T1), x, h),
+  "c-metal": (v, a) => {
+    // Measured c with the losses, then the listed value with the smallest relative gap.
+    let lo = 1, hi = 1e5;
+    const f = (c) => (v.P * v.t * 60 * (100 - v.loss)) / 100 - v.m * c * (v.T2 - v.T1);
+    for (let i = 0; i < 200; i++) { const mid = (lo + hi) / 2; if (f(lo) * f(mid) <= 0) hi = mid; else lo = mid; }
+    const c = (lo + hi) / 2;
+    const best = v.opts.reduce((p, q) => (Math.abs(q[1] - c) < Math.abs(p[1] - c) ? q : p));
+    return best[0] === a;
+  },
+  "sh-E": (v, x, h) => xBracket((E) => E * 1000 - v.mw * v.cw * (v.T2 - v.T1) - v.mk * v.ck * (v.T2 - v.T1), x, h),
+  "sh-t": (v, x, h) => xBracket((t) => (v.P * v.eff / 100) * t * 60 - v.mw * v.cw * (v.T2 - v.T1) - v.mk * v.ck * (v.T2 - v.T1), x, h),
+  "sh-t-alone": (v, x, h) => xBracket((t) => (v.P * v.eff / 100) * t * 60 - v.mw * v.cw * (v.T2 - v.T1), x, h),
+  "lh-total": (v, x, h) => xBracket((E) => E * 1000 - xIceWalk(v, "end"), x, h),
+  "lh-tmelt": (v, x, h) => xBracket((t) => v.P * t * 60 - xIceWalk(v, "melted"), x, h),
+  "lh-tend": (v, x, h) => xBracket((t) => v.P * t * 60 - xIceWalk(v, "end"), x, h),
+  "lv-raw": (v, x, h) => xBracket((L) => v.P * v.t * 60 - (v.dm / 1000) * L * 1000, x, h),
+  "lv-loss": (v, x, h) => xBracket((L) => (v.P - v.Ploss) * v.t * 60 - (v.dm / 1000) * L * 1000, x, h),
+  // Same boiling power for the rest: energy per gram from the measured part, applied to M grams.
+  "lv-rest": (v, x, h) => xBracket((t) => (v.P - v.Ploss) * t * 60 - v.M * (((v.P - v.Ploss) * v.t * 60) / v.dm), x, h),
+  "sx-to": (v, x, h) => xBracket((X) => (X - v.a) / (v.b - v.a) - v.C / 100, x, h),
+  "sx-f": (v, x, h) => xBracket((F) => (v.y - v.a) / (v.b - v.a) - (F - 32) / 180, x, h),
+  "cal-T": (v, x, h) => xBracket((T) => (v.Xr - v.X0) / (v.X100 - v.X0) - T / 100, x, h),
+  "cal-X": (v, x, h) => xBracket((X) => (X - v.X0) / (v.X100 - v.X0) - v.T2 / 100, x, h),
+  "fk-mult": (v, x, h) => xBracket(v.askF ? (F) => F - v.k * ((F - 32) * 5 / 9) : (C) => C * 9 / 5 + 32 - v.k * C, x, h),
+  "fk-same": (v, x, h) => xBracket((K) => (K - v.off) * 9 / 5 + 32 - K, x, h),
+  "ice-T": (v, x, h) => {
+    const m = v.mi / 1000;
+    const have = v.mw * v.cw * v.Tw;
+    const need = m * v.ci * v.Ti + m * v.Lf * 1000;
+    if (have < need) return x - h < 0 && 0 < x + h; // ice remains: 0 °C
+    return xBracket((T) => v.mw * v.cw * (v.Tw - T) - need - m * v.cw * T, x, h);
+  },
+  "ice-left": (v, x, h) => {
+    const m = v.mi / 1000;
+    const have = v.mw * v.cw * v.Tw;
+    if (have >= m * v.ci * v.Ti + m * v.Lf * 1000) return x - h < 0 && 0 < x + h; // all melts
+    // Energy the drink releases = warming all the ice + melting (mi - left) grams of it.
+    return xBracket((g) => have - m * v.ci * v.Ti - ((v.mi - g) / 1000) * v.Lf * 1000, x, h);
+  },
+  "cal-Tf": (v, x, h) => xBracket((T) => v.mm * v.cm * (v.Tm - T) - (v.mw * v.cw + v.mk * v.ck) * (T - v.Tw), x, h),
+  "cal-Tm": (v, x, h) => xBracket((Tb) => v.mm * v.cm * (Tb - v.Tf2) - (v.mw * v.cw + v.mk * v.ck) * (v.Tf2 - v.Tw), x, h),
+};

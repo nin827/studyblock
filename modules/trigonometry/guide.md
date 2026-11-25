@@ -29,6 +29,8 @@ Example: hypotenuse 10 cm, angle 30°, so the opposite side is 10 × sin(30) = 5
 
 **Watch out:** the hypotenuse is always the longest side. If your answer for a leg is longer than the hypotenuse, you multiplied when you should have divided.
 
+**Expert: two triangles.** Look for two right-angled triangles that share a side (a height, or a ground distance) and solve the one you know most about first. With two angles of elevation from points d apart, call the near distance x and write the height twice: `h = x × tan(a2) = (x + d) × tan(a1)`, then solve for x. In 3D, find the ground diagonal with Pythagoras before using tan.
+
 ## Right triangles: angles
 
 1. Name the two sides you know from the angle θ.
@@ -39,6 +41,8 @@ Example: hypotenuse 10 cm, angle 30°, so the opposite side is 10 × sin(30) = 5
 Example: opposite 5 and adjacent 5, so θ = atan(1) = 45.
 
 **Watch out:** an acute angle is between 0° and 90°. A tiny answer such as 0.79 means the calculator gave radians.
+
+**Expert: 3D and bearings.** For the angle between a line and a plane, drop a perpendicular to the plane and use the right-angled triangle it makes (in a cuboid, the space diagonal, the base diagonal and a vertical edge). For bearings, sketch a north line at each point; turning 90° makes a right-angled triangle, and the bearing back is the bearing out ± 180°, kept between 0 and 360.
 
 ## Sine and cosine rules
 
@@ -51,3 +55,5 @@ Example: opposite 5 and adjacent 5, so θ = atan(1) = 45.
 Example: b = 3, c = 4 and A = 90°, so a² = 9 + 16 - 0 = 25 and a = 5.
 
 **Watch out:** side a is always opposite angle A. Match each side with the angle across from it, not the one next to it.
+
+**Expert: ambiguous case and chains.** If you know A, a and b with b × sin(A) < a < b, two triangles fit: B = asin(…) and B = 180° - asin(…). For an unknown angle after the cosine rule, prefer the rearranged cosine rule, which also gives obtuse angles. A perpendicular height is 2 × area ÷ base. For bearings that don't meet at 90°, the angle inside the triangle at the turn is 180° minus the change of course.

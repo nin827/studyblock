@@ -674,9 +674,474 @@ function genSeries(difficulty, rng) {
   return finish(base, S, fmt, [a / (1 + r), (a * r) / (1 - r), a / r, a * (1 - r), a + a * r], rng, { step: fmt === "exact" ? 0.5 : 1 });
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert: multi-step, multi-part questions (easy/medium/hard above are untouched and never reach
+// this code). Every template draws all of its rng values first, then builds text. Hints use only
+// values already drawn (no rng) and never state a part's answer. Params use "x-" kinds, checked by
+// verifyExpert (walking the sequence / adding terms one at a time / bisection).
+
+const XNOTE = { whole: " (a whole number)", exact: " (exact)", "2dp": " (round to 2 decimal places)" };
+
+// One number part; null when the value doesn't suit its format (the template is then redrawn).
+function xpart(id, label, ask, exact, fmt, hint) {
+  if (!fitsFormat(exact, fmt)) return null;
+  return { id, label, ask: ask + XNOTE[fmt], answerType: "number", answer: fmt === "2dp" ? round2(exact) : clean(exact), tolerance: TOL(fmt), hint };
+}
+const xmulti = (base, parts) => (parts.some((p) => !p) ? null : { ...base, answerType: "multi", parts });
+// "3x + 1", "x - 2", "-x", "2x"
+const linX = (m, c) => `${m === 1 ? "" : m === -1 ? "-" : m}x${c === 0 ? "" : c > 0 ? ` + ${c}` : ` - ${-c}`}`;
+const money = (v) => `£${Number.isInteger(v) ? v : v.toFixed(2)}`; // no thousands commas, so prompt values match the calculator rows
+
+// arithmetic / expert 0: three consecutive terms written in x -> x, d and a later term.
+function xArithAlg(rng) {
+  const x = rng.int(-8, 9);
+  const m1 = rng.int(1, 5);
+  const m2 = rng.int(1, 6);
+  const m3 = rng.int(1, 7);
+  const c1 = rng.int(-12, 12);
+  const c2 = rng.int(-12, 12);
+  const n = rng.int(12, 40);
+  const K = 2 * m2 - m1 - m3;
+  if (Math.abs(K) < 2) return null; // K = ±1 would make the hint `Kx = R` state x
+  const c3 = K * x + 2 * c2 - c1;
+  if (Math.abs(c3) > 40) return null;
+  const [t1, t2, t3] = [m1 * x + c1, m2 * x + c2, m3 * x + c3];
+  const d = t2 - t1;
+  if (d === 0) return null;
+  const un = arithTerm(t1, d, n);
+  const [e1, e2, e3] = [linX(m1, c1), linX(m2, c2), linX(m3, c3)];
+  const R = c1 + c3 - 2 * c2;
+  const explanation = [
+    `Consecutive terms of an arithmetic sequence have equal differences: \`(${e2}) - (${e1}) = (${e3}) - (${e2})\`, which rearranges to \`2(${e2}) = (${e1}) + (${e3})\`.`,
+    `Expand and collect: \`${linX(2 * m2, 2 * c2)} = ${linX(m1 + m3, c1 + c3)}\`, so \`${K}x = ${R}\` and **x = ${x}**.`,
+    `The terms are ${t1}, ${t2}, ${t3}, so **d = ${d}**.`,
+    row(`_u${n}`, `${par(t1)} + (${n} - 1) * ${par(d)}`, final(un, "whole")),
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `The expressions \`${e1}\`, \`${e2}\` and \`${e3}\` are the first three terms of an arithmetic sequence, in that order.`,
+      explanation,
+      params: { kind: "x-arith-alg", m1, c1, m2, c2, m3, c3, n },
+      hints: [
+        `In an arithmetic sequence the differences are equal: (2nd - 1st) = (3rd - 2nd). That rearranges to 2 × (2nd term) = 1st term + 3rd term.`,
+        `Expand \`2(${e2}) = (${e1}) + (${e3})\` and collect the x terms on one side. You should reach \`${K}x = ${R}\`.`,
+        `Once you have x, substitute it into all three expressions to get the actual terms, then use \`u(n) = a + (n - 1) × d\`.`,
+      ],
+    },
+    [
+      xpart("x", "x", "Value of x", x, "whole", `Solve \`${K}x = ${R}\`.`),
+      xpart("d", "Difference", "Common difference d", d, "whole", `Substitute your x into \`${e1}\` and \`${e2}\`, then subtract the first from the second.`),
+      xpart("term", `Term ${n}`, `The ${ordinal(n)} term`, un, "whole", `The first term a is the value of \`${e1}\`. Then \`a + (${n} - 1) × d\`.`),
+    ],
+  );
+}
+
+// arithmetic / expert 1: a term and a sum are known -> d, a and a later term (simultaneous equations).
+function xArithTermSum(rng) {
+  const a = rng.int(-15, 25);
+  const d = nonZero(rng, -7, 9);
+  const p = rng.int(3, 9);
+  const n = rng.int(8, 30);
+  const r = rng.int(31, 80);
+  if (2 * (p - 1) === n - 1) return null; // the two equations would be the same
+  const up = arithTerm(a, d, p);
+  const S = (n * (2 * a + (n - 1) * d)) / 2;
+  const ur = arithTerm(a, d, r);
+  const half = 2 * S / n;
+  const prompt = `In an arithmetic sequence, the ${ordinal(p)} term is ${up} and the sum of the first ${n} terms is ${S}.`;
+  const explanation = [
+    `Write two equations: \`a + ${p - 1}d = ${up}\` (the ${ordinal(p)} term) and \`${n}/2 × (2a + ${n - 1}d) = ${S}\` (the sum).`,
+    `Divide the sum equation by ${n}/2: \`2a + ${n - 1}d = ${show(half)}\`. Double the term equation: \`2a + ${2 * (p - 1)}d = ${2 * up}\`.`,
+    `Subtract to eliminate a: \`${n - 1 - 2 * (p - 1)}d = ${show(half - 2 * up)}\`, so **d = ${d}**.`,
+    [given(`_u${p}`, up), given("_S", S), given("_n", n), row("_d", `(2 * _S / _n - 2 * _u${p}) / ((_n - 1) - 2 * (${p} - 1))`, d), row("_a", `_u${p} - (${p} - 1) * _d`, `**${a}**`), row(`_u${r}`, `_a + (${r} - 1) * _d`, final(ur, "whole"))].join("\n"),
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt,
+      explanation,
+      params: { kind: "x-arith-termsum", p, up, n, S, r },
+      hints: [
+        `Use both facts. The ${ordinal(p)} term gives \`a + (${p} - 1)d = ${up}\`; the sum gives \`${n}/2 × (2a + (${n} - 1)d) = ${S}\`.`,
+        `Divide the sum equation by ${n}/2 so it reads \`2a + ${n - 1}d = …\`, and double the term equation so both start with 2a.`,
+        `Subtract one from the other: the a terms cancel and leave one equation in d.`,
+      ],
+    },
+    [
+      xpart("d", "Difference", "Common difference d", d, "whole", "After eliminating a you have one equation in d only: divide."),
+      xpart("a", "First term", "First term a", a, "whole", `Put d back into \`a + (${p} - 1)d = ${up}\`.`),
+      xpart("term", `Term ${r}`, `The ${ordinal(r)} term`, ur, "whole", `Use \`u(n) = a + (n - 1) × d\` with n = ${r}.`),
+    ],
+  );
+}
+
+// arithmetic / expert 2: a decreasing sequence -> first negative term, its value, sum of the positive terms.
+function xArithFirstNeg(rng) {
+  const half = rng.next() < 0.35;
+  const step = half ? rng.int(3, 15) / 2 : rng.int(2, 9); // |d|
+  const k = rng.int(8, 40);
+  const zero = rng.next() < 0.25;
+  const eUnits = rng.int(1, Math.max(1, Math.round(step * 2) - 1)); // e in half-units, 0 < e < step
+  const e = zero ? 0 : eUnits / 2;
+  if (!zero && e >= step) return null;
+  const a = k * step + e; // u(k + 1) = e >= 0, u(k + 2) = e - step < 0
+  const d = -step;
+  const n = k + 2;
+  const val = e - step;
+  const sumPos = ((k + 1) * (a + e)) / 2;
+  const terms = [1, 2, 3, 4].map((i) => arithTerm(a, d, i));
+  const nReal = a / step + 1;
+  const explanation = [
+    `The sequence goes down by ${show(step)} each time, so d = ${show(d)}. Solve \`a + (n - 1) × d < 0\`.`,
+    [given("_a", a), given("_u2", terms[1]), row("_d", "_u2 - _a", show(d)), row("_n", "_a / (0 - _d) + 1", show(Math.round(nReal * 10000) / 10000))].join("\n"),
+    zero
+      ? `So u(${n - 1}) = 0 exactly. Zero is not negative, so the first negative term is the next one: **n = ${n}**, with value ${final(val, "exact")}.`
+      : `n must be a whole number greater than that, so **n = ${n}**: u(${n}) = ${final(val, "exact")} and u(${n - 1}) = ${show(e)} is still positive.`,
+    `The positive terms are the first ${zero ? k : k + 1}${zero ? ` (the ${ordinal(k + 1)} term is 0 and adds nothing)` : ""}. Their sum is \`${k + 1} × (${show(a)} + ${show(e)}) / 2\` = ${final(sumPos, "exact")}.`,
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `The arithmetic sequence ${listTerms(terms)} continues. (0 counts as neither positive nor negative.)`,
+      explanation,
+      params: { kind: "x-arith-neg", a, d },
+      hints: [
+        `Find d = ${par(terms[1])} - ${par(a)} first (it is negative). A term is negative when \`a + (n - 1) × d < 0\`.`,
+        `Solve it like an equation: n - 1 > ${show(a)} ÷ ${show(step)}. Then n is the next whole number above \`_a / (0 - _d) + 1\`; if that is already whole, that term is exactly 0, so go one further.`,
+        `The positive terms are all the terms before the first negative one (leave out a term equal to 0). Add them with \`S = n × (first + last) / 2\`.`,
+      ],
+    },
+    [
+      xpart("n", "Position", "Which term is the first negative one? (n)", n, "whole", "Round up to the next whole number, and check the term before it is not negative."),
+      xpart("value", "Its value", "The value of that term", val, "exact", "Substitute your n into `a + (n - 1) × d`."),
+      xpart("sum", "Sum", "The sum of all the positive terms", sumPos, "exact", "Count the positive terms, find the last one, and use n × (first + last) ÷ 2."),
+    ],
+  );
+}
+
+// geometric / expert 0: x + a, x + b, x + c in geometric progression -> x, r and a later term.
+const XGEO_R = [2, 3, -2, -3, 4, 1.5, 0.5, -0.5];
+function xGeoAlg(rng) {
+  const r = rng.pick(XGEO_R);
+  let t1 = nonZero(rng, -9, 9);
+  const x = rng.int(-12, 12);
+  const n = rng.int(5, 8);
+  if (!Number.isInteger(r)) t1 *= 4;
+  const [t2, t3] = [t1 * r, t1 * r * r];
+  const [a, b, c] = [t1 - x, t2 - x, t3 - x];
+  if (new Set([a, b, c]).size < 3) return null;
+  const K = 2 * b - a - c;
+  const R = a * c - b * b;
+  if (Math.abs(K) < 2) return null; // the hint `Kx = R` would state x
+  const un = geoTerm(t1, r, n);
+  if (Math.abs(un) > 1e6) return null;
+  const [e1, e2, e3] = [linX(1, a), linX(1, b), linX(1, c)];
+  const explanation = [
+    `In a geometric sequence the ratios are equal: \`(${e2}) / (${e1}) = (${e3}) / (${e2})\`, so \`(${e2})² = (${e1})(${e3})\`.`,
+    `Expand: the x² terms cancel, leaving \`${K}x = ${R}\`, so **x = ${x}**.`,
+    `The terms are ${t1}, ${show(t2)}, ${show(t3)}, so **r = ${show(t2)} / ${par(t1)} = ${show(r)}**.`,
+    row(`_u${n}`, `${par(t1)} * ${par(r)}^(${n} - 1)`, final(un, "exact")),
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `The expressions \`${e1}\`, \`${e2}\` and \`${e3}\` are the first three terms of a geometric sequence, in that order.`,
+      explanation,
+      params: { kind: "x-geo-alg", a, b, c, n },
+      hints: [
+        `In a geometric sequence, 2nd ÷ 1st = 3rd ÷ 2nd. Cross-multiply: \`(${e2})² = (${e1})(${e3})\`.`,
+        `Expand both sides. The x² terms cancel, so the equation is linear: \`${K}x = ${R}\`.`,
+        `Substitute x into the three expressions to get the actual terms. Divide the 2nd by the 1st for r, then use \`u(n) = a × r^(n - 1)\`.`,
+      ],
+    },
+    [
+      xpart("x", "x", "Value of x", x, "whole", `Solve \`${K}x = ${R}\`.`),
+      xpart("r", "Ratio", "Common ratio r", r, "exact", `Substitute x into \`${e1}\` and \`${e2}\`, then divide the second by the first.`),
+      xpart("term", `Term ${n}`, `The ${ordinal(n)} term`, un, "exact", `The first term is the value of \`${e1}\`; multiply it by r ${n - 1} times.`),
+    ],
+  );
+}
+
+// geometric / expert 1: two positive terms -> r, a, and the first term above a bound (logs).
+function xGeoTwoBound(rng) {
+  const r = rng.pick([2, 3, 4, 1.5, 2.5]);
+  const p = rng.int(2, 4);
+  const gap = rng.int(2, 3);
+  const a = rng.int(1, 6) * (Number.isInteger(r) ? 1 : 64);
+  const ahead = rng.int(2, 6);
+  const frac = rng.int(1, 9) / 10;
+  const q = p + gap;
+  const up = geoTerm(a, r, p);
+  const uq = geoTerm(a, r, q);
+  const m = q + ahead;
+  const lo = geoTerm(a, r, m - 1);
+  const hi = geoTerm(a, r, m);
+  const B = Math.floor(lo + frac * (hi - lo));
+  if (!(B > lo && B < hi) || B > 1e8) return null;
+  const nReal = Math.log(B / a) / Math.log(r) + 1;
+  const explanation = [
+    `From term ${p} to term ${q} you multiply by r ${gap} times, so \`r^${gap} = ${show(uq)} / ${show(up)}\`. The terms are positive, so r is positive.`,
+    [given(`_u${p}`, up), given(`_u${q}`, uq), given("_B", B), row("_r", `(_u${q} / _u${p})^(1 / ${gap})`, `**${show(r)}**`), row("_a", `_u${p} / _r^(${p} - 1)`, `**${show(a)}**`), row("_n", "log(_B / _a) / log(_r) + 1", show(Math.round(nReal * 10000) / 10000))].join("\n"),
+    `n must be the next whole number: **n = ${m}** (check: u(${m}) = ${show(hi)} > ${B}, u(${m - 1}) = ${show(lo)} is not).`,
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `In a geometric sequence all the terms are positive. The ${ordinal(p)} term is ${show(up)} and the ${ordinal(q)} term is ${show(uq)}. Which term is the first one greater than ${B}?`,
+      explanation,
+      params: { kind: "x-geo-bound", p, up, q, uq, B },
+      hints: [
+        `From the ${ordinal(p)} term to the ${ordinal(q)} term you multiply by r ${gap} times: \`r^${gap} = u${q} / u${p}\`. Take the ${gap === 2 ? "square" : "cube"} root.`,
+        `Step back to the first term: divide the ${ordinal(p)} term by r ${p - 1} time${p === 2 ? "" : "s"}, \`_u${p} / _r^(${p} - 1)\`.`,
+        `Solve \`a × r^(n - 1) > ${B}\` with logs: n - 1 > log(${B} ÷ a) ÷ log(r). Take the next whole number and check the terms either side.`,
+      ],
+    },
+    [
+      xpart("r", "Ratio", "Common ratio r", r, "exact", `Work out ${show(uq)} ÷ ${show(up)}, then take the ${gap === 2 ? "square" : "cube"} root.`),
+      xpart("a", "First term", "First term a", a, "exact", `Divide the ${ordinal(p)} term by r^${p - 1}.`),
+      xpart("n", "Position", `Which term is the first one greater than ${B}? (n)`, m, "whole", "Use `log(_B / _a) / log(_r) + 1` and round up."),
+    ],
+  );
+}
+
+const XGROW = [
+  { what: "A car", start: "is bought for", per: "loses {p}% of its value each year", unit: "value", down: true, lo: 80, hi: 400 },
+  { what: "A laptop", start: "costs", per: "loses {p}% of its value each year", unit: "value", down: true, lo: 6, hi: 25 },
+  { what: "A savings account", start: "starts with", per: "earns {p}% compound interest at the end of each year", unit: "balance", down: false, lo: 10, hi: 200 },
+  { what: "A house", start: "is valued at", per: "rises in value by {p}% each year", unit: "value", down: false, lo: 1200, hi: 4000 },
+];
+// geometric / expert 2: compound growth or decay -> value after k years, first year past a threshold.
+function xGeoGrowth(rng) {
+  const ctx = rng.pick(XGROW);
+  const pct = rng.pick(ctx.down ? [5, 8, 10, 12, 15, 20, 25] : [2, 3, 4, 5, 6, 8, 10]);
+  const V = rng.int(ctx.lo, ctx.hi) * 100;
+  const k = rng.int(3, 9);
+  const m = rng.int(4, ctx.down ? 15 : 25);
+  const frac = rng.int(2, 8) / 10;
+  const r = ctx.down ? 1 - pct / 100 : 1 + pct / 100;
+  const vk = V * r ** k;
+  const before = V * r ** (m - 1);
+  const at = V * r ** m;
+  const T = Math.round((before + frac * (at - before)) / 10) * 10;
+  if (ctx.down ? !(T < before && T > at) : !(T > before && T < at)) return null;
+  if (isTie(vk)) return null;
+  const cmp = ctx.down ? "less than" : "more than";
+  const per = ctx.per.replace("{p}", pct);
+  const mReal = Math.log(T / V) / Math.log(r);
+  const explanation = [
+    `Each year multiplies the ${ctx.unit} by r = ${ctx.down ? `1 - ${pct}/100` : `1 + ${pct}/100`} = ${show(r)}. After t years it is \`V × r^t\` (the start is year 0, so the power is t, not t - 1).`,
+    [given("_V", V), given("_pct", pct), given("_k", k), given("_T", T), row("_r", ctx.down ? "1 - _pct / 100" : "1 + _pct / 100", show(r)), row("_after", "_V * _r^_k", final(vk, "2dp")), row("_t", "log(_T / _V) / log(_r)", show(Math.round(mReal * 10000) / 10000))].join("\n"),
+    `t must be a whole number of years past that, so **${m} years** (after ${m - 1} years the ${ctx.unit} is ${money(round2(before))}, after ${m} it is ${money(round2(at))}).`,
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `${ctx.what} ${ctx.start} ${money(V)} and ${per}.`,
+      explanation,
+      params: { kind: "x-geo-growth", V, pct, down: ctx.down, k, T },
+      hints: [
+        `Multiplying by the same number each year makes a geometric sequence. The multiplier is r = ${ctx.down ? `1 - ${pct}/100` : `1 + ${pct}/100`}.`,
+        `After t years the ${ctx.unit} is \`_V * _r^t\`. Use the power t itself (the starting ${ctx.unit} is year 0).`,
+        `For the threshold, solve \`_V × r^t ${ctx.down ? "<" : ">"} ${T}\` with logs: t = log(${T} ÷ ${V}) ÷ log(r), then round up to a whole year.${ctx.down ? " log(r) is negative, which flips the inequality." : ""}`,
+      ],
+    },
+    [
+      xpart("after", `After ${k} years`, `The ${ctx.unit} after ${k} years, in £`, vk, "2dp", `Work out \`_V * _r^${k}\`. Round only at the end.`),
+      xpart("years", "Years", `After how many whole years is the ${ctx.unit} first ${cmp} ${money(T)}?`, m, "whole", "Use `log(_T / _V) / log(_r)` and round up. Check the year before too."),
+    ],
+  );
+}
+
+// series / expert 0: how many terms give a stated sum -> quadratic in n, reject the negative root.
+function xSeriesFindN(rng) {
+  const a = rng.int(-20, 30);
+  const d = rng.int(1, 9);
+  const n = rng.int(6, 40);
+  const S = (n * (2 * a + (n - 1) * d)) / 2;
+  if (S <= 0) return null; // then the other root of the quadratic is negative
+  const l = arithTerm(a, d, n);
+  const terms = [1, 2, 3, 4].map((i) => arithTerm(a, d, i));
+  const B = 2 * a - d;
+  const other = (-B - Math.sqrt(B * B + 8 * d * S)) / (2 * d);
+  const explanation = [
+    `Set \`S(n) = n/2 × (2a + (n - 1)d)\` equal to ${S} and multiply by 2: \`n(${2 * a} + ${d}(n - 1)) = ${2 * S}\`, which is \`${d}n² ${B < 0 ? "-" : "+"} ${Math.abs(B)}n - ${2 * S} = 0\`.`,
+    [given("_a", a), given("_u2", terms[1]), given("_S", S), row("_d", "_u2 - _a", d), row("_n", "(-(2*_a - _d) + sqrt((2*_a - _d)^2 + 8*_d*_S)) / (2*_d)", `**${n}**`)].join("\n"),
+    `The other root is ${show(Math.round(other * 100) / 100)}, which is negative, so it is rejected: a number of terms can't be negative.`,
+    `The last term added is \`a + (n - 1)d\` = ${par(a)} + ${n - 1} × ${d} = ${final(l, "whole")}.`,
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `How many terms of the arithmetic series ${terms.map(par).join(" + ")} + … must be added to make a total of ${S}?`,
+      explanation,
+      params: { kind: "x-series-n", a, d, S },
+      hints: [
+        `Set \`S(n) = n/2 × (2a + (n - 1)d)\` equal to ${S}, with a = ${a} and d = ${par(terms[1])} - ${par(a)} = ${d}.`,
+        `Multiply out to get a quadratic in n: \`${d}n² ${B < 0 ? "-" : "+"} ${Math.abs(B)}n - ${2 * S} = 0\`.`,
+        `Solve it (formula or factorising). n must be a positive whole number, so reject the negative root.`,
+      ],
+    },
+    [
+      xpart("n", "Terms", "Number of terms n", n, "whole", "Use the quadratic formula on the quadratic in n and keep the positive root."),
+      xpart("last", "Last term", "The last term added", l, "whole", "The last term is the nth term: `a + (n - 1) × d`."),
+    ],
+  );
+}
+
+const XPAY = [
+  { who: "Sam's salary", start: "starts at", unit: "£", per: "year", lo: 18, hi: 45, scale: 1000, step: 1000 },
+  { who: "A shop's yearly sales", start: "are", unit: "£", per: "year", lo: 40, hi: 200, scale: 1000, step: 1000 },
+  { who: "A runner's weekly distance", start: "is", unit: "km", per: "week", lo: 8, hi: 30, scale: 1, step: 10 },
+];
+// series / expert 1: amounts growing by a percentage -> amount in period n, total, first period the total passes T.
+function xSeriesGrowth(rng) {
+  const ctx = rng.pick(XPAY);
+  const A = rng.int(ctx.lo, ctx.hi) * ctx.scale;
+  const pct = rng.pick([2, 3, 4, 5, 6, 8, 10, 12, 15]);
+  const n = rng.int(5, 15);
+  const m = rng.int(4, 20);
+  const frac = rng.int(2, 8) / 10;
+  const r = 1 + pct / 100;
+  const un = A * r ** (n - 1);
+  const Sn = (A * (r ** n - 1)) / (r - 1);
+  const Sb = (A * (r ** (m - 1) - 1)) / (r - 1);
+  const Sm = (A * (r ** m - 1)) / (r - 1);
+  const T = Math.round((Sb + frac * (Sm - Sb)) / ctx.step) * ctx.step;
+  if (!(T > Sb && T < Sm) || isTie(un) || isTie(Sn)) return null;
+  const amt = (v) => (ctx.unit === "£" ? money(v) : `${show(v)} km`);
+  const P = ctx.per;
+  const mReal = Math.log(1 + (T * (r - 1)) / A) / Math.log(r);
+  const explanation = [
+    `The amounts form a geometric sequence with a = ${A} and r = 1 + ${pct}/100 = ${show(r)}.`,
+    [given("_A", A), given("_pct", pct), given("_n", n), given("_T", T), row("_r", "1 + _pct / 100", show(r)), row("_un", "_A * _r^(_n - 1)", final(un, "2dp")), row("_Sn", "_A * (_r^_n - 1) / (_r - 1)", final(Sn, "2dp"))].join("\n"),
+    `For the running total, solve \`A(r^m - 1)/(r - 1) > T\`: \`r^m > 1 + T(r - 1)/A\`, so m > \`log(1 + _T * (_r - 1) / _A) / log(_r)\` = ${show(Math.round(mReal * 10000) / 10000)}. The total first passes ${amt(T)} in ${P} **${m}**.`,
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `${ctx.who} ${ctx.start} ${amt(A)} in the first ${P} and rises by ${pct}% each ${P} after that.`,
+      explanation,
+      params: { kind: "x-series-growth", A, pct, n, T },
+      hints: [
+        `Each ${P} is the previous one times r = 1 + ${pct}/100, so the amounts are a geometric sequence starting at ${amt(A)}.`,
+        `The amount in ${P} n is \`_A * _r^(n - 1)\`; the total of the first n ${P}s is \`_A * (_r^n - 1) / (_r - 1)\`.`,
+        `For when the total passes ${amt(T)}, set the sum formula greater than ${T} and rearrange to \`r^m > 1 + T(r - 1)/A\`, then use logs and round up.`,
+      ],
+    },
+    [
+      xpart("amount", `${P[0].toUpperCase()}${P.slice(1)} ${n}`, `The amount in ${P} ${n}${ctx.unit === "£" ? ", in £" : ", in km"}`, un, "2dp", `The power is ${n} - 1, because the first ${P} has no rise yet.`),
+      xpart("total", "Total", `The total over the first ${n} ${P}s${ctx.unit === "£" ? ", in £" : ", in km"}`, Sn, "2dp", "Use the geometric sum with the power n, not n - 1. Round only at the end."),
+      xpart("passes", "Passes", `In which ${P} does the running total first pass ${amt(T)}?`, m, "whole", "Solve with logs, round up, and check the totals either side."),
+    ],
+  );
+}
+
+const XINF_R = [[1, 4], [1, 5], [2, 5], [1, 3], [3, 4], [4, 5], [3, 5], [2, 3], [1, 10], [9, 10], [3, 10], [7, 10]];
+// series / expert 2: sum to infinity and the 2nd term -> r (one of two roots), a, and a partial sum.
+function xSeriesInfReverse(rng) {
+  const [rn, rd] = rng.pick(XINF_R);
+  const k = rng.int(1, 8);
+  const n = rng.int(4, 8);
+  const r = rn / rd;
+  const S = k * rd * rd;
+  const a = k * rd * (rd - rn);
+  const u2 = k * rn * (rd - rn);
+  const Sn = (a * (1 - r ** n)) / (1 - r);
+  if (isTie(Sn) || isTie(r)) return null;
+  const big = r > 0.5;
+  const other = 1 - r;
+  const explanation = [
+    `Two facts: \`S = a / (1 - r)\`, so a = ${S}(1 - r), and the 2nd term is \`a × r = ${u2}\`.`,
+    `Substitute: \`${S}r(1 - r) = ${u2}\`, i.e. \`${S}r² - ${S}r + ${u2} = 0\`. Its roots add to 1: r = ${show(Math.round(r * 10000) / 10000)} or r = ${show(Math.round(other * 10000) / 10000)}. The question says r ${big ? "> 0.5" : "< 0.5"}, so **r = ${rn}/${rd} ≈ ${fmtAns(r, "2dp")}**.`,
+    [given("_S", S), given("_u2", u2), given("_n", n), row("_r", `${rn} / ${rd}`, show(Math.round(r * 10000) / 10000)), row("_a", "_S * (1 - _r)", `**${a}**`), row("_Sn", "_a * (1 - _r^_n) / (1 - _r)", final(Sn, "2dp"))].join("\n"),
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt: `An infinite geometric series has sum to infinity ${S}, and its 2nd term is ${u2}. Its common ratio r is ${big ? "greater" : "less"} than 0.5.`,
+      explanation,
+      params: { kind: "x-series-inf", S, u2, n, big },
+      hints: [
+        `Use both facts: \`S = a / (1 - r)\` gives a = ${S}(1 - r), and the 2nd term is \`a × r\`.`,
+        `Substitute a: \`${S} × r × (1 - r) = ${u2}\`. Rearranged, that is the quadratic \`${S}r² - ${S}r + ${u2} = 0\`.`,
+        `It has two roots, which add up to 1. Keep the one that is ${big ? "greater" : "less"} than 0.5, then find a = ${S}(1 - r).`,
+      ],
+    },
+    [
+      xpart("r", "Ratio", "Common ratio r", r, "2dp", "Solve the quadratic in r (the formula works) and pick the allowed root."),
+      xpart("a", "First term", "First term a", a, "exact", `a = ${S} × (1 - r). Use r as an exact fraction, not the rounded decimal.`),
+      xpart("sum", `First ${n} terms`, `Sum of the first ${n} terms`, Sn, "2dp", "Use `a × (1 - r^n) / (1 - r)` with the exact r. Round only at the end."),
+    ],
+  );
+}
+
+// series / expert 3: the sum of a block of terms (from term m to term M), as a list or in sigma form.
+function xSeriesBlock(rng) {
+  const sigma = rng.next() < 0.5;
+  const a = rng.int(-20, 30);
+  const d = nonZero(rng, -8, 12);
+  const m = rng.int(5, 20);
+  const M = m + rng.int(8, 30);
+  const p = d; // sigma form: u(k) = p k + q
+  const q = a - d;
+  const count = M - m + 1;
+  const first = arithTerm(a, d, m);
+  const last = arithTerm(a, d, M);
+  const sum = (count * (first + last)) / 2;
+  const terms = [1, 2, 3, 4].map((i) => arithTerm(a, d, i));
+  const expr = `${p === 1 ? "" : p === -1 ? "-" : p}k${q === 0 ? "" : q > 0 ? ` + ${q}` : ` - ${-q}`}`;
+  const prompt = sigma
+    ? `Find the sum of \`${expr}\` for every whole number k from ${m} to ${M} (that is, Σ from k = ${m} to ${M} of \`${expr}\`).`
+    : `The arithmetic sequence ${listTerms(terms)} continues. Find the sum of the ${ordinal(m)} to the ${ordinal(M)} terms, inclusive.`;
+  const lines = sigma
+    ? [given("_m", m), given("_M", M), row("_count", "_M - _m + 1", count), row("_first", `${p} * _m + ${par(q)}`, first), row("_last", `${p} * _M + ${par(q)}`, last), row("_S", "_count * (_first + _last) / 2", final(sum, "whole"))]
+    : [given("_a", a), given("_u2", terms[1]), given("_m", m), given("_M", M), row("_d", "_u2 - _a", d), row("_count", "_M - _m + 1", count), row("_first", "_a + (_m - 1) * _d", first), row("_last", "_a + (_M - 1) * _d", last), row("_S", "_count * (_first + _last) / 2", final(sum, "whole"))];
+  const explanation = [
+    sigma
+      ? `Each value of k gives one term, and the terms go up by ${p} each time: an arithmetic series. Count the terms, find the first and last, then use \`S = count × (first + last) / 2\`.`
+      : "Count the terms in the block, find its first and last terms, then use `S = count × (first + last) / 2`. (Or work out S(M) - S(m - 1).)",
+    lines.join("\n"),
+  ].join("\n\n");
+  return xmulti(
+    {
+      prompt,
+      explanation,
+      params: { kind: "x-series-block", a, d, m, M },
+      hints: [
+        sigma
+          ? `Substitute k = ${m}, ${m + 1}, ${m + 2}: the terms go up by the same amount each time, so this is an arithmetic series.`
+          : `The block starts at the ${ordinal(m)} term, not the 1st. Find d = ${par(terms[1])} - ${par(a)} first.`,
+        `The number of terms from ${m} to ${M} inclusive is ${M} - ${m} + 1 (both ends count).`,
+        sigma
+          ? `The first term uses k = ${m} and the last uses k = ${M}. Then \`S = count × (first + last) / 2\`.`
+          : `First term of the block: \`a + (${m} - 1)d\`; last: \`a + (${M} - 1)d\`. Then \`S = count × (first + last) / 2\`.`,
+      ],
+    },
+    [
+      xpart("count", "Terms", "How many terms are added?", count, "whole", "Subtract the positions and add 1."),
+      xpart("sum", "Sum", "The sum", sum, "whole", "Use count × (first + last) ÷ 2."),
+    ],
+  );
+}
+
+const XGENS = {
+  arithmetic: [xArithAlg, xArithTermSum, xArithFirstNeg],
+  geometric: [xGeoAlg, xGeoTwoBound, xGeoGrowth],
+  series: [xSeriesFindN, xSeriesGrowth, xSeriesInfReverse, xSeriesBlock],
+};
+
+function genExpert(subtopic, rng) {
+  const list = XGENS[subtopic];
+  if (!list) throw new Error(`Unknown subtopic: ${subtopic}`);
+  for (let t = 0; t < 200; t++) {
+    GIVEN = [];
+    const q = rng.pick(list)(rng);
+    if (q) {
+      const out = attachGiven(q);
+      GIVEN = null;
+      return out;
+    }
+  }
+  GIVEN = null;
+  throw new Error(`Could not build a ${subtopic}/expert question`);
+}
+
 const GENS = { arithmetic: genArithmetic, geometric: genGeometric, series: genSeries };
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   const fn = GENS[subtopic];
   if (!fn) throw new Error(`Unknown subtopic: ${subtopic}`);
   checkDifficulty(difficulty);
@@ -800,6 +1265,7 @@ function exactOf(p) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.kind) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
 
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -814,4 +1280,172 @@ export function verify(question, answer) {
   if (p.fmt === "2dp") return Math.abs(x - exact) <= 0.005 + 1e-9;
   if (p.fmt === "whole" && !Number.isInteger(x)) return false;
   return Math.abs(x - exact) <= 1e-9 * Math.max(1, Math.abs(exact));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Expert verification. Each kind rebuilds every part's value without the generator's formulas:
+// integer scans for unknowns, walking the sequence one term at a time, adding terms one by one,
+// and bisection for ratios. Then each candidate part is compared in its own format.
+
+const xnum = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+
+// Root of f on [lo, hi] (f changes sign there) by bisection.
+function bisect(f, lo, hi) {
+  let flo = f(lo);
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    const fm = f(mid);
+    if (fm === 0) return mid;
+    if (Math.sign(fm) === Math.sign(flo)) {
+      lo = mid;
+      flo = fm;
+    } else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// The only integer in [-500, 500] that satisfies ok(x), or NaN (none, or more than one).
+function onlyInt(ok) {
+  let found = NaN;
+  let count = 0;
+  for (let x = -500; x <= 500; x++) if (ok(x)) {
+    found = x;
+    count++;
+  }
+  return count === 1 ? found : NaN;
+}
+
+function expertExpected(p) {
+  switch (p.kind) {
+    case "x-arith-alg": {
+      const e = (m, c, x) => m * x + c;
+      const x = onlyInt((t) => e(p.m2, p.c2, t) - e(p.m1, p.c1, t) === e(p.m3, p.c3, t) - e(p.m2, p.c2, t));
+      if (!Number.isFinite(x)) return null;
+      const t1 = e(p.m1, p.c1, x);
+      const d = e(p.m2, p.c2, x) - t1;
+      return { x: [x, "whole"], d: [d, "whole"], term: [walkArith(t1, d, p.n), "whole"] };
+    }
+    case "x-arith-termsum": {
+      const ds = [];
+      for (let d = -60; d <= 60; d++) {
+        const a = p.up - (p.p - 1) * d;
+        let s = 0;
+        for (let i = 0, u = a; i < p.n; i++, u += d) s += u;
+        if (s === p.S) ds.push(d);
+      }
+      if (ds.length !== 1) return null;
+      const d = ds[0];
+      let a = p.up;
+      for (let i = p.p; i > 1; i--) a -= d;
+      return { d: [d, "whole"], a: [a, "whole"], term: [walkArith(a, d, p.r), "whole"] };
+    }
+    case "x-arith-neg": {
+      if (!(p.d < 0) || !(p.a > 0)) return null;
+      let u = p.a;
+      let s = 0;
+      for (let n = 1; n <= 100000; n++, u += p.d) {
+        if (u < 0) return { n: [n, "whole"], value: [u, "exact"], sum: [s, "exact"] };
+        if (u > 0) s += u;
+      }
+      return null;
+    }
+    case "x-geo-alg": {
+      const x = onlyInt((t) => t + p.a !== 0 && t + p.b !== 0 && (t + p.b) * (t + p.b) === (t + p.a) * (t + p.c));
+      if (!Number.isFinite(x)) return null;
+      const r = (x + p.b) / (x + p.a);
+      if (Math.abs((x + p.c) / (x + p.b) - r) > 1e-12) return null;
+      return { x: [x, "whole"], r: [r, "exact"], term: [walkGeo(x + p.a, r, p.n), "exact"] };
+    }
+    case "x-geo-bound": {
+      const gap = p.q - p.p;
+      if (!(p.up > 0 && p.uq > p.up)) return null;
+      const r = bisect((t) => p.up * t ** gap - p.uq, 1, 100);
+      let a = p.up;
+      for (let i = p.p; i > 1; i--) a /= r;
+      let u = a;
+      let n = 1;
+      while (u <= p.B && n < 10000) {
+        u *= r;
+        n++;
+      }
+      return { r: [r, "exact"], a: [a, "exact"], n: [n, "whole"] };
+    }
+    case "x-geo-growth": {
+      const f = p.down ? 1 - p.pct / 100 : 1 + p.pct / 100;
+      let v = p.V;
+      let after = NaN;
+      let years = NaN;
+      for (let t = 1; t <= 1000; t++) {
+        v *= f;
+        if (t === p.k) after = v;
+        if (Number.isNaN(years) && (p.down ? v < p.T : v > p.T)) years = t;
+        if (t >= p.k && !Number.isNaN(years)) break;
+      }
+      return { after: [after, "2dp"], years: [years, "whole"] };
+    }
+    case "x-series-n": {
+      let s = 0;
+      let u = p.a;
+      for (let n = 1; n <= 10000; n++, u += p.d) {
+        s += u;
+        if (s === p.S) return { n: [n, "whole"], last: [u, "whole"] };
+      }
+      return null;
+    }
+    case "x-series-growth": {
+      const f = 1 + p.pct / 100;
+      let u = p.A;
+      let s = 0;
+      let amount = NaN;
+      let total = NaN;
+      let passes = NaN;
+      for (let m = 1; m <= 1000; m++, u *= f) {
+        s += u;
+        if (m === p.n) {
+          amount = u;
+          total = s;
+        }
+        if (Number.isNaN(passes) && s > p.T) passes = m;
+        if (m >= p.n && !Number.isNaN(passes)) break;
+      }
+      return { amount: [amount, "2dp"], total: [total, "2dp"], passes: [passes, "whole"] };
+    }
+    case "x-series-inf": {
+      if (!(p.S > 0 && p.u2 > 0 && p.u2 < p.S / 4)) return null;
+      const f = (t) => p.S * t * (1 - t) - p.u2;
+      const r = p.big ? bisect(f, 0.5, 1) : bisect(f, 0, 0.5);
+      const a = p.S * (1 - r);
+      let s = 0;
+      for (let i = 0, u = a; i < p.n; i++, u *= r) s += u;
+      return { r: [r, "2dp"], a: [a, "exact"], sum: [s, "2dp"] };
+    }
+    case "x-series-block": {
+      let u = p.a;
+      let s = 0;
+      let count = 0;
+      for (let k = 1; k <= p.M; k++, u += p.d) if (k >= p.m) {
+        s += u;
+        count++;
+      }
+      return { count: [count, "whole"], sum: [s, "whole"] };
+    }
+    default:
+      return null;
+  }
+}
+
+function verifyExpert(p, question, answer) {
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  const want = expertExpected(p);
+  if (!want) return false;
+  const ids = Object.keys(want);
+  if (question.parts.length !== ids.length || !question.parts.every((pt) => ids.includes(pt.id))) return false;
+  return ids.every((id) => {
+    const [v, fmt] = want[id];
+    const x = xnum(answer[id]);
+    if (!Number.isFinite(x) || !Number.isFinite(v)) return false;
+    if (fmt === "2dp") return Math.abs(x - v) <= 0.005 + 1e-9;
+    if (fmt === "whole") return Number.isInteger(x) && x === Math.round(v) && Math.abs(v - x) < 1e-9;
+    return Math.abs(x - v) <= 1e-9 * Math.max(1, Math.abs(v));
+  });
 }

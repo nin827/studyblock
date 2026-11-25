@@ -17,6 +17,8 @@ Example: 340 m/s at 170 Hz gives λ = 340 / 170 = 2 m.
 
 **Watch out:** a MHz or kHz frequency has to be turned into Hz before you divide.
 
+**Expert:** an echo travels there and back, so halve the distance. When a wave crosses into a new material its frequency stays the same; only the speed and wavelength change, so λ2 = v2 ÷ f.
+
 ## Period and frequency
 
 1. Period and frequency are reciprocals: `T = 1 / f` and `f = 1 / T`, with T in seconds.
@@ -27,6 +29,8 @@ Example: 340 m/s at 170 Hz gives λ = 340 / 170 = 2 m.
 Example: f = 50 Hz gives T = 1 / 50 = 0.02 s = 20 ms.
 
 **Watch out:** a period in ms must be divided by 1000 before you take 1 / T.
+
+**Expert:** rpm ÷ 60 gives hertz. To choose an oscilloscope timebase, work out the total time for the cycles you want to see and share it over the screen's divisions.
 
 ## Refraction
 
@@ -39,6 +43,8 @@ Example: from air into glass (n = 1.5) at 30°: r = asin(sin 30 / 1.5) ≈ 19.5�
 
 **Watch out:** don't divide the angles themselves; divide their sines.
 
+**Expert:** between two materials keep both indices in Snell's law. Total internal reflection needs a higher-to-lower index boundary and an angle bigger than C, where sin C = (lower n) ÷ (higher n). From measured angles in air, n = sin i ÷ sin r.
+
 ## Thin lenses
 
 1. Use `1/f = 1/u + 1/v`, with real-is-positive signs: u > 0, a real image has v > 0, a virtual image has v < 0, and a diverging lens has f < 0.
@@ -49,3 +55,5 @@ Example: from air into glass (n = 1.5) at 30°: r = asin(sin 30 / 1.5) ≈ 19.5�
 Example: u = 15 cm and f = 10 cm give 1/v = 1/10 − 1/15 = 1/30, so v = 30 cm.
 
 **Watch out:** remember the final reciprocal: 1/v is not v.
+
+**Expert:** for a real image M times as big, put v = M × u into the lens equation: u = f(1 + 1/M). An object inside the focal length gives a negative v, which means a virtual image (a magnifying glass). With the object and screen a fixed distance D apart, v = D - u turns the lens equation into the quadratic u² - Du + Df = 0, with two valid lens positions.

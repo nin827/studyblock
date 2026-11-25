@@ -20,5 +20,8 @@ Summarise data and reason about chance: averages, how spread out data is, probab
 | Easy | Short sorted lists with whole-number answers, single-event probabilities as fractions |
 | Medium | Unsorted lists, quartiles, two independent events, grades with percentage weights or credits |
 | Hard | Longer lists with negative numbers, "at least one" probabilities, the exam score needed for a target grade |
+| Expert | Multi-step, several answers per question: working back from a mean, outlier fences, two-way tables, mixtures |
+
+**Expert** questions have 2 to 4 parts about one scenario: a missing value or a changed mean worked out from totals, outliers by the 1.5 × IQR rule, a missing cell and a "given that" probability from a two-way table, pooled experiments, and weighted averages run backwards (a class mean, an exam weight, a mixture).
 
 **How to type answers.** Round to 2 decimal places when the answer is not a whole number (answers within 0.005 are accepted). Probabilities are asked either as a decimal, like `0.25`, or as a fraction in simplest form with no spaces, like `3/8`; the question says which.

@@ -19,5 +19,8 @@ Spot the pattern and use it: find the next term, any term, which term has a give
 | Easy | Next terms, whole-number ratios, nth terms from a formula, short sums |
 | Medium | Larger n, negative and decimal differences, which term equals a value, the formula `pn + q` |
 | Hard | Sequences from two known terms, the first term above a limit, growth by a percentage, sums to infinity |
+| Expert | Multi-step, several answers per question: terms written in x, finding a and d from a term and a sum, the first negative term, compound growth and decay, how many terms make a sum, a sum to infinity worked backwards, and the sum of a block of terms |
+
+**Expert** questions have two or three answer boxes. Some use logs to find the first term (or year) past a limit, and one kind gives two possible ratios: the question tells you which to keep.
 
 **How to type answers.** Type plain numbers, with a minus sign for negatives. When the answer is a term number, type just n (for example `14`). Round to 2 decimal places when the question asks (answers within 0.005 are accepted). In the calculator, `^` is a power, so `_a * _r^(_n - 1)` works as written.

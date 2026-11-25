@@ -18,6 +18,8 @@ Example: `a + b * ___` prints 23 with `a = 3`, `b = 4`. So `4 * ___` must be 20,
 
 **Watch out:** whole-number division drops the remainder. Python writes it `7 // 2`; C#, C++, GDScript and Rust write `7 / 2`. Both give 3, and `7 % 2` gives 1.
 
+**Expert (working backwards):** a whole-number division like `y / 5` (`y // 5` in Python) printing 4 only tells you `y` is somewhere from 20 to 24. Turn the printed value into that range first, then find the smallest input that lands in it. For digits: `n / 100` is the hundreds digit, `n / 10 % 10` the tens and `n % 10` the units (Python uses `//`).
+
 ## Conditionals
 
 1. Say the rule in words: "at least 18", "from 10 to 20", "even".
@@ -26,6 +28,8 @@ Example: `a + b * ___` prints 23 with `a = 3`, `b = 4`. So `4 * ___` must be 20,
 4. Test the edge values: the number itself, one below and one above.
 
 **Watch out:** `>=` includes the number and `>` does not. With `>`, a threshold blank is one less than the first value that counts.
+
+**Expert (order of checks):** in an `if`/`elif` chain only the first true branch runs, so a later branch only sees values the earlier ones let through. Mark on a number line which values each branch takes, then count.
 
 ## Loops
 
@@ -38,6 +42,8 @@ Example: a loop starts `i` at 2, adds `i` to a total each pass, and the total sh
 
 **Watch out:** the end value of a range is never used itself, so the end is one more than the last value.
 
+**Expert (nested loops and two moving values):** count one outer pass at a time and keep a running total. `break` leaves only the inner loop. When two variables move towards each other, the gap closes by both steps each pass.
+
 ## Lists and strings
 
 1. Positions start at 0. The last item is at length − 1.
@@ -47,6 +53,8 @@ Example: a loop starts `i` at 2, adds `i` to a total each pass, and the total sh
 Example: in `"rocket"`, `k` is at position 3 (r=0, o=1, c=2, k=3).
 
 **Watch out:** an answer that only works for one list length is wrong. Use the length (`len(xs)`, `xs.Count`, `xs.size()`, `xs.len()`) instead of a fixed number.
+
+**Expert (streaks and mirrors):** a streak counter must restart from 0 when the streak breaks. To compare a word with itself backwards, position `i` pairs with `length - 1 - i`; `length - i` runs one past the end.
 
 ## Functions
 
@@ -58,3 +66,5 @@ Example: in `"rocket"`, `k` is at position 3 (r=0, o=1, c=2, k=3).
 Example: a function returns `n * ___ + 2`, and calling it with 4 prints 14. So 4 × ___ = 12, and the blank is 3.
 
 **Watch out:** a blank inside the function is the same value on every call, so the second call uses it too.
+
+**Expert (recursion and helpers):** for a function that calls itself, start at the stopping case and build the values upwards: f(stop), f(stop + 1), … For a helper called inside a loop, work out the helper's result for each value first, then count.

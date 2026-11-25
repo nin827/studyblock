@@ -1131,6 +1131,7 @@ function verifyTransfer(q, answer) {
 // =============================================================================================
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "ip-binary") return genIpBinary(difficulty, rng);
   if (subtopic === "masks-cidr") return genMasks(difficulty, rng);
   if (subtopic === "network-broadcast") return genNetBroadcast(difficulty, rng);
@@ -1156,12 +1157,548 @@ export function verify(question, answer) {
   if (!p || !p.kind) return false; // regenerate from the seed to get params back
   if (answer === "" || answer === null || answer === undefined) return false;
   try {
+    if (p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
     if (["oct2bin", "bin2oct", "class", "classbin", "ip2bin", "bin2ip", "classify"].includes(p.kind) || (p.kind === "multi" && p.idx !== undefined)) return verifyIpBinary(question, answer);
     if (["cidr2mask", "wildcard", "mask2cidr", "hosts", "count", "fit", "borrow"].includes(p.kind)) return verifyMasks(question, answer);
     if (["network", "broadcast", "first", "last", "hostin"].includes(p.kind) || (p.kind === "multi" && p.ip)) return verifyNetBroadcast(question, answer);
     if (["time", "rate", "size", "conv"].includes(p.kind)) return verifyTransfer(question, answer);
   } catch {
     return false;
+  }
+  return false;
+}
+
+// =============================================================================================
+// Expert. A separate branch: generate() dispatches here first (before checkDifficulty and the
+// data-transfer retry loop), so easy/medium/hard draws are unchanged. Hints use only values
+// already drawn. Params kinds start with "x-"; verifyExpert re-derives everything with 32-bit
+// integer / bitwise maths, prefix scans with big2, unit factors from unit names and residuals.
+
+const hex8 = (o) => o.map((x) => x.toString(16).toUpperCase().padStart(2, "0")).join("");
+const YN = ["Yes", "No"];
+
+// ---- IP addresses and binary / expert ----
+
+function xIpInt(rng) {
+  const cat = rng.pick(["private", "private", "public", "public", "loopback", "linklocal"]);
+  const o = addressOf(cat, false, rng);
+  const val = ((o[0] * 256 + o[1]) * 256 + o[2]) * 256 + o[3];
+  const hx = hex8(o);
+  return {
+    prompt: `Software often stores an IPv4 address as one 32-bit number. Take the address \`${dotted(o)}\`.`,
+    answerType: "multi",
+    parts: [
+      { id: "int", label: "32-bit integer", ask: "The address as one decimal integer. Type the whole number, without commas.", answerType: "number", answer: val, tolerance: 0,
+        hint: "The octets are base-256 digits: first × 256³ + second × 256² + third × 256 + fourth. Calculator: `_o1*256^3 + _o2*256^2 + _o3*256 + _o4`." },
+      { id: "hex", label: "Hex", ask: `The address in hexadecimal: exactly 8 hex digits, keeping leading zeros, no 0x (like ${hx === "0A000001" ? "`C0A80001` for 192.168.0.1" : "`0A000001` for 10.0.0.1"}).`, answerType: "text", answer: hx,
+        hint: "Each octet becomes exactly two hex digits: divide it by 16; the whole-number result is the first digit and the remainder the second." },
+    ],
+    explanation: `Each octet is one base-256 digit.\n\n- ${o[0]} × 16,777,216 + ${o[1]} × 65,536 + ${o[2]} × 256 + ${o[3]} = **${commas(val)}**\n- In hex, each octet is two digits: ${o.map((x) => `${x} → ${x.toString(16).toUpperCase().padStart(2, "0")}`).join(", ")}, so **${hx}**.`,
+    given: [{ label: "_o1", value: o[0] }, { label: "_o2", value: o[1] }, { label: "_o3", value: o[2] }, { label: "_o4", value: o[3] }],
+    params: { kind: "x-ipint", o },
+    hints: [
+      "Think of the four octets as digits in base 256: the first is worth 256³ = 16,777,216, the second 256² = 65,536, the third 256 and the last 1.",
+      "For hex, 8 bits = 2 hex digits, so convert each octet separately and write the four pairs side by side.",
+    ],
+  };
+}
+
+function xHexIp(rng) {
+  const cat = rng.pick(["private", "private", "public", "loopback", "linklocal"]);
+  const o = addressOf(cat, rng.next() < 0.5, rng);
+  const c = catByOctets(o);
+  if (!CAT_LABEL[c]) return xHexIp(rng);
+  const hx = hex8(o);
+  return {
+    prompt: `A packet capture shows an IPv4 address as the hex value \`${hx}\` (8 hex digits, two per octet).`,
+    answerType: "multi",
+    parts: [
+      { id: "ip", label: "Address", ask: `The address in dotted decimal (write it like ${likeIp(dotted(o))}).`, answerType: "text", answer: dotted(o),
+        hint: "Split the hex into four pairs. Each pair is one octet: first digit × 16 + second digit." },
+      { id: "type", label: "Type", ask: "What kind of address is it?", answerType: "choice", answer: CAT_LABEL[c], choices: [PRIV, PUB, LOOP, LINK],
+        hint: "Compare it with 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 (private), 127.0.0.0/8 (loopback) and 169.254.0.0/16 (link-local)." },
+    ],
+    explanation: `Split into pairs and convert each: ${hx.match(/../g).map((p, i) => `\`${p}\` = ${o[i]}`).join(", ")}. The address is **${dotted(o)}**.\n\n${classifyExplanation(o, c)}`,
+    params: { kind: "x-hexip", hx },
+    hints: [
+      `Split \`${hx}\` into four pairs of hex digits.`,
+      "Convert each pair to decimal (A = 10 … F = 15); those are the four octets.",
+      "Then check the octets against the reserved ranges, watching the edges such as 172.16 to 172.31.",
+    ],
+  };
+}
+
+function xSameSubnet(rng) {
+  for (;;) {
+    let n;
+    do n = rng.int(17, 30); while (n % 8 === 0);
+    const a = pickIpForPrefix(n, rng);
+    const { net, bc, k, block } = subnetOctets(a, n);
+    const same = rng.next() < 0.5;
+    let b;
+    if (same) {
+      const size = pow2(32 - n);
+      b = addOct(net, rng.int(1, size - 2));
+    } else {
+      const dir = rng.next() < 0.5 ? -1 : 1;
+      b = dir < 0 ? addOct(net, -rng.int(2, Math.min(40, pow2(32 - n) - 1))) : addOct(bc, rng.int(2, Math.min(40, pow2(32 - n) - 1)));
+    }
+    if (dotted(b) === dotted(a)) continue;
+    const m = maskOctets(n);
+    return {
+      prompt: `Host A is \`${dotted(a)}\` and host B is \`${dotted(b)}\`, both with mask /${n} (\`${dotted(m)}\`). A router finds a host's network by ANDing its address with the mask, bit by bit.`,
+      answerType: "multi",
+      parts: [
+        { id: "bits", label: `${ORD[k]} octet`, ask: `The ${ORD[k]} octet of host A's network address, in 8-bit binary (like ${likeBin8(bin8(net[k]))}).`, answerType: "text", answer: bin8(net[k]),
+          hint: `Write ${a[k]} and the mask octet ${m[k]} in binary and AND them: a result bit is 1 only where both bits are 1.` },
+        { id: "same", label: "Same subnet?", ask: "Are A and B on the same subnet?", answerType: "choice", answer: same ? "Yes" : "No", choices: YN,
+          hint: `Do the same AND for B's ${ORD[k]} octet (and check the octets before it) and compare the two network addresses.` },
+      ],
+      explanation: `The mask ${m[k]} = \`${bin8(m[k])}\` keeps the first ${n % 8} bit${n % 8 === 1 ? "" : "s"} of the ${ORD[k]} octet.\n\n- A: \`${bin8(a[k])}\` AND \`${bin8(m[k])}\` = **${bin8(net[k])}** (${net[k]}), so A's network is \`${dotted(net)}\`.\n- B's network is \`${dotted(subnetOctets(b, n).net)}\`.\n\n${same ? "They match: **Yes**, same subnet." : "They differ: **No**, B is in a different subnet."} (Blocks are ${block} wide in the ${ORD[k]} octet; A's runs from \`${dotted(net)}\` to \`${dotted(bc)}\`.)`,
+      params: { kind: "x-samesub", a, b, n },
+      hints: [
+        `With /${n}, the boundary is inside the ${ORD[k]} octet, where the mask is ${m[k]} = \`${bin8(m[k])}\`.`,
+        "AND keeps a bit only when both bits are 1, so the mask keeps the network bits and clears the host bits.",
+        "Two hosts are on the same subnet when every octet of their network addresses matches.",
+      ],
+    };
+  }
+}
+
+// ---- Subnet masks and CIDR / expert ----
+
+const DEPTS = ["Sales", "Admin", "Lab", "Guest Wi-Fi", "Cameras", "Finance", "Support", "Servers", "Printers", "Warehouse"];
+
+function xVlsm(rng) {
+  for (;;) {
+    const base = rng.pick([[192, 168, rng.int(0, 255), 0], [10, rng.int(0, 255), rng.int(0, 255), 0], [172, rng.int(16, 31), rng.int(0, 255), 0]]);
+    const names = rng.shuffle(DEPTS).slice(0, 3);
+    const need = names.map(() => rng.int(3, 120));
+    const pref = need.map((h) => { let p = 30; while (usable(p) < h) p--; return p; });
+    const order = [0, 1, 2].sort((x, y) => pref[x] - pref[y] || x - y); // biggest block first; ties keep listed order
+    const sizes = order.map((i) => pow2(32 - pref[i]));
+    if (sizes.reduce((s, x) => s + x, 0) > 256 || new Set(need).size < 3) continue;
+    const starts = [];
+    let off = 0;
+    for (const s of sizes) { starts.push(off); off += s; }
+    const third = addOct(base, starts[2]);
+    return {
+      prompt: `The network \`${dotted(base)}/24\` is split with VLSM for three teams: ${names.map((nm, i) => `**${nm}** needs ${need[i]} hosts`).join(", ")}. Give each team the smallest subnet that fits (usable hosts = 2^h − 2), and hand them out **biggest subnet first** from the start of the block (equal sizes in the order listed), each starting straight after the previous one.`,
+      answerType: "multi",
+      parts: [
+        ...[0, 1, 2].map((i) => ({ id: `p${i + 1}`, label: names[i], ask: `Prefix length for ${names[i]} (n in /n)`, answerType: "number", answer: pref[i], tolerance: 0,
+          hint: `Find the fewest host bits h with 2^h − 2 ≥ ${need[i]}; the prefix is 32 − h.` })),
+        { id: "net3", label: "Third subnet", ask: `Network address of the subnet handed out **third** (${names[order[2]]}). ${IP_NOTE}.`, answerType: "text", answer: dotted(third),
+          hint: "Add the sizes (2^h addresses each) of the first two subnets to the start of the block." },
+      ],
+      explanation: `Smallest subnet for each team:\n\n${names.map((nm, i) => `- ${nm}: ${need[i]} hosts → 2^${32 - pref[i]} − 2 = ${usable(pref[i])} ≥ ${need[i]}, so **/${pref[i]}** (${pow2(32 - pref[i])} addresses)`).join("\n")}\n\nBiggest first: ${order.map((i, j) => `${names[i]} at \`${dotted(addOct(base, starts[j]))}/${pref[i]}\``).join(", ")}.\n\nThe third subnet starts at ${starts[2]} addresses in: **${dotted(third)}**.`,
+      given: need.map((h, i) => ({ label: `_h${i + 1}`, value: h })),
+      params: { kind: "x-vlsm", base, need },
+      hints: [
+        "For each team, find the smallest power of two that is at least hosts + 2. That is the subnet size.",
+        "Sort the subnets from biggest to smallest; allocating in that order keeps every subnet on a boundary of its own size.",
+        `The first subnet starts at \`${dotted(base)}\`; each next one starts right after the previous one ends.`,
+      ],
+    };
+  }
+}
+
+function xSummary(rng) {
+  for (;;) {
+    const cnt = rng.int(2, 4);
+    const first = rng.pick([[10, rng.int(0, 255)], [172, rng.int(16, 31)], [192, 168]]);
+    const start = rng.int(0, 255 - cnt);
+    const nets = Array.from({ length: cnt }, (_, i) => [first[0], first[1], start + i, 0]);
+    // Generation: grow the block until it covers the first and last /24.
+    let p = 24;
+    while (p > 16 && Math.floor(start / pow2(24 - p)) !== Math.floor((start + cnt - 1) / pow2(24 - p))) p--;
+    const sumNet = [first[0], first[1], Math.floor(start / pow2(24 - p)) * pow2(24 - p), 0];
+    const extra = pow2(24 - p) - cnt;
+    return {
+      prompt: `A router has these routes:\n\n${nets.map((x) => `- \`${dotted(x)}/24\``).join("\n")}\n\nThey are to be replaced by **one** summary route: the longest prefix that covers all of them. (It may also cover some addresses that are not in the list.)`,
+      answerType: "multi",
+      parts: [
+        { id: "net", label: "Summary network", ask: `Summary network address. ${IP_NOTE}.`, answerType: "text", answer: dotted(sumNet),
+          hint: "Keep only the bits that all the networks share; set the rest to 0." },
+        { id: "prefix", label: "Prefix", ask: "Its prefix length (n in /n)", answerType: "number", answer: p, tolerance: 0,
+          hint: `Write the third octets ${start} and ${start + cnt - 1} in binary and count how many leading bits they share. Add that to 16.` },
+      ],
+      explanation: `Only the third octet changes. In binary:\n\n${nets.map((x) => `- ${x[2]} = \`${bin8(x[2])}\``).join("\n")}\n\nThey share the first ${p - 16} bits, so the summary is /16 + ${p - 16} = **/${p}**, starting at **${dotted(sumNet)}**.${extra ? ` It also covers ${extra} other /24${extra === 1 ? "" : "s"}, which is allowed here.` : ""}`,
+      params: { kind: "x-summary", nets },
+      hints: [
+        "A summary route covers a block whose size is a power of two and that starts on a multiple of that size.",
+        `Compare the first and last networks, \`${dotted(nets[0])}\` and \`${dotted(nets[cnt - 1])}\`: everything they share in binary stays.`,
+        "Count the shared leading bits across the whole address. That count is the prefix.",
+      ],
+    };
+  }
+}
+
+function xMaskBack(rng) {
+  for (;;) {
+    const n = rng.int(18, 29);
+    const ip = pickIpForPrefix(n, rng);
+    const { net, bc } = subnetOctets(ip, n);
+    const h = usable(n);
+    return {
+      prompt: `A subnet's broadcast address is \`${dotted(bc)}\` and it has exactly **${commas(h)}** usable host addresses.`,
+      answerType: "multi",
+      parts: [
+        { id: "mask", label: "Mask", ask: `Its subnet mask in dotted decimal (like \`255.255.255.0\`).`, answerType: "text", answer: dotted(maskOctets(n)),
+          hint: `Usable hosts = 2^h − 2, so 2^h = ${commas(h)} + 2. Find h, then the prefix is 32 − h.` },
+        { id: "net", label: "Network", ask: `Its network address. ${IP_NOTE}.`, answerType: "text", answer: dotted(net),
+          hint: "The subnet holds 2^h addresses ending at the broadcast, so the network address is broadcast − 2^h + 1." },
+      ],
+      explanation: `- ${commas(h)} + 2 = ${commas(h + 2)} = 2^${32 - n}, so there are ${32 - n} host bits and the prefix is /${n}: mask **${dotted(maskOctets(n))}**.\n- The block has ${commas(h + 2)} addresses and ends at \`${dotted(bc)}\`, so it starts ${commas(h + 1)} addresses earlier: **${dotted(net)}**.`,
+      given: [{ label: "_hosts", value: h }],
+      params: { kind: "x-maskback", bc, h },
+      hints: [
+        "Add back the network and broadcast addresses: the block holds hosts + 2 addresses, a power of two.",
+        "Host bits h give the prefix 32 − h, and the mask has that many 1s.",
+        "The broadcast is the last address of the block. Count back to its first address.",
+      ],
+    };
+  }
+}
+
+// ---- Network and broadcast / expert ----
+
+function xKth(rng) {
+  const p = rng.pick([16, 16, 20, 22]);
+  const base = p === 16 ? rng.pick([[10, rng.int(0, 255), 0, 0], [172, rng.int(16, 31), 0, 0]])
+    : p === 20 ? [172, rng.int(1, 15) * 16, 0, 0] : [10, rng.int(0, 255), rng.int(0, 63) * 4, 0];
+  const m = rng.int(Math.max(p + 3, 24), 28);
+  const count = pow2(m - p);
+  const k = rng.int(3, count - 2);
+  const size = pow2(32 - m);
+  const net = addOct(base, k * size);
+  const bc = addOct(net, size - 1);
+  return {
+    prompt: `The network \`${dotted(base)}/${p}\` is cut into equal **/${m}** subnets, numbered from **0** (subnet 0 starts at \`${dotted(base)}\`; subnet zero is allowed). Look at **subnet number ${k}**. ${IP_NOTE}.`,
+    answerType: "multi",
+    parts: [
+      { id: "net", label: "Network", ask: "Its network address", answerType: "text", answer: dotted(net),
+        hint: `Each /${m} subnet has 2^${32 - m} addresses. Subnet ${k} starts ${k} × that many addresses after the base, carrying into the next octet every 256.` },
+      { id: "bc", label: "Broadcast", ask: "Its broadcast address", answerType: "text", answer: dotted(bc),
+        hint: "The broadcast is the last address of the subnet: the network address plus the subnet size, minus 1." },
+      { id: "first", label: "First host", ask: "Its first usable host address", answerType: "text", answer: dotted(addOct(net, 1)),
+        hint: "The first usable host is the network address plus 1." },
+    ],
+    explanation: `A /${m} subnet has 2^${32 - m} = ${size} addresses.\n\n- Subnet ${k} starts ${k} × ${size} = ${commas(k * size)} addresses after \`${dotted(base)}\`${k * size >= 256 ? ` (${Math.floor(k * size / 256)} × 256 + ${(k * size) % 256}, so the third octet goes up by ${Math.floor(k * size / 256)} and the fourth is ${(k * size) % 256})` : ""}: **${dotted(net)}**.\n- Broadcast: + ${size - 1} → **${dotted(bc)}**.\n- First usable host: **${dotted(addOct(net, 1))}**.`,
+    given: [{ label: "_k", value: k }, { label: "_size", value: size }],
+    params: { kind: "x-kth", base, p, m, k },
+    hints: [
+      `Subnet size: 2^(32 − ${m}) addresses. Calculator: \`_k * _size\` gives how far subnet ${k} starts from the base.`,
+      "Turn that offset into octets: divide by 256; the whole-number part adds to the third octet and the remainder is the fourth.",
+      "Broadcast = start + size − 1; first host = start + 1.",
+    ],
+  };
+}
+
+const GW_OK = "Yes: it's a usable host in the same subnet";
+const GW_OTHER = "No: it's in a different subnet";
+const GW_NET = "No: it's the subnet's network address";
+const GW_BC = "No: it's the subnet's broadcast address";
+
+function xGateway(rng) {
+  let n;
+  do n = rng.int(20, 30); while (n % 8 === 0);
+  const ip = pickIpForPrefix(n, rng);
+  const { net, bc } = subnetOctets(ip, n);
+  const size = pow2(32 - n);
+  const kind = rng.pick(["ok", "other", "net", "bc"]);
+  let gw;
+  if (kind === "net") gw = net;
+  else if (kind === "bc") gw = bc;
+  else if (kind === "other") gw = rng.next() < 0.5 ? addOct(bc, 1 + rng.int(1, Math.min(size - 1, 30))) : addOct(net, -1 - rng.int(1, Math.min(size - 1, 30)));
+  else {
+    let off;
+    do off = rng.int(1, size - 2); while (dotted(addOct(net, off)) === dotted(ip));
+    gw = addOct(net, off);
+  }
+  const ans = { ok: GW_OK, other: GW_OTHER, net: GW_NET, bc: GW_BC }[kind];
+  return {
+    prompt: `A laptop is set up as \`${dotted(ip)}/${n}\` with default gateway \`${dotted(gw)}\`.`,
+    answerType: "multi",
+    parts: [
+      { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop?", answerType: "choice", answer: ans, choices: [GW_OK, GW_OTHER, GW_NET, GW_BC],
+        hint: "Work out the laptop's network and broadcast addresses, then see where the gateway falls." },
+      { id: "last", label: "Last host", ask: `A common choice of gateway is the subnet's last usable host. What is it? ${IP_NOTE}.`, answerType: "text", answer: dotted(addOct(bc, -1)),
+        hint: "The last usable host is the broadcast address minus 1." },
+    ],
+    explanation: `${nbExplanation(ip, n)}\n\nThe gateway \`${dotted(gw)}\` ${kind === "ok" ? "lies strictly between them" : kind === "net" ? "is the network address" : kind === "bc" ? "is the broadcast address" : "is outside that range"}, so: **${ans}**.\n\nLast usable host: **${dotted(addOct(bc, -1))}**.`,
+    params: { kind: "x-gateway", ip, n, gw },
+    hints: nbHints(ip, n, "broadcast").slice(0, 3),
+  };
+}
+
+function xPrefixBack(rng) {
+  for (;;) {
+    const n = rng.int(18, 29);
+    const ip = pickIpForPrefix(n, rng);
+    const { net, bc } = subnetOctets(ip, n);
+    // Only keep cases where exactly one prefix fits this host and broadcast.
+    const fits = [];
+    for (let q = 1; q <= 30; q++) {
+      const s = subnetOctets(ip, q);
+      if (dotted(s.bc) === dotted(bc) && dotted(ip) !== dotted(s.net) && dotted(ip) !== dotted(s.bc)) fits.push(q);
+    }
+    if (fits.length !== 1) continue;
+    return {
+      prompt: `A host has the address \`${dotted(ip)}\`, and the broadcast address of its subnet is \`${dotted(bc)}\`. The prefix is between /1 and /30.`,
+      answerType: "multi",
+      parts: [
+        { id: "prefix", label: "Prefix", ask: "What is the prefix length (n in /n)?", answerType: "number", answer: n, tolerance: 0,
+          hint: "The broadcast is the host address with every host bit set to 1. Compare the two in binary." },
+        { id: "net", label: "Network", ask: `What is the network address? ${IP_NOTE}.`, answerType: "text", answer: dotted(net),
+          hint: "Set every host bit of the address to 0 instead." },
+      ],
+      explanation: `The broadcast is the address with every host bit set to 1. Look at the ${ORD[Math.floor(n / 8)]} octet: address ${ip[Math.floor(n / 8)]} = \`${bin8(ip[Math.floor(n / 8)])}\`, broadcast ${bc[Math.floor(n / 8)]} = \`${bin8(bc[Math.floor(n / 8)])}\`${n < 24 ? " (later octets are 255 in the broadcast)" : ""}.
+
+Only ${32 - n} host bits work: fewer would leave a 0 that the broadcast has as 1, and more would change a bit the address has as 0. So the prefix is **${n}** (/${n}), and clearing those ${32 - n} bits gives the network address **${dotted(net)}**.`,
+      params: { kind: "x-prefixback", ip, bc },
+      hints: [
+        "The broadcast address = the network part of the address followed by all-1 host bits.",
+        `Write the octets of \`${dotted(ip)}\` and \`${dotted(bc)}\` that differ in binary. The host bits are the run of 1s at the end of the broadcast.`,
+        "Check which run length works: the address must keep its own bits in the network part, and it must not itself be the network or broadcast address.",
+      ],
+    };
+  }
+}
+
+// ---- Data transfer / expert ----
+
+const PLANS = [10, 20, 50, 100, 200, 300, 500, 1000];
+
+function xRequired(rng) {
+  for (;;) {
+    const su = rng.pick(["GB", "GiB"]);
+    const S = rng.int(2, 120);
+    const mins = rng.int(5, 90);
+    const eff = rng.pick([0.95, 0.9, 0.85, 0.8, 0.75]);
+    const need = (S * SIZE_F[su] * 8) / (mins * 60 * eff) / 1e6;
+    if (nearHalf(need)) continue;
+    const pi = PLANS.findIndex((x) => x >= need);
+    if (pi < 0 || PLANS[pi] - need < 0.01) continue;
+    const lo = Math.max(0, Math.min(pi - 1, PLANS.length - 4));
+    const opts = PLANS.slice(lo, lo + 4).map((x) => `${x} Mbps`);
+    return {
+      prompt: `A **${S} ${su}** backup must finish within **${mins} minutes**. Protocol overhead means only **${Math.round(eff * 100)}%** of the link speed carries file data. ${notes([su, "Mbps"])}`,
+      answerType: "multi",
+      parts: [
+        { id: "need", label: "Link speed needed", ask: "What link speed, in Mbps, is just enough? Round to 2 decimal places.", answerType: "number", answer: round2(need), tolerance: 0.005,
+          hint: `Bits ÷ seconds gives the data rate; divide by ${eff} because only that fraction of the link carries data. Calculator: \`_size * ${SIZE_C[su]} * 8 / (_mins * 60 * _eff) / 1e6\`.` },
+        { id: "plan", label: "Plan to buy", ask: "Which is the slowest of these plans that is fast enough?", answerType: "choice", answer: `${PLANS[pi]} Mbps`, choices: opts,
+          hint: "A plan is fast enough when its speed is at least the speed you found. Round up to a plan, never down." },
+      ],
+      explanation: `- Size: ${S} × ${commas(SIZE_F[su])} × 8 = ${commas(S * SIZE_F[su] * 8)} bits\n- Time: ${mins} × 60 = ${mins * 60} s\n- Data rate: ${commas(S * SIZE_F[su] * 8)} ÷ ${mins * 60} ≈ ${commas(Math.round(need * eff * 1e6))} bits/s\n- Link speed: ÷ ${eff} ≈ ${commas(Math.round(need * 1e6))} bits/s ≈ **${round2(need).toFixed(2)} Mbps**\n\nThe slowest plan at or above that is **${PLANS[pi]} Mbps**${pi > 0 ? ` (${PLANS[pi - 1]} Mbps is too slow)` : ""}.`,
+      given: [{ label: "_size", value: S }, { label: "_mins", value: mins }, { label: "_eff", value: eff }],
+      params: { kind: "x-required", S, su, mins, eff, opts },
+      hints: [
+        `Convert the size to bits (${su} uses ${SIZE_F[su] === 1e9 ? "1000s" : "1024s"}) and the time to seconds.`,
+        `Bits per second needed for the file data = bits ÷ seconds. The link must be faster, because only ${Math.round(eff * 100)}% of it carries data.`,
+        "Then pick the slowest plan that is not below your answer.",
+      ],
+    };
+  }
+}
+
+const nearHalf = (x) => Math.abs(Math.abs(x * 100) % 1 - 0.5) < 1e-6;
+
+function xStoreForward(rng) {
+  for (;;) {
+    const S = rng.int(20, 900);
+    const hops = rng.int(2, 3);
+    const rates = Array.from({ length: hops }, () => rng.pick([10, 20, 50, 100, 200, 500, 1000]));
+    if (new Set(rates).size < 2) continue;
+    const times = rates.map((r) => (S * 8) / r);
+    const total = times.reduce((s, x) => s + x, 0);
+    const slow = Math.max(...times);
+    if (nearHalf(total) || nearHalf(slow)) continue;
+    return {
+      prompt: `A **${S} MB** file travels over ${hops} links in a row: ${rates.map((r, i) => `link ${i + 1} at **${r} Mbps**`).join(", ")}. Each router is **store-and-forward**: it must receive the whole file before it starts sending it on. Ignore delays other than transmission time. ${notes(["MB", "Mbps"])}`,
+      answerType: "multi",
+      parts: [
+        { id: "slow", label: "Slowest link", ask: "How many seconds does the slowest link take? Round to 2 decimal places.", answerType: "number", answer: round2(slow), tolerance: 0.005,
+          hint: `Time on a link = ${S} × 8 megabits ÷ its speed. The slowest link is the one with the lowest Mbps.` },
+        { id: "total", label: "Total time", ask: "How many seconds until the file has fully arrived? Round to 2 decimal places.", answerType: "number", answer: round2(total), tolerance: 0.005,
+          hint: "Store-and-forward means the links take turns, so add the times of all the links." },
+      ],
+      explanation: `${S} MB = ${S * 8} megabits.\n\n${rates.map((r, i) => `- Link ${i + 1}: ${S * 8} ÷ ${r} = ${num(times[i])} s`).join("\n")}\n\nSlowest: **${round2(slow).toFixed(2)} s**. Because each router waits for the whole file, the times add up: **${round2(total).toFixed(2)} s**.`,
+      given: [{ label: "_size", value: S }, ...rates.map((r, i) => ({ label: `_r${i + 1}`, value: r }))],
+      params: { kind: "x-storefwd", S, rates },
+      hints: [
+        `Convert the size to megabits once: ${S} × 8.`,
+        "Work out the time on each link separately: megabits ÷ Mbps.",
+        "With store-and-forward nothing overlaps, so the total is the sum.",
+      ],
+    };
+  }
+}
+
+function xCourier(rng) {
+  for (;;) {
+    const TB = rng.int(2, 40);
+    const R = rng.pick([50, 100, 200, 300, 500, 1000]);
+    const eff = rng.pick([1, 0.9, 0.8]);
+    const hours = rng.int(4, 48);
+    const netH = (TB * 1e12 * 8) / (R * 1e6 * eff) / 3600;
+    const courierRate = (TB * 1e12 * 8) / (hours * 3600) / 1e6;
+    if (nearHalf(netH) || nearHalf(courierRate) || Math.abs(netH - hours) < 0.5) continue;
+    const faster = netH < hours ? "The network" : "The courier";
+    return {
+      prompt: `You must move **${TB} TB** of data to another office. Option 1: send it over a **${R} Mbps** link${eff === 1 ? "" : `, where only **${Math.round(eff * 100)}%** of the speed carries file data`}. Option 2: copy it to a drive and send a courier, which takes **${hours} hours** door to door. Take 1 TB = 10¹² bytes, 1 Mbps = 1,000,000 bits per second and 1 byte = 8 bits; ignore copying time.`,
+      answerType: "multi",
+      parts: [
+        { id: "net", label: "Network time", ask: "How many hours would the network take? Round to 2 decimal places.", answerType: "number", answer: round2(netH), tolerance: 0.005,
+          hint: `Bits ÷ (bits per second actually carried) gives seconds; divide by 3600 for hours. Calculator: \`_tb * 1e12 * 8 / (_rate * 1e6${eff === 1 ? "" : " * _eff"}) / 3600\`.` },
+        { id: "rate", label: "Courier's speed", ask: "What average speed in Mbps does the courier deliver? Round to 2 decimal places.", answerType: "number", answer: round2(courierRate), tolerance: 0.005,
+          hint: "Treat the courier like a link: total bits ÷ total seconds, then ÷ 1,000,000." },
+        { id: "faster", label: "Faster", ask: "Which option is faster?", answerType: "choice", answer: faster, choices: ["The network", "The courier"],
+          hint: "Compare the network time with the courier's hours (or compare the two speeds)." },
+      ],
+      explanation: `${TB} TB = ${TB} × 10¹² × 8 = ${commas(TB * 8e12)} bits.\n\n- Network: ${commas(TB * 8e12)} ÷ ${commas(R * 1e6 * eff)} bits/s ≈ ${commas(Math.round(netH * 3600))} s ÷ 3600 ≈ **${round2(netH).toFixed(2)} hours**\n- Courier: ${commas(TB * 8e12)} bits ÷ ${hours * 3600} s ≈ ${commas(Math.round(courierRate * 1e6))} bits/s ≈ **${round2(courierRate).toFixed(2)} Mbps**\n\n${netH < hours ? `The network needs ${round2(netH).toFixed(2)} h, less than ${hours} h:` : `The network needs ${round2(netH).toFixed(2)} h, more than ${hours} h:`} **${faster}** is faster.`,
+      given: [{ label: "_tb", value: TB }, { label: "_rate", value: R }, { label: "_hours", value: hours }, ...(eff === 1 ? [] : [{ label: "_eff", value: eff }])],
+      params: { kind: "x-courier", TB, R, eff, hours },
+      hints: [
+        "Work in bits and seconds throughout, then convert at the end.",
+        `The link carries ${R} × 1,000,000${eff === 1 ? "" : ` × ${eff}`} bits of file data per second.`,
+        `The courier moves all the bits in ${hours} × 3600 seconds, so its speed is bits ÷ seconds.`,
+      ],
+    };
+  }
+}
+
+function genExpert(subtopic, rng) {
+  const t = rng.int(0, 2);
+  if (subtopic === "ip-binary") return t === 0 ? xIpInt(rng) : t === 1 ? xHexIp(rng) : xSameSubnet(rng);
+  if (subtopic === "masks-cidr") return t === 0 ? xVlsm(rng) : t === 1 ? xSummary(rng) : xMaskBack(rng);
+  if (subtopic === "network-broadcast") return t === 0 ? xKth(rng) : t === 1 ? xGateway(rng) : xPrefixBack(rng);
+  if (subtopic === "data-transfer") return t === 0 ? xRequired(rng) : t === 1 ? xStoreForward(rng) : xCourier(rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- expert verification ----
+
+const xa = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+const xn = (answer, id) => {
+  const v = xa(answer, id);
+  return v === "" || v === null || v === undefined ? NaN : Number(v);
+};
+// A 2-decimal answer x for an exact value: within 0.005, and no neighbouring 2-dp value also is.
+function r2(x, exact) {
+  const ok = (y) => Number.isFinite(y) && Math.abs(y - exact) <= 0.005 * (1 + 1e-9);
+  return ok(x) && !ok(Math.round((x - 0.01) * 100) / 100) && !ok(Math.round((x + 0.01) * 100) / 100);
+}
+// Smallest prefix scan: longest /p whose usable hosts (2^(32-p) - 2) reach h.
+function vPrefixFor(h) {
+  for (let p = 30; p >= 1; p--) if (big2(32 - p) - 2n >= BigInt(h)) return p;
+  return null;
+}
+
+function verifyExpert(p, q, answer) {
+  if (p.kind === "x-ipint") {
+    const v = octInt(p.o);
+    let hx = "";
+    for (let s = 28; s >= 0; s -= 4) hx += "0123456789ABCDEF"[(v >>> s) & 15];
+    return xn(answer, "int") === v && String(xa(answer, "hex") ?? "").trim().toUpperCase() === hx;
+  }
+  if (p.kind === "x-hexip") {
+    if (!/^[0-9A-F]{8}$/.test(p.hx)) return false;
+    let v = 0;
+    for (const c of p.hx) v = v * 16 + "0123456789ABCDEF".indexOf(c);
+    const cat = categoryOfInt(v >>> 0);
+    const part = (q.parts || []).find((x) => x.id === "type");
+    if (!part || !Array.isArray(part.choices) || new Set(part.choices).size !== 4) return false;
+    return parseDotted(String(xa(answer, "ip") ?? "")) === v >>> 0 && Boolean(CAT_LABEL[cat]) && String(xa(answer, "type")) === CAT_LABEL[cat];
+  }
+  if (p.kind === "x-samesub") {
+    const m = maskInt(p.n);
+    const na = (octInt(p.a) & m) >>> 0;
+    const nb = (octInt(p.b) & m) >>> 0;
+    if (octInt(p.a) === na || octInt(p.a) === (na | ~m) >>> 0) return false;
+    const k = Math.floor(p.n / 8);
+    const want = (na >>> (8 * (3 - k))) & 255;
+    return parseBinGroups(String(xa(answer, "bits") ?? ""), 1) === want && String(xa(answer, "same")) === (na === nb ? "Yes" : "No");
+  }
+  if (p.kind === "x-vlsm") {
+    const pre = p.need.map(vPrefixFor);
+    if (pre.some((x) => x === null)) return false;
+    if (![0, 1, 2].every((i) => xn(answer, `p${i + 1}`) === pre[i])) return false;
+    const order = [0, 1, 2].sort((x, y) => pre[x] - pre[y] || x - y);
+    const size = (i) => Number(big2(32 - pre[i]));
+    if (order.reduce((s, i) => s + size(i), 0) > 256) return false;
+    const start = octInt(p.base) + size(order[0]) + size(order[1]);
+    const net3 = parseDotted(String(xa(answer, "net3") ?? ""));
+    return net3 === start && net3 % size(order[2]) === 0;
+  }
+  if (p.kind === "x-summary") {
+    const ints = p.nets.map(octInt);
+    const lo = Math.min(...ints), hi = Math.max(...ints) + 255;
+    // Longest prefix whose block holds both the lowest and the highest address.
+    let best = null;
+    for (let n = 32; n >= 0 && best === null; n--) if (((lo & maskInt(n)) >>> 0) === ((hi & maskInt(n)) >>> 0)) best = n;
+    return xn(answer, "prefix") === best && parseDotted(String(xa(answer, "net") ?? "")) === ((lo & maskInt(best)) >>> 0);
+  }
+  if (p.kind === "x-maskback") {
+    const n = vPrefixFor(p.h);
+    if (n === null || big2(32 - n) - 2n !== BigInt(p.h)) return false;
+    const bc = parseDotted(dotted(p.bc));
+    const size = Number(big2(32 - n));
+    const net = bc - size + 1;
+    if (net % size !== 0) return false;
+    const mask = parseDotted(String(xa(answer, "mask") ?? ""));
+    return mask !== null && prefixOfMask(mask) === n && parseDotted(String(xa(answer, "net") ?? "")) === net;
+  }
+  if (p.kind === "x-kth") {
+    const size = Number(big2(32 - p.m));
+    if (p.k < 0 || p.k >= Number(big2(p.m - p.p))) return false;
+    const net = octInt(p.base) + p.k * size;
+    return parseDotted(String(xa(answer, "net") ?? "")) === net && parseDotted(String(xa(answer, "bc") ?? "")) === net + size - 1
+      && parseDotted(String(xa(answer, "first") ?? "")) === net + 1;
+  }
+  if (p.kind === "x-gateway") {
+    const { v, net, bc } = subnetInts(p.ip, p.n);
+    if (v === net || v === bc) return false;
+    const g = octInt(p.gw);
+    const want = g === net ? GW_NET : g === bc ? GW_BC : g > net && g < bc ? GW_OK : GW_OTHER;
+    const part = (q.parts || []).find((x) => x.id === "gw");
+    if (!part || new Set(part.choices).size !== 4) return false;
+    return String(xa(answer, "gw")) === want && parseDotted(String(xa(answer, "last") ?? "")) === bc - 1;
+  }
+  if (p.kind === "x-prefixback") {
+    const v = octInt(p.ip), b = octInt(p.bc);
+    const fits = [];
+    for (let n = 1; n <= 30; n++) {
+      const m = maskInt(n);
+      const net = (v & m) >>> 0, bc = (net | ~m) >>> 0;
+      if (bc === b && v !== net && v !== bc) fits.push(n);
+    }
+    if (fits.length !== 1) return false;
+    return xn(answer, "prefix") === fits[0] && parseDotted(String(xa(answer, "net") ?? "")) === ((v & maskInt(fits[0])) >>> 0);
+  }
+  if (p.kind === "x-required") {
+    const bits = p.S * unitFactor(p.su) * 8;
+    if (!Number.isFinite(bits)) return false;
+    // need · 10^6 · seconds · eff = bits
+    const need = bits / (p.mins * 60 * p.eff) / unitFactor("Mbps");
+    if (!r2(xn(answer, "need"), need)) return false;
+    const speeds = p.opts.map((s) => Number(s.replace(" Mbps", "")));
+    const enough = speeds.filter((s) => s * unitFactor("Mbps") * p.eff * p.mins * 60 >= bits);
+    if (!enough.length || new Set(p.opts).size !== 4) return false;
+    return String(xa(answer, "plan")) === `${Math.min(...enough)} Mbps`;
+  }
+  if (p.kind === "x-storefwd") {
+    const bits = p.S * unitFactor("MB") * 8;
+    const t = p.rates.map((r) => bits / (r * unitFactor("Mbps")));
+    return r2(xn(answer, "slow"), Math.max(...t)) && r2(xn(answer, "total"), t.reduce((s, x) => s + x, 0));
+  }
+  if (p.kind === "x-courier") {
+    const bits = p.TB * 1e12 * 8;
+    const netH = bits / (p.R * unitFactor("Mbps") * p.eff) / 3600;
+    const rate = bits / (p.hours * 3600) / unitFactor("Mbps");
+    return r2(xn(answer, "net"), netH) && r2(xn(answer, "rate"), rate)
+      && String(xa(answer, "faster")) === (p.R * unitFactor("Mbps") * p.eff > rate * unitFactor("Mbps") ? "The network" : "The courier");
   }
   return false;
 }

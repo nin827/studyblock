@@ -7,9 +7,9 @@
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [
-    { "id": "notes", "title": "Notes", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "intervals", "title": "Intervals", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "scales", "title": "Major & minor scales", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "keys", "title": "Key signatures", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "notes", "title": "Notes", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "intervals", "title": "Intervals", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "scales", "title": "Major & minor scales", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "keys", "title": "Key signatures", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

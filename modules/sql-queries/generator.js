@@ -1186,6 +1186,7 @@ function stateWhole(q) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return stateWhole(genExpert(subtopic, rng));
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "select-where") return stateWhole(genSelectWhere(difficulty, rng));
   if (subtopic === "order-limit") return stateWhole(genOrderLimit(difficulty, rng));
@@ -1197,6 +1198,14 @@ export function generate({ subtopic, difficulty, rng }) {
 // Independent check: parse the shown SQL text, run it with the loop-based executor, compare.
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) {
+    if (answer === "" || answer === null || answer === undefined) return false;
+    try {
+      return verifyExpert(p, question, answer);
+    } catch {
+      return false;
+    }
+  }
   if (!p || typeof p.sql !== "string" || !p.tables) return false;
   if (answer === "" || answer === null || answer === undefined) return false;
   try {
@@ -1218,4 +1227,478 @@ export function verify(question, answer) {
   } catch {
     return false;
   }
+}
+
+// =============================================================================================
+// Expert. A separate branch: generate() dispatches here before its difficulty check, so
+// easy/medium/hard draws are unchanged. Questions built with finish() are verified by the usual
+// path (parse the shown SQL, run execSql). Questions whose SQL has a gap or a hidden value carry
+// params.kind "x-…" and are checked by verifyExpert, which fills the gap with each candidate and
+// runs execSql on the result. Hints use only values already drawn.
+
+// finish() keeps hints only on single questions; expert multi-part ones keep theirs too.
+const finishX = (args) => ({ ...finish(args), hints: args.hints });
+const NOTE_PREC = "Standard SQL operator precedence applies.";
+const keysOf = (rows, K) => rows.map((r) => r[K]);
+
+// ---- SELECT and WHERE / expert ----
+
+// Working backwards: which numbers could replace the ? in the WHERE?
+function xThreshold(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(6, 9);
+    const t = makeTable(rng, theme, n, rng.int(2, 3));
+    const [K, C, N1, N2] = t.cols;
+    const col = rng.pick([N1, N2]);
+    const cat = rng.pick(t.cats);
+    const inCat = t.rows.filter((r) => r[C] === cat);
+    if (inCat.length < 3) continue;
+    const op = rng.pick([">", ">=", "<", "<="]);
+    const v0 = rng.pick(inCat.map((r) => r[col]));
+    const kept = inCat.filter((r) => CMP[op](r[col], v0));
+    const out = inCat.filter((r) => !CMP[op](r[col], v0));
+    if (!kept.length || !out.length) continue;
+    const I = kept.map((r) => r[col]);
+    const X = out.map((r) => r[col]);
+    const [lo, hi] = op === ">" ? [Math.max(...X), Math.min(...I) - 1]
+      : op === ">=" ? [Math.max(...X) + 1, Math.min(...I)]
+        : op === "<" ? [Math.max(...I) + 1, Math.min(...X)]
+          : [Math.max(...I), Math.min(...X) - 1];
+    if (lo >= hi) continue;
+    const sql = `SELECT ${K}\nFROM ${t.name}\nWHERE ${C} = '${cat}' AND ${col} ${op} ?;`;
+    const keys = keysOf(kept, K);
+    return {
+      prompt: buildPrompt([t], sql, `The \`?\` stands for a whole number. The query returned exactly these rows: **${alpha(keys)}**.`, []),
+      answerType: "multi",
+      parts: [
+        { id: "lo", label: "Smallest", ask: "What is the **smallest** whole number the `?` could be?", answerType: "number", answer: lo, tolerance: 0,
+          hint: `Only ${cat} rows matter. ${op.includes(">") ? "Every returned row must pass the test, and every other " + cat + " row must fail it." : "Every returned row must pass, and every other " + cat + " row must fail."}` },
+        { id: "hi", label: "Largest", ask: "What is the **largest** whole number the `?` could be?", answerType: "number", answer: hi, tolerance: 0,
+          hint: `Watch the boundary: ${op === ">" || op === "<" ? `${op} leaves out the value itself` : `${op} includes the value itself`}.` },
+      ],
+      explanation: `Only rows with ${C} = '${cat}' can be returned:\n\n- Returned: ${passList(t, kept, [col])}\n- Not returned: ${passList(t, out, [col])}\n\nFor \`${col} ${op} ?\` the returned values (${I.join(", ")}) must pass and the others (${X.join(", ")}) must fail, so ? can be any whole number from **${lo}** to **${hi}**.`,
+      params: { kind: "x-threshold", sql, tables: { [t.name]: rawTable(t) }, keys: alpha(keys), K },
+      hints: [
+        `Ignore rows whose ${C} isn't '${cat}': the AND removes them whatever ? is.`,
+        `Split the ${cat} rows into returned and not returned, and list their ${col} values.`,
+        "The ? must sit between the two groups. Try the values at the edges to see whether they still work.",
+      ],
+    };
+  }
+}
+
+// AND binds tighter than OR, with no brackets to help.
+function xPrecedence(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(6, 8);
+    const t = makeTable(rng, theme, n, rng.int(2, 4));
+    const [K] = t.cols;
+    const a = randCmp(rng, t, ["cat", "num"]);
+    let b, c;
+    do b = randCmp(rng, t, ["num", "cat"]); while (b.col === a.col);
+    do c = randCmp(rng, t, ["num", "cat"]); while (c.col === b.col);
+    const right = { t: "or", a, b: { t: "and", a: b, b: c } };
+    const wrongTree = { t: "and", a: { t: "or", a, b }, b: c };
+    const res = t.rows.filter((r) => genCond(r, right, {}));
+    const naive = t.rows.filter((r) => genCond(r, wrongTree, {}));
+    if (res.length < 1 || res.length >= n || alpha(keysOf(res, K)) === alpha(keysOf(naive, K))) continue;
+    const keys = keysOf(res, K);
+    const wrong = [alpha(keysOf(naive, K)), ...wrongSets(rng, t, right, keys)].filter((s) => s);
+    const ch = choicesFrom(alpha(keys), wrong, rng);
+    if (!ch) continue;
+    const sql = `SELECT ${K}\nFROM ${t.name}\nWHERE ${renderCond(a)} OR ${renderCond(b)} AND ${renderCond(c)};`;
+    const pass = (cond, r) => (genCond(r, cond, {}) ? "T" : "F");
+    return {
+      prompt: buildPrompt([t], sql, "Answer both parts.", [NOTE_PREC, NOTE_SET]),
+      answerType: "multi",
+      parts: [
+        { id: "rows", label: "Row count", ask: "How many rows does it return?", answerType: "number", answer: res.length, tolerance: 0,
+          hint: "In SQL, AND is worked out before OR, just like × before + in maths." },
+        { id: "which", label: "Rows returned", ask: `Which ${K} values does it return?`, answerType: "choice", ...ch,
+          hint: `Read it as \`${renderCond(a)} OR (${renderCond(b)} AND ${renderCond(c)})\`.` },
+      ],
+      explanation: `AND binds tighter than OR, so the condition means \`${renderCond(a)} OR (${renderCond(b)} AND ${renderCond(c)})\`.\n\n${t.rows.map((r) => `- ${r[K]}: ${pass(a, r)} OR (${pass(b, r)} AND ${pass(c, r)}) → ${genCond(r, right, {}) ? "**kept**" : "dropped"}`).join("\n")}\n\n**${res.length}** rows: **${alpha(keys)}**. (Reading it left to right, as \`(… OR …) AND …\`, would wrongly give ${alpha(keysOf(naive, K)) || "no rows"}.)`,
+      params: { kind: "x-plain", sql, tables: { [t.name]: rawTable(t) }, check: { parts: { rows: { type: "count" }, which: { type: "set", col: 0 } } } },
+      hints: [
+        "There are no brackets, so precedence decides: AND before OR.",
+        `Add the brackets yourself: \`${renderCond(a)} OR (${renderCond(b)} AND ${renderCond(c)})\`.`,
+        "For each row, work out the bracket (both parts true?), then OR it with the first test.",
+      ],
+    };
+  }
+}
+
+// ---- ORDER BY and LIMIT / expert ----
+
+function xPagination(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(8, 11);
+    const t = makeTable(rng, theme, n, rng.int(2, 3));
+    const [K, , N1, N2] = t.cols;
+    const col = rng.pick([N1, N2]);
+    const dir = rng.pick(["ASC", "DESC"]);
+    const k = rng.int(2, 4);
+    const page = rng.int(2, 3);
+    if ((page - 1) * k >= n) continue;
+    const base = `SELECT ${K}, ${col}\nFROM ${t.name}\nORDER BY ${col} ${dir}`;
+    const order = genRun({ select: [{ col: K }], from: t.name, orderBy: [{ col, dir }] }, { [t.name]: t }).map((r) => String(r[0]));
+    const pageRows = order.slice((page - 1) * k, page * k);
+    const right = `LIMIT ${k} OFFSET ${(page - 1) * k}`;
+    const cands = [`LIMIT ${k} OFFSET ${page * k}`, `LIMIT ${k} OFFSET ${page - 1}`, `LIMIT ${page * k} OFFSET ${k}`, `LIMIT ${k} OFFSET ${(page - 2) * k}`, `LIMIT ${(page - 1) * k} OFFSET ${k}`];
+    const pageOf = (cl) => { const m = /LIMIT (\d+) OFFSET (\d+)/.exec(cl); return order.slice(+m[2], +m[2] + +m[1]).join(","); };
+    const wrong = rng.shuffle(cands).filter((c) => c !== right && pageOf(c) !== pageRows.join(","));
+    const ch = choicesFrom(right, wrong, rng);
+    if (!ch) continue;
+    return {
+      prompt: `${mdTable(t)}\n\nAn app shows this query's results **${k} rows per page**, pages numbered from 1:\n\n\`\`\`sql\n${base}\n\`\`\`\n\n${NOTE} ${NOTE_OFFSET}`,
+      answerType: "multi",
+      parts: [
+        { id: "clause", label: "Clause", ask: `Which clause, added to the end, gives **page ${page}**?`, answerType: "choice", ...ch,
+          hint: `Page ${page} skips the rows of the ${page - 1} page${page === 2 ? "" : "s"} before it.` },
+        { id: "first", label: "First row", ask: `Which ${K} is the first row on page ${page}? Type it.`, answerType: "text", answer: pageRows[0],
+          hint: `Sort all rows by ${col} (${dir === "ASC" ? "smallest" : "largest"} first) and count past the earlier pages.` },
+      ],
+      explanation: `Page p starts after (p − 1) × ${k} rows, so page ${page} is **${right}**.\n\n- Sorted: ${order.join(", ")}\n- Skip ${(page - 1) * k}, take ${k}: ${pageRows.join(", ")}\n\nFirst row on page ${page}: **${pageRows[0]}**.`,
+      params: { kind: "x-page", base, tables: { [t.name]: rawTable(t) }, k, page },
+      hints: [
+        `LIMIT sets the page size (${k}); OFFSET says how many rows to skip first.`,
+        `Rows skipped before page ${page} = (${page} − 1) × ${k}.`,
+      ],
+    };
+  }
+}
+
+function xOrderBack(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(5, 7);
+    const t = makeTable(rng, theme, n, 2);
+    const [K, C, N1, N2] = t.cols;
+    const col = rng.pick([N1, N2]);
+    const d1 = rng.pick(["ASC", "DESC"]);
+    const d2 = rng.pick(["ASC", "DESC"]);
+    const T = { [t.name]: t };
+    const run = (ob) => genRun({ select: [{ col: K }], from: t.name, orderBy: ob }, T).map((r) => String(r[0])).join(", ");
+    const want = run([{ col: C, dir: d1 }, { col, dir: d2 }]);
+    const flip = (d) => (d === "ASC" ? "DESC" : "ASC");
+    const cl = (ob) => ob.map((o) => `${o.col} ${o.dir}`).join(", ");
+    const right = cl([{ col: C, dir: d1 }, { col, dir: d2 }]);
+    const cands = [
+      [{ col: C, dir: d1 }, { col, dir: flip(d2) }],
+      [{ col: C, dir: flip(d1) }, { col, dir: d2 }],
+      [{ col, dir: d2 }, { col: C, dir: d1 }],
+      [{ col, dir: d2 }],
+      [{ col: C, dir: flip(d1) }, { col, dir: flip(d2) }],
+    ].filter((ob) => run(ob) !== want).map(cl);
+    const ch = choicesFrom(right, rng.shuffle(cands), rng);
+    if (!ch) continue;
+    const shown = want.split(", ");
+    const sql = `SELECT ${K}\nFROM ${t.name}\nORDER BY ?;`;
+    return {
+      prompt: buildPrompt([t], sql, `The query returned the rows in this order: **${want}**. Which ORDER BY list replaces the \`?\`?`, ["Text sorts alphabetically (A to Z) with ASC."]),
+      answer: ch.answer,
+      answerType: "choice",
+      choices: ch.choices,
+      explanation: `In the result, rows with the same ${C} are together, ${d1 === "ASC" ? "A to Z" : "Z to A"}: the first key is **${C} ${d1}**. Inside each ${C}, ${col} goes ${d2 === "ASC" ? "up" : "down"}: the second key is **${col} ${d2}**.\n\n${shown.map((k2, i) => { const r = t.rows.find((x) => String(x[K]) === k2); return `${i + 1}. ${k2} (${r[C]}, ${r[col]})`; }).join("\n")}\n\nAnswer: **${right}**.`,
+      params: { kind: "x-orderback", tables: { [t.name]: rawTable(t) }, K, from: t.name, want },
+      hints: [
+        `Look up each returned row's ${C} and ${col}.`,
+        `Are rows with the same ${C} next to each other? Then ${C} is the first sort key; check whether it runs A to Z or Z to A.`,
+        `Within each ${C}, does ${col} go up or down? Then test the options against the full order.`,
+      ],
+    };
+  }
+}
+
+function xOrderCombo(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(7, 9);
+    const t = makeTable(rng, theme, n, rng.int(2, 3));
+    const [K, C, N1, N2] = t.cols;
+    const T = { [t.name]: t };
+    const col = rng.pick([N1, N2]);
+    const other = col === N1 ? N2 : N1;
+    const where = randCmp(rng, t, ["num"]);
+    if (where.col !== other) continue;
+    const d1 = rng.pick(["ASC", "DESC"]);
+    const d2 = rng.pick(["ASC", "DESC"]);
+    const k = rng.int(2, 4);
+    const off = rng.int(1, 3);
+    const q = { select: [{ col: K }], from: t.name, where, orderBy: [{ col: C, dir: d1 }, { col, dir: d2 }], limit: k, offset: off };
+    const res = genRun(q, T).map((r) => String(r[0]));
+    const passing = t.rows.filter((r) => genCond(r, where, T));
+    if (res.length < 1) continue;
+    const sorted = genRun({ ...q, limit: undefined, offset: undefined }, T).map((r) => String(r[0]));
+    return finishX({
+      tables: [t], q, notes: [NOTE_OFFSET, "Text sorts alphabetically (A to Z) with ASC."],
+      check: { parts: { rows: { type: "count" }, last: { type: "cell", row: res.length - 1, col: 0 } } },
+      parts: [
+        { id: "rows", label: "Row count", ask: "How many rows does it return?", answerType: "number", answer: res.length, tolerance: 0,
+          hint: `After WHERE, skip ${off} sorted row${off === 1 ? "" : "s"}; LIMIT ${k} is a maximum, so you may get fewer.` },
+        { id: "last", label: "Last row", ask: `Which ${K} is in the **last** row of the result? Type it.`, answerType: "text", answer: res[res.length - 1],
+          hint: `Sort by ${C} first, then by ${col} inside each ${C}.` },
+      ],
+      explanation: `WHERE, then ORDER BY, then OFFSET and LIMIT.\n\n- Rows passing \`${renderCond(where)}\`: ${passList(t, passing, [C, col])}\n- Sorted (${C} ${d1}, then ${col} ${d2}): ${sorted.join(", ")}\n- Skip ${off}, keep at most ${k}: ${res.join(", ")}\n\n**Row count:** **${res.length}**\n\n**Last row:** **${res[res.length - 1]}**`,
+      hints: ["The order of work is WHERE → ORDER BY → OFFSET → LIMIT.", `Two sort keys: ${C} decides first; ${col} only breaks ties within the same ${C}.`],
+    });
+  }
+}
+
+// ---- Aggregates / expert ----
+
+function xHiddenAvg(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(5, 8);
+    const t = makeTable(rng, theme, n, rng.int(2, 3));
+    const [K, C, N1, N2] = t.cols;
+    const col = rng.pick([N1, N2]);
+    const cat = rng.pick(t.cats);
+    const inCat = t.rows.filter((r) => r[C] === cat);
+    if (![2, 4, 5].includes(inCat.length) && !(inCat.length === 3 && rng.next() < 0.3)) continue;
+    const avg = aggOf({ agg: "AVG", col }, inCat);
+    if (Math.round(avg * 100) / 100 !== avg) continue; // shown exactly
+    const hid = rng.pick(inCat);
+    const missing = hid[col];
+    const total = aggOf({ agg: "SUM", col }, t.rows);
+    const shownT = { ...t, rows: t.rows.map((r) => (r === hid ? { ...r, [col]: "?" } : r)) };
+    const sql = `SELECT AVG(${col})\nFROM ${t.name}\nWHERE ${C} = '${cat}';`;
+    const others = inCat.filter((r) => r !== hid).map((r) => r[col]);
+    return {
+      prompt: buildPrompt([shownT], sql, `One value is hidden as **?**. This query returns exactly **${num(avg)}**.`, [NOTE_AVG]),
+      answerType: "multi",
+      parts: [
+        { id: "missing", label: "Hidden value", ask: "What is the hidden value?", answerType: "number", answer: missing, tolerance: 0,
+          hint: `AVG = sum ÷ count over the ${cat} rows, so their sum is ${num(avg)} × ${inCat.length}.` },
+        { id: "sum", label: `SUM(${col})`, ask: `With the hidden value filled in, what would \`SELECT SUM(${col}) FROM ${t.name};\` return?`, answerType: "number", answer: total, tolerance: 0,
+          hint: `No WHERE this time: add the ${col} of every row, including the one you found.` },
+      ],
+      explanation: `- ${cat} rows: ${inCat.length}, so their total is ${num(avg)} × ${inCat.length} = ${num(avg * inCat.length)}.\n- The visible ${cat} values add to ${others.reduce((s, x) => s + x, 0)}${others.length ? ` (${others.join(" + ")})` : ""}, so ? = ${num(avg * inCat.length)} − ${others.reduce((s, x) => s + x, 0)} = **${missing}**.\n- SUM over the whole table: ${t.rows.map((r) => r[col]).join(" + ")} = **${total}**.`,
+      params: { kind: "x-hidden", tables: { [t.name]: rawTable(shownT) }, name: t.name, col, avg, sumSql: `SELECT SUM(${col})\nFROM ${t.name};`, sql },
+      hints: [
+        "Work backwards: an average times the number of rows gives their total.",
+        `Count the ${cat} rows, multiply by ${num(avg)}, then take away the ${cat} values you can see.`,
+      ],
+    };
+  }
+}
+
+function xSubAgg(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(6, 8);
+    const t = makeTable(rng, theme, n, rng.int(2, 3));
+    const [K, C, N1, N2] = t.cols;
+    const T = { [t.name]: t };
+    const [a, b] = rng.shuffle([N1, N2]);
+    const op = rng.pick([">", "<"]);
+    const where = { t: "sub", col: a, op, agg: "AVG", aggCol: a, from: t.name };
+    const avg = aggOf({ agg: "AVG", col: a }, t.rows);
+    if (t.rows.some((r) => r[a] === avg)) continue;
+    const rows = t.rows.filter((r) => genCond(r, where, T));
+    const dist = new Set(rows.map((r) => r[C])).size;
+    if (rows.length < 2 || rows.length === n || dist === rows.length) continue;
+    const ext = op === ">" ? "MIN" : "MAX";
+    const q = { select: [{ agg: "COUNT", star: true }, { agg: "COUNT", distinct: true, col: C }, { agg: ext, col: b }], from: t.name, where };
+    const res = genRun(q, T)[0];
+    return finishX({
+      tables: [t], q, notes: [NOTE_AVG],
+      check: { parts: { count: { type: "cell", row: 0, col: 0 }, dist: { type: "cell", row: 0, col: 1 }, ext: { type: "cell", row: 0, col: 2 } } },
+      parts: [
+        { id: "count", label: "COUNT(*)", ask: "First column", answerType: "number", answer: res[0], tolerance: 0,
+          hint: `The subquery is the mean ${a} of the whole table. Count the rows ${op === ">" ? "above" : "below"} it.` },
+        { id: "dist", label: `COUNT(DISTINCT ${C})`, ask: "Second column", answerType: "number", answer: res[1], tolerance: 0,
+          hint: `Among those rows, count each different ${C} once.` },
+        { id: "ext", label: `${ext}(${b})`, ask: "Third column", answerType: "number", answer: res[2], tolerance: 0,
+          hint: `Among those rows, take the ${ext === "MIN" ? "smallest" : "largest"} ${b}. Note it's a different column from the one in WHERE.` },
+      ],
+      explanation: `- Subquery: AVG(${a}) = (${t.rows.map((r) => r[a]).join(" + ")}) ÷ ${n} ≈ ${num(avg)}\n- Rows with ${a} ${op} ${num(avg)}: ${passList(t, rows, [a, C, b])}\n\n**COUNT(*):** **${res[0]}**\n\n**COUNT(DISTINCT ${C}):** **${res[1]}**\n\n**${ext}(${b}):** **${res[2]}**`,
+      hints: ["Run the subquery first: it gives one number for the whole table.", "All three columns then use only the rows that passed the WHERE."],
+    });
+  }
+}
+
+// ---- GROUP BY and JOIN / expert ----
+
+function xJoinHaving(rng) {
+  for (;;) {
+    const { J, L, R } = makeJoinTables(rng);
+    const T = { [L.name]: L, [R.name]: R };
+    const [, fk, val] = J.lcols.map((c) => `${L.name}.${c}`);
+    const [rk, rn] = J.rcols.map((c) => `${R.name}.${c}`);
+    const join = { table: R.name, on: [fk, rk] };
+    const base = baseRows({ from: L.name, join }, T);
+    const groups = {};
+    base.forEach((r) => (groups[r[rn]] ||= []).push(r));
+    const names = Object.keys(groups);
+    if (names.length < 3) continue;
+    const sums = names.map((g) => aggOf({ agg: "SUM", col: val }, groups[g])).sort((x, y) => x - y);
+    const i = rng.int(0, sums.length - 2);
+    const v = rng.next() < 0.5 ? sums[i] : Math.floor((sums[i] + sums[i + 1]) / 2);
+    const hv = { agg: "SUM", col: val, op: rng.pick([">", ">="]), v };
+    const q = { select: [{ col: rn }, { agg: "COUNT", star: true }], from: L.name, join, groupBy: rn, having: hv };
+    const res = genRun(q, T);
+    const kept = res.map((r) => String(r[0]));
+    if (!kept.length || kept.length === names.length) continue;
+    const keepWith = (h) => alpha(names.filter((g) => CMP[h.op](aggOf(h, groups[g]), h.v)));
+    const allR = R.rows.map((r) => r[J.rcols[1]]);
+    const wrong = [keepWith({ ...hv, op: FLIP[hv.op] }), alpha(names.filter((g) => !kept.includes(g))), alpha(names), alpha([...kept, ...allR.filter((x) => !names.includes(x)).slice(0, 1)]), alpha(kept.slice(1))];
+    const ch = choicesFrom(alpha(kept), wrong.filter((s) => s), rng);
+    if (!ch) continue;
+    return finishX({
+      tables: [L, R], q, notes: [NOTE_SET],
+      check: { parts: { rows: { type: "count" }, which: { type: "set", col: 0 } } },
+      parts: [
+        { id: "rows", label: "Row count", ask: "How many rows does it return?", answerType: "number", answer: kept.length, tolerance: 0,
+          hint: "JOIN first (rows with no match disappear), then group, then HAVING keeps or drops whole groups." },
+        { id: "which", label: "Groups kept", ask: `Which ${J.rcols[1]} values does it return?`, answerType: "choice", ...ch,
+          hint: `For each ${J.rcols[1]}, add the ${J.lcols[2]} of its joined rows and compare with ${v}.` },
+      ],
+      explanation: `Join, group by ${J.rcols[1]}, then keep groups where SUM(${J.lcols[2]}) ${hv.op} ${v}.\n\n${names.slice().sort().map((g) => `- ${g}: ${groups[g].map((r) => r[val]).join(" + ")} = ${aggOf(hv, groups[g])}${CMP[hv.op](aggOf(hv, groups[g]), v) ? " (kept)" : ""}`).join("\n")}${allR.some((x) => !names.includes(x)) ? `\n- ${allR.filter((x) => !names.includes(x)).join(", ")}: no matching ${L.name} rows, so no group at all` : ""}\n\n**Row count:** **${kept.length}**\n\n**Groups kept:** **${alpha(kept)}**`,
+      hints: [
+        `Match each ${L.name} row's ${J.lcols[1]} with ${R.name}.${J.rcols[0]}; unmatched rows drop out.`,
+        "A name with no matching rows makes no group, so it can never appear in the result.",
+        `HAVING SUM(${J.lcols[2]}) ${hv.op} ${v} is tested on each group's total, not on single rows.`,
+      ],
+    });
+  }
+}
+
+function xWhereGroup(rng) {
+  for (;;) {
+    const theme = randomTheme(rng);
+    const n = rng.int(7, 9);
+    const t = makeTable(rng, theme, n, rng.int(2, 4));
+    const [K, C, N1, N2] = t.cols;
+    const T = { [t.name]: t };
+    const [a, b] = rng.shuffle([N1, N2]);
+    const vals = t.rows.map((r) => r[b]).sort((x, y) => x - y);
+    const where = { t: "cmp", col: b, op: rng.pick([">", "<"]), v: vals[rng.int(1, vals.length - 2)] };
+    const q = { select: [{ col: C }, { agg: "AVG", col: a }], from: t.name, where, groupBy: C, having: { agg: "COUNT", star: true, op: ">=", v: 2 } };
+    const res = genRun(q, T);
+    if (res.length < 1) continue;
+    const passing = t.rows.filter((r) => genCond(r, where, T));
+    const pg = {};
+    passing.forEach((r) => (pg[r[C]] ||= []).push(r));
+    const dropped = Object.keys(pg).filter((g) => pg[g].length < 2);
+    if (!dropped.length && rng.next() < 0.6) continue;
+    const pick = rng.pick(res);
+    if (nearTie(pick[1])) continue;
+    return finishX({
+      tables: [t], q, notes: [NOTE_AVG],
+      check: { parts: { rows: { type: "count" }, val: { type: "group", key: pick[0], col: 1, round: true } } },
+      parts: [
+        { id: "rows", label: "Row count", ask: "How many rows does it return?", answerType: "number", answer: res.length, tolerance: 0,
+          hint: "WHERE removes rows before grouping; HAVING then removes whole groups with fewer than 2 rows." },
+        { id: "val", label: `AVG for ${pick[0]}`, ask: `What number appears next to **${pick[0]}**? Round to 2 decimal places.`, answerType: "number", answer: round2(pick[1]), tolerance: 0.005,
+          hint: `Average the ${a} of the ${pick[0]} rows that passed the WHERE only.` },
+      ],
+      explanation: `WHERE first, then GROUP BY, then HAVING.\n\n- Rows passing \`${renderCond(where)}\`: ${passList(t, passing, [C, a])}\n${Object.keys(pg).sort().map((g) => `- ${g}: ${pg[g].length} row${pg[g].length === 1 ? "" : "s"}${pg[g].length >= 2 ? `, AVG(${a}) = (${pg[g].map((r) => r[a]).join(" + ")}) ÷ ${pg[g].length} ≈ ${num(aggOf({ agg: "AVG", col: a }, pg[g]))}` : " → dropped by HAVING"}`).join("\n")}\n\n**Row count:** **${res.length}**\n\n**AVG for ${pick[0]}:** **${round2(pick[1]).toFixed(2)}**`,
+      hints: ["WHERE filters rows; HAVING filters groups. Do them in that order.", `Group the surviving rows by ${C} and count each group before averaging.`],
+    });
+  }
+}
+
+function xJoinSub(rng) {
+  for (;;) {
+    const { J, L, R } = makeJoinTables(rng);
+    const T = { [L.name]: L, [R.name]: R };
+    const [, fk, val] = J.lcols.map((c) => `${L.name}.${c}`);
+    const [rk, rn] = J.rcols.map((c) => `${R.name}.${c}`);
+    const join = { table: R.name, on: [fk, rk] };
+    const avg = aggOf({ agg: "AVG", col: J.lcols[2] }, L.rows);
+    if (L.rows.some((r) => r[J.lcols[2]] === avg)) continue;
+    const where = { t: "sub", col: val, op: rng.pick([">", "<"]), agg: "AVG", aggCol: J.lcols[2], from: L.name };
+    const q = { select: [{ col: rn }, { agg: "COUNT", star: true }], from: L.name, join, where, groupBy: rn };
+    const res = genRun(q, T);
+    if (res.length < 2) continue;
+    const target = rng.pick(res);
+    const joined = baseRows({ from: L.name, join }, T);
+    return finishX({
+      tables: [L, R], q, notes: [NOTE_AVG],
+      check: { parts: { rows: { type: "count" }, count: { type: "group", key: target[0], col: 1 } } },
+      parts: [
+        { id: "rows", label: "Result rows", ask: "How many rows does the query return?", answerType: "number", answer: res.length, tolerance: 0,
+          hint: `The subquery averages ${J.lcols[2]} over the **whole** ${L.name} table, including rows that won't join.` },
+        { id: "count", label: `Count for ${target[0]}`, ask: `What number appears next to ${target[0]}?`, answerType: "number", answer: target[1], tolerance: 0,
+          hint: `Count ${target[0]}'s joined rows whose ${J.lcols[2]} passes the WHERE.` },
+      ],
+      explanation: `- Subquery: AVG(${J.lcols[2]}) over all ${L.rows.length} ${L.name} rows = ${num(avg)}\n- Joined rows passing \`${renderCond(where)}\`: ${joined.filter((r) => genCond(r, where, T)).map((r) => `${r[`${L.name}.${J.lcols[0]}`]} (${r[rn]}, ${r[val]})`).join("; ")}\n\nGrouped by ${J.rcols[1]}: ${res.map((r) => `${r[0]} ${r[1]}`).join(", ")}.\n\n**Result rows:** **${res.length}**\n\n**Count for ${target[0]}:** **${target[1]}**`,
+      hints: ["Order of work: subquery → JOIN → WHERE → GROUP BY.", `Unmatched ${L.name} rows still count in the subquery's average, but they never reach the result.`],
+    });
+  }
+}
+
+function genExpert(subtopic, rng) {
+  const t = rng.int(0, 2);
+  if (subtopic === "select-where") return rng.next() < 0.5 ? xThreshold(rng) : xPrecedence(rng);
+  if (subtopic === "order-limit") return t === 0 ? xPagination(rng) : t === 1 ? xOrderBack(rng) : xOrderCombo(rng);
+  if (subtopic === "aggregates") return rng.next() < 0.5 ? xHiddenAvg(rng) : xSubAgg(rng);
+  if (subtopic === "group-join") return t === 0 ? xJoinHaving(rng) : t === 1 ? xWhereGroup(rng) : xJoinSub(rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- expert verification: fill the gap, run execSql ----
+
+const xget = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+const sameSet = (res, keys) => res.map((r) => String(r[0])).sort().join(", ") === keys;
+
+function verifyExpert(p, question, answer) {
+  if (p.kind === "x-plain") {
+    const res = execSql(p.sql, p.tables);
+    for (const part of question.parts) {
+      const c = p.check.parts[part.id];
+      const a = xget(answer, part.id);
+      if (!c || a === "" || a === null || a === undefined) return false;
+      if (part.answerType === "choice" ? !checkChoice(res, c, part.choices, a) : !checkOne(res, c, a)) return false;
+    }
+    return true;
+  }
+  if (p.kind === "x-threshold") {
+    // Scan whole numbers well past every value in the table; the fits must form one run.
+    const all = Object.values(p.tables)[0].rows.flat().filter((x) => typeof x === "number");
+    const fits = [];
+    // The tokenizer has no negative numbers; every value is at least 0, so start no lower than 0.
+    const L = Math.max(0, Math.min(...all) - 5);
+    for (let v = L; v <= Math.max(...all) + 5; v++) {
+      if (sameSet(execSql(p.sql.replace("?", String(v)), p.tables), p.keys)) fits.push(v);
+    }
+    if (!fits.length || fits[fits.length - 1] - fits[0] + 1 !== fits.length) return false;
+    if ((L > 0 && fits[0] === L) || fits[fits.length - 1] === Math.max(...all) + 5) return false;
+    const lo = Number(xget(answer, "lo")), hi = Number(xget(answer, "hi"));
+    return String(xget(answer, "lo") ?? "").trim() !== "" && lo === fits[0] && hi === fits[fits.length - 1];
+  }
+  if (p.kind === "x-page") {
+    const full = execSql(`${p.base};`, p.tables).map((r) => String(r[0]));
+    const want = full.slice((p.page - 1) * p.k, p.page * p.k);
+    const part = question.parts.find((x) => x.id === "clause");
+    const ch = part && part.choices;
+    if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
+    const ok = ch.filter((c) => execSql(`${p.base}\n${c};`, p.tables).map((r) => String(r[0])).join(",") === want.join(","));
+    if (ok.length !== 1 || ok[0] !== String(xget(answer, "clause"))) return false;
+    return String(xget(answer, "first") ?? "").trim().toLowerCase() === String(want[0]).toLowerCase();
+  }
+  if (p.kind === "x-orderback") {
+    const ch = question.choices;
+    if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
+    const ok = ch.filter((c) => execSql(`SELECT ${p.K}\nFROM ${p.from}\nORDER BY ${c};`, p.tables).map((r) => String(r[0])).join(", ") === p.want);
+    return ok.length === 1 && ok[0] === String(answer);
+  }
+  if (p.kind === "x-hidden") {
+    const x = Number(xget(answer, "missing"));
+    if (!Number.isInteger(x) || String(xget(answer, "missing") ?? "").trim() === "") return false;
+    const t = p.tables[p.name];
+    const ci = t.cols.indexOf(p.col);
+    const filled = { [p.name]: { cols: t.cols, rows: t.rows.map((r) => r.map((v, i) => (i === ci && v === "?" ? x : v))) } };
+    const vals = filled[p.name].rows.map((r) => r[ci]);
+    if (new Set(vals).size !== vals.length) return false;
+    const avg = execSql(p.sql, filled)[0][0];
+    if (Math.abs(avg - p.avg) > 1e-9) return false;
+    return Number(xget(answer, "sum")) === execSql(p.sumSql, filled)[0][0] && String(xget(answer, "sum") ?? "").trim() !== "";
+  }
+  return false;
 }

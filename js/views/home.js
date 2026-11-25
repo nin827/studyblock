@@ -1,4 +1,4 @@
-import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares } from '../lib/engine.js';
+import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup } from '../lib/engine.js';
 import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, MIX_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
 import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
@@ -61,6 +61,9 @@ export async function render(root, params, ctx) {
   }
   let official = [];
   try { official = await loadOfficialPresets(); } catch (e) { console.warn(e); }
+  // Titles of archived modules, for old attempts in "Recent" (archived modules are never loaded).
+  let archived = new Map();
+  try { archived = await loadArchived(); } catch (e) { console.warn(e); }
   if (!ctx.alive()) return;
   const draft = loadMixDraft();
   const quick = [...official, ...getPresets()];
@@ -69,7 +72,7 @@ export async function render(root, params, ctx) {
   const modules = domains.flatMap(d => d.loaded);
   const modById = new Map(modules.map(m => [m.id, m]));
   const domainOfModule = new Map(domains.flatMap(d => d.modules.map(mid => [mid, d])));
-  const modTitle = id => String(modById.get(id)?.title ?? id);
+  const modTitle = titleLookup(modules, archived);
   const subTitle = (mid, sid) => subtopicLabel(sid, modById.get(mid)?.subtopics.find(s => s.id === sid)?.title);
 
   // ---- continue card ----
@@ -170,10 +173,10 @@ export async function render(root, params, ctx) {
     if (isMix) {
       const ds = new Set(a.questions.map(q => domainOfModule.get(q.module)?.id).filter(Boolean));
       chip = tag('Mix', 'tag-mix');
-      title = `Mixed quiz · ${ds.size} domain${ds.size === 1 ? '' : 's'} · ${a.difficulty === 'any' ? 'Any' : cap(a.difficulty)}`;
+      title = `Mixed quiz · ${ds.size} domain${ds.size === 1 ? '' : 's'} · ${a.difficulty === 'any' ? 'Any' : difficultyLabel(a.difficulty)}`;
     } else {
       const d = domainOfModule.get(a.module);
-      chip = tag(d ? d.title : 'Other', domClass(d?.id));
+      chip = tag(d ? d.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(d?.id));
       title = `${modTitle(a.module)} · ${subTitle(a.module, a.subtopic)} · ${difficultyLabel(a.difficulty)}`;
     }
     return `<li>${chip}<span class="recent-title">${esc(title)}</span>

@@ -24,3 +24,6 @@ Practise the arithmetic behind IPv4 networks: reading addresses in binary, worki
 | Easy | Single octets and address classes, common prefixes (/8, /16, /24 to /30), subnets on /8, /16 and /24, whole-number transfer times |
 | Medium | Whole addresses in binary, private or public, any prefix from /9 to /30, counting subnets, mixed units rounded to 2 decimal places |
 | Hard | Addresses near range boundaries, prefixes from /1 to /30, wildcard masks, borrowing bits, 1024-based sizes and overhead, questions with several parts |
+| Expert | Addresses as one 32-bit number or 8 hex digits, ANDing with the mask, VLSM plans, summary routes, working back from a broadcast address, numbered subnets, gateway checks, choosing a link speed, store-and-forward and courier comparisons |
+
+A hex address is typed as exactly 8 hex digits with leading zeros and no `0x`, like `0A000001` for 10.0.0.1. A whole 32-bit number is typed without commas.

@@ -40,5 +40,8 @@ A café sells coffee for $4.50 a cup. Each cup costs $1.20 in variable costs, an
 | Easy | Round numbers, whole-number answers, about 2 steps |
 | Medium | Prices with cents, rounding up to whole units, about 3 steps |
 | Hard | Target profits, churn, NPV over 3 years, EOQ costs, hiring payback, 3–4 steps with 2-decimal answers |
+| Expert | Multi-part cases that combine ideas or work backwards from a goal: see below |
+
+**Expert** cases are all multi-part and need more setting up. You work **backwards** from a goal (the lowest price that hits a profit target, the highest churn investors accept, the yearly inflow that makes NPV zero, the order cost an EOQ implies, the sales a hire must bring in), or combine two ideas: margin of safety and operating leverage, a two-product sales mix, blended versus per-channel CAC, two projects with different lives and resale values, discounted payback, a price change against expected sales, a special order with limited capacity, a bulk discount versus the EOQ, and an employee versus a contractor.
 
 **Tip:** store each given value in its own row (`_price`, `_fixed`, …) and build later rows from those labels. If you mistype a number, fix that one row and every row after it updates. Rows also carry over to the next question. Each prompt says how to round: "round up to whole units" means `ceil`, and "2 decimal places" accepts answers within 0.005. Type percents and ratios as plain numbers: `25` for 25%, `3.5` for 3.5:1.

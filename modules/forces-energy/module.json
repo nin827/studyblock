@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "forces", "title": "Forces", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "work-power", "title": "Work & power", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "energy", "title": "Energy", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "momentum", "title": "Momentum", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "forces", "title": "Forces", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "work-power", "title": "Work & power", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "energy", "title": "Energy", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "momentum", "title": "Momentum", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

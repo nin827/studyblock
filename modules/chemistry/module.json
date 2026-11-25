@@ -6,9 +6,9 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "moles", "title": "Moles and molar mass", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "concentration", "title": "Concentration and dilution", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "balancing", "title": "Balancing equations", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "composition", "title": "Percent composition and formulae", "difficulties": ["medium", "hard"] }
+    { "id": "moles", "title": "Moles and molar mass", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "concentration", "title": "Concentration and dilution", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "balancing", "title": "Balancing equations", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "composition", "title": "Percent composition and formulae", "difficulties": ["medium", "hard", "expert"] }
   ]
 }

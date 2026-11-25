@@ -393,6 +393,12 @@ svg.icon, .icon svg { stroke-width: 2; }
 .tag[class*="dom-"] { background: var(--dom-bg); color: var(--dom-fg); }
 .tag-mix { background: var(--ink); color: var(--paper); }
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Expert difficulty: flame icon + label, accent ink with an accent outline (themed via the accent tokens) */
+.tag-expert { background: var(--accent-soft); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.tag-expert .icon, .diff-expert .icon { width: 14px; height: 14px; flex-shrink: 0; }
+.diff-expert { display: inline-flex; align-items: center; gap: 4px; color: var(--accent-ink); font-weight: 700; white-space: nowrap; }
+.quiz-title .diff-expert { font-weight: inherit; }
+.quiz-title .diff-expert .icon { width: 0.9em; height: 0.9em; }
 
 /* status pill with dot */
 .status-pill {
@@ -802,6 +808,8 @@ a.chip-main { text-decoration: none; }
   background: var(--accent-soft); color: var(--accent-ink);
 }
 .part-label { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent-ink); }
+/* Short labels are usually a variable name (b, k, x1): keep their case so b never reads as B. */
+.part-label.keep-case { text-transform: none; letter-spacing: 0; font-family: var(--mono); }
 .part-ask { display: block; margin: 0; font-size: 15px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
 .part .answer-input { min-height: 50px; font-size: 18px; }
 .part-choices .choice { min-height: 48px; background: var(--surface); }

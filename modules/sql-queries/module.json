@@ -7,9 +7,9 @@
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [
-    { "id": "select-where", "title": "SELECT and WHERE", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "order-limit", "title": "ORDER BY and LIMIT", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "aggregates", "title": "Aggregates", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "group-join", "title": "GROUP BY and JOIN", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "select-where", "title": "SELECT and WHERE", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "order-limit", "title": "ORDER BY and LIMIT", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "aggregates", "title": "Aggregates", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "group-join", "title": "GROUP BY and JOIN", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

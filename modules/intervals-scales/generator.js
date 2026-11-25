@@ -556,9 +556,431 @@ function genKeys(difficulty, rng) {
   };
 }
 
+// ---------------------------------------------------------------- Expert
+//
+// A separate branch: generate() sends "expert" here before anything else, so easy/medium/hard
+// never consume extra rng draws. Hints use only values already drawn (no rng calls).
+// The calculator is off for this module, so there are no `given` rows.
+
+// One everyday spelling of a pitch class: the natural if there is one, else the black key with
+// the preferred accidental (1 sharp, -1 flat).
+const spellPc = (p, pref) => NATURALS.find((m) => pc(m) === p) || BLACK.find((m) => pc(m) === p && m.a === pref);
+
+// Choices that are checked by pitch: the answer plus candidates, at most one spelling per pitch.
+function pitchChoices(rng, ans, cands) {
+  const seen = new Set([pc(ans)]);
+  const uniq = [];
+  for (const m of cands) {
+    if (!m || !plain(m)) continue;
+    const p = pc(m);
+    if (!seen.has(p)) { seen.add(p); uniq.push(fmt(m)); }
+  }
+  return fourChoices(rng, fmt(ans), uniq);
+}
+
+// The note `num` letter names below `top` that makes the given interval up to it (BUILD side).
+function noteBelow(top, num, quality) {
+  const base = note(top.l - (num - 1), 0);
+  return note(base.l, top.a - noteAbove(base, num, quality).a);
+}
+
+// Walk of keys from x, for explanations: "E♯ (F) → F♯ → G".
+const keyWalk = (x, n, dir, pref) => Array.from({ length: n + 1 }, (_, i) => (i === 0 ? fmt(x) : fmt(spellPc(((pc(x) + dir * i) % 12 + 12) % 12, pref))));
+const sameKeyNote = (x) => {
+  const s = spellPc(pc(x), x.a < 0 ? -1 : 1);
+  return sameNote(s, x) ? '' : ` (the same key as ${fmt(s)})`;
+};
+
+function genNotesExpert(rng) {
+  const kind = rng.pick(['path', 'back', 'letter']);
+
+  if (kind === 'path') {
+    // Up a semitones, then down b: name the note after each leg (any spelling of the right key).
+    const x = rng.pick(ALL_PLAIN);
+    const up = rng.int(3, 9);
+    let down;
+    do down = rng.int(2, 8); while (down === up);
+    const midPc = (pc(x) + up) % 12;
+    const endPc = (midPc - down + 12) % 12;
+    const mid = spellPc(midPc, 1);
+    const end = spellPc(endPc, -1);
+    const midC = pitchChoices(rng, mid, [spellPc((midPc + 1) % 12, 1), spellPc((midPc + 11) % 12, 1), spellPc((pc(x) + 12 - up) % 12, 1), spellPc((midPc + 2) % 12, 1)]);
+    const endC = pitchChoices(rng, end, [spellPc((midPc + down) % 12, -1), spellPc((endPc + 1) % 12, -1), spellPc((endPc + 11) % 12, -1), spellPc((pc(x) - down + 12) % 12, -1)]);
+    if (!midC || !endC) return genNotesExpert(rng);
+    const net = up - down;
+    return {
+      prompt: `Start on ${fmt(x)}. Go up ${semis(up)}, then down ${semis(down)}.`,
+      answerType: 'multi',
+      parts: [
+        { id: 'mid', label: 'After going up', ask: `Which note are you on after going up ${semis(up)}?`, answerType: 'choice', answer: fmt(mid), choices: midC,
+          hint: `Move up one key at a time from ${fmt(x)}${sameKeyNote(x)}, black or white, ${up} times.` },
+        { id: 'end', label: 'Finish', ask: `Which note do you finish on after coming down ${semis(down)}?`, answerType: 'choice', answer: fmt(end), choices: endC,
+          hint: `From the note you reached, count ${down} keys down. Or go straight from ${fmt(x)}: up ${up} then down ${down} is the same as ${net > 0 ? `up ${semis(net)}` : `down ${semis(-net)}`}.` },
+      ],
+      explanation: `Count keys, black and white. Any spelling of the right key counts.\n\n- Up ${up}: ${keyWalk(x, up, 1, 1).join(' → ')}, so you reach **${fmt(mid)}**.\n- Down ${down}: ${keyWalk(mid, down, -1, -1).join(' → ')}, so you finish on **${fmt(end)}**.\n\nCheck: up ${up} and down ${down} is ${net > 0 ? `up ${semis(net)}` : `down ${semis(-net)}`} overall from ${fmt(x)}.`,
+      hints: [
+        `Start on ${fmt(x)}${sameKeyNote(x)} and do the two moves one at a time.`,
+        'Each move to the very next key, black or white, is one semitone. E–F and B–C have no black key between them.',
+      ],
+      params: { multi: true, parts: { mid: { kind: 'semis-from', from: fmt(x), n: up, up: true }, end: { kind: 'semis-path', from: fmt(x), up, down } } },
+    };
+  }
+
+  if (kind === 'back') {
+    // Working backwards: which note is n semitones below y?
+    const y = rng.pick(ALL_PLAIN);
+    const n = rng.int(3, 11);
+    const pref = y.a < 0 ? -1 : 1;
+    const ansPc = (pc(y) - n + 12) % 12;
+    const ans = spellPc(ansPc, pref);
+    const choices = pitchChoices(rng, ans, [spellPc((pc(y) + n) % 12, pref), spellPc((ansPc + 1) % 12, pref), spellPc((ansPc + 11) % 12, pref), spellPc((ansPc + 2) % 12, pref)]);
+    if (!choices) return genNotesExpert(rng);
+    return {
+      prompt: `${fmt(y)} is ${semis(n)} above which note? (Any spelling of the right key counts; only one option is that key.)`,
+      answer: fmt(ans), answerType: 'choice', choices,
+      explanation: `Work backwards: count ${n} keys **down** from ${fmt(y)}${sameKeyNote(y)}.\n\n${keyWalk(y, n, -1, pref).join(' → ')}\n\nSo ${fmt(y)} is ${semis(n)} above **${fmt(ans)}**. Check: going up 12 − ${n} = ${12 - n} from ${fmt(y)} lands on the same key an octave higher.`,
+      hints: [
+        `"${fmt(y)} is ${n} above the note" means the note is ${n} below ${fmt(y)}. Count downwards, not upwards.`,
+        `Counting ${n} keys down is the same as counting ${12 - n} keys up (an octave is 12).${sameKeyNote(y) ? ` Start from ${fmt(y)}${sameKeyNote(y)}.` : ''}`,
+      ],
+      params: { check: { kind: 'semis-from', from: fmt(y), n, up: false } },
+    };
+  }
+
+  // letter: n semitones above x, spelled with a given letter (unusual spellings like E♯, C♭ included).
+  const x = rng.pick(ALL_PLAIN);
+  const n = rng.int(1, 11);
+  const t = (pc(x) + n) % 12;
+  const spellings = ALL_PLAIN.filter((m) => pc(m) === t);
+  const ans = spellings.length > 1 ? rng.pick(spellings) : spellings[0];
+  const others = spellings.filter((m) => !sameNote(m, ans));
+  const cands = [note(ans.l, -1), note(ans.l, 0), note(ans.l, 1), ...others, ...others.flatMap((m) => [note(m.l, m.a - 1), note(m.l, m.a + 1)]), note(ans.l + 1, 0), note(ans.l - 1, 0)]
+    .filter((m) => plain(m) && !sameNote(m, ans)).map(fmt);
+  const choices = fourChoices(rng, fmt(ans), cands);
+  if (!choices) return genNotesExpert(rng);
+  const L = LETTERS[ans.l];
+  return {
+    prompt: `Which note is ${semis(n)} above ${fmt(x)}, written with the letter ${L}?`,
+    answer: fmt(ans), answerType: 'choice', choices,
+    explanation: `First find the key: ${keyWalk(x, n, 1, 1).join(' → ')}.\n\nThen name that key with the letter ${L}: ${ans.a === 0 ? `it is the white key ${L} itself` : `it is one semitone ${ans.a > 0 ? 'above' : 'below'} ${L}`}, so the answer is **${fmt(ans)}**.${others.length ? ` (${others.map(fmt).join(' or ')} is the same key with a different letter.)` : ''}`,
+    hints: [
+      `Find the key first: count ${n} keys up from ${fmt(x)}${sameKeyNote(x)}, black and white.`,
+      `Now name that key using the letter ${L}: it is either the white key ${L}, one semitone above it (♯) or one semitone below it (♭). Remember E–F and B–C have no black key between them.`,
+    ],
+    params: { check: { kind: 'letter-spell', from: fmt(x), n, letter: L } },
+  };
+}
+
+// Every non-octave interval, augmented and diminished included (no zero-size dim 2nd / 12-semitone aug 7th).
+const EXPERT_INTERVALS = [
+  [2, 'minor'], [2, 'major'], [2, 'augmented'], [3, 'minor'], [3, 'major'], [3, 'diminished'],
+  [4, 'perfect'], [4, 'augmented'], [4, 'diminished'], [5, 'perfect'], [5, 'diminished'], [5, 'augmented'],
+  [6, 'minor'], [6, 'major'], [6, 'augmented'], [7, 'minor'], [7, 'major'], [7, 'diminished'],
+];
+const INVERT_Q = { major: 'minor', minor: 'major', perfect: 'perfect', augmented: 'diminished', diminished: 'augmented' };
+const COMPOUND = [[9, 'minor'], [9, 'major'], [9, 'augmented'], [10, 'minor'], [10, 'major'], [11, 'perfect'], [11, 'augmented'], [12, 'perfect'], [12, 'diminished'], [13, 'minor'], [13, 'major']];
+const compName = (num, q) => `${q} ${num}th`;
+const qualityWords = 'One semitone smaller than major is minor; one larger than major or perfect is augmented; one smaller than minor or perfect is diminished.';
+
+function genIntervalsExpert(rng) {
+  const kind = rng.pick(['below', 'invert', 'compound']);
+
+  if (kind === 'below') {
+    const [num, quality] = rng.pick(EXPERT_INTERVALS);
+    const top = rng.pick(ALL_PLAIN);
+    const root = noteBelow(top, num, quality);
+    if (!plain(root)) return genIntervalsExpert(rng);
+    const name = intervalName(num, quality);
+    const size = intervalSize(num, quality);
+    const cands = [noteAbove(top, num, quality), ...enharmonics(root), note(root.l, root.a + 1), note(root.l, root.a - 1)]
+      .filter((m) => plain(m) && !sameNote(m, root)).map(fmt);
+    const choices = fourChoices(rng, fmt(root), cands);
+    if (!choices) return genIntervalsExpert(rng);
+    const letters = Array.from({ length: num }, (_, i) => LETTERS[(root.l + i) % 7]);
+    return {
+      prompt: `${fmt(top)} is ${art(name)} above which note?`,
+      answer: fmt(root), answerType: 'choice', choices,
+      explanation: `Work downwards from ${fmt(top)}.\n\n- Letter: ${art(name)} spans ${num} letter names (${letters.join(', ')}), so the lower note uses the letter ${LETTERS[root.l]}.\n- Size: ${art(name)} is ${semis(size)}. The note on ${LETTERS[root.l]} that is ${semis(size)} below ${fmt(top)} is **${fmt(root)}**.\n\nCheck: ${fmt(root)} up to ${fmt(top)} spans ${num} letters and ${semis(size)}: ${art(name)}.`,
+      hints: [
+        `Work downwards: count ${num} letter names down from ${LETTERS[top.l]}, calling ${LETTERS[top.l]} number ${num}. That gives the letter of the lower note.`,
+        `${cap(art(name))} spans ${semis(size)}. Count that many keys down from ${fmt(top)}${sameKeyNote(top)}.`,
+        'Keep the letter from the first step and choose the sharp, flat or natural that lands on that key.',
+      ],
+      params: { check: { kind: 'interval-below', upper: fmt(top), num, quality } },
+    };
+  }
+
+  if (kind === 'invert') {
+    const [num, quality] = rng.pick(EXPERT_INTERVALS);
+    const root = rng.pick(COMMON);
+    const top = noteAbove(root, num, quality);
+    if (!plain(top)) return genIntervalsExpert(rng);
+    const name = intervalName(num, quality);
+    const size = intervalSize(num, quality);
+    const iNum = 9 - num;
+    const iQ = INVERT_Q[quality];
+    const iName = intervalName(iNum, iQ);
+    const nameC = fourChoices(rng, name, intervalDistractors(num, quality, true));
+    const invC = fourChoices(rng, iName, intervalDistractors(iNum, iQ, true));
+    if (!nameC || !invC) return genIntervalsExpert(rng);
+    return {
+      prompt: `Look at the interval from ${fmt(root)} up to ${fmt(top)}, then turn it upside down: from ${fmt(top)} up to the next ${fmt(root)}.`,
+      answerType: 'multi',
+      parts: [
+        { id: 'name', label: 'Interval', ask: `Name the interval from ${fmt(root)} up to ${fmt(top)}.`, answerType: 'choice', answer: name, choices: nameC,
+          hint: `Letters ${LETTERS[root.l]} to ${LETTERS[top.l]} give the number (count both ends); the semitones give the quality.` },
+        { id: 'inv', label: 'Inversion', ask: `Name the interval from ${fmt(top)} up to the next ${fmt(root)}.`, answerType: 'choice', answer: iName, choices: invC,
+          hint: 'An interval and its inversion have numbers that add up to 9. Major and minor swap, augmented and diminished swap, perfect stays perfect.' },
+        { id: 'semis', label: 'Semitones', ask: `How many semitones is it from ${fmt(top)} up to the next ${fmt(root)}?`, answerType: 'number', answer: 12 - size, tolerance: 0,
+          hint: 'The two intervals together make an octave, 12 semitones.' },
+      ],
+      explanation: `**Interval:** ${LETTERS[root.l]} to ${LETTERS[top.l]} spans ${num} letter names and ${semis(size)}, so it is ${art(`**${name}**`)}.\n\n**Inversion:** the numbers add to 9 (${num} + ${iNum}), and ${quality} becomes ${iQ}, so ${fmt(top)} up to ${fmt(root)} is ${art(`**${iName}**`)}.\n\n**Semitones:** together they make an octave, so 12 − ${size} = **${12 - size}**.`,
+      hints: ['Name the first interval as usual, then use the inversion rules for the second.'],
+      params: { multi: true, parts: {
+        name: { kind: 'interval-name', lower: fmt(root), upper: fmt(top) },
+        inv: { kind: 'interval-name', lower: fmt(top), upper: fmt(root) },
+        semis: { kind: 'semis-between', from: fmt(top), to: fmt(root) },
+      } },
+    };
+  }
+
+  // compound: an interval bigger than an octave.
+  const [num, quality] = rng.pick(COMPOUND);
+  const root = rng.pick(COMMON);
+  const simple = num - 7;
+  const top = noteAbove(root, simple, quality);
+  if (!plain(top)) return genIntervalsExpert(rng);
+  const name = compName(num, quality);
+  const sName = intervalName(simple, quality);
+  const size = 12 + intervalSize(simple, quality);
+  const cands = [...enharmonics(top), note(top.l, top.a + 1), note(top.l, top.a - 1), note(top.l + 1, 0), note(top.l - 1, 0)]
+    .filter((m) => plain(m) && !sameNote(m, top)).map(fmt);
+  const noteC = fourChoices(rng, fmt(top), cands);
+  if (!noteC) return genIntervalsExpert(rng);
+  return {
+    prompt: `Think about ${art(name)} above ${fmt(root)} (a compound interval: more than an octave).`,
+    answerType: 'multi',
+    parts: [
+      { id: 'note', label: 'Note', ask: `Which note is ${art(name)} above ${fmt(root)}?`, answerType: 'choice', answer: fmt(top), choices: noteC,
+        hint: `Take 7 away from the number: ${art(name)} is ${art(sName)} plus an octave, so it has the same note name as ${art(sName)} above ${fmt(root)}.` },
+      { id: 'semis', label: 'Semitones', ask: `How many semitones does ${art(name)} span?`, answerType: 'number', answer: size, tolerance: 0,
+        hint: `Find the semitones in ${art(sName)}, then add an octave (12).` },
+    ],
+    explanation: `A ${num}th is a ${ordinal(simple)} plus an octave (${num} − 7 = ${simple}), so ${art(name)} is ${art(sName)} an octave higher.\n\n- Note: ${art(sName)} above ${fmt(root)} is **${fmt(top)}**, so ${art(name)} above ${fmt(root)} is ${fmt(top)} too, one octave up.\n- Semitones: ${art(sName)} is ${semis(intervalSize(simple, quality))}, plus 12 for the octave = **${size}**.`,
+    hints: [
+      'A compound interval is a simple interval plus an octave: subtract 7 from the number (a 10th is a 3rd plus an octave).',
+      'The quality (major, minor, perfect…) stays the same when you add the octave.',
+    ],
+    params: { multi: true, parts: { note: { kind: 'compound-above', root: fmt(root), num, quality }, semis: { kind: 'compound-size', num, quality } } },
+  };
+}
+
+// Keys whose scales need no double sharps/flats, for every mode (BUILD side).
+const EXPERT_KEYS = [];
+for (let k = -7; k <= 7; k++) for (const mode of ['major', 'natural', 'harmonic']) {
+  const sc = scaleFromSignature(k, mode);
+  if (sc.every(plain)) EXPERT_KEYS.push({ k, mode, tonic: sc[0], scale: sc });
+}
+const HARMONIC_KEYS = EXPERT_KEYS.filter((x) => x.mode === 'harmonic' && Math.abs(x.k) <= 6);
+const MODE_WORD = { major: 'major', natural: 'natural minor', harmonic: 'harmonic minor' };
+// Pairs of harmonic-minor degrees (j > 7 = that degree in the octave above).
+const HM_PAIRS = [[1, 7], [2, 7], [3, 7], [4, 7], [5, 7], [6, 7], [7, 10], [7, 11], [7, 13]];
+const degLabel = (j) => (j <= 7 ? `${ordinal(j)} note` : `${ordinal(j - 7)} note in the octave above`);
+
+// BUILD-side interval name from letter distance and pitch-class size.
+function buildName(lo, hi, num) {
+  const size = (pc(hi) - pc(lo) + 12) % 12 || 12;
+  const q = qualitiesFor(num).find((x) => intervalSize(num, x) === size);
+  return q ? { quality: q, name: intervalName(num, q), size } : null;
+}
+
+function genScalesExpert(rng) {
+  const kind = rng.pick(['which-key', 'parallel', 'harmonic-int']);
+
+  if (kind === 'which-key') {
+    // Working backwards: the note is degree `deg` of which scale?
+    const key = rng.pick(EXPERT_KEYS.filter((x) => Math.abs(x.k) <= 6));
+    const deg = key.mode === 'harmonic' ? rng.pick([7, 7, 3, 6, 2, 4, 5]) : rng.int(2, 7);
+    const x = key.scale[deg - 1];
+    const { tonic, mode } = key;
+    const ans = keyName(tonic, mode);
+    const cands = [note(tonic.l, tonic.a + 1), note(tonic.l, tonic.a - 1), ...enharmonics(tonic), note(x.l + deg - 1, x.a), x, note(tonic.l + 1, 0), note(tonic.l - 1, 0)]
+      .filter((m) => plain(m) && !sameNote(m, tonic)).map((m) => keyName(m, mode));
+    const choices = fourChoices(rng, ans, cands);
+    const iv = buildName(tonic, x, deg);
+    if (!choices || !iv) return genScalesExpert(rng);
+    return {
+      prompt: `${fmt(x)} is the ${ordinal(deg)} note of which ${MODE_WORD[mode]} scale?`,
+      answer: ans, answerType: 'choice', choices,
+      explanation: `Work backwards from ${fmt(x)}.\n\n- Letter: the tonic is ${deg - 1} letter names below ${LETTERS[x.l]}, which is ${LETTERS[tonic.l]}.\n- Size: in ${art(MODE_WORD[mode])} scale the ${ordinal(deg)} note is ${art(iv.name)} (${semis(iv.size)}) above the tonic, so the tonic is ${fmt(tonic)}.\n\nThe ${ans} scale is ${fmtList(key.scale)}: its ${ordinal(deg)} note is ${fmt(x)}, so the answer is **${ans}**.`,
+      hints: [
+        `Work backwards: the tonic is ${deg - 1} letter names below ${LETTERS[x.l]} (count ${LETTERS[x.l]} as ${deg} and go down to 1).`,
+        `In ${art(MODE_WORD[mode])} scale the ${ordinal(deg)} note is ${art(iv.name)} (${semis(iv.size)}) above the tonic. Pick the accidental on the tonic letter that fits.`,
+        'Check your choice: write out its scale and make sure the note sits in that position.',
+      ],
+      params: { check: { kind: 'key-of-degree', note: fmt(x), deg, mode } },
+    };
+  }
+
+  if (kind === 'parallel') {
+    // Major key and its parallel (same-tonic) natural minor.
+    const k = rng.int(-4, 7);
+    const T = majorTonic(k);
+    const minScale = scaleFromSignature(k - 3, 'natural');
+    if (!plain(T) || !minScale.every(plain) || !sameNote(minScale[0], T)) return genScalesExpert(rng);
+    const deg = rng.pick([3, 6, 7]);
+    const ans = minScale[deg - 1];
+    const majNote = scaleFromSignature(k, 'major')[deg - 1];
+    const count = minScale.filter((m) => m.a !== 0).length;
+    const cands = [majNote, ...enharmonics(ans), note(ans.l, ans.a - 1), note(ans.l + 1, 0), note(ans.l - 1, 0)]
+      .filter((m) => plain(m) && !sameNote(m, ans) && m.l !== T.l).map(fmt);
+    const choices = fourChoices(rng, fmt(ans), cands);
+    if (!choices) return genScalesExpert(rng);
+    return {
+      prompt: `${fmt(T)} major has ${accWord(k)}. Now think about ${fmt(T)} natural minor, its parallel minor (same tonic, ${fmt(T)}): how many sharps or flats it has, and its ${ordinal(deg)} note.`,
+      answerType: 'multi',
+      parts: [
+        { id: 'count', label: 'Sharps or flats', ask: `How many of the seven notes of ${fmt(T)} natural minor have a sharp or a flat?`, answerType: 'number', answer: count, tolerance: 0,
+          hint: `${fmt(T)} minor shares its key signature with its relative major, the major key a minor 3rd (3 semitones) above ${fmt(T)}.` },
+        { id: 'deg', label: `${ordinal(deg)} note`, ask: `What is the ${ordinal(deg)} note of ${fmt(T)} natural minor?`, answerType: 'choice', answer: fmt(ans), choices,
+          hint: `Start from the ${ordinal(deg)} note of ${fmt(T)} major and lower it by a semitone, keeping the letter name.` },
+      ],
+      explanation: `The natural minor lowers the 3rd, 6th and 7th notes of the major scale by a semitone. That moves the key signature 3 steps flatwards on the circle of fifths (each step removes a sharp or adds a flat).\n\n- ${fmt(T)} major: ${fmtList(scaleFromSignature(k, 'major'))}.\n- ${fmt(T)} natural minor: ${fmtList(minScale)}, the key signature of ${fmt(majorTonic(k - 3))} major (${accWord(k - 3)}).\n\nSo **${count}** of its notes ${count === 1 ? 'has' : 'have'} a sharp or flat, and its ${ordinal(deg)} note is **${fmt(ans)}**.`,
+      hints: [
+        'Compared with the major scale on the same note, the natural minor lowers the 3rd, 6th and 7th notes by a semitone.',
+        'Lowering a sharp note cancels the sharp; lowering a natural note adds a flat.',
+      ],
+      params: { multi: true, parts: { count: { kind: 'scale-accidentals', tonic: fmt(T), mode: 'natural' }, deg: { kind: 'degree', tonic: fmt(T), mode: 'natural', deg } } },
+    };
+  }
+
+  // harmonic-int: the raised 7th and an interval that uses it.
+  const key = rng.pick(HARMONIC_KEYS);
+  const [i, j] = rng.pick(HM_PAIRS);
+  const lo = key.scale[i - 1];
+  const hi = key.scale[(j - 1) % 7];
+  const num = j - i + 1;
+  const iv = buildName(lo, hi, num);
+  if (!iv) return genScalesExpert(rng);
+  const sev = key.scale[6];
+  const kname = keyName(key.tonic, 'harmonic');
+  const sevC = fourChoices(rng, fmt(sev), [note(sev.l, sev.a - 1), note(sev.l, sev.a + 1), ...enharmonics(sev), note(sev.l - 1, 0)]
+    .filter((m) => plain(m) && !sameNote(m, sev) && m.l !== key.tonic.l).map(fmt));
+  const intC = fourChoices(rng, iv.name, intervalDistractors(num, iv.quality, true));
+  if (!sevC || !intC) return genScalesExpert(rng);
+  return {
+    prompt: `Think about the ${kname} scale: its 7th note, and the interval from its ${ordinal(i)} note up to its ${degLabel(j)}.`,
+    answerType: 'multi',
+    parts: [
+      { id: 'seventh', label: '7th note', ask: 'What is its 7th note?', answerType: 'choice', answer: fmt(sev), choices: sevC,
+        hint: `Write ${fmt(key.tonic)} natural minor (the key signature of its relative major, ${accWord(key.k)}), then raise the 7th note by a semitone.` },
+      { id: 'int', label: 'Interval', ask: `Name the interval from its ${ordinal(i)} note up to its ${degLabel(j)}.`, answerType: 'choice', answer: iv.name, choices: intC,
+        hint: `Count the letter names from the ${ordinal(i)} note up to the ${degLabel(j)} for the number, then count semitones for the quality. The raised 7th makes some of these intervals augmented or diminished.` },
+    ],
+    explanation: `${fmt(key.tonic)} minor has ${accWord(key.k)}. Raising the 7th gives the harmonic minor: ${fmtList(key.scale)}. Its 7th note is **${fmt(sev)}**.\n\nFrom ${fmt(lo)} up to ${fmt(hi)}: ${num} letter names and ${semis(iv.size)}. A ${isPerfectNum(num) ? 'perfect' : 'major'} ${ordinal(num)} has ${semis(intervalSize(num, isPerfectNum(num) ? 'perfect' : 'major'))}, so it is ${art(`**${iv.name}**`)}.`,
+    hints: ['Write out the scale first: the natural minor with its 7th note raised by a semitone.'],
+    params: { multi: true, parts: { seventh: { kind: 'degree', tonic: fmt(key.tonic), mode: 'harmonic', deg: 7 }, int: { kind: 'scale-interval', tonic: fmt(key.tonic), mode: 'harmonic', i, j } } },
+  };
+}
+
+function genKeysExpert(rng) {
+  const kind = rng.pick(['enh-keys', 'harmonic-key', 'parallel-sig']);
+
+  if (kind === 'enh-keys') {
+    // Enharmonic keys at the bottom of the circle: their sharps and flats add up to 12.
+    const k = rng.pick([5, 6, 7, -5, -6, -7]);
+    const minor = rng.next() < 0.5;
+    const k2 = k > 0 ? k - 12 : k + 12;
+    const name1 = minor ? minName(k) : majName(k);
+    const name2 = minor ? minName(k2) : majName(k2);
+    const t1 = minor ? minorTonic(k) : majorTonic(k);
+    const t2 = minor ? minorTonic(k2) : majorTonic(k2);
+    const mode = minor ? 'natural' : 'major';
+    return {
+      prompt: `${name1} and ${name2} sound exactly the same on a piano: they are enharmonic keys.`,
+      answerType: 'multi',
+      parts: [
+        { id: 'first', label: name1, ask: `How many sharps or flats are in the key signature of ${name1}?`, answerType: 'number', answer: Math.abs(k), tolerance: 0,
+          hint: `${minor ? `Use the relative major (a minor 3rd above ${fmt(t1)}). ` : ''}${circleHint(k)}` },
+        { id: 'second', label: name2, ask: `How many sharps or flats are in the key signature of ${name2}?`, answerType: 'number', answer: Math.abs(k2), tolerance: 0,
+          hint: `${minor ? `Use the relative major (a minor 3rd above ${fmt(t2)}). ` : ''}${circleHint(k2)}` },
+      ],
+      explanation: `${minor ? `Minor keys use their relative major's signature: ${name1} goes with ${majName(k)} and ${name2} with ${majName(k2)}.\n\n` : ''}${circleHint(k, true)}\n\n${circleHint(k2, true)}\n\nSo ${name1} has **${Math.abs(k)}** and ${name2} has **${Math.abs(k2)}**. Enharmonic keys always add up to 12 (${Math.abs(k)} + ${Math.abs(k2)}): one is ${Math.abs(k)} steps round the circle one way, the other ${Math.abs(k2)} steps the other way.`,
+      hints: [
+        'Find each key on the circle of fifths: one is on the sharp side, the other on the flat side.',
+        'At the bottom of the circle the sharp and flat sides overlap. The sharps of one key and the flats of its enharmonic twin always add up to 12.',
+      ],
+      params: { multi: true, parts: { first: { kind: 'sig-count', tonic: fmt(t1), mode }, second: { kind: 'sig-count', tonic: fmt(t2), mode } } },
+    };
+  }
+
+  if (kind === 'harmonic-key') {
+    // Key signature + a recurring raised 7th as an accidental -> the minor key.
+    const key = rng.pick(HARMONIC_KEYS);
+    const { k } = key;
+    const minT = key.scale[0];
+    const raised = key.scale[6];
+    const ans = `${fmt(minT)} minor`;
+    const cands = [majName(k), `${fmt(raised)} minor`, `${fmt(raised)} major`, `${fmt(minT)} major`, ...(Math.abs(k + 1) <= 7 ? [minName(k + 1)] : []), ...(Math.abs(k - 1) <= 7 ? [minName(k - 1)] : [])]
+      .filter((c) => { const t = parseNote(c.split(' ')[0]); return !!t && plain(t) && c !== ans; });
+    const choices = fourChoices(rng, ans, cands);
+    if (!choices) return genKeysExpert(rng);
+    const sigText = k === 0 ? 'no sharps or flats in its key signature' : `a key signature of ${accWord(k)} (${signatureNotes(k).map(fmt).join(', ')})`;
+    return {
+      prompt: `A piece has ${sigText}, and the music keeps adding ${fmt(raised)} as an accidental. Which key is it in?`,
+      answer: ans, answerType: 'choice', choices,
+      explanation: `${accWord(k) === 'no sharps or flats' ? 'No sharps or flats' : cap(accWord(k))} fits two keys: ${majName(k)} and its relative minor, ${minName(k)}.\n\nIn a minor key the 7th note is usually raised by a semitone (harmonic minor), and the raised note is written as an accidental. ${fmt(minT)} natural minor has ${fmt(note(raised.l, raised.a - 1))} as its 7th note; raised, it becomes ${fmt(raised)}.\n\nSo the piece is in **${ans}**.`,
+      hints: [
+        'A key signature fits two keys: a major key and its relative minor, a minor 3rd lower.',
+        'In a minor key the 7th note is often raised by a semitone (harmonic minor). That raised note is not in the key signature, so it is written as an accidental each time.',
+        `Find the two keys that share this signature, then check which one has ${fmt(raised)} as its raised 7th.`,
+      ],
+      params: { check: { kind: 'raised-key', k, raised: fmt(raised) } },
+    };
+  }
+
+  // parallel-sig: the parallel minor's signature, and its relative major.
+  const k = rng.int(-4, 7);
+  const T = majorTonic(k);
+  if (!plain(T) || !plain(majorTonic(k - 3))) return genKeysExpert(rng);
+  const km = k - 3;
+  const sigC = fourChoices(rng, accWord(km), [k + 3, -km, k, km + 1, km - 1].filter((x) => Math.abs(x) <= 7 && x !== km).map(accWord));
+  const relCands = [`${fmt(T)} major`, `${fmt(noteAbove(T, 3, 'major'))} major`, `${fmt(noteAbove(T, 6, 'minor'))} major`, `${fmt(noteAbove(T, 4, 'perfect'))} major`, `${fmt(noteAbove(T, 6, 'major'))} major`]
+    .filter((c) => { const t = parseNote(c.split(' ')[0]); return !!t && plain(t) && c !== majName(km); });
+  const relC = fourChoices(rng, majName(km), relCands);
+  if (!sigC || !relC) return genKeysExpert(rng);
+  return {
+    prompt: `${fmt(T)} major has ${accWord(k)}. Now think about ${fmt(T)} minor, its parallel minor (same tonic).`,
+    answerType: 'multi',
+    parts: [
+      { id: 'sig', label: 'Key signature', ask: `What is the key signature of ${fmt(T)} minor?`, answerType: 'choice', answer: accWord(km), choices: sigC,
+        hint: 'The minor key on the same tonic is 3 steps flatwards on the circle of fifths: each step removes a sharp or adds a flat.' },
+      { id: 'rel', label: 'Relative major', ask: `Which major key shares its key signature with ${fmt(T)} minor?`, answerType: 'choice', answer: majName(km), choices: relC,
+        hint: `The relative major is a minor 3rd (3 semitones, 3 letter names) above ${fmt(T)}.` },
+    ],
+    explanation: `Parallel keys share a tonic; relative keys share a key signature.\n\n- The relative major of ${fmt(T)} minor is a minor 3rd above ${fmt(T)}: **${majName(km)}**.\n- So ${fmt(T)} minor has the same signature as ${majName(km)}: **${accWord(km)}**. That is 3 steps flatwards from ${fmt(T)} major (${accWord(k)}).`,
+    hints: [
+      `Parallel keys (same tonic) are not relative keys (same signature): ${km === 0 ? 'D major and D minor' : 'C major and C minor'} have different key signatures.`,
+      `Find the relative major of ${fmt(T)} minor first; the signature comes with it.`,
+    ],
+    params: { multi: true, parts: { sig: { kind: 'sig-words', tonic: fmt(T), mode: 'natural' }, rel: { kind: 'rel-major', of: fmt(T) } } },
+  };
+}
+
+function genExpert(subtopic, rng) {
+  switch (subtopic) {
+    case 'notes': return genNotesExpert(rng);
+    case 'intervals': return genIntervalsExpert(rng);
+    case 'scales': return genScalesExpert(rng);
+    case 'keys': return genKeysExpert(rng);
+    default: throw new Error(`Unknown subtopic: ${subtopic}`);
+  }
+}
+
 // ---------------------------------------------------------------- generate / verify
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === 'expert') return genExpert(subtopic, rng);
   if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {
     case 'notes': return genNotes(difficulty, rng);
@@ -658,6 +1080,61 @@ function isRight(c, v) {
         if (!got || got.quality !== 'perfect' || got.num !== (sharp ? 5 : 4)) return false;
       }
       return true;
+    }
+    // ---- Expert kinds ----
+    case 'semis-path': {
+      const m = parseNote(s);
+      return !!m && keyboardDistance(parseNote(c.from), m) === (((c.up - c.down) % 12) + 12) % 12;
+    }
+    case 'letter-spell': {
+      const m = parseNote(s);
+      return !!m && LETTERS[m.l] === c.letter && keyboardDistance(parseNote(c.from), m) === c.n;
+    }
+    case 'interval-below': {
+      const m = parseNote(s);
+      return !!m && isInterval(m, parseNote(c.upper), c.num, c.quality);
+    }
+    case 'compound-above': {
+      // Same letter as the simple interval (num - 7 letters), and that simple interval's quality.
+      const m = parseNote(s), r = parseNote(c.root);
+      return !!m && m.l === (r.l + c.num - 1) % 7 && isInterval(r, m, c.num - 7, c.quality);
+    }
+    case 'compound-size': {
+      // Brute force on C, then walk all num - 1 letter steps (past the octave) on the keyboard.
+      const C = note(0, 0);
+      for (let a = -2; a <= 2; a++) {
+        const y = note(c.num - 8, a);
+        if (isInterval(C, y, c.num - 7, c.quality)) return s !== '' && Number(s) === walkSemis(C, c.num - 1, y);
+      }
+      return false;
+    }
+    case 'key-of-degree': {
+      const m = /^(\S+) (major|natural minor|harmonic minor)$/.exec(s);
+      const mode = m && { major: 'major', 'natural minor': 'natural', 'harmonic minor': 'harmonic' }[m[2]];
+      if (!m || mode !== c.mode || !parseNote(m[1])) return false;
+      const sc = patScale(m[1], mode);
+      return matchesPattern(sc, mode) && sameNote(sc[c.deg - 1], parseNote(c.note));
+    }
+    case 'scale-interval': {
+      const sc = patScale(c.tonic, c.mode);
+      if (!matchesPattern(sc, c.mode)) return false;
+      const want = parseInterval(s);
+      const got = classify(sc[c.i - 1], sc[(c.j - 1) % 7], c.j - c.i === 7);
+      return !!want && !!got && want.num === got.num && want.quality === got.quality;
+    }
+    case 'raised-key': {
+      // A minor key with this signature whose harmonic minor has the accidental as its 7th note.
+      const m = /^(\S+) (major|minor)$/.exec(s);
+      if (!m || m[2] !== 'minor' || !parseNote(m[1])) return false;
+      const nat = patScale(m[1], 'natural');
+      const sigOk = accCount(nat) === Math.abs(c.k) && (c.k === 0 || accSign(nat) === Math.sign(c.k));
+      return sigOk && sameNote(patScale(m[1], 'harmonic')[6], parseNote(c.raised));
+    }
+    case 'sig-words': {
+      const sc = patScale(c.tonic, c.mode);
+      if (s === 'no sharps or flats') return accCount(sc) === 0;
+      const m = /^([1-7]) (sharp|flat)s?$/.exec(s);
+      return !!m && (m[1] === '1') === !s.endsWith('s') && accCount(sc) === Number(m[1]) && accSign(sc) === (m[2] === 'sharp' ? 1 : -1);
     }
     default:
       return false;

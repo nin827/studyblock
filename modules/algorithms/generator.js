@@ -942,6 +942,7 @@ ${opsText(kind, ops)}
 // ---------- entry point ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {
     case "searching":
@@ -1108,6 +1109,7 @@ function choiceOk(q, answer, expected) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
   switch (p.kind) {
     case "linear-count": {
       if (!isDistinct(p.a)) return false;
@@ -1223,6 +1225,633 @@ export function verify(question, answer) {
         numEq(answer.size, r.final.length) &&
         numEq(answer.end, p.ds === "stack" ? r.final[r.final.length - 1] : r.final[0])
       );
+    }
+    default:
+      return false;
+  }
+}
+
+// =====================================================================================
+// Expert. A separate branch (generate dispatches to it before the difficulty check), so
+// easy/medium/hard draws are unchanged. Hints use only values already drawn. Params kinds start
+// with "x-" and are checked by verifyExpert with the independent v* re-implementations above
+// or with different methods (cycle counting, pair counting, prefix reduction).
+
+// ---- searching / expert ----
+
+// Comparisons binary search needs to find every item of a sorted list.
+function xSearchDepth(rng) {
+  for (;;) {
+    const n = rng.int(10, 20);
+    // Mostly sizes where the deepest level is only partly full (n + 1 not a power of two).
+    if (!((n + 1) & n) && rng.next() < 0.7) continue;
+    const a = sortedList(rng, n);
+    const depth = a.map((t) => binaryTrace(a, t).steps.length);
+    const max = Math.max(...depth);
+    const deep = a.filter((_, i) => depth[i] === max);
+    const byDepth = [];
+    for (let d = 1; d <= max; d++) byDepth.push(`- ${d} comparison${d === 1 ? "" : "s"}: ${a.filter((_, i) => depth[i] === d).join(", ")}`);
+    return {
+      prompt: `Binary search (mid = floor((lo + hi) / 2), indexes from 0) is run once for **each** item in this sorted list, searching for that item.\n\nList: ${code(a)} (${n} items)`,
+      answerType: "multi",
+      parts: [
+        { id: "max", label: "Most comparisons", ask: "What is the largest number of comparisons any of these searches needs?", answerType: "number", answer: max, tolerance: 0,
+          hint: `The first comparison is always the middle item, index floor((0 + ${n - 1}) / 2). Each further comparison goes one level deeper into the left or right part.` },
+        { id: "deep", label: "Items that need it", ask: "How many of the items need that many comparisons?", answerType: "number", answer: deep.length, tolerance: 0,
+          hint: "Level 1 has 1 item, level 2 at most 2, level 3 at most 4, … The last level holds whatever items are left over." },
+      ],
+      explanation: `Think of binary search as a tree: the first middle item is found in 1 comparison, the middles of the two halves in 2, and so on.\n\n${byDepth.join("\n")}\n\nThe deepest searches need **${max}** comparisons, and **${deep.length}** item${deep.length === 1 ? "" : "s"} (${deep.join(", ")}) need${deep.length === 1 ? "s" : ""} that many.`,
+      params: { kind: "x-depth", a },
+      hints: [
+        BS_RULE,
+        `Start with the whole list: mid = floor((0 + ${n - 1}) / 2) = ${Math.floor((n - 1) / 2)}, so ${a[Math.floor((n - 1) / 2)]} is found in 1 comparison.`,
+        "Then do the same for the left part and the right part separately: their middles take 2 comparisons. Keep splitting until every item has a count.",
+      ],
+    };
+  }
+}
+
+// Working backwards: which target produced these first comparisons?
+function xSearchBack(rng) {
+  for (;;) {
+    const n = rng.int(11, 16);
+    const a = sortedList(rng, n);
+    const missing = rng.next() < 0.5;
+    const t = missing ? missingValue(rng, a) : rng.pick(a);
+    const tr = binaryTrace(a, t);
+    if (tr.steps.length < 4) continue;
+    const shown = tr.steps.slice(0, 3).map((s) => s.v);
+    const seqOf = (x) => binaryTrace(a, x).steps.map((s) => s.v);
+    const agrees = (x) => seqOf(x).slice(0, 3).join(",") === shown.join(",") && seqOf(x).length > 3;
+    const pool = [];
+    for (let x = a[0] - 2; x <= a[n - 1] + 2; x++) if (x !== t && x > 0 && !agrees(x)) pool.push(x);
+    // Plausible slips first: values that agree with the first two comparisons only.
+    const near = pool.filter((x) => seqOf(x).slice(0, 2).join(",") === shown.slice(0, 2).join(","));
+    const wrong = [...rng.shuffle(near).slice(0, 2)];
+    for (const x of rng.shuffle(pool)) if (wrong.length < 3 && !wrong.includes(x)) wrong.push(x);
+    if (wrong.length < 3) continue;
+    const trace = tr.steps.slice(0, 3).map((s, i) => `- ${stepLine(s, t, i)}`);
+    return {
+      prompt: `Binary search (mid = floor((lo + hi) / 2), indexes from 0) runs on this sorted list. Its first three comparisons are with **${shown.join("**, then **")}**, and it hasn't finished yet.\n\nList: ${code(a)}\n\nWhich of these could the target be?`,
+      answer: String(t),
+      answerType: "choice",
+      choices: rng.shuffle([String(t), ...wrong.map(String)]),
+      explanation: `Each comparison tells you which side the target is on.\n\n- ${shown[0]} is compared first; next comes ${shown[1]}, which is to the ${a.indexOf(shown[1]) < a.indexOf(shown[0]) ? "left, so the target is smaller than " + shown[0] : "right, so the target is bigger than " + shown[0]}.\n- After ${shown[1]} the search moves to ${shown[2]}, so the target is ${a.indexOf(shown[2]) < a.indexOf(shown[1]) ? "smaller than " + shown[1] : "bigger than " + shown[1]}.\n- It doesn't stop at ${shown[2]}, so the target is not ${shown[2]}.\n\nTracing the search for **${t}**:\n\n${trace.join("\n")}\n\nThe other options lead to a different comparison within the first three, or the search stops too early.`,
+      params: { kind: "x-searchback", a, shown },
+      hints: [
+        "Each comparison halves the range: if the next value compared is to the left, the target was smaller; to the right, bigger.",
+        `The first comparison is ${shown[0]} and the second is ${shown[1]}. Which side of ${shown[0]} must the target be on?`,
+        `Do the same for ${shown[1]} → ${shown[2]}, and remember the search did not stop at ${shown[2]}. Then trace each option to check.`,
+      ],
+    };
+  }
+}
+
+// ---- sorting / expert ----
+
+// Working backwards: which start list gives this list after pass k?
+function xSortBack(rng) {
+  for (;;) {
+    const algo = rng.pick(["bubble", "insertion", "selection"]);
+    const k = rng.int(2, 3);
+    const a = distinct(rng, 6, 1, 50);
+    const st = statesOf(algo, a);
+    const after = st[k];
+    if (fmt(after) === fmt(a) || fmt(after) === fmt(asc(a))) continue;
+    const cands = [];
+    for (let i = 0; i < a.length - 1; i++) {
+      const b = a.slice();
+      [b[i], b[i + 1]] = [b[i + 1], b[i]];
+      cands.push(b);
+    }
+    cands.push(after.slice(), statesOf(algo, after)[1], a.slice().reverse());
+    const wrong = [];
+    const seen = new Set([fmt(a)]);
+    for (const b of rng.shuffle(cands)) {
+      const s = fmt(b);
+      if (seen.has(s) || fmt(statesOf(algo, b)[k]) === fmt(after)) continue;
+      seen.add(s);
+      wrong.push(s);
+      if (wrong.length === 3) break;
+    }
+    if (wrong.length < 3) continue;
+    const lines = [];
+    for (let p = 1; p <= k; p++) lines.push(`- ${passDetail(algo, st[p - 1], st[p], p)}`);
+    return {
+      prompt: `${ALGO_RULE[algo]}\n\nAfter **pass ${k}**, the list is ${code(after)}. Which of these could the starting list have been?`,
+      answer: fmt(a),
+      answerType: "choice",
+      choices: rng.shuffle([fmt(a), ...wrong]),
+      explanation: `Run ${k} passes of ${ALGO_NAME[algo].toLowerCase()} on each option and see which one ends as ${code(after)}. For **${fmt(a)}**:\n\n${lines.join("\n")}\n\nThe other options end differently after pass ${k}.`,
+      params: { kind: "x-sortback", algo, k, after },
+      hints: [
+        ALGO_RULE[algo],
+        algo === "insertion"
+          ? `After pass ${k} the first ${k + 1} items are sorted and the rest haven't moved yet. Compare the end of each option with the end of ${code(after)}.`
+          : algo === "selection"
+            ? `After pass ${k} the ${k} smallest items sit at the front in order, and the rest have only moved by swaps.`
+            : `After pass ${k} the ${k} biggest items sit at the end in order.`,
+        `Rule options out quickly with that fact, then run ${k} passes on the ones left.`,
+      ],
+    };
+  }
+}
+
+// Total swaps for selection sort and total shifts for insertion sort.
+function xSortTotals(rng) {
+  for (;;) {
+    const a = distinct(rng, 7, 1, 60);
+    // Selection sort, counting real swaps (no swap when the smallest is already in place).
+    const b = a.slice();
+    let sel = 0;
+    for (let i = 0; i < b.length - 1; i++) {
+      let m = i;
+      for (let j = i + 1; j < b.length; j++) if (b[j] < b[m]) m = j;
+      if (m !== i) { [b[i], b[m]] = [b[m], b[i]]; sel++; }
+    }
+    const ins = insertionStates(a).shifts.reduce((s, x) => s + x, 0);
+    if (sel < 2 || ins < 4 || sel === 6) continue;
+    const sst = selectionStates(a).states;
+    const selLines = [];
+    for (let p = 1; p < a.length; p++) selLines.push(`- ${passDetail("selection", sst[p - 1], sst[p], p)}`);
+    const invLines = a.map((x, i) => `- ${x}: ${a.slice(0, i).filter((y) => y > x).length} bigger item(s) before it`);
+    return {
+      prompt: `Start: ${code(a)}\n\nSelection sort swaps the smallest remaining item into place, but does **not** swap when it is already in place. Insertion sort slides each item left past every bigger item before it; each slide of one item one place right counts as one **shift**.`,
+      answerType: "multi",
+      parts: [
+        { id: "sel", label: "Selection swaps", ask: "How many swaps does selection sort make in total?", answerType: "number", answer: sel, tolerance: 0,
+          hint: "Run the passes: a pass only counts when the smallest remaining item is not already at the front of the unsorted part." },
+        { id: "ins", label: "Insertion shifts", ask: "How many shifts does insertion sort make in total?", answerType: "number", answer: ins, tolerance: 0,
+          hint: "Each item shifts once for every bigger item that comes before it in the starting list." },
+      ],
+      explanation: `**Selection sort**, pass by pass:\n\n${selLines.join("\n")}\n\nThat is **${sel}** swaps.\n\n**Insertion sort:** each item is passed by every bigger item before it, so count those pairs in the starting list:\n\n${invLines.join("\n")}\n\nTotal: **${ins}** shifts.`,
+      params: { kind: "x-sorttotals", a },
+      hints: [
+        "The two algorithms are counted separately; you can do them in either order.",
+        `Selection sort: pass 1 looks for the smallest item, ${Math.min(...a)}. Is it already at index 0?`,
+        `Insertion sort: for ${a[a.length - 1]}, the last item, count the bigger items before it. Do the same for every item and add up.`,
+      ],
+    };
+  }
+}
+
+// Merging two sorted lists: comparisons, and which list runs out first.
+function xMerge(rng) {
+  for (;;) {
+    const n1 = rng.int(4, 6);
+    const n2 = rng.int(4, 6);
+    const all = distinct(rng, n1 + n2, 1, 80);
+    const L = asc(all.slice(0, n1));
+    const R = asc(all.slice(n1));
+    let i = 0, j = 0, comps = 0;
+    const steps = [];
+    while (i < L.length && j < R.length) {
+      comps++;
+      if (L[i] < R[j]) { steps.push(`${L[i]} < ${R[j]}: take ${L[i]}`); i++; }
+      else { steps.push(`${R[j]} < ${L[i]}: take ${R[j]}`); j++; }
+    }
+    const first = i === L.length ? "The first list" : "The second list";
+    const rest = i === L.length ? R.slice(j) : L.slice(i);
+    if (rest.length < 2 || comps < 5) continue;
+    return {
+      prompt: `Merge sort's merge step combines two sorted lists. It compares the front items of the two lists, moves the smaller one to the output, and repeats. When one list is empty, the rest of the other list is copied across **without** any more comparisons.\n\nFirst list: ${code(L)}\n\nSecond list: ${code(R)}`,
+      answerType: "multi",
+      parts: [
+        { id: "comps", label: "Comparisons", ask: "How many comparisons does the merge make?", answerType: "number", answer: comps, tolerance: 0,
+          hint: "Every item that is moved while both lists still have items costs one comparison. The copied tail costs none." },
+        { id: "empty", label: "Runs out first", ask: "Which list becomes empty first?", answerType: "choice", answer: first, choices: ["The first list", "The second list"],
+          hint: "The list whose largest item is smaller runs out first." },
+      ],
+      explanation: `Merge step by step:\n\n${steps.map((s) => `- ${s}`).join("\n")}\n\n${first} is now empty, so ${fmt(rest)} is copied across with no comparisons.\n\nComparisons: **${comps}** (${L.length + R.length} items − ${rest.length} copied). Empty first: **${first}**.`,
+      params: { kind: "x-merge", L, R },
+      hints: [
+        `The first comparison is ${L[0]} with ${R[0]}.`,
+        "Keep going, one comparison per item moved, until one list is empty.",
+        `Shortcut: the largest items are ${L[L.length - 1]} and ${R[R.length - 1]}. The items bigger than the smaller of these, in the other list, are copied without comparisons.`,
+      ],
+    };
+  }
+}
+
+// ---- complexity / expert ----
+
+const GROW = {
+  "O(n)": { p: 1, word: "n" },
+  "O(n²)": { p: 2, word: "n²" },
+  "O(n³)": { p: 3, word: "n³" },
+};
+
+// Scaling forwards and backwards with a time budget.
+function xBudget(rng) {
+  const o = rng.pick(["O(n²)", "O(n²)", "O(n³)", "O(2^n)"]);
+  if (o === "O(2^n)") {
+    const n1 = rng.int(20, 30);
+    const T1 = rng.pick([1, 2, 3, 4, 5]);
+    const d = rng.int(2, 6);
+    const T2 = T1 * 2 ** d;
+    const B = rng.int(30, 600);
+    let best = n1;
+    while (T1 * 2 ** (best + 1 - n1) <= B) best++;
+    if (best === n1) return xBudget(rng);
+    return {
+      prompt: `An algorithm's running time doubles every time n goes up by 1 (it grows like 2^n). It takes **${T1} s** when n = ${n1}.`,
+      answerType: "multi",
+      parts: [
+        { id: "time", label: "Time", ask: `How many seconds does it take when n = ${n1 + d}?`, answerType: "number", answer: T2, tolerance: 0,
+          hint: `n goes up by ${d}, so the time doubles ${d} times.` },
+        { id: "maxn", label: "Largest n", ask: `What is the largest n it can handle in at most **${B} s**?`, answerType: "number", answer: best, tolerance: 0,
+          hint: `Keep doubling from ${T1} s and count the steps before you would go over ${B} s.` },
+      ],
+      explanation: `Each +1 in n doubles the time.\n\n- n = ${n1 + d}: ${T1} × 2^${d} = **${T2} s**.\n- Doubling from ${T1} s: ${Array.from({ length: best - n1 + 2 }, (_, k) => `${T1 * 2 ** k}`).join(", ")}. The last time within ${B} s is ${T1 * 2 ** (best - n1)} s at n = **${best}**; one more step would take ${T1 * 2 ** (best - n1 + 1)} s.`,
+      params: { kind: "x-budget", o, n1, T1, n2: n1 + d, B },
+      hints: [
+        "With 2^n growth, adding 1 to n doubles the time, whatever n is.",
+        `For the budget, list the times ${T1}, ${2 * T1}, … (doubling each time) and stop before you pass ${B}.`,
+      ],
+    };
+  }
+  const { p, word } = GROW[o];
+  const n1 = rng.pick([100, 200, 250, 400, 500, 1000, 2000]);
+  const m = rng.int(2, p === 3 ? 4 : 8);
+  const T1 = rng.pick([1, 2, 3, 4, 5, 6, 8]);
+  const T2 = T1 * m ** p;
+  const B = T1 * rng.int(5, p === 1 ? 50 : 300) + rng.int(0, T1 - 1);
+  let best = Math.floor(n1 * (B / T1) ** (1 / p));
+  while (T1 * (best + 1) ** p <= B * n1 ** p) best++;
+  while (T1 * best ** p > B * n1 ** p) best--;
+  return {
+    prompt: `An algorithm's running time grows like **${word}** (${o}). It takes **${T1} s** for n = ${n1.toLocaleString("en-GB")} items. Assume the time is exactly proportional to ${word}.`,
+    answerType: "multi",
+    parts: [
+      { id: "time", label: "Time", ask: `How many seconds does it take for n = ${(n1 * m).toLocaleString("en-GB")} items?`, answerType: "number", answer: T2, tolerance: 0,
+        hint: `n is ${m} times bigger, so the time is ${m}${p > 1 ? `^${p}` : ""} times bigger.` },
+      { id: "maxn", label: "Largest n", ask: `What is the largest whole n it can handle in at most **${B} s**?`, answerType: "number", answer: best, tolerance: 0,
+        hint: `Solve ${T1} × (n / ${n1})${p > 1 ? `^${p}` : ""} ≤ ${B}, then round **down** to a whole n.` },
+    ],
+    explanation: `Time = ${T1} × (n / ${n1})${p > 1 ? `^${p}` : ""} seconds.\n\n- n = ${n1 * m}: ${T1} × ${m}${p > 1 ? `^${p}` : ""} = **${T2} s**.\n- Budget: (n / ${n1})${p > 1 ? `^${p}` : ""} ≤ ${B} / ${T1} = ${Math.round((B / T1) * 10000) / 10000}, so n ≤ ${n1} × ${p > 1 ? `${p === 2 ? "√" : "∛"}(${Math.round((B / T1) * 10000) / 10000})` : Math.round((B / T1) * 10000) / 10000} ≈ ${Math.round(n1 * (B / T1) ** (1 / p) * 100) / 100}. Rounding down: **${best}** (n = ${best + 1} would take just over ${B} s).`,
+    params: { kind: "x-budget", o, n1, T1, n2: n1 * m, B },
+    hints: [
+      `With ${o}, multiplying n by k multiplies the time by k${p > 1 ? `^${p}` : ""}.`,
+      `For the budget, the time may grow by at most ${B} ÷ ${T1}. Undo the power${p > 1 ? ` with a ${p === 2 ? "square" : "cube"} root` : ""} to find how much n may grow.`,
+      "A part item can't be processed, so round the final n down, and check that n + 1 would go over.",
+    ],
+  };
+}
+
+// Where does the slower-growing algorithm start to win? (It may be called A or B.)
+function xCrossover(rng) {
+  const [pa, pb] = rng.pick([[1, 2], [1, 2], [2, 3], [1, 3]]);
+  const a = rng.int(10, 400);
+  const b = rng.int(1, 9);
+  const low = rng.next() < 0.5 ? "A" : "B"; // name of the slower-growing algorithm (a · n^pa)
+  const high = low === "A" ? "B" : "A";
+  const steps = (c, p, n) => c * n ** p;
+  let n0 = 1;
+  while (!(steps(a, pa, n0) < steps(b, pb, n0))) n0++;
+  const W = ["", "n", "n²", "n³"];
+  const tie = steps(a, pa, n0 - 1) === steps(b, pb, n0 - 1);
+  const r = Math.round((a / b) * 1000) / 1000;
+  const cost = { [low]: `${a}${W[pa]}`, [high]: `${b}${W[pb]}` };
+  return {
+    prompt: `Algorithm A takes **${cost.A}** steps and algorithm B takes **${cost.B}** steps for an input of size n (n is a whole number, at least 1).`,
+    answerType: "multi",
+    parts: [
+      { id: "n0", label: "Crossover", ask: `What is the smallest n for which ${low} takes **strictly fewer** steps than ${high}?`, answerType: "number", answer: n0, tolerance: 0,
+        hint: `Write ${cost[low]} < ${cost[high]} and divide both sides by ${b}${pa === 1 ? "n" : "n²"}, which is positive.` },
+      { id: "big", label: "Large inputs", ask: "Which algorithm is faster for very large n?", answerType: "choice", answer: `Algorithm ${low}`, choices: ["Algorithm A", "Algorithm B"],
+        hint: "For big n the highest power of n wins, whatever the constants in front." },
+    ],
+    explanation: `${low} is faster when ${cost[low]} < ${cost[high]}. Dividing by ${b}${pa === 1 ? "n" : "n²"}: ${pb - pa === 1 ? `n > ${a}/${b} = ${r}` : `n² > ${a}/${b} = ${r}, so n > √${r} ≈ ${Math.round(Math.sqrt(a / b) * 1000) / 1000}`}.
+
+The smallest whole n is **${n0}**.${tie ? ` (At n = ${n0 - 1} the two are exactly equal, which is not "fewer".)` : ""} Check: n = ${n0} gives ${steps(a, pa, n0)} vs ${steps(b, pb, n0)}${n0 > 1 ? `, and n = ${n0 - 1} gives ${steps(a, pa, n0 - 1)} vs ${steps(b, pb, n0 - 1)}` : ""}.
+
+For very large n, ${W[pa]} grows more slowly than ${W[pb]}, so **Algorithm ${low}** is faster despite its bigger constant.`,
+    params: { kind: "x-crossover", a, pa, b, pb, low },
+    hints: [
+      `Write the inequality for ${low} being faster: ${cost[low]} < ${cost[high]}.`,
+      "Simplify it to the form n > (number) or n² > (number). Careful with equality: equal is not fewer.",
+      "Check your n and the one below it by putting them back into both step counts.",
+    ],
+  };
+}
+
+// ---- stacks and queues / expert ----
+
+const stackPossible = (seq) => {
+  const st = [];
+  let next = 1;
+  for (const x of seq) {
+    while (next <= x) st.push(next++);
+    if (st[st.length - 1] !== x) return false;
+    st.pop();
+  }
+  return true;
+};
+
+// Push 1..n in order with pops in between: which pop order is impossible?
+function xStackPerm(rng) {
+  for (;;) {
+    const n = rng.int(5, 6);
+    const possible = new Set();
+    for (let t = 0; t < 60 && possible.size < 3; t++) {
+      // A random push/pop schedule.
+      const st = [];
+      const out = [];
+      let next = 1;
+      while (out.length < n) {
+        if (next <= n && (st.length === 0 || rng.next() < 0.5)) st.push(next++);
+        else out.push(st.pop());
+      }
+      const s = out.join(", ");
+      if (s !== Array.from({ length: n }, (_, i) => i + 1).join(", ") && s !== Array.from({ length: n }, (_, i) => n - i).join(", ")) possible.add(s);
+    }
+    if (possible.size < 3) continue;
+    let bad = null;
+    for (let t = 0; t < 200 && !bad; t++) {
+      const p = rng.shuffle(Array.from({ length: n }, (_, i) => i + 1));
+      if (!stackPossible(p)) bad = p;
+    }
+    if (!bad) continue;
+    const ans = fmt(bad);
+    const choices = rng.shuffle([ans, ...[...possible].map((s) => `[${s}]`)]);
+    // Where the impossible order gets stuck.
+    const st = [];
+    let next = 1;
+    let stuck = "";
+    for (const x of bad) {
+      while (next <= x) st.push(next++);
+      if (st[st.length - 1] !== x) { stuck = `To pop ${x}, it would have to be on top, but the stack is ${fmt(st)} (top at the right): ${st[st.length - 1]} is in the way.`; break; }
+      st.pop();
+    }
+    return {
+      prompt: `The numbers 1 to ${n} are pushed onto a stack **in that order**. Pops can happen at any time in between, and every number is popped once. Which of these orders of popped numbers is **impossible**?`,
+      answer: ans,
+      answerType: "choice",
+      choices,
+      explanation: `Simulate each option: push numbers in order until the one you need is pushed, then it must be on top to be popped.\n\n${choices.filter((c) => c !== ans).map((c) => `- ${c}: works`).join("\n")}\n- ${ans}: ${stuck}\n\nSo **${ans}** is impossible.`,
+      params: { kind: "x-stackperm", n },
+      hints: [
+        "A stack only lets you pop the top item. Once a number is pushed, every number pushed after it must be popped before it.",
+        "Simulate an option: to pop x, push everything up to x if you haven't yet; then x must be on top.",
+        "Look for a pattern like a big number popped, then a smaller one, then a middle one: the middle one is buried under the smaller one.",
+      ],
+    };
+  }
+}
+
+// Circular buffer queue: wrap-around indexes.
+function xCircular(rng) {
+  for (;;) {
+    const k = rng.int(5, 8);
+    const ops = [];
+    let size = 0, enq = 0;
+    const len = rng.int(10, 15);
+    let val = rng.int(10, 30);
+    for (let i = 0; i < len; i++) {
+      const add = size === 0 || (size < k && rng.next() < 0.6);
+      if (add) { ops.push({ op: "add", v: val }); val += rng.int(1, 7); size++; enq++; }
+      else { ops.push({ op: "remove" }); size--; }
+    }
+    if (enq <= k || size === 0) continue; // must wrap, and leave something to read
+    // Generation side: step the indexes with wrap.
+    const slots = Array(k).fill(null);
+    let front = 0, rear = 0;
+    for (const o of ops) {
+      if (o.op === "add") { slots[rear] = o.v; rear = rear + 1 === k ? 0 : rear + 1; }
+      else { front = front + 1 === k ? 0 : front + 1; }
+    }
+    const deq = ops.filter((o) => o.op === "remove").length;
+    return {
+      prompt: `A queue is stored in a **circular buffer**: an array with slots 0 to ${k - 1}. \`front\` is the slot of the next item to dequeue and \`rear\` is the slot where the next enqueue writes; both start at 0, and each moves forward by 1 when used, wrapping from ${k - 1} back to 0. (The queue never holds more than ${k} items.)\n\nOperations: ${opsText("queue", ops)}.`,
+      answerType: "multi",
+      parts: [
+        { id: "front", label: "front", ask: "What is `front` at the end?", answerType: "number", answer: front, tolerance: 0,
+          hint: "front moves once per dequeue. Count the dequeues and wrap past the last slot." },
+        { id: "rear", label: "rear", ask: "What is `rear` at the end?", answerType: "number", answer: rear, tolerance: 0,
+          hint: "rear moves once per enqueue. Count the enqueues and wrap past the last slot." },
+        { id: "next", label: "Next out", ask: "Which value would the next dequeue return?", answerType: "number", answer: slots[front], tolerance: 0,
+          hint: "It is the oldest value still in the queue: the queue is first in, first out." },
+      ],
+      explanation: `There are ${enq} enqueues and ${deq} dequeues.\n\n- front moved ${deq} times: ${deq} mod ${k} = **${front}**.\n- rear moved ${enq} times: ${enq} mod ${k} = **${rear}**.\n- The queue is first in, first out, so after ${deq} dequeues the next value out is the ${deq + 1}${deq + 1 === 1 ? "st" : deq + 1 === 2 ? "nd" : deq + 1 === 3 ? "rd" : "th"} value enqueued: **${slots[front]}**, sitting in slot ${front}.`,
+      params: { kind: "x-circular", k, ops },
+      hints: [
+        "You don't need to redraw the array after every step: each pointer just counts its own operations.",
+        `Wrapping means counting modulo ${k}: after slot ${k - 1} comes slot 0.`,
+        "The value at front is simply the oldest one not yet dequeued.",
+      ],
+    };
+  }
+}
+
+const OPEN = "([{";
+const CLOSE = ")]}";
+
+// Bracket checker with a stack: largest stack size, and where it fails.
+function xBrackets(rng) {
+  for (;;) {
+    // A random balanced string.
+    const n = rng.int(4, 7);
+    let s = "";
+    const st = [];
+    let opened = 0;
+    while (opened < n || st.length) {
+      if (opened < n && (st.length === 0 || rng.next() < 0.55)) {
+        const i = rng.int(0, 2);
+        s += OPEN[i];
+        st.push(i);
+        opened++;
+      } else s += CLOSE[st.pop()];
+    }
+    const mode = rng.pick(["ok", "swap", "swap", "extra"]);
+    if (mode === "swap") {
+      const idx = [...s].map((c, i) => (CLOSE.includes(c) ? i : -1)).filter((i) => i >= 0);
+      const at = rng.pick(idx);
+      const others = [...CLOSE].filter((c) => c !== s[at]);
+      s = s.slice(0, at) + rng.pick(others) + s.slice(at + 1);
+    } else if (mode === "extra") {
+      const at = rng.int(1, s.length - 1);
+      s = s.slice(0, at) + rng.pick([...CLOSE]) + s.slice(at);
+    }
+    // Generation side: the usual stack check.
+    const stack = [];
+    let max = 0, fail = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (OPEN.includes(c)) { stack.push(c); max = Math.max(max, stack.length); }
+      else if (!stack.length || OPEN.indexOf(stack[stack.length - 1]) !== CLOSE.indexOf(c)) { fail = i + 1; break; }
+      else stack.pop();
+    }
+    if (!fail && stack.length) continue; // only "balanced" or "fails at a closing bracket"
+    if (mode !== "ok" && !fail) continue;
+    return {
+      prompt: `A program checks brackets with a stack: it reads left to right, pushes every opening bracket, and for every closing bracket pops the top and checks that it is the matching kind. It stops at the first closing bracket that has nothing to match or the wrong kind on top.\n\nInput: \`${s}\` (${s.length} characters, numbered from 1)`,
+      answerType: "multi",
+      parts: [
+        { id: "max", label: "Largest stack", ask: "What is the largest number of brackets on the stack at any moment before the check stops?", answerType: "number", answer: max, tolerance: 0,
+          hint: "Track the stack size: +1 for every opening bracket, −1 for every matching closing one." },
+        { id: "fail", label: "Fails at", ask: "At which character does the check fail? Type 0 if the brackets are balanced.", answerType: "number", answer: fail, tolerance: 0,
+          hint: "At each closing bracket, look at the top of the stack: it must be the same kind of bracket." },
+      ],
+      explanation: `Trace the stack (top at the right):\n\n${(() => {
+        const rows = [];
+        const t = [];
+        for (let i = 0; i < s.length; i++) {
+          const c = s[i];
+          if (OPEN.includes(c)) { t.push(c); rows.push(`- ${i + 1}: \`${c}\` push → \`${t.join("")}\``); }
+          else if (!t.length || OPEN.indexOf(t[t.length - 1]) !== CLOSE.indexOf(c)) { rows.push(`- ${i + 1}: \`${c}\` ${t.length ? `but the top is \`${t[t.length - 1]}\`` : "but the stack is empty"}: **fail**`); break; }
+          else { t.pop(); rows.push(`- ${i + 1}: \`${c}\` matches, pop → \`${t.join("") || "empty"}\``); }
+        }
+        return rows.join("\n");
+      })()}\n\nLargest stack: **${max}**. ${fail ? `It fails at character **${fail}**.` : "Every bracket matched and the stack ends empty, so it is balanced: **0**."}`,
+      params: { kind: "x-brackets", s },
+      hints: [
+        "Write the stack down after every character, with the top on the right.",
+        `The first character \`${s[0]}\` ${OPEN.includes(s[0]) ? "is pushed" : "is a closing bracket with nothing to match"}. Carry on from there.`,
+        "A closing bracket must match the **top** of the stack, not just any earlier opening bracket.",
+      ],
+    };
+  }
+}
+
+function genExpert(subtopic, rng) {
+  if (subtopic === "searching") return rng.next() < 0.5 ? xSearchDepth(rng) : xSearchBack(rng);
+  if (subtopic === "sorting") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xSortBack(rng) : t === 1 ? xSortTotals(rng) : xMerge(rng);
+  }
+  if (subtopic === "complexity") return rng.next() < 0.5 ? xBudget(rng) : xCrossover(rng);
+  if (subtopic === "data-structures") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xStackPerm(rng) : t === 1 ? xCircular(rng) : xBrackets(rng);
+  }
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- expert verification ----
+
+const xNum = (answer, id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+
+// Prefix reduction for brackets: remove adjacent matching pairs until none are left.
+function vReduce(s) {
+  let cur = s;
+  for (;;) {
+    const next = cur.replace(/\(\)|\[\]|\{\}/g, "");
+    if (next === cur) return cur;
+    cur = next;
+  }
+}
+
+function verifyExpert(p, question, answer) {
+  switch (p.kind) {
+    case "x-depth": {
+      if (!isDistinct(p.a)) return false;
+      const d = p.a.map((t) => vBinary(p.a, t).length);
+      const max = Math.max(...d);
+      return numEq(xNum(answer, "max"), max) && numEq(xNum(answer, "deep"), d.filter((x) => x === max).length);
+    }
+    case "x-searchback": {
+      if (!isDistinct(p.a)) return false;
+      const fits = (c) => {
+        const t = Number(c);
+        if (!Number.isInteger(t)) return false;
+        const seq = vBinary(p.a, t);
+        return seq.length > 3 && p.shown.every((x, i) => seq[i] === x);
+      };
+      const ch = question.choices;
+      if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
+      const ok = ch.filter(fits);
+      return ok.length === 1 && ok[0] === String(answer);
+    }
+    case "x-sortback": {
+      const ch = question.choices;
+      if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
+      const ok = ch.filter((c) => {
+        const a = JSON.parse(c);
+        return isDistinct(a) && fmt(vPass(p.algo, a, p.k)) === fmt(p.after);
+      });
+      return ok.length === 1 && ok[0] === String(answer);
+    }
+    case "x-sorttotals": {
+      if (!isDistinct(p.a)) return false;
+      // Selection swaps = n − (cycles of the permutation that sorts the list).
+      const order = asc(p.a);
+      const seen = new Array(p.a.length).fill(false);
+      let cycles = 0;
+      for (let i = 0; i < p.a.length; i++) {
+        if (seen[i]) continue;
+        cycles++;
+        for (let j = i; !seen[j]; j = order.indexOf(p.a[j])) seen[j] = true;
+      }
+      let inv = 0;
+      p.a.forEach((x, i) => p.a.forEach((y, j) => { if (i < j && x > y) inv++; }));
+      return numEq(xNum(answer, "sel"), p.a.length - cycles) && numEq(xNum(answer, "ins"), inv);
+    }
+    case "x-merge": {
+      // The list with the smaller maximum empties first; the other list's items above that
+      // maximum are copied without comparisons.
+      const mL = Math.max(...p.L), mR = Math.max(...p.R);
+      const firstL = mL < mR;
+      const copied = (firstL ? p.R : p.L).filter((x) => x > (firstL ? mL : mR)).length;
+      return numEq(xNum(answer, "comps"), p.L.length + p.R.length - copied)
+        && String(xNum(answer, "empty")) === (firstL ? "The first list" : "The second list");
+    }
+    case "x-budget": {
+      const t = Number(xNum(answer, "time"));
+      const n = Number(xNum(answer, "maxn"));
+      if (!Number.isInteger(n) || String(xNum(answer, "time") ?? "").trim() === "") return false;
+      if (p.o === "O(2^n)") {
+        const time = (k) => { let x = p.T1; for (let i = p.n1; i < k; i++) x *= 2; return x; };
+        return t === time(p.n2) && time(n) <= p.B && time(n + 1) > p.B;
+      }
+      const e = { "O(n)": 1, "O(n²)": 2, "O(n³)": 3 }[p.o];
+      // t / T1 = (n2 / n1)^e, checked as t · n1^e = T1 · n2^e; budget with integer inequalities.
+      return t * p.n1 ** e === p.T1 * p.n2 ** e && p.T1 * n ** e <= p.B * p.n1 ** e && p.T1 * (n + 1) ** e > p.B * p.n1 ** e;
+    }
+    case "x-crossover": {
+      let n0 = null;
+      for (let n = 1; n <= 100000 && n0 === null; n++) if (p.a * n ** p.pa < p.b * n ** p.pb) n0 = n;
+      // Once A is ahead it stays ahead (checked a little further on).
+      for (let n = n0; n < n0 + 50; n++) if (!(p.a * n ** p.pa < p.b * n ** p.pb)) return false;
+      return n0 !== null && numEq(xNum(answer, "n0"), n0) && p.pa < p.pb && String(xNum(answer, "big")) === `Algorithm ${p.low}`;
+    }
+    case "x-stackperm": {
+      const ch = question.choices;
+      if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
+      // Exhaustive: an order is possible iff some push/pop schedule produces it.
+      const reach = (seq) => {
+        const go = (next, st, k) => {
+          if (k === seq.length) return true;
+          if (st.length && st[st.length - 1] === seq[k] && go(next, st.slice(0, -1), k + 1)) return true;
+          return next <= p.n && go(next + 1, [...st, next], k);
+        };
+        return go(1, [], 0);
+      };
+      const bad = ch.filter((c) => {
+        const seq = JSON.parse(c);
+        return seq.length === p.n && new Set(seq).size === p.n && !reach(seq);
+      });
+      return bad.length === 1 && bad[0] === String(answer);
+    }
+    case "x-circular": {
+      // Plain queue for the value; pointer positions from operation counts.
+      const q = [];
+      let e = 0, d = 0;
+      for (const o of p.ops) {
+        if (o.op === "add") { q.push(o.v); e++; if (q.length > p.k) return false; }
+        else { if (!q.length) return false; q.shift(); d++; }
+      }
+      return q.length > 0 && numEq(xNum(answer, "front"), d % p.k) && numEq(xNum(answer, "rear"), e % p.k) && numEq(xNum(answer, "next"), q[0]);
+    }
+    case "x-brackets": {
+      const s = p.s;
+      // A prefix is still fine when it reduces to opening brackets only.
+      const fine = (pre) => /^[([{]*$/.test(vReduce(pre));
+      let fail = 0;
+      for (let i = 1; i <= s.length; i++) if (!fine(s.slice(0, i))) { fail = i; break; }
+      if (!fail && vReduce(s) !== "") return false;
+      let max = 0;
+      for (let i = 1; i <= (fail ? fail - 1 : s.length); i++) max = Math.max(max, vReduce(s.slice(0, i)).length);
+      return numEq(xNum(answer, "max"), max) && numEq(xNum(answer, "fail"), fail);
     }
     default:
       return false;

@@ -15,3 +15,11 @@ An algorithm is a precise recipe a computer follows. Here you trace classic algo
 - Whenever the answer is a whole list, you pick it from the options.
 - Counts, values and indexes are typed as whole numbers.
 - Each question spells out the exact version of the algorithm it uses, and the **How to solve** card in Guided mode has the same rules.
+
+## Expert
+
+Expert questions make you reason about a whole algorithm, not just trace one run, and most have several parts:
+- **Searching:** how many comparisons each item needs, or which target produced a given trace.
+- **Sorting:** work backwards to the starting list, total swaps and shifts, and merging two sorted lists.
+- **Complexity:** scale a running time up, find the largest input that fits a time budget (round down), and find where a slower-growing algorithm starts to win.
+- **Stacks and queues:** impossible stack orders, circular-buffer queues and bracket checking.

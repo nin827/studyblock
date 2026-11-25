@@ -75,13 +75,15 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 ```
 Domain ids follow the same `^[a-z0-9-]+$` rule. A domain with an empty `modules` list shows as "coming soon".
 
+**Archived modules:** an optional top-level `"archived": [{ "id", "title" }]` lists retired subjects. Their folders stay in `modules/`, but they are never loaded, shown or sampled, and `tools/bundle.py` skips them. `loadArchived()` / `titleLookup()` in `engine.js` give old attempts their title. History groups them under "Archived", and Home "Recent" tags them. An id that is still listed in a domain stays active, with a warning. Restoring a subject means moving its id back into a domain.
+
 ## Multi-domain mix
 
 The `#/mix` builder lets the user:
 1. Tick domains to include (all ticked by default).
 2. Within each ticked domain, tick/untick subdomains (modules) — all ticked by default.
 3. Set a **weight** (number ≥ 0, default **1**) on every ticked domain and every ticked subdomain. 0 = excluded.
-4. Pick difficulty: `any` (default) or `easy`/`medium`/`hard`; and question count (default 10, 1–50).
+4. Pick difficulty: `any` (default) or `easy`/`medium`/`hard`/`expert` (a module without the chosen level uses its closest one, so Expert falls back to Hard); and question count (default 10, 1–50).
 
 Sampling per question (seeded): pick a domain with probability ∝ domain weight, then a subdomain within it ∝ subdomain weight, then a subtopic uniformly from that module, then difficulty (the chosen one if the subtopic supports it, else the closest available; `any` = uniform over the subtopic's difficulties). Domains/subdomains whose effective weight is 0 are skipped. The builder shows each subdomain's resulting share as a percentage.
 
@@ -142,6 +144,11 @@ A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `d
   ]
 }
 ```
+
+**Difficulties** are `easy`, `medium`, `hard` and `expert` (`DIFFICULTY_ORDER` in `engine.js`), offered per subtopic. 35 deep subjects add Expert and the other 24 (fact lists and simple skills) stop at Hard; a subtopic may stop at Medium where Hard wouldn't be harder (none does yet, ticket 015). Unknown values and duplicates are dropped with one warning per module, and a subtopic left with none is skipped. The module grid shows only the levels a module offers.
+- **Expert** means multi-step or multi-concept problems, working backwards, or a problem the learner sets up, not bigger numbers. It is added as a separate branch in `generate()`/`verify()` (dispatching on `difficulty` and `params.kind`), so existing levels never change per seed. `modules/algebra/` is the reference.
+- **UI:** Expert shows a `flame` icon plus its label (`difficultyHtml`/`difficultyTag` in `ui.js`), with a pill in the accent tokens, so it never relies on colour alone.
+- **Expert conventions:** every part states its rounding, and chained parts must not change answer when worked from an earlier rounded answer (redraw instead). Part ids stay lowercase (`multiShapeOk`); labels of 3 characters or fewer (`b`, `k`, `x1`) keep their case in the quiz (`.part-label.keep-case`), longer ones show in capitals.
 
 `all` is a reserved id: a subtopic with id `all` is skipped with a console warning.
 
@@ -424,6 +431,7 @@ The same code runs in three places.
      - `loadModule(path)`: dynamic `import()` normally, or the mapped specifier.
    - No other file may call `fetch` or `import()` on project paths.
    - Lucide is inlined in the bundle from `vendor/lucide.min.js`.
+   - Module folders not listed in any domain (archived ones) are left out.
    - The bundler uses only the Python standard library and writes only inside `dist/`.
 
 ## Installable web app (PWA)
@@ -482,9 +490,10 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 ## Subject notes
 
 - **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
-- **Medical domain:** general facts and standard calculations only. No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
+- **Trimmed subjects (ticket 015):** Balancing & Progression, Pixels & Colour, Collision, Vital Signs and Health Statistics are archived. Cryptography Basics was merged into Number Theory (Ciphers, Keys & RSA, worked by hand), and Anatomy into Biology Basics (Skeleton, Organs and body systems).
+- **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
 - **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
-- **Collision:** touching never counts as overlapping. **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
+- **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** a fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.
 - Open choices for these are in tickets 012–014.

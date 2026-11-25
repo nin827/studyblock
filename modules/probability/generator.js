@@ -1185,6 +1185,7 @@ function genEV(difficulty, rng) {
 // ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   checkDifficulty(difficulty);
   if (subtopic === "basic") return genBasic(difficulty, rng);
   if (subtopic === "combined") return genCombined(difficulty, rng);
@@ -1492,6 +1493,7 @@ function evMatches(x, T, n, cost, times = 1) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
 
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -1554,4 +1556,602 @@ export function verify(question, answer) {
   if (truth === null || !Number.isFinite(truth)) return false;
   const x = Number(answer);
   return Number.isInteger(x) && x === truth;
+}
+
+// =============================================================================================
+// Expert: multi-step questions (easy/medium/hard above are untouched; they never reach this code).
+// Each template draws its rng values first, then builds text. Hints use only values already
+// drawn (no rng calls) and never state a final answer. Params use "x-" kinds, checked by
+// verifyExpert() with a different method: enumerating the outcomes, or a brute-force search.
+
+const FRAC_ASK = " (simplest form, like 3/8)";
+const pct = (n) => `${n}%`;
+// nCr by the multiplicative formula (generate only; verify enumerates subsets instead).
+function cnk(n, r) {
+  if (r < 0 || r > n) return 0;
+  let c = 1;
+  for (let i = 1; i <= r; i++) c = (c * (n - r + i)) / i;
+  return Math.round(c);
+}
+const twoCols = (rng) => {
+  const c1 = rng.pick(COLOURS);
+  const c2 = rng.pick(COLOURS.filter((c) => c !== c1));
+  return [c1, c2];
+};
+const fracPart = (id, label, ask, N, D, hint) => ({ id, label, ask: ask + FRAC_ASK, answerType: "text", answer: fracStr(N, D), hint });
+const numPart = (id, label, ask, answer, hint, tolerance = 0) => ({ id, label, ask, answerType: "number", answer, tolerance, hint });
+
+// ---- basic / expert ----
+
+// Working backwards from a probability to the bag's contents, then a new probability.
+function xBagBack(rng) {
+  const [c1, c2] = twoCols(rng);
+  const thing = rng.pick(THINGS);
+  const r = rng.int(2, 12);
+  const b = rng.int(2, 20);
+  const k = rng.int(2, 6);
+  const addFirst = rng.next() < 0.5;
+  const [p, q] = reduce(r, r + b);
+  const addCol = addFirst ? c1 : c2;
+  const newR = addFirst ? r + k : r;
+  const newT = r + b + k;
+  const prompt = `A bag contains only ${c1} and ${c2} ${thing}. There are ${r} ${c1} ${thing}, and the probability of picking a ${c1} one at random is ${p}/${q}.`;
+  const steps = [
+    `If there are T ${thing} altogether, then ${r}/T = ${p}/${q}, so T = ${r} × ${q} ÷ ${p} = ${r + b}.`,
+    `So there are ${r + b} - ${r} = **${b}** ${c2} ${thing}.`,
+    `After adding ${k} ${addCol}, there are ${newR} ${c1} out of ${newT}. ${simplifyLine(newR, newT)}`,
+  ];
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      numPart("other", `${cap(c2)} ${thing}`, `How many ${c2} ${thing} are in the bag?`, b,
+        `The total is the number that makes ${r} ÷ total equal ${p}/${q}. Then subtract the ${c1} ones.`),
+      fracPart("after", "New probability", `${k} more ${addCol} ${thing} are added. What is the probability of now picking a ${c1} one?`, newR, newT,
+        `Update both counts: the ${addCol} count and the total each go up by ${k}.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `Call the total number of ${thing} T. The probability says ${r} out of T is the same as ${p} out of ${q}.`,
+      `Scale up: ${p} parts are ${r} ${thing}, so one part is ${r} ÷ ${p}, and the whole bag is ${q} parts. In the calculator: \`_${c1} * _q / _p\`.`,
+      `Subtract the ${c1} ${thing} from the total to get the ${c2} ones, then add the ${k} new ${thing} before working out the new probability.`,
+    ],
+    given: [{ label: `_${c1}`, value: r }, { label: "_p", value: p }, { label: "_q", value: q }],
+    params: { kind: "x-bagback", r, p, q, k, addFirst },
+  };
+}
+
+// Two probabilities (before and after adding some) pin down the bag; then a two-draw probability.
+function xBagAdd(rng) {
+  const [c1, c2] = twoCols(rng);
+  const thing = rng.pick(THINGS);
+  const R = rng.int(2, 10);
+  const B = rng.int(2, 12);
+  const k = rng.int(2, 8);
+  const T = R + B;
+  const [p1, q1] = reduce(R, T);
+  const [p2, q2] = reduce(R, T + k);
+  const prompt = `A bag contains only ${c1} and ${c2} ${thing}. The probability of picking a ${c1} one is ${p1}/${q1}. After ${k} more ${c2} ${thing} are put in, the probability of picking a ${c1} one is ${p2}/${q2}.`;
+  const steps = [
+    `Let the original bag hold T ${thing}, so it has (${p1}/${q1})T ${c1} ones. After adding ${k}, \`(${p1}/${q1})T ÷ (T + ${k}) = ${p2}/${q2}\`.`,
+    `Cross-multiply: \`${p1 * q2}T = ${q1 * p2}(T + ${k})\`, so \`${p1 * q2 - q1 * p2}T = ${q1 * p2 * k}\` and **T = ${T}**.`,
+    `${cap(c1)} ${thing}: ${p1}/${q1} × ${T} = **${R}**.`,
+    `Two from the original bag without replacement: ${R}/${T} × ${R - 1}/${T - 1} = ${R * (R - 1)}/${T * (T - 1)}. ${simplifyLine(R * (R - 1), T * (T - 1))}`,
+  ];
+  return {
+    prompt,
+    answerType: "multi",
+    parts: [
+      numPart("total", "Original total", `How many ${thing} were in the bag before any were added?`, T,
+        `Write the ${c1} count as (${p1}/${q1}) × T, then set (${c1} count) ÷ (T + ${k}) equal to ${p2}/${q2} and solve for T.`),
+      numPart("first", `${cap(c1)} ${thing}`, `How many ${c1} ${thing} are in the bag?`, R,
+        `The number of ${c1} ${thing} doesn't change when ${c2} ones are added. Use the first probability with your total.`),
+      fracPart("both", "Two picks", `Using the original bag, two ${thing} are taken out without replacement. What is the probability that both are ${c1}?`, R * (R - 1), T * (T - 1),
+        "Multiply along the route: the second fraction has one fewer on the top and on the bottom."),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `Let T be the original number of ${thing}. The ${c1} count is (${p1}/${q1}) × T, and it stays the same when ${c2} ones are added.`,
+      `After adding, the total is T + ${k}. Set (${p1}/${q1})T ÷ (T + ${k}) = ${p2}/${q2} and cross-multiply.`,
+      "Collect the T terms on one side and solve. Check that the number of each colour comes out whole.",
+    ],
+    given: [{ label: "_p1", value: p1 }, { label: "_q1", value: q1 }, { label: "_p2", value: p2 }, { label: "_q2", value: q2 }, { label: "_k", value: k }],
+    params: { kind: "x-bagadd", p1, q1, p2, q2, k },
+  };
+}
+
+// ---- combined / expert ----
+
+const TREES = [
+  { intro: (a, f, g) => `It rains on ${pct(a)} of school days. On a rainy day the bus is late ${pct(f)} of the time; on a dry day it is late ${pct(g)} of the time.`,
+    pick: "A school day is picked at random.", ev: "the bus is late", cond: "it was a rainy day", A: "rainy", notA: "dry", labs: ["_rain", "_late_wet", "_late_dry"] },
+  { intro: (a, f, g) => `Machine A makes ${pct(a)} of a factory's phone cases and machine B makes the rest. ${pct(f)} of machine A's cases are faulty, and ${pct(g)} of machine B's.`,
+    pick: "A case is picked at random.", ev: "it is faulty", cond: "it was made by machine A", A: "machine A", notA: "machine B", labs: ["_A", "_fault_A", "_fault_B"] },
+  { intro: (a, f, g) => `${pct(a)} of the emails a company receives are spam. Its filter flags ${pct(f)} of spam emails and ${pct(g)} of the other emails.`,
+    pick: "An email is picked at random.", ev: "it is flagged", cond: "it is spam", A: "spam", notA: "not spam", labs: ["_spam", "_flag_spam", "_flag_other"] },
+  { intro: (a, f, g) => `A team plays ${pct(a)} of its matches at home. It wins ${pct(f)} of its home matches and ${pct(g)} of its away matches.`,
+    pick: "One of its matches is picked at random.", ev: "the team won", cond: "it was a home match", A: "home", notA: "away", labs: ["_home", "_win_home", "_win_away"] },
+];
+
+// Tree diagram with conditional probabilities: total probability, then reverse (Bayes).
+function xTree(rng) {
+  const ti = rng.int(0, TREES.length - 1);
+  const t = TREES[ti];
+  const a = rng.int(2, 18) * 5;
+  const f = rng.int(1, 19) * 5;
+  let g;
+  do g = rng.int(1, 19) * 5; while (g === f);
+  const b = 100 - a;
+  const top = a * f;
+  const all = a * f + b * g;
+  const [L1, L2, L3] = t.labs;
+  const steps = [
+    `Two routes lead to "${t.ev}": ${t.A} and ${t.ev} (${a}/100 × ${f}/100 = ${top}/10000), or ${t.notA} and ${t.ev} (${b}/100 × ${g}/100 = ${b * g}/10000).`,
+    `Add the routes: P(${t.ev}) = ${all}/10000. ${simplifyLine(all, 10000)}`,
+    `Given that ${t.ev}, only those routes count: P = ${top} ÷ ${all}. ${simplifyLine(top, all)}`,
+  ];
+  return {
+    prompt: `${t.intro(a, f, g)} ${t.pick}`,
+    answerType: "multi",
+    parts: [
+      fracPart("event", "Overall", `What is the probability that ${t.ev}?`, all, 10000,
+        `Add the two routes that end in "${t.ev}": ${t.A} first, and ${t.notA} first.`),
+      fracPart("reverse", "Reverse", `Given that ${t.ev}, what is the probability that ${t.cond}?`, top, all,
+        `Divide the ${t.A} route by the total for "${t.ev}". Using the unsimplified ten-thousandths keeps it easy.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `Draw a tree: the first branch is ${t.A} (${a}%) or ${t.notA} (${b}%); the second branch is whether ${t.ev}.`,
+      `Multiply along each branch. As fractions out of 10000: \`${L1} * ${L2}\` for the ${t.A} route and \`(100 - ${L1}) * ${L3}\` for the other.`,
+      `"Given that ${t.ev}" means you only look at the routes ending in "${t.ev}": the ${t.A} route as a share of both.`,
+    ],
+    given: [{ label: L1, value: a }, { label: L2, value: f }, { label: L3, value: g }],
+    params: { kind: "x-tree", a, f, g },
+  };
+}
+
+// Three picks without replacement from a 3-colour bag: "at least one" and "all the same colour".
+function xDraw3(rng) {
+  let b;
+  let ci;
+  do {
+    b = bag(rng, 3, 2, 7);
+    ci = rng.int(0, 2);
+  } while (!b.counts.some((c) => c >= 3) || b.total - b.counts[ci] < 3);
+  const col = b.cols[ci];
+  const T = b.total;
+  const r = b.counts[ci];
+  const all3 = cnk(T, 3);
+  const none = cnk(T - r, 3);
+  const same = sum(b.counts.map((c) => cnk(c, 3)));
+  const steps = [
+    `There are ${T} ${b.thing}; ${T - r} of them are not ${col}.`,
+    `P(no ${col}) = ${T - r}/${T} × ${T - r - 1}/${T - 1} × ${T - r - 2}/${T - 2} = ${none}/${all3} (as combinations: C(${T - r}, 3) ÷ C(${T}, 3)).`,
+    `P(at least one ${col}) = 1 - ${none}/${all3} = ${all3 - none}/${all3}. ${simplifyLine(all3 - none, all3)}`,
+    `All the same colour: add C(count, 3) for each colour: ${b.counts.map((c) => `C(${c}, 3) = ${cnk(c, 3)}`).join(", ")}, total ${same}, so P = ${same}/${all3}. ${simplifyLine(same, all3)}`,
+  ];
+  return {
+    prompt: `A bag holds ${bagText(b)} ${b.thing}. Three are taken out at random, one after another, without replacement.`,
+    answerType: "multi",
+    parts: [
+      fracPart("atleast", "At least one", `What is the probability that at least one is ${col}?`, all3 - none, all3,
+        `Find P(no ${col}) first: three picks from the ${T - r} that aren't ${col}, with the bottom going down by one each time.`),
+      fracPart("same", "Same colour", "What is the probability that all three are the same colour?", same, all3,
+        `Work out "all three ${b.cols[0]}", "all three ${b.cols[1]}" and "all three ${b.cols[2]}" separately (a colour with fewer than 3 gives 0), then add.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `"At least one" is easiest as 1 - P(none). Without replacement, multiply three fractions whose tops and bottoms each go down by one.`,
+      `In the calculator, the total is \`${bagSum(b)}\`.`,
+      "For \"all the same colour\" there is one route per colour. Each route is a product of three fractions; add the routes at the end.",
+    ],
+    given: bagGiven(b),
+    params: { kind: "x-draw3", cols: b.cols, counts: b.counts, col },
+  };
+}
+
+const VENNS = [
+  { who: "students in a class", A: "study French", B: "study Spanish", one: "a student", labs: ["_french", "_spanish"] },
+  { who: "members of a sports club", A: "play tennis", B: "swim", one: "a member", labs: ["_tennis", "_swim"] },
+  { who: "households on a street", A: "have a cat", B: "have a dog", one: "a household", labs: ["_cat", "_dog"] },
+  { who: "people at a meeting", A: "drink tea", B: "drink coffee", one: "a person", labs: ["_tea", "_coffee"] },
+];
+
+// Overlapping groups (inclusion-exclusion) and a conditional probability from counts.
+function xVenn(rng) {
+  const v = VENNS[rng.int(0, VENNS.length - 1)];
+  const c = rng.int(1, 8);
+  const a = c + rng.int(1, 10);
+  const b = c + rng.int(1, 10);
+  const n = a + b - c + rng.int(1, 10);
+  const either = a + b - c;
+  const neither = n - either;
+  const exactly = a + b - 2 * c;
+  const [LA, LB] = v.labs;
+  const steps = [
+    `In at least one group: ${a} + ${b} - ${c} = ${either} (the ${c} in both were counted twice).`,
+    `Neither: ${n} - ${either} = ${neither}, so P = ${neither}/${n}. ${simplifyLine(neither, n)}`,
+    `Exactly one: (${a} - ${c}) + (${b} - ${c}) = ${exactly}, so P = ${exactly}/${n}. ${simplifyLine(exactly, n)}`,
+    `Given that they ${v.B}, only those ${b} count, and ${c} of them also ${v.A}: P = ${c}/${b}. ${simplifyLine(c, b)}`,
+  ];
+  return {
+    prompt: `Of the ${n} ${v.who}, ${a} ${v.A}, ${b} ${v.B}, and ${c} do both. One is picked at random.`,
+    answerType: "multi",
+    parts: [
+      fracPart("neither", "Neither", `What is the probability that they do neither?`, neither, n,
+        "Count those in at least one group first: add the two groups, then take away the ones counted twice."),
+      fracPart("exactly", "Exactly one", `What is the probability that they do exactly one of the two?`, exactly, n,
+        `Take the ${c} who do both out of each group before adding.`),
+      fracPart("given", "Conditional", `Given that they ${v.B}, what is the probability that they also ${v.A}?`, c, b,
+        `"Given that" shrinks the total: only the ones who ${v.B} are left to choose from.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      "Draw a Venn diagram with two overlapping circles. Put the number who do both in the middle first.",
+      `Fill in the rest of each circle: \`${LA} - _both\` and \`${LB} - _both\`. Whatever is left of the ${n} is outside both circles.`,
+      "For the conditional part, the bottom of the fraction is the whole circle you're told about, not the whole group.",
+    ],
+    given: [{ label: "_n", value: n }, { label: LA, value: a }, { label: LB, value: b }, { label: "_both", value: c }],
+    params: { kind: "x-venn", n, a, b, c },
+  };
+}
+
+// ---- counting / expert ----
+
+const XWORDS = ["PLANET", "GARDEN", "FRIEND", "MONKEY", "CASTLE", "BRIGHT", "JUMPED", "ORANGE", "SILVER", "DANGER",
+  "PIRATES", "TRAVEL", "CLOUDS", "HUNTER", "MAGIC", "TIGER", "PLANTS", "WINTER", "FROGS", "QUEST", "BLANKET", "CORNISH"];
+
+// Arrangements of a word with all-different letters, with two letters kept together or apart.
+function xTogether(rng) {
+  const word = rng.pick(XWORDS);
+  const n = word.length;
+  const i = rng.int(0, n - 1);
+  let j;
+  do j = rng.int(0, n - 1); while (j === i);
+  const [x, y] = [word[Math.min(i, j)], word[Math.max(i, j)]];
+  const apart = rng.next() < 0.5;
+  const tog = 2 * fact(n - 1);
+  const all = fact(n);
+  const count = apart ? all - tog : tog;
+  const steps = [
+    `All ${n} letters are different, so there are ${n}! = ${all} arrangements.`,
+    `Together: glue ${x}${y} into one block, giving ${n - 1} items to arrange: ${n - 1}! = ${fact(n - 1)}, and the block can be ${x}${y} or ${y}${x}: × 2 = ${tog}.`,
+    apart ? `Apart: ${all} - ${tog} = **${all - tog}**.` : `So **${tog}** arrangements keep them together.`,
+    `Apart, as a probability: ${all - tog}/${all}. ${simplifyLine(all - tog, all)}`,
+  ];
+  return {
+    prompt: `The letters of the word **${word}** are arranged in a row. Look at where the letters ${x} and ${y} end up.`,
+    answerType: "multi",
+    parts: [
+      numPart("count", apart ? "Apart" : "Together", `How many arrangements have ${x} and ${y} ${apart ? "not next to each other" : "next to each other"}?`, count,
+        apart ? "Count the arrangements with them together, then subtract from the total." : `Treat ${x}${y} as one block, and remember the block can be written two ways.`),
+      fracPart("prob", "Probability", `One arrangement is chosen at random. What is the probability that ${x} and ${y} are not next to each other?`, all - tog, all,
+        `Divide the number of "apart" arrangements by all ${n}! arrangements.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `Every letter of ${word} is different, so the total number of arrangements is ${n}!.`,
+      `For "next to each other", glue ${x} and ${y} into one block. Now count the arrangements of the block and the other ${n - 2} letters.`,
+      "Inside the block the two letters can swap, which doubles the count. \"Not next to each other\" is everything else.",
+    ],
+    params: { kind: "x-together", word, x, y, apart },
+  };
+}
+
+const XGROUPS = [["teachers", "students"], ["girls", "boys"], ["managers", "staff members"], ["adults", "children"], ["seniors", "juniors"]];
+
+// Committees with "at least one" (complement), then a probability from the counts.
+function xCommittee(rng) {
+  const [A, B] = rng.pick(XGROUPS);
+  const g1 = rng.int(2, 6);
+  const r = rng.int(3, 5);
+  const g2 = rng.int(Math.max(r, 3), 9);
+  const n = g1 + g2;
+  const all = cnk(n, r);
+  const none = cnk(g2, r);
+  const one = g1 * cnk(g2, r - 1);
+  const steps = [
+    `All committees: C(${n}, ${r}) = ${all}.`,
+    `With no ${A}: C(${g2}, ${r}) = ${none}. So at least one: ${all} - ${none} = **${all - none}**.`,
+    `Exactly one ${A.replace(/s$/, "")}: ${g1} ways to choose them × C(${g2}, ${r - 1}) = ${cnk(g2, r - 1)} for the rest = ${one}.`,
+    `P(exactly one) = ${one}/${all}. ${simplifyLine(one, all)}`,
+  ];
+  return {
+    prompt: `A committee of ${r} is chosen from ${g1} ${A} and ${g2} ${B}. The order of choosing doesn't matter.`,
+    answerType: "multi",
+    parts: [
+      numPart("atleast", "At least one", `How many different committees include at least one of the ${A}?`, all - none,
+        `Count every committee, then take away the ones made only of ${B}.`),
+      fracPart("exactly", "Probability", `The committee is chosen at random. What is the probability that it has exactly one of the ${A}?`, one, all,
+        `Choose the one from the ${g1} ${A}, then fill the other ${r - 1} places from the ${g2} ${B}. Multiply.`),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      `Order doesn't matter, so use combinations: C(n, r) = n! ÷ (r! (n - r)!). There are ${n} people altogether.`,
+      `"At least one" is the total minus "none": how many committees of ${r} use only the ${g2} ${B}?`,
+      `For exactly one, multiply the choices for each group, then divide by the number of all committees.`,
+    ],
+    given: [{ label: `_${A.split(" ")[0]}`, value: g1 }, { label: `_${B.split(" ")[0]}`, value: g2 }, { label: "_r", value: r }],
+    params: { kind: "x-committee", g1, g2, r },
+  };
+}
+
+// ---- expected-value / expert ----
+
+// Find the prize that makes a game fair, then the expected profit with a different prize.
+function xFair(rng) {
+  return retry(() => {
+    const n = rng.pick([6, 8, 10, 12, 20]);
+    const k = rng.int(1, 3);
+    const j = rng.int(0, 1);
+    const s = j ? rng.int(1, 4) * 50 : 0;
+    const c = rng.int(4, 20) * 25;
+    const G = rng.pick([20, 50, 100, 200]);
+    const down = rng.int(0, 2);
+    const X = (c * n - s * j) / k; // fair prize in cents
+    const Y = Math.floor(X / 100) - down; // the prize actually offered, whole dollars
+    if (X <= c || X <= s || Y * 100 <= s || Y < 1 || nearHalf(X / 100)) return null;
+    const totalCents = (G * (k * Y * 100 + j * s - c * n)) / n;
+    if (nearHalf(totalCents / 100) || totalCents === 0) return null;
+    const win = k === 1 ? art(n) : `${art(n - k + 1)} or higher`;
+    const cons = j ? `, ${money(s)} back on a 1` : "";
+    const steps = [
+      `Each face has probability 1/${n}. ${k} face${k > 1 ? "s" : ""} win${k > 1 ? "" : "s"} the prize X${j ? ` and one face (the 1) pays ${money(s)}` : ""}.`,
+      `Fair means expected winnings = cost: \`${k}/${n} × X${j ? ` + 1/${n} × ${dollars(s)}` : ""} = ${dollars(c)}\`.`,
+      `So X = (${dollars(c)} × ${n}${j ? ` - ${dollars(s)}` : ""}) ÷ ${k} = **${fmt2(X / 100)}**.`,
+      `With a prize of ${money(Y * 100)}: expected profit per game = ${k}/${n} × ${Y}${j ? ` + 1/${n} × ${dollars(s)}` : ""} - ${dollars(c)} = ${num(totalCents / G / 100)}.`,
+      `Over ${G} games: ${G} × that = **${fmt2(totalCents / 100)}**.`,
+    ];
+    return {
+      prompt: `A game costs ${money(c)} to play. You roll a fair ${n}-sided die (faces 1 to ${n}): you win a prize on ${win}${cons}, and nothing otherwise. The organiser plans to make the prize ${money(Y * 100)}, and a regular player expects to play ${G} games.`,
+      answerType: "multi",
+      parts: [
+        numPart("prize", "Fair prize", "What prize (in dollars) would make the game fair, so the expected profit is 0? Round to 2 decimal places.", round2(X / 100),
+          "Set the expected winnings equal to the cost and solve for the prize.", 0.005),
+        numPart("total", "Profit", `With the planned prize of ${money(Y * 100)}, what is the player's expected total profit (in dollars) over the ${G} games? Round to 2 decimal places; a loss is negative.`, round2(totalCents / 100),
+          "Find the expected profit for one game (expected winnings minus the cost), then multiply by the number of games.", 0.005),
+      ],
+      explanation: steps.join("\n\n"),
+      hints: [
+        `The chance of winning the prize is ${k}/${n}${j ? `, and the chance of getting ${money(s)} back is 1/${n}` : ""}.`,
+        `Expected winnings = Σ prize × probability. A fair game has expected winnings equal to the ${money(c)} cost, so solve \`${k}/${n} × X${j ? " + _back/_sides" : ""} = _cost\`.`,
+        `For the second part, use the offered prize, subtract the cost to get the profit per game, and multiply by \`_games\`.`,
+      ],
+      given: [{ label: "_cost", value: c / 100 }, { label: "_sides", value: n }, ...(j ? [{ label: "_back", value: s / 100 }] : []), { label: "_prize", value: Y }, { label: "_games", value: G }],
+      params: { kind: "x-fair", n, k, j, s, c, Y, G },
+    };
+  });
+}
+
+// Probabilities in hundredths (multiples of 5) for 4 outcomes, each at least 0.05.
+function probs4(rng) {
+  let ps;
+  do {
+    ps = [rng.int(1, 8) * 5, rng.int(1, 8) * 5, rng.int(1, 8) * 5];
+  } while (sum(ps) > 95);
+  return [...ps, 100 - sum(ps)];
+}
+function values4(rng) {
+  const vs = new Set();
+  while (vs.size < 4) vs.add(rng.int(-10, 20));
+  return [...vs].sort((x, y) => x - y);
+}
+const XEV_CTX = [
+  { what: "the points scored on one turn of a board game", unit: "points" },
+  { what: "the profit in dollars from one ticket in a prize draw", unit: "dollars" },
+  { what: "the number of goals a team's score changes by in a match", unit: "goals" },
+  { what: "the score from one throw at a fairground stall", unit: "points" },
+];
+const pStr = (h) => num(h / 100);
+
+// A probability table with one missing probability: find it, then E(X).
+function xTable(rng) {
+  const ctx = rng.pick(XEV_CTX);
+  const xs = values4(rng);
+  const ps = rng.shuffle(probs4(rng));
+  const m = rng.int(0, 3);
+  const E100 = sum(xs.map((x, i) => x * ps[i]));
+  const shown = ps.map((p, i) => (i === m ? "p" : pStr(p)));
+  const known = ps.filter((_, i) => i !== m);
+  const steps = [
+    `Probabilities add to 1: p = 1 - (${known.map(pStr).join(" + ")}) = **${pStr(ps[m])}**.`,
+    `E(X) = ${xs.map((x, i) => `${x < 0 ? `(${x})` : x} × ${pStr(ps[i])}`).join(" + ")} = **${num(E100 / 100)}**.`,
+  ];
+  return {
+    prompt: `X is ${ctx.what}. X takes the values ${andList(xs.map(String))} with probabilities ${andList(shown)} respectively.`,
+    answerType: "multi",
+    parts: [
+      numPart("p", "Missing probability", "What is p? Give it as a decimal, like 0.25.", ps[m] / 100,
+        "All the probabilities in a table must add up to 1."),
+      numPart("ev", "Expected value", `What is E(X), the expected value, in ${ctx.unit}? Round to 2 decimal places if needed.`, round2(E100 / 100),
+        "Multiply each value by its probability (use your p), then add. Keep the signs of negative values.", 0.005),
+    ],
+    explanation: steps.join("\n\n"),
+    hints: [
+      "The probabilities of all the outcomes add to 1, so subtract the three you know from 1.",
+      "E(X) = Σ x × P(X = x): one product for each value in the list.",
+      `In the calculator, add a row \`_p${m + 1}\` holding your p, then: \`${xs.map((_, i) => `_x${i + 1} * _p${i + 1}`).join(" + ")}\`.`,
+    ],
+    given: [...xs.map((x, i) => ({ label: `_x${i + 1}`, value: x })), ...ps.map((p, i) => ({ label: `_p${i + 1}`, value: p / 100 })).filter((_, i) => i !== m)],
+    params: { kind: "x-table", xs, ps: shown, m },
+  };
+}
+
+// Working backwards: E(X) is given and one value is unknown.
+function xMissingValue(rng) {
+  const ctx = rng.pick(XEV_CTX);
+  const xs = values4(rng);
+  const ps = rng.shuffle(probs4(rng));
+  const m = rng.int(0, 3);
+  const E100 = sum(xs.map((x, i) => x * ps[i]));
+  const shownX = xs.map((x, i) => (i === m ? "a" : String(x)));
+  const rest = E100 - xs[m] * ps[m];
+  const steps = [
+    `E(X) = Σ x × P(X = x), with a in place of the unknown value: ${shownX.map((x, i) => `${x.startsWith("-") ? `(${x})` : x} × ${pStr(ps[i])}`).join(" + ")} = ${num(E100 / 100)}.`,
+    `The known products add to ${num(rest / 100)}, so ${pStr(ps[m])}a = ${num(E100 / 100)} - ${rest < 0 ? `(${num(rest / 100)})` : num(rest / 100)} = ${num((E100 - rest) / 100)}.`,
+    `a = ${num((E100 - rest) / 100)} ÷ ${pStr(ps[m])} = **${xs[m]}**.`,
+  ];
+  return {
+    prompt: `X is ${ctx.what}. X takes the values ${andList(shownX)} with probabilities ${andList(ps.map(pStr))} respectively. The expected value E(X) is ${num(E100 / 100)}. What is a?${WHOLE}`,
+    answer: xs[m],
+    answerType: "number",
+    tolerance: 0,
+    explanation: steps.join("\n\n"),
+    hints: [
+      "Write out E(X) = Σ x × P(X = x) with a as one of the values, and set it equal to the expected value you're given.",
+      `Work out the three products you know and add them. Only the term ${pStr(ps[m])} × a is left.`,
+      `Subtract that sum from E(X), then divide by ${pStr(ps[m])}.`,
+    ],
+    given: [...xs.map((x, i) => ({ label: `_x${i + 1}`, value: x })).filter((_, i) => i !== m), ...ps.map((p, i) => ({ label: `_p${i + 1}`, value: p / 100 })), { label: "_E", value: E100 / 100 }],
+    params: { kind: "x-missx", xs: shownX, ps, E100 },
+  };
+}
+
+function genExpert(subtopic, rng) {
+  if (subtopic === "basic") return rng.next() < 0.5 ? xBagBack(rng) : xBagAdd(rng);
+  if (subtopic === "combined") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xTree(rng) : t === 1 ? xDraw3(rng) : xVenn(rng);
+  }
+  if (subtopic === "counting") return rng.next() < 0.5 ? xTogether(rng) : xCommittee(rng);
+  if (subtopic === "expected-value") {
+    const t = rng.int(0, 2);
+    return t === 0 ? xFair(rng) : t === 1 ? xTable(rng) : xMissingValue(rng);
+  }
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// ---- Expert verification: enumerate the outcomes, or search for the unknown ----
+
+const xNum = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+const popcount = (m) => { let c = 0; while (m) { c += m & 1; m >>>= 1; } return c; };
+
+function verifyExpert(p, question, answer) {
+  if (question.answerType === "multi" && (!answer || typeof answer !== "object")) return false;
+  const A = (id) => (answer && typeof answer === "object" ? answer[id] : undefined);
+
+  if (p.kind === "x-bagback") {
+    // Search every possible number of the other colour for the one that gives p/q.
+    let other = null;
+    for (let x = 1; x <= 1000; x++) if (p.r * p.q === p.p * (p.r + x)) { other = x; break; }
+    if (other === null || xNum(A("other")) !== other) return false;
+    const items = VCOLOURS_EXPAND([p.r + (p.addFirst ? p.k : 0), other + (p.addFirst ? 0 : p.k)]);
+    return fracMatches(A("after"), items.filter((c) => c === 0).length, items.length);
+  }
+  if (p.kind === "x-bagadd") {
+    // Every (first colour, total) pair that fits both probabilities; there must be exactly one.
+    const fits = [];
+    for (let T = 2; T <= 1000; T++) {
+      if ((p.p1 * T) % p.q1 !== 0) continue;
+      const R = (p.p1 * T) / p.q1;
+      if (R >= 1 && R < T && R * p.q2 === p.p2 * (T + p.k)) fits.push([R, T]);
+    }
+    if (fits.length !== 1) return false;
+    const [R, T] = fits[0];
+    if (xNum(A("total")) !== T || xNum(A("first")) !== R) return false;
+    let N = 0, D = 0;
+    forEachDraw(VCOLOURS_EXPAND([R, T - R]), 2, false, (d) => { D++; if (d[0] === 0 && d[1] === 0) N++; });
+    return fracMatches(A("both"), N, D);
+  }
+  if (p.kind === "x-tree") {
+    // 20 × 20 grid of equally likely cells (each 5% × 5%).
+    if ([p.a, p.f, p.g].some((v) => v % 5 !== 0 || v <= 0 || v >= 100)) return false;
+    let ev = 0, both = 0;
+    for (let i = 0; i < 20; i++) for (let j = 0; j < 20; j++) {
+      const isA = i < p.a / 5;
+      const hit = j < (isA ? p.f : p.g) / 5;
+      if (hit) { ev++; if (isA) both++; }
+    }
+    return fracMatches(A("event"), ev, 400) && fracMatches(A("reverse"), both, ev);
+  }
+  if (p.kind === "x-draw3") {
+    const items = VCOLOURS_EXPAND(p.counts);
+    const ci = p.cols.indexOf(p.col);
+    let D = 0, hit = 0, same = 0;
+    forEachDraw(items, 3, false, (d) => {
+      D++;
+      if (d.includes(ci)) hit++;
+      if (d[0] === d[1] && d[1] === d[2]) same++;
+    });
+    return fracMatches(A("atleast"), hit, D) && fracMatches(A("same"), same, D);
+  }
+  if (p.kind === "x-venn") {
+    // Build the group member by member: [inA, inB].
+    const people = [];
+    for (let i = 0; i < p.n; i++) people.push([i < p.a, i < p.c || (i >= p.a && i < p.a + p.b - p.c)]);
+    const cnt = (f) => people.filter(f).length;
+    if (cnt(([x]) => x) !== p.a || cnt(([, y]) => y) !== p.b || cnt(([x, y]) => x && y) !== p.c) return false;
+    return fracMatches(A("neither"), cnt(([x, y]) => !x && !y), p.n)
+      && fracMatches(A("exactly"), cnt(([x, y]) => x !== y), p.n)
+      && fracMatches(A("given"), cnt(([x, y]) => x && y), cnt(([, y]) => y));
+  }
+  if (p.kind === "x-together") {
+    const w = String(p.word);
+    const n = w.length;
+    if (new Set(w).size !== n || !w.includes(p.x) || !w.includes(p.y) || p.x === p.y) return false;
+    // Brute force over every arrangement of the letters.
+    let all = 0, tog = 0;
+    const used = new Array(n).fill(false);
+    const seq = [];
+    const rec = () => {
+      if (seq.length === n) { all++; if (Math.abs(seq.indexOf(p.x) - seq.indexOf(p.y)) === 1) tog++; return; }
+      for (let i = 0; i < n; i++) { if (used[i]) continue; used[i] = true; seq.push(w[i]); rec(); seq.pop(); used[i] = false; }
+    };
+    rec();
+    const want = p.apart ? all - tog : tog;
+    const c = xNum(A("count"));
+    return Number.isInteger(c) && c === want && fracMatches(A("prob"), all - tog, all);
+  }
+  if (p.kind === "x-committee") {
+    // People 0..g1-1 are the first group. Enumerate every subset of size r.
+    const n = p.g1 + p.g2;
+    if (n > 20) return false;
+    const mask1 = (1 << p.g1) - 1;
+    let all = 0, atleast = 0, one = 0;
+    for (let m = 0; m < 1 << n; m++) {
+      if (popcount(m) !== p.r) continue;
+      all++;
+      const k = popcount(m & mask1);
+      if (k >= 1) atleast++;
+      if (k === 1) one++;
+    }
+    const c = xNum(A("atleast"));
+    return Number.isInteger(c) && c === atleast && fracMatches(A("exactly"), one, all);
+  }
+  if (p.kind === "x-fair") {
+    // List every face's payout (in dollars) and average.
+    const ev = (prize) => {
+      let t = 0;
+      for (let f = 1; f <= p.n; f++) t += f > p.n - p.k ? prize : f === 1 && p.j ? p.s / 100 : 0;
+      return t / p.n - p.c / 100;
+    };
+    const X = xNum(A("prize"));
+    const tot = xNum(A("total"));
+    if (!Number.isFinite(X) || !Number.isFinite(tot)) return false;
+    // A prize within 0.005 of fair leaves |E(profit)| ≤ (k/n) × 0.005.
+    if (Math.abs(ev(X)) > (p.k / p.n) * 0.005 + 1e-9) return false;
+    return Math.abs(tot - p.G * ev(p.Y)) <= 0.005 + 1e-9;
+  }
+  if (p.kind === "x-table") {
+    // A population of 100 equally likely outcomes, built from the hundredths.
+    const ps = p.ps.map((v, i) => (i === p.m ? null : Math.round(Number(v) * 100)));
+    const known = ps.filter((v) => v !== null);
+    const miss = 100 - sum(known);
+    const pa = xNum(A("p"));
+    if (!Number.isFinite(pa) || Math.abs(pa * 100 - miss) > 1e-6 || miss <= 0) return false;
+    const pop = [];
+    p.xs.forEach((x, i) => { const c = i === p.m ? miss : ps[i]; for (let t = 0; t < c; t++) pop.push(x); });
+    if (pop.length !== 100) return false;
+    const E = sum(pop) / 100;
+    return Math.abs(xNum(A("ev")) - E) <= 0.005 + 1e-9;
+  }
+  if (p.kind === "x-missx") {
+    // Substitute the candidate into a population of 100 and compare with E(X) × 100.
+    const a = xNum(answer);
+    if (!Number.isInteger(a)) return false;
+    const pop = [];
+    p.xs.forEach((x, i) => { const v = x === "a" ? a : Number(x); for (let t = 0; t < p.ps[i]; t++) pop.push(v); });
+    return pop.length === 100 && sum(pop) === p.E100;
+  }
+  return false;
 }

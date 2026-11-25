@@ -943,6 +943,7 @@ function genAngles(d, rng) {
 // Draws until verify() accepts the question (e.g. no rounding ties). Only the rng passed in is
 // used, so a seed always gives the same question.
 export function generate(args) {
+  if (args && args.difficulty === "expert") return xGenerate(args.subtopic, args.rng);
   let q;
   for (let i = 0; i < 25; i++) {
     q = make(args);
@@ -1030,6 +1031,7 @@ function wellPosed(p, a) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false; // regenerate from the seed to get params back
+  if (p.expert) return xVerify(question, answer);
   try {
     if (p.multi) {
       const a = answer && typeof answer === "object" ? answer : {};
@@ -1052,3 +1054,501 @@ export function verify(question, answer) {
     return false;
   }
 }
+
+// =============================================================================================
+// Expert. A separate branch: generate() sends "expert" here before anything else, so easy, medium
+// and hard questions never see an extra rng draw. Each part carries a check name and the values
+// stated in the prompt (in SI). verify() substitutes the candidate into the un-rearranged law,
+// recomputing any intermediate from the stated values (never from an earlier part), and accepts it
+// when the law changes sign inside the answer ± half a unit in the last place.
+
+class XRetry extends Error {}
+const xRound = (n, dp) => {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+};
+const xTie = (x, dp) => {
+  const f = Math.abs(x) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 1e-6;
+};
+const xFix = (x, dp) => xRound(x, dp).toFixed(dp);
+const xN = (n) => String(xRound(n, 6));
+const xDP = (dp) => (dp === 0 ? " Round to the nearest whole number." : ` Round to ${dp} decimal place${dp === 1 ? "" : "s"}.`);
+const xG = (label, value) => ({ label, value });
+
+function xNum(id, label, ask, exact, dp, hint, check) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  return {
+    part: { id, label, ask: ask + xDP(dp), answerType: "number", answer: xRound(exact, dp), tolerance: 0.5 * 10 ** -dp, hint },
+    spec: { id, check, dp },
+  };
+}
+// A whole-number part that must be exact (counts, "round up" answers): tolerance 0.
+function xInt(id, label, ask, answer, hint, check) {
+  if (!Number.isInteger(answer)) throw new XRetry();
+  return { part: { id, label, ask, answerType: "number", answer, tolerance: 0, hint }, spec: { id, check, int: true } };
+}
+function xPick(id, label, ask, answer, choices, hint, check) {
+  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+}
+function xMulti(prompt, list, steps, values, given, hints) {
+  const q = {
+    prompt,
+    answerType: "multi",
+    parts: list.map((p) => p.part),
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, parts: list.map((p) => p.spec) },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+function xSingle(prompt, exact, dp, steps, values, check, given, hints) {
+  if (!Number.isFinite(exact) || xTie(exact, dp)) throw new XRetry();
+  const q = {
+    prompt: prompt + xDP(dp),
+    answer: xRound(exact, dp),
+    answerType: "number",
+    choices: undefined,
+    tolerance: 0.5 * 10 ** -dp,
+    explanation: steps.join("\n\n"),
+    params: { expert: true, values, check, dp },
+    hints,
+  };
+  if (given && given.length) q.given = given;
+  return q;
+}
+// "≈ 12.3456, which rounds to **12.35**" (or "= **12.35**" when exact).
+function xRes(exact, dp, unit) {
+  const u = unit ? (unit.startsWith("°") ? unit : ` ${unit}`) : "";
+  const shown = xFix(exact, dp);
+  if (Math.abs(exact - Number(shown)) < 1e-9) return `= **${shown}${u}**`;
+  return `≈ ${Number(exact.toPrecision(7))}${u}, which rounds to **${shown}${u}**`;
+}
+function xRun(make, rng) {
+  for (let i = 0; i < 60; i++) {
+    try {
+      return make(rng);
+    } catch (e) {
+      if (!(e instanceof XRetry)) throw e;
+    }
+  }
+  return make(rng);
+}
+
+// Root of f strictly inside (x - h, x + h): a sign change across the window.
+function xBracket(f, x, h) {
+  if (!Number.isFinite(x)) return false;
+  const lo = f(x - h);
+  const hi = f(x + h);
+  return Number.isFinite(lo) && Number.isFinite(hi) && lo * hi < 0;
+}
+const xNumOf = (v) => (v === "" || v === null || v === undefined || typeof v === "boolean" ? NaN : Number(v));
+
+function xVerify(question, answer) {
+  const p = question.params;
+  const v = p.values;
+  if (!v || typeof v !== "object") return false;
+  const one = (spec, a, q) => {
+    const fn = X_CHECKS[spec.check];
+    if (!fn) return false;
+    if (q.answerType === "choice") {
+      if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
+      if (!q.choices.includes(String(a))) return false;
+      return fn(v, String(a)) === true;
+    }
+    const x = xNumOf(a);
+    if (!Number.isFinite(x)) return false;
+    if (spec.int) return Number.isInteger(x) && fn(v, x, 0) === true;
+    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+  };
+  if (question.answerType === "multi") {
+    if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;
+    if (!answer || typeof answer !== "object") return false;
+    return p.parts.every((spec, i) => spec.id === question.parts[i].id && one(spec, answer[spec.id], question.parts[i]));
+  }
+  return one(p, answer, question);
+}
+
+// ======================================================================================
+// Expert questions. Constants are stated in each prompt, as elsewhere in the module.
+
+const X_PC = 3.26; // ly per parsec (stated)
+const X_STARNAMES = ["A faint red dwarf", "A newly catalogued star", "A yellow star in Lyra", "A binary star", "A white dwarf", "A star in the Hyades", "An orange dwarf", "A variable star"];
+
+// Distances, expert 1: parallax -> parsecs -> light-years (a new unit chain).
+function xParallax(rng) {
+  const who = rng.pick(X_STARNAMES);
+  const p = rng.int(20, 800) / 1000;
+  const pc = 1 / p;
+  const ly = pc * X_PC;
+  // Someone who carries the rounded parsec value forward still gets the same light-years.
+  if (xRound(xRound(pc, 2) * X_PC, 2) !== xRound(ly, 2)) throw new XRetry();
+  const values = { p, k: X_PC };
+  return xMulti(
+    `${who} shows a parallax angle of ${fix(p, 3)} arcseconds. Distance in parsecs = 1 ÷ parallax in arcseconds, and 1 parsec = ${X_PC} light-years.`,
+    [
+      xNum("pc", "Parsecs", "How far away is the star, in parsecs?", pc, 2,
+        "A smaller parallax means a more distant star: divide 1 by the parallax angle in arcseconds.", "px-pc"),
+      xNum("ly", "Light-years", "How far away is it in light-years? (This is also how many years its light has travelled.)", ly, 2,
+        `Multiply the distance in parsecs by ${X_PC}.`, "px-ly"),
+    ],
+    [
+      `Parallax: \`d = 1 / ${fix(p, 3)}\` ${xRes(pc, 2, "pc")}.`,
+      `Light-years: \`${Number(pc.toPrecision(7))} × ${X_PC}\` ${xRes(ly, 2, "ly")}. In the calculator: \`_k / _p\`.`,
+      "A light-year is a distance, but it also says how long the light took: light we see tonight left the star that many years ago.",
+    ],
+    values,
+    [xG("_p", p), xG("_k", X_PC)],
+    [
+      "Parallax works backwards: the bigger the angle, the closer the star. Distance (pc) = 1 ÷ angle (arcseconds).",
+      `Then change units: 1 parsec = ${X_PC} light-years. Carry the unrounded parsec value forward.`,
+    ],
+  );
+}
+
+// Distances, expert 2: the shortest and longest radio delay to another body (orbits in the same plane),
+// then a round trip at the longest distance.
+function xRadioDelay(rng) {
+  let name, a;
+  if (rng.next() < 0.4) {
+    const pl = rng.pick(PLANETS);
+    name = pl.name;
+    a = pl.au;
+  } else {
+    name = rng.pick(BODIES);
+    a = rng.int(130, 4000) / 100;
+  }
+  const dmin = Math.abs(a - 1);
+  const dmax = a + 1;
+  const tmin = (dmin * AU) / C / 60;
+  const tmax = (dmax * AU) / C / 60;
+  const hrs = (2 * tmax) / 60;
+  if (xRound((2 * xRound(tmax, 2)) / 60, 2) !== xRound(hrs, 2)) throw new XRetry();
+  const values = { a };
+  const inner = a < 1;
+  return xMulti(
+    `Earth orbits the Sun at 1 AU and ${name} at ${num(a)} AU. Treat both orbits as circles in the same plane. Radio waves travel at 3.00 × 10⁵ km/s and 1 AU = 1.50 × 10⁸ km.`,
+    [
+      xNum("short", "Closest", `What is the shortest possible one-way radio delay between Earth and ${name}, in minutes?`, tmin, 2,
+        `They are closest when they line up on the same side of the Sun. The gap is then the difference of the two orbit radii.`, "rd-min"),
+      xNum("long", "Farthest", "What is the longest possible one-way delay, in minutes?", tmax, 2,
+        "They are farthest apart on opposite sides of the Sun: add the two orbit radii.", "rd-max"),
+      xNum("round", "Round trip", "At the farthest, how long does a command take to get there and the reply to come back, in hours?", hrs, 2,
+        "Twice the one-way delay, turned from minutes into hours.", "rd-rt"),
+    ],
+    [
+      `Closest: same side of the Sun, \`|${num(a)} - 1| = ${num(dmin)}\` AU = ${big(dmin * AU)} km.${inner ? " (It orbits inside Earth's orbit, so the gap is 1 minus its radius.)" : ""}`,
+      `Delay: \`${num(dmin)} × 1.5e8 / 3e5 / 60\` ${xRes(tmin, 2, "min")}.`,
+      `Farthest: opposite sides, \`${num(a)} + 1 = ${num(dmax)}\` AU. Delay: \`${num(dmax)} × 1.5e8 / 3e5 / 60\` ${xRes(tmax, 2, "min")}.`,
+      `Round trip: \`2 × ${Number(tmax.toPrecision(7))} / 60\` ${xRes(hrs, 2, "h")}. In the calculator: \`2 * (_a + 1) * _AU / _c / 3600\`.`,
+    ],
+    values,
+    [xG("_a", a), xG("_AU", AU), xG("_c", C)],
+    [
+      "Draw the Sun with two circles around it. The distance between the bodies changes as they move: it is smallest on the same side and largest on opposite sides.",
+      "Turn the gap in AU into km, then time = distance ÷ speed of light gives seconds. Divide by 60 for minutes.",
+      "A round trip covers the distance twice.",
+    ],
+  );
+}
+
+const X_STARS2 = ["Kepler-62", "HD 40307", "Gliese 876", "Tau Ceti", "Wolf 1061", "TOI-700", "Teegarden's Star", "LHS 1140", "HD 69830", "Ross 128"];
+
+// Orbits, expert 1: weigh a star from one planet's orbit, then use T² ∝ a³ for a second planet and work
+// backwards to where a one-year orbit would be.
+function xStarMass(rng) {
+  const star = rng.pick(X_STARS2);
+  const a1 = rng.int(5, 300) / 100;
+  const M = rng.int(30, 250) / 100;
+  const Td = Math.round(Math.sqrt(a1 ** 3 / M) * 365.25);
+  let a2;
+  do a2 = rng.int(5, 400) / 100; while (Math.abs(a2 - a1) < 0.1);
+  if (Td < 2) throw new XRetry();
+  const Mx = a1 ** 3 / (Td / 365.25) ** 2;
+  const T2 = Td * Math.sqrt((a2 / a1) ** 3);
+  const aYr = Math.cbrt(Mx);
+  if (xRound(Math.cbrt(xRound(Mx, 2)), 2) !== xRound(aYr, 2)) throw new XRetry();
+  const values = { a1, Td, a2, yr: 365.25 };
+  return xMulti(
+    `A planet orbits the star ${star} at ${num(a1)} AU with a period of ${Td} days. For a planet around a star of mass M (in solar masses), T² = a³ ÷ M with T in years and a in AU. Use 1 year = 365.25 days.`,
+    [
+      xNum("mass", "Star's mass", `What is the mass of ${star}, in solar masses?`, Mx, 2,
+        "Turn the period into years first, then rearrange `T² = a³ ÷ M` to `M = a³ ÷ T²`.", "sm-M"),
+      xNum("t2", "Second planet", `A second planet orbits ${star} at ${num(a2)} AU. What is its period, in days? (Compare it with the first planet rather than using your rounded mass.)`, T2, 0,
+        "Around the same star, T² ∝ a³: `T2 = T1 × (a2 ÷ a1)^1.5`. Days in, days out.", "sm-T2"),
+      xNum("ayear", "One-year orbit", `How far from ${star} would a planet with a period of exactly 1 year orbit, in AU?`, aYr, 2,
+        "With T = 1, the law becomes `1 = a³ ÷ M`, so a is the cube root of M.", "sm-a1"),
+    ],
+    [
+      `Period in years: \`${Td} / 365.25\` = ${Number((Td / 365.25).toPrecision(6))} years.`,
+      `Mass: \`M = ${num(a1)}³ / ${Number((Td / 365.25).toPrecision(6))}²\` ${xRes(Mx, 2, "solar masses")}. In the calculator: \`_a1^3 / (_T1_days / _yr)^2\`.`,
+      `Second planet, same star: \`T2 = ${Td} × (${num(a2)} / ${num(a1)})^1.5\` ${xRes(T2, 0, "days")}.`,
+      `One-year orbit: \`a³ = M × 1²\`, so \`a = ∛${Number(Mx.toPrecision(6))}\` ${xRes(aYr, 2, "AU")}. A heavier star pulls harder, so a one-year orbit sits farther out.`,
+    ],
+    values,
+    [xG("_a1", a1), xG("_T1_days", Td), xG("_a2", a2), xG("_yr", 365.25)],
+    [
+      "The law needs T in years: divide the period in days by 365.25.",
+      "Rearrange the law for M. Then, for the second planet, compare the two planets: the star's mass cancels.",
+      "For the one-year orbit, put T = 1 into the law and solve for a.",
+    ],
+  );
+}
+
+const X_COMETS = ["Comet Ardent", "Comet Lumen", "Comet Halvard", "Comet Ise", "Comet Taro", "Comet Wenlock", "Comet Brisa", "Comet Okoro", "Comet Mirren", "Comet Quill"];
+
+// Orbits, expert 2: an elliptical orbit. Forwards (perihelion + aphelion -> a -> T) or backwards
+// (period + perihelion -> a -> aphelion).
+function xComet(rng) {
+  const name = rng.pick(X_COMETS);
+  const law = "Kepler's third law for things orbiting the Sun: T² = a³, with T in years and a in AU. For an ellipse, a (the semi-major axis) is the average of the closest and farthest distances from the Sun.";
+  if (rng.next() < 0.55) {
+    const rp = rng.int(30, 300) / 100;
+    const ra = rng.int(500, 6000) / 100;
+    const a = (rp + ra) / 2;
+    const T = a ** 1.5;
+    const half = T / 2;
+    if (xRound(xRound(a, 2) ** 1.5, 2) !== xRound(T, 2) || xRound(xRound(T, 2) / 2, 2) !== xRound(half, 2)) throw new XRetry();
+    const values = { mode: "fwd", rp, ra };
+    return xMulti(
+      `${name} comes as close as ${num(rp)} AU to the Sun (perihelion) and goes out to ${num(ra)} AU (aphelion). ${law}`,
+      [
+        xNum("a", "Semi-major axis", "What is the semi-major axis of its orbit, in AU?", a, 2,
+          "Average the closest and farthest distances.", "cf-a"),
+        xNum("T", "Period", "What is its orbital period, in years?", T, 2,
+          "Use `T² = a³`, so `T = √(a³)` = a^1.5.", "cf-T"),
+        xNum("half", "Out and back", "How many years does it take to travel from perihelion to aphelion?", half, 2,
+          "That is one half of a complete orbit (it moves fast near the Sun and slowly far out, but the two halves take the same time).", "cf-half"),
+      ],
+      [
+        `\`a = (${num(rp)} + ${num(ra)}) / 2\` ${xRes(a, 2, "AU")}.`,
+        `\`T = ${num(a)}^1.5\` ${xRes(T, 2, "years")}. In the calculator: \`((_rp + _ra) / 2)^1.5\`.`,
+        `Perihelion to aphelion is half an orbit: \`${Number(T.toPrecision(7))} / 2\` ${xRes(half, 2, "years")}.`,
+      ],
+      values,
+      [xG("_rp", rp), xG("_ra", ra)],
+      [
+        "Kepler's law uses the semi-major axis, not the closest or farthest distance. Find it first.",
+        "Then T² = a³ gives the period. From one end of the ellipse to the other is half an orbit.",
+      ],
+    );
+  }
+  const T = rng.int(500, 30000) / 100;
+  const a = T ** (2 / 3);
+  const rp = rng.int(30, Math.max(31, Math.min(300, Math.floor(a * 100) - 10))) / 100;
+  const ra = 2 * a - rp;
+  if (ra <= rp + 0.1) throw new XRetry();
+  if (xRound(2 * xRound(a, 2) - rp, 2) !== xRound(ra, 2)) throw new XRetry();
+  const values = { mode: "back", T, rp };
+  return xMulti(
+    `${name} has an orbital period of ${num(T)} years and comes as close as ${num(rp)} AU to the Sun. ${law}`,
+    [
+      xNum("a", "Semi-major axis", "What is the semi-major axis of its orbit, in AU?", a, 2,
+        "Rearrange `T² = a³`: a is the cube root of T².", "cb-a"),
+      xNum("ra", "Aphelion", "How far from the Sun does it get at its farthest, in AU?", ra, 2,
+        "The closest and farthest distances add up to 2a.", "cb-ra"),
+    ],
+    [
+      `\`a = ∛(${num(T)}²)\` ${xRes(a, 2, "AU")}. In the calculator: \`(_T^2)^(1/3)\`.`,
+      `\`r_far = 2a - r_close = 2 × ${Number(a.toPrecision(7))} - ${num(rp)}\` ${xRes(ra, 2, "AU")}.`,
+    ],
+    values,
+    [xG("_T", T), xG("_rp", rp)],
+    [
+      "Work backwards: from the period, Kepler's law gives the semi-major axis (a cube root of T²).",
+      "The semi-major axis is the average of the closest and farthest distances, so the two add up to 2a.",
+    ],
+  );
+}
+
+const X_FAR = PLANETS.filter((p) => p.au > 9);
+const X_BIG = PLANETS.filter((p) => p.diam > 40000);
+const X_PLACES = ["a school corridor", "a sports field", "a long beach", "a village street", "a park path", "a playing field"];
+
+// Scale models, expert 1: the farthest planet must fit in a given length. Work out the scale, then see how
+// tiny everything else becomes.
+function xScaleFit(rng) {
+  const far = rng.pick(X_FAR);
+  const L = rng.int(50, 400);
+  const place = rng.pick(X_PLACES);
+  const planet = rng.pick(X_BIG.filter((p) => p !== far));
+  const earth = (150 / far.mkm) * L * 100; // cm
+  const sun = (SUN_D / (far.mkm * 1e6)) * L * 1000; // mm
+  const pd = (planet.diam / (far.mkm * 1e6)) * L * 1000; // mm
+  const values = { L, mkm: far.mkm, D: planet.diam };
+  return xMulti(
+    `A model solar system is laid out along ${place} with ${far.name} (${big(far.mkm)} million km from the Sun) at the far end, exactly ${L} m from the model Sun. Earth is 150 million km from the Sun, the Sun is 1 390 000 km across and ${planet.name} is ${big(planet.diam)} km across. Everything uses the same scale.`,
+    [
+      xNum("earth", "Earth's distance", "How far from the model Sun is the model Earth, in cm?", earth, 2,
+        `Earth is 150 ÷ ${big(far.mkm)} of the way to ${far.name}, so it is that fraction of ${L} m.`, "fit-earth"),
+      xNum("sun", "Sun's size", "How wide is the model Sun, in mm?", sun, 2,
+        `Same scale: ${L} m stands for ${big(far.mkm)} million km. Turn ${L} m into mm first.`, "fit-sun"),
+      xNum("planet", `${planet.name}'s size`, `How wide is the model ${planet.name}, in mm?`, pd, 2,
+        "Same scale again, with this planet's diameter.", "fit-planet"),
+    ],
+    [
+      `Scale: ${L} m represents ${big(far.mkm)} million km, so 1 million km is \`${L} / ${far.mkm}\` = ${Number((L / far.mkm).toPrecision(6))} m.`,
+      `Earth: \`150 × ${L} / ${far.mkm}\` m, × 100 for cm ${xRes(earth, 2, "cm")}.`,
+      `Sun: 1 390 000 km = 1.39 million km. \`1.39 × ${L} / ${far.mkm} × 1000\` ${xRes(sun, 2, "mm")}. In the calculator: \`_Sun / (_far_mkm * 1e6) * _L * 1000\`.`,
+      `${planet.name}: \`${planet.diam} / (${far.mkm} × 10⁶) × ${L} × 1000\` ${xRes(pd, 2, "mm")}. Space is mostly empty: the planets become specks.`,
+    ],
+    values,
+    [xG("_L", L), xG("_far_mkm", far.mkm), xG("_Sun", SUN_D), xG("_D", planet.diam)],
+    [
+      `The far end fixes the scale: ${L} m on the model means ${big(far.mkm)} million km in space.`,
+      "Every other length is scaled by the same fraction: real length ÷ real far distance × model length. Keep the units the same top and bottom (million km with million km, km with km).",
+      "Convert the model answer into the unit asked for (1 m = 100 cm = 1000 mm).",
+    ],
+  );
+}
+
+const X_BALLS = ["a peppercorn", "a pea", "a marble", "a cherry", "a bead", "a grape", "a hazelnut"];
+
+// Scale models, expert 2: start from the size of the model Earth instead, and work out the distances.
+function xScaleEarth(rng) {
+  const ball = rng.pick(X_BALLS);
+  const d = rng.int(2, 30);
+  const target = rng.pick(PLANETS.filter((p) => p.au > 1));
+  const k = d / EARTH_D; // mm of model per km
+  const earthSun = (AU * k) / 1000; // m
+  const sun = (SUN_D * k) / 10; // cm
+  const far = (target.mkm * 1e6 * k) / 1000; // m
+  const values = { d, mkm: target.mkm };
+  return xMulti(
+    `In a scale model, Earth (${big(EARTH_D)} km across) is ${ball} ${d} mm wide. On the same scale: the Sun is 1 390 000 km across, Earth is 1.50 × 10⁸ km from the Sun and ${target.name} is ${big(target.mkm)} million km from the Sun.`,
+    [
+      xNum("au", "Earth to Sun", "How far from the model Sun must the model Earth go, in m?", earthSun, 2,
+        `Scale: ${d} mm stands for ${big(EARTH_D)} km. Multiply the real distance by ${d} ÷ ${EARTH_D} to get mm, then ÷ 1000 for m.`, "eb-au"),
+      xNum("sun", "Model Sun", "How wide is the model Sun, in cm?", sun, 2,
+        "Same scale factor applied to the Sun's diameter; ÷ 10 for cm.", "eb-sun"),
+      xNum("far", target.name, `How far from the model Sun is the model ${target.name}, in m?`, far, 2,
+        `Million km must be turned into km (× 1 000 000) before using the scale.`, "eb-far"),
+    ],
+    [
+      `Scale factor: \`${d} / ${EARTH_D}\` mm of model per km of space.`,
+      `Earth-Sun: \`1.5e8 × ${d} / ${EARTH_D} / 1000\` ${xRes(earthSun, 2, "m")}.`,
+      `Sun: \`1390000 × ${d} / ${EARTH_D} / 10\` ${xRes(sun, 2, "cm")}.`,
+      `${target.name}: \`${target.mkm} × 10⁶ × ${d} / ${EARTH_D} / 1000\` ${xRes(far, 2, "m")}. In the calculator: \`_far_mkm * 1e6 * _d_mm / _Earth / 1000\`.`,
+    ],
+    values,
+    [xG("_d_mm", d), xG("_Earth", EARTH_D), xG("_far_mkm", target.mkm)],
+    [
+      `Start from what you know on both sides: ${d} mm on the model is ${big(EARTH_D)} km in space. That gives mm per km.`,
+      "Multiply each real length (in km) by that factor to get mm on the model, then convert to m or cm as asked.",
+    ],
+  );
+}
+
+const X_SMALL_ARC = "For small angles, angle in arcminutes = (diameter ÷ distance) × (180 ÷ π) × 60";
+
+// Apparent size, expert 1: will an eclipse be total or annular? Compare the Moon's and Sun's angular sizes.
+function xEclipse(rng) {
+  const dm = rng.int(3565, 4067) * 100;
+  const ds = rng.int(1471, 1521) * 1e5;
+  const Dm = 3474;
+  const moon = (Dm / dm) * (180 / Math.PI) * 60;
+  const sun = (SUN_D / ds) * (180 / Math.PI) * 60;
+  if (Math.abs(moon - sun) < 0.05) throw new XRetry();
+  const total = moon > sun;
+  const values = { dm, ds, Dm, Ds: SUN_D };
+  return xMulti(
+    `During a solar eclipse the Moon (${big(Dm)} km across) is ${big(dm)} km from Earth and the Sun (1 390 000 km across) is ${big(ds)} km away. ${X_SMALL_ARC}.`,
+    [
+      xNum("moon", "Moon", "How wide does the Moon look, in arcminutes?", moon, 2, "Diameter ÷ distance gives the angle in radians; × 180 ÷ π for degrees; × 60 for arcminutes.", "ec-moon"),
+      xNum("sun", "Sun", "How wide does the Sun look, in arcminutes?", sun, 2, "Same formula with the Sun's diameter and distance.", "ec-sun"),
+      xPick("type", "Eclipse", "What kind of eclipse is seen from the centre of the Moon's shadow path?", total ? "Total" : "Annular (a ring of Sun)", ["Total", "Annular (a ring of Sun)"],
+        "If the Moon looks bigger than the Sun it can cover it completely. If it looks smaller, a ring of Sun stays visible.", "ec-type"),
+    ],
+    [
+      `Moon: \`${Dm} / ${dm} × 180 / π × 60\` ${xRes(moon, 2, "′")}.`,
+      `Sun: \`1390000 / ${ds} × 180 / π × 60\` ${xRes(sun, 2, "′")}. In the calculator: \`_sun_size / _sun_dist * 180 / pi * 60\`.`,
+      `The Moon looks ${total ? "bigger" : "smaller"} than the Sun, so the eclipse is **${total ? "total" : "annular"}**. The Moon's distance changes during its orbit, which is why both kinds happen.`,
+    ],
+    values,
+    [xG("_moon_size", Dm), xG("_moon_dist", dm), xG("_sun_size", SUN_D), xG("_sun_dist", ds)],
+    [
+      "Work out each body's angular size with the small-angle formula, using its own diameter and distance (both in km).",
+      "Compare the two angles. The Moon can only hide the whole Sun if it looks at least as big.",
+    ],
+  );
+}
+
+const X_WORLDS = ["Planet Orla", "Planet Tarsis", "Planet Vexa", "a large moon", "Planet Corvin", "a dwarf planet", "Planet Ilda", "a rocky exoplanet", "Planet Brann"];
+const X_GRAV = 6.67e-11;
+
+// Apparent size & gravity, expert 2: surface gravity from G, M and R; then work backwards to the radius a
+// world of the same mass would need for Earth-like gravity.
+function xGravity(rng) {
+  const who = rng.pick(X_WORLDS);
+  const mm = rng.int(10, 99) / 10;
+  const e = rng.int(22, 25);
+  const M = mm * 10 ** e;
+  const rho = rng.int(20, 60) * 100;
+  const Rkm = Math.round(Math.cbrt((3 * M) / (4 * Math.PI * rho)) / 1000 / 10) * 10;
+  const g = (X_GRAV * M) / (Rkm * 1000) ** 2;
+  if (g < 0.05 || g > 40) throw new XRetry();
+  const Rs = Math.sqrt((X_GRAV * M) / 9.8) / 1000;
+  const values = { M, R: Rkm, G: X_GRAV };
+  return xMulti(
+    `${cap(who)} has a mass of ${fix(mm, 1)} × ${pow10(e)} kg and a radius of ${big(Rkm)} km. Surface gravity g = G × M ÷ R², with G = 6.67 × 10⁻¹¹ N m²/kg², M in kg and R in metres.`,
+    [
+      xNum("g", "Surface gravity", "What is the surface gravity, in N/kg?", g, 2,
+        "Turn the radius into metres before squaring it.", "gv-g"),
+      xNum("R", "Earth-like radius", "What radius would a world of the same mass need for a surface gravity of 9.8 N/kg, in km?", Rs, 0,
+        "Rearrange `g = G × M ÷ R²` for R: `R = √(G × M ÷ g)`. That gives metres; ÷ 1000 for km.", "gv-R"),
+    ],
+    [
+      `R = ${big(Rkm)} km = ${big(Rkm * 1000)} m.`,
+      `\`g = 6.67e-11 × ${fix(mm, 1)}e${e} / ${Rkm * 1000}²\` ${xRes(g, 2, "N/kg")}. In the calculator: \`_G * _M / (_R_km * 1000)^2\`.`,
+      `Backwards: \`R = √(6.67e-11 × ${fix(mm, 1)}e${e} / 9.8)\` = ${big(Math.round(Rs * 1000))} m ${xRes(Rs, 0, "km")}. ${Rs < Rkm ? "It would have to be squeezed smaller" : "It could be larger"}: gravity at the surface grows as the radius shrinks.`,
+    ],
+    values,
+    [xG("_G", X_GRAV), xG("_M", M), xG("_R_km", Rkm)],
+    [
+      "Use SI units: mass in kg, radius in metres (km × 1000). Square the radius, not the whole fraction.",
+      "For the second part, g is known (9.8 N/kg) and R is the unknown. Multiply both sides by R², divide by g, then take the square root.",
+    ],
+  );
+}
+
+function xGenerate(subtopic, rng) {
+  if (subtopic === "distances") return xRun(rng.next() < 0.45 ? xParallax : xRadioDelay, rng);
+  if (subtopic === "orbits") return xRun(rng.next() < 0.5 ? xStarMass : xComet, rng);
+  if (subtopic === "scale-models") return xRun(rng.next() < 0.5 ? xScaleFit : xScaleEarth, rng);
+  if (subtopic === "angles-gravity") return xRun(rng.next() < 0.5 ? xEclipse : xGravity, rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Expert checks: each substitutes the candidate into the forward relation, rebuilt from the stated values.
+const X_CHECKS = {
+  "px-pc": (v, x, h) => xBracket((d) => d * v.p - 1, x, h),
+  "px-ly": (v, x, h) => xBracket((ly) => (ly / v.k) * v.p - 1, x, h),
+  "rd-min": (v, x, h) => xBracket((t) => t * 60 * 3e5 - Math.abs(v.a - 1) * 1.5e8, x, h),
+  "rd-max": (v, x, h) => xBracket((t) => t * 60 * 3e5 - (v.a + 1) * 1.5e8, x, h),
+  "rd-rt": (v, x, h) => xBracket((t) => (t * 3600 * 3e5) / 2 - (v.a + 1) * 1.5e8, x, h),
+  "sm-M": (v, x, h) => xBracket((M) => M * (v.Td / v.yr) ** 2 - v.a1 ** 3, x, h),
+  // T² / a³ is the same for both planets (days and AU throughout).
+  "sm-T2": (v, x, h) => xBracket((T) => (T * T) / v.a2 ** 3 - (v.Td * v.Td) / v.a1 ** 3, x, h),
+  // One-year orbit: (1 year in days)² / a³ matches the first planet's T² / a³.
+  "sm-a1": (v, x, h) => xBracket((a) => (v.yr * v.yr) / v.Td ** 2 - a ** 3 / v.a1 ** 3, x, h),
+  "cf-a": (v, x, h) => xBracket((a) => 2 * a - v.rp - v.ra, x, h),
+  "cf-T": (v, x, h) => xBracket((T) => T * T - ((v.rp + v.ra) / 2) ** 3, x, h),
+  "cf-half": (v, x, h) => xBracket((t) => (2 * t) ** 2 - ((v.rp + v.ra) / 2) ** 3, x, h),
+  "cb-a": (v, x, h) => xBracket((a) => a ** 3 - v.T * v.T, x, h),
+  "cb-ra": (v, x, h) => xBracket((ra) => ((v.rp + ra) / 2) ** 3 - v.T * v.T, x, h),
+  // Model length ÷ real length is the same for every object.
+  "fit-earth": (v, x, h) => xBracket((cm) => cm / 100 / (150e6) - v.L / (v.mkm * 1e6), x, h),
+  "fit-sun": (v, x, h) => xBracket((mm) => mm / 1000 / 1.39e6 - v.L / (v.mkm * 1e6), x, h),
+  "fit-planet": (v, x, h) => xBracket((mm) => mm / 1000 / v.D - v.L / (v.mkm * 1e6), x, h),
+  "eb-au": (v, x, h) => xBracket((m) => (m * 1000) / 1.5e8 - v.d / 12700, x, h),
+  "eb-sun": (v, x, h) => xBracket((cm) => (cm * 10) / 1.39e6 - v.d / 12700, x, h),
+  "eb-far": (v, x, h) => xBracket((m) => (m * 1000) / (v.mkm * 1e6) - v.d / 12700, x, h),
+  "ec-moon": (v, x, h) => xBracket((am) => (am / 60) * (Math.PI / 180) * v.dm - v.Dm, x, h),
+  "ec-sun": (v, x, h) => xBracket((am) => (am / 60) * (Math.PI / 180) * v.ds - v.Ds, x, h),
+  // Total when the Moon covers a wider angle: compare Dm/dm with Ds/ds by cross-multiplying.
+  "ec-type": (v, a) => (v.Dm * v.ds > v.Ds * v.dm ? a === "Total" : a === "Annular (a ring of Sun)"),
+  "gv-g": (v, x, h) => xBracket((g) => g * (v.R * 1000) ** 2 - v.G * v.M, x, h),
+  "gv-R": (v, x, h) => xBracket((R) => 9.8 * (R * 1000) ** 2 - v.G * v.M, x, h),
+};

@@ -8,9 +8,9 @@
   "calculator": false,
   "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
   "subtopics": [
-    { "id": "predict-output", "title": "Predict the output", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "find-the-bug", "title": "Find the bug", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "fix-the-bug", "title": "Fix the bug", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "bug-types", "title": "Bug types", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "predict-output", "title": "Predict the output", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "find-the-bug", "title": "Find the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "fix-the-bug", "title": "Fix the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "bug-types", "title": "Bug types", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

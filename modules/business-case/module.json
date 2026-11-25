@@ -6,11 +6,11 @@
   "type": "generator",
   "questionsPerQuiz": 8,
   "subtopics": [
-    { "id": "break-even", "title": "Break-even", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "unit-economics", "title": "Unit economics", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "investment", "title": "Investment returns", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "pricing-decision", "title": "Pricing decisions", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "inventory", "title": "Inventory", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "hiring", "title": "Hiring", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "break-even", "title": "Break-even", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "unit-economics", "title": "Unit economics", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "investment", "title": "Investment returns", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pricing-decision", "title": "Pricing decisions", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "inventory", "title": "Inventory", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "hiring", "title": "Hiring", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

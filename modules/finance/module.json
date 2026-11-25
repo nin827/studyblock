@@ -6,8 +6,8 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "depreciation", "title": "Depreciation", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "loans", "title": "Loans", "difficulties": ["easy", "medium", "hard"] },
-    { "id": "annuities-savings", "title": "Annuities and savings", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "depreciation", "title": "Depreciation", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "loans", "title": "Loans", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "annuities-savings", "title": "Annuities and savings", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

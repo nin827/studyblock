@@ -18,6 +18,10 @@ Example: a circle with radius 3 has area `π × 9 ≈ 28.27` cm².
 
 **Watch out:** area and perimeter are different things. Area multiplies, perimeter adds up the edges.
 
+**Expert: composite shapes.** Split the shape into pieces you know (a rectangle and a semicircle), then add or subtract areas. For the perimeter, walk round the outside only: an edge that is now inside the shape doesn't count, and a semicircle's arc is half of π × d.
+
+**Expert: working backwards.** From a perimeter and an area, halve the perimeter to get length + width, then find two numbers with that sum and the area as product. A path of width p round a rectangle adds 2p to each outer measurement; path area = outer area - inner area.
+
 ## Angles
 
 1. A triangle's angles add up to 180°. Supplementary angles add to 180°; complementary angles add to 90°.
@@ -28,6 +32,10 @@ Example: a circle with radius 3 has area `π × 9 ≈ 28.27` cm².
 Example: a regular hexagon has angles adding to `4 × 180 = 720°`, so each is 120°.
 
 **Watch out:** it's (n - 2) × 180, not n × 180.
+
+**Expert: interior vs exterior.** Call the exterior angle e, so the interior angle is 180 - e. Turn the sentence into an equation (for example `180 - e = 4e`), solve for e, then n = 360 ÷ e.
+
+**Expert: angles in x or in a ratio.** Add every expression and set it equal to the angle sum (180° or (n - 2) × 180°), solve for x, then substitute back. For a ratio, add the ratio numbers, divide the angle sum by that to get one share, and multiply.
 
 ## Pythagoras
 
@@ -40,6 +48,10 @@ Example: legs 6 and 8 → `36 + 64 = 100` → hypotenuse 10.
 
 **Watch out:** don't skip the square root at the end, and don't just add the sides.
 
+**Expert: two steps of Pythagoras.** In a box, first find the base diagonal `√(l² + w²)`, then use it with the height: space diagonal = `√(l² + w² + h²)`. For a slipping ladder, the ladder's length stays the same: find the old height, take off the slip, and use Pythagoras again for the new foot distance. Keep values unrounded until the end.
+
+**Expert: points on a grid.** The distance between two points is `√(Δx² + Δy²)`. A triangle is right-angled only if the two smaller squared lengths add up exactly to the largest; compare the whole-number squares, not rounded lengths.
+
 ## Volume
 
 1. Cuboid: volume = length × width × height.
@@ -50,3 +62,5 @@ Example: legs 6 and 8 → `36 + 64 = 100` → hypotenuse 10.
 Example: a cylinder with r = 2 and h = 5 has volume `π × 4 × 5 ≈ 62.83` cm³.
 
 **Watch out:** r³ means r × r × r, not r × 3.
+
+**Expert: working backwards and combining.** From a volume, rearrange: `h = V ÷ (π × r²)` (convert litres to cm³ first: × 1000). Poured liquid keeps its volume, so new depth = volume ÷ new base area. For a solid made of parts, find each volume (the question gives the cone or hemisphere formula) and add. Similar solids with length scale factor k have areas × k² and volumes × k³, so k = ∛(volume ratio).

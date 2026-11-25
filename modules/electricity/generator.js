@@ -544,7 +544,505 @@ function genCircuit(difficulty, rng) {
   return finish(base, exact, rounded, candidates, rng);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert level: a separate branch. generate() sends "expert" here before any other code runs, so
+// easy/medium/hard draw exactly the same rng values as before. Expert questions are multi-part,
+// state the rounding on every part, and keep their inputs in params.v with params.kind "x-…".
+// verify() recomputes the true values a different way (a Kirchhoff loop or nodal equation solved
+// by bisection, energy per second instead of per run) and compares each part. Hint code never calls rng.
+
+// Round half away from zero to dp decimals; never "-0".
+function xr(n, dp) {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+}
+// Display form for stated values and working: up to 4 decimals.
+const xs = (n) => String(xr(n, 4));
+// True when n sits within 2% of a unit of a rounding tie at dp decimals.
+function xTie(n, dp) {
+  const f = Math.abs(n) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 0.02;
+}
+const xDpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
+
+// A rounded numeric part (accepted within half a unit of the stated precision).
+const xNum = (id, label, ask, exact, dp, hint) => ({
+  id, label, ask: `${ask}, ${xDpWord(dp)}`, answerType: "number", answer: xr(exact, dp), tolerance: 0.5 * 10 ** -dp, hint, _exact: exact, _dp: dp,
+});
+// A choice part.
+const xChoice = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
+
+// Assemble a multi-part question. Returns null (regenerate) on a rounding tie, a zero or
+// non-finite answer, a given value equal to an answer, or NaN/undefined in the text.
+// "a 8 kg" -> "an 8 kg" (eight, eleven, eighteen, eighty... start with a vowel sound).
+function xArticles(text) {
+  return text.replace(/\b([Aa]n?) (\d+)/g, (all, art, digits) => {
+    const vowel = digits[0] === "8" || (digits.length % 3 === 2 && /^1[18]/.test(digits));
+    return `${art[0] === "A" ? (vowel ? "An" : "A") : vowel ? "an" : "a"} ${digits}`;
+  });
+}
+
+function xMulti({ kind, v, prompt, parts, steps, given, hints }) {
+  prompt = xArticles(prompt);
+  const dp = {};
+  const out = [];
+  for (const p of parts) {
+    const { _exact, _dp, ...part } = p;
+    part.id = part.id.toLowerCase(); // ids must match ^[a-z0-9-]+$
+    if (part.answerType === "number") {
+      if (!Number.isFinite(_exact) || part.answer === 0) return null;
+      if (_dp === null ? !Number.isInteger(_exact) : xTie(_exact, _dp)) return null;
+      if (given.some(([, g]) => Math.abs(g - part.answer) < 1e-9)) return null;
+      dp[part.id] = _dp;
+    } else {
+      if (!part.choices.includes(part.answer) || new Set(part.choices).size !== part.choices.length) return null;
+      dp[part.id] = "choice";
+    }
+    out.push(part);
+  }
+  const text = [prompt, ...steps, ...hints, ...out.map((p) => `${p.ask} ${p.hint} ${p.answer}`)].join(" ");
+  if (/NaN|undefined|Infinity/.test(text)) return null;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: out,
+    explanation: steps.join("\n\n"),
+    params: { kind, v, dp },
+    given: given.map(([label, value]) => ({ label, value })),
+    hints,
+  };
+}
+
+// Bisection: a root of f between lo and hi (f must change sign), else NaN.
+function xRoot(f, lo, hi) {
+  let a = lo;
+  let b = hi;
+  let fa = f(a);
+  const fb = f(b);
+  if (fa === 0) return a;
+  if (fb === 0) return b;
+  if (!Number.isFinite(fa) || !Number.isFinite(fb) || Math.sign(fa) === Math.sign(fb)) return NaN;
+  for (let i = 0; i < 200; i++) {
+    const m = (a + b) / 2;
+    const fm = f(m);
+    if (fm === 0) return m;
+    if (Math.sign(fm) === Math.sign(fa)) {
+      a = m;
+      fa = fm;
+    } else b = m;
+  }
+  return (a + b) / 2;
+}
+
+// Check every part against the independently recomputed truth { partId: number | string }.
+function xVerify(question, answer, truthFns) {
+  const p = question.params;
+  const fn = truthFns[p.kind];
+  if (!fn || !p.v || !p.dp) return false;
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  let truth;
+  try {
+    truth = fn(p.v);
+  } catch {
+    return false;
+  }
+  if (truth) truth = Object.fromEntries(Object.entries(truth).map(([k, x]) => [k.toLowerCase(), x]));
+  if (!truth || Object.keys(truth).length !== question.parts.length) return false;
+  for (const part of question.parts) {
+    if (!(part.id in truth)) return false;
+    const want = truth[part.id];
+    const got = answer[part.id];
+    if (typeof want === "string") {
+      const ch = part.choices;
+      if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(got)) || String(got) !== want) return false;
+      continue;
+    }
+    if (got === "" || got === null || got === undefined || typeof got === "boolean" || typeof got === "object") return false;
+    const x = Number(got);
+    if (!Number.isFinite(x) || !Number.isFinite(want)) return false;
+    const dp = p.dp[part.id];
+    if (dp === null) {
+      if (Math.abs(x - want) > 1e-9 * Math.max(1, Math.abs(want))) return false;
+    } else if (typeof dp !== "number" || Math.abs(x - want) > 0.5 * 10 ** -dp + 1e-9) return false;
+  }
+  return true;
+}
+
+// Retry a template until it returns a question (deterministic: only the rng passed in).
+function xTry(make, rng) {
+  for (let i = 0; i < 80; i++) {
+    const q = make(rng);
+    if (q) return q;
+  }
+  throw new Error("Expert: could not generate a question");
+}
+
+const X_UNROUNDED = "Use unrounded values from earlier parts.";
+
+// ohms-law / expert: a cell with internal resistance; current, terminal voltage and lost volts.
+function xEmf(rng) {
+  const src = rng.pick([["A battery", 30, 240], ["A cell", 12, 30], ["A power pack", 20, 200], ["A car battery", 120, 130]]);
+  const emf = rng.int(src[1], src[2]) / 10;
+  const r = rng.int(1, 30) / 10;
+  const R = rng.int(10, 500) / 10;
+  const I = emf / (R + r);
+  const Vt = I * R;
+  const lost = I * r;
+  return xMulti({
+    kind: "x-emf",
+    v: { emf, r, R },
+    prompt: `${src[0]} has an emf of ${xs(emf)} V and an internal resistance of ${xs(r)} Ω. It is connected to a ${xs(R)} Ω resistor. ${X_UNROUNDED}`,
+    parts: [
+      xNum("I", "Current", "Current in the circuit, in A", I, 3, "The internal resistance is in series with the resistor: the emf drives current through both."),
+      xNum("Vt", "Terminal voltage", "Voltage across the resistor (terminal voltage), in V", Vt, 2, "Ohm's law for the resistor alone: V = I × R."),
+      xNum("lost", "Lost volts", "Voltage lost inside the source, in V", lost, 2, "The lost volts are I × r, or emf - terminal voltage."),
+    ],
+    steps: [
+      `Total resistance: \`_R + _rint\` → ${xs(R + r)} Ω. \`_I = _emf / (_R + _rint)\` → ${xs(I)}, which rounds to **${xr(I, 3)} A**.`,
+      `\`_I * _R\` → ${xs(Vt)}, which rounds to **${xr(Vt, 2)} V**.`,
+      `\`_I * _rint\` → ${xs(lost)}, which rounds to **${xr(lost, 2)} V**. Check: ${xs(Vt)} + ${xs(lost)} = ${xs(emf)} V, the emf.`,
+    ],
+    given: [["_emf", emf], ["_rint", r], ["_R", R]],
+    hints: [
+      "Think of the internal resistance as a small resistor inside the source, in series with the outside resistor.",
+      "The emf divided by the total resistance (outside + inside) gives the current.",
+      "The voltage across each resistance is I × that resistance; together they add up to the emf.",
+    ],
+  });
+}
+
+// ohms-law / expert: design a potential divider (work back to R2), then its current.
+function xDivider(rng) {
+  const Vin = rng.pick([5, 6, 9, 12, 15, 24]);
+  const R1 = rng.int(10, 470) / 10; // kΩ
+  const Vout = rng.int(5, Vin * 10 - 5) / 10;
+  const R2 = (R1 * Vout) / (Vin - Vout);
+  const ImA = Vin / (R1 + R2);
+  if (R2 > 2000 || R2 < 0.1) return null;
+  return xMulti({
+    kind: "x-divider",
+    v: { Vin, R1, Vout },
+    prompt: `A potential divider has a fixed ${xs(R1)} kΩ resistor R1 in series with a resistor R2, across a ${Vin} V supply. The output is taken across R2 and must be ${xs(Vout)} V. ${X_UNROUNDED}`,
+    parts: [
+      xNum("R2", "R2", "Resistance R2, in kΩ", R2, 2, "The same current flows through both resistors, so the voltages are in the same ratio as the resistances."),
+      xNum("I", "Current", "Current through the divider, in mA", ImA, 3, "Use R1: the voltage across it is the supply minus the output. Volts ÷ kΩ gives mA."),
+    ],
+    steps: [
+      `Voltage across R1: \`_Vin - _Vout\` → ${xs(Vin - Vout)} V.`,
+      `Same current, so \`R2 / R1 = Vout / (Vin - Vout)\`: \`_R2 = _R1 * _Vout / (_Vin - _Vout)\` → ${xs(R2)}, which rounds to **${xr(R2, 2)} kΩ**.`,
+      `\`(_Vin - _Vout) / _R1\` → ${xs(ImA)}, which rounds to **${xr(ImA, 3)} mA** (V ÷ kΩ = mA).`,
+    ],
+    given: [["_Vin", Vin], ["_R1", R1], ["_Vout", Vout]],
+    hints: [
+      "Work backwards from the output. The supply voltage is shared between R1 and R2.",
+      "In series the current is the same, so V ÷ R is the same for both resistors: voltages are in the ratio of the resistances.",
+      "Find the voltage across R1 first, then set `(_Vin - _Vout) / _R1` equal to `_Vout / R2`.",
+    ],
+  });
+}
+
+// ohms-law / expert: the current rises by a known amount when the voltage is raised; find R and the currents.
+function xDelta(rng) {
+  const R = rng.int(20, 2000) / 2;
+  const V1 = rng.int(10, 120) / 10;
+  const V2 = xr(V1 + rng.int(5, 120) / 10, 1);
+  const dmA = ((V2 - V1) / R) * 1000;
+  const dShown = xr(dmA, 2);
+  const Rr = ((V2 - V1) / dShown) * 1000;
+  const I1 = (V1 / Rr) * 1000;
+  const I2 = (V2 / Rr) * 1000;
+  return xMulti({
+    kind: "x-delta",
+    v: { V1, V2, dmA: dShown },
+    prompt: `When the voltage across a resistor is raised from ${xs(V1)} V to ${xs(V2)} V, the current rises by ${xs(dShown)} mA. The resistor obeys Ohm's law. ${X_UNROUNDED}`,
+    parts: [
+      xNum("R", "Resistance", "Resistance, in Ω", Rr, 1, "For an ohmic resistor the change in voltage ÷ change in current is the resistance. Convert mA to A."),
+      xNum("I1", "Current before", "Current at the lower voltage, in mA", I1, 2, "Ohm's law at the lower voltage: I = V ÷ R."),
+      xNum("I2", "Current after", "Current at the higher voltage, in mA", I2, 2, "Either use Ohm's law again or add the rise to the first current."),
+    ],
+    steps: [
+      `\`R = ΔV / ΔI\`: \`_R = (_V2 - _V1) / (_dI / 1000)\` → ${xs(Rr)}, which rounds to **${xr(Rr, 1)} Ω**.`,
+      `\`_V1 / _R * 1000\` → ${xs(I1)}, which rounds to **${xr(I1, 2)} mA**.`,
+      `\`_V2 / _R * 1000\` → ${xs(I2)}, which rounds to **${xr(I2, 2)} mA**.`,
+    ],
+    given: [["_V1", V1], ["_V2", V2], ["_dI", dShown]],
+    hints: [
+      "You don't know either current, only the change. For a resistor that obeys Ohm's law, the change in V ÷ the change in I is also R.",
+      "Convert the change in current from mA to A before dividing.",
+      "With R known, use I = V ÷ R at each voltage, then convert A to mA.",
+    ],
+  });
+}
+
+const X_APPLIANCES = [
+  ["a toaster", 800, 1500], ["a microwave", 600, 1200], ["a hair dryer", 1000, 2200], ["a games console", 100, 250],
+  ["a fan heater", 1500, 2900], ["a lamp", 20, 100], ["a laptop charger", 45, 140], ["an iron", 1100, 2600], ["a fridge", 80, 200],
+];
+const X_FUSES = [3, 5, 13];
+
+// power / expert: current at 230 V, the right fuse, and the running cost.
+function xFuse(rng) {
+  const [what, lo, hi] = rng.pick(X_APPLIANCES);
+  const P = rng.int(lo / 10, hi / 10) * 10;
+  const V = 230;
+  const I = P / V;
+  if (X_FUSES.some((f) => Math.abs(I - f) < 0.15 * f)) return null; // keep clear of a rating
+  const fuse = `${X_FUSES.find((f) => f > I)} A`;
+  const hours = rng.int(2, 40) / 2;
+  const days = rng.pick([7, 30, 31, 90, 365]);
+  const price = rng.int(10, 45) / 100;
+  const cost = (P / 1000) * hours * days * price;
+  return xMulti({
+    kind: "x-fuse",
+    v: { P, V, hours, days, price },
+    prompt: `${what[0].toUpperCase() + what.slice(1)} is rated ${P} W on the ${V} V mains. Fuses come in 3 A, 5 A and 13 A. It is used for ${xs(hours)} hours a day for ${days} days, and electricity costs ${cash(price)} per kWh. ${X_UNROUNDED}`,
+    parts: [
+      xNum("I", "Current", "Current it draws, in A", I, 2, "P = V × I, so I = P ÷ V."),
+      xChoice("fuse", "Fuse", "Which fuse should it have?", fuse, ["3 A", "5 A", "13 A"], "Choose the smallest fuse rated above the normal current: big enough not to blow in normal use, small enough to blow on a fault."),
+      xNum("cost", "Cost", "Running cost over the whole period, in $", cost, 2, "Energy in kWh = power in kW × hours of use. Then multiply by the price per kWh."),
+    ],
+    steps: [
+      `\`_I = _P / _V\` → ${xs(I)}, which rounds to **${xr(I, 2)} A**.`,
+      `The smallest fuse above ${xs(I)} A is **${fuse}**. A smaller one would blow in normal use; a bigger one gives less protection.`,
+      `Energy: \`_P / 1000 * _hours * _days\` → ${xs((P / 1000) * hours * days)} kWh. Cost: \`× _price\` → ${xs(cost)}, which rounds to **$${xr(cost, 2).toFixed(2)}**.`,
+    ],
+    given: [["_P", P], ["_V", V], ["_hours", hours], ["_days", days], ["_price", price]],
+    hints: [
+      "Start with the current from `P = V × I`.",
+      "A fuse must carry the normal current without blowing, but should be as small as possible.",
+      "For the cost: convert W to kW, multiply by the total hours of use to get kWh, then by the price.",
+    ],
+  });
+}
+
+// power / expert: a kettle heating water (specific heat capacity) with an efficiency.
+function xKettle(rng) {
+  const P = rng.int(18, 30) * 100;
+  const eff = rng.int(70, 95);
+  const m = rng.int(5, 17) / 10;
+  const T1 = rng.int(8, 25);
+  const c = 4200;
+  const Q = m * c * (100 - T1);
+  const t = Q / ((P * eff) / 100);
+  const I = P / 230;
+  return xMulti({
+    kind: "x-kettle",
+    v: { P, eff, m, T1 },
+    prompt: `A ${P} W kettle on the 230 V mains is ${eff}% efficient. It heats ${xs(m)} kg of water from ${T1} °C to boiling (100 °C). The specific heat capacity of water is 4200 J/(kg °C). ${X_UNROUNDED}`,
+    parts: [
+      xNum("Q", "Energy for the water", "Energy the water must gain, in kJ", Q / 1000, 1, "Q = m × c × temperature rise. Divide J by 1000 for kJ."),
+      xNum("t", "Time", "Time to reach boiling, in s", t, 1, `Only ${eff}% of the electrical power heats the water.`),
+      xNum("I", "Current", "Current the kettle draws, in A", I, 2, "P = V × I with the kettle's rated power."),
+    ],
+    steps: [
+      `\`_Q = _m * 4200 * (100 - _T1)\` → ${xs(Q)} J, which is **${xr(Q / 1000, 1)} kJ**.`,
+      `Useful power: \`_P * _eff / 100\` → ${xs((P * eff) / 100)} W. \`_Q / (_P * _eff / 100)\` → ${xs(t)}, which rounds to **${xr(t, 1)} s**.`,
+      `\`_P / 230\` → ${xs(I)}, which rounds to **${xr(I, 2)} A**.`,
+    ],
+    given: [["_P", P], ["_eff", eff], ["_m", m], ["_T1", T1]],
+    hints: [
+      "The energy the water needs depends only on its mass, the specific heat capacity and the temperature rise.",
+      "The kettle wastes some energy, so the useful heating power is the efficiency × the electrical power.",
+      "Time = energy needed ÷ useful power.",
+    ],
+  });
+}
+
+// power / expert: power lost in a transmission cable; why high voltage helps.
+function xCable(rng) {
+  const P = rng.int(10, 500); // kW delivered
+  const V = rng.pick([400, 690, 1000, 3300, 6600, 11000]);
+  const R = rng.int(5, 200) / 100;
+  const I = (P * 1000) / V;
+  const loss = I * I * R;
+  const pct = (100 * loss) / (P * 1000);
+  if (pct > 30 || pct < 0.01) return null;
+  return xMulti({
+    kind: "x-cable",
+    v: { P, V, R },
+    prompt: `A generator sends ${P} kW at ${V} V along a cable with a total resistance of ${xs(R)} Ω. ${X_UNROUNDED}`,
+    parts: [
+      xNum("I", "Current", "Current in the cable, in A", I, 2, "P = V × I with P in watts."),
+      xNum("loss", "Power lost", "Power wasted heating the cable, in W", loss, 1, "The cable's own heating is I² × R. Don't use the supply voltage here: it is not across the cable."),
+      xNum("pct", "Percentage lost", "Power lost as a percentage of the power sent", pct, 2, "Divide the power lost by the power sent (in W) and multiply by 100."),
+    ],
+    steps: [
+      `\`_I = _P * 1000 / _V\` → ${xs(I)}, which rounds to **${xr(I, 2)} A**.`,
+      `\`_I^2 * _R\` → ${xs(loss)}, which rounds to **${xr(loss, 1)} W**.`,
+      `\`_I^2 * _R / (_P * 1000) * 100\` → ${xs(pct)}, which rounds to **${xr(pct, 2)}%**.`,
+      `Doubling the voltage would halve the current and cut this loss to a quarter: that is why the grid uses high voltages.`,
+    ],
+    given: [["_P", P], ["_V", V], ["_R", R]],
+    hints: [
+      "The power sent fixes the current: I = P ÷ V, with kW converted to W.",
+      "The wasted power is the heating in the cable, I² × R. Using V²/R with the supply voltage would be wrong: that voltage is not across the cable.",
+      "Compare the loss with the power sent to get the percentage.",
+    ],
+  });
+}
+
+// series-parallel / expert: R1 in series with R2 ∥ R3; total resistance, supply current, current in R2.
+function xNetwork(rng) {
+  const V = rng.int(30, 240) / 10;
+  const R1 = rng.int(1, 100);
+  const R2 = rng.int(2, 120);
+  let R3;
+  do R3 = rng.int(2, 120);
+  while (R3 === R2);
+  const Rp = (R2 * R3) / (R2 + R3);
+  const Rt = R1 + Rp;
+  const I = V / Rt;
+  const I2 = (I * R3) / (R2 + R3);
+  return xMulti({
+    kind: "x-network",
+    v: { V, R1, R2, R3 },
+    prompt: `A ${xs(V)} V supply is connected to R1 = ${R1} Ω in series with a parallel pair, R2 = ${R2} Ω and R3 = ${R3} Ω. ${X_UNROUNDED}`,
+    parts: [
+      xNum("Rt", "Total resistance", "Total resistance, in Ω", Rt, 2, "Combine the parallel pair first (product over sum), then add R1."),
+      xNum("I", "Supply current", "Current from the supply, in A", I, 3, "Supply voltage ÷ total resistance."),
+      xNum("I2", "Current in R2", "Current through R2, in A", I2, 3, "Find the voltage across the parallel pair (supply minus the voltage across R1), then use Ohm's law for R2."),
+    ],
+    steps: [
+      `\`_Rp = _R2 * _R3 / (_R2 + _R3)\` → ${xs(Rp)} Ω; \`_Rt = _R1 + _Rp\` → ${xs(Rt)}, which rounds to **${xr(Rt, 2)} Ω**.`,
+      `\`_I = _V / _Rt\` → ${xs(I)}, which rounds to **${xr(I, 3)} A**.`,
+      `Voltage across the pair: \`_V - _I * _R1\` → ${xs(V - I * R1)} V. \`(_V - _I * _R1) / _R2\` → ${xs(I2)}, which rounds to **${xr(I2, 3)} A**.`,
+      `Check: R3 carries ${xs(I - I2)} A, and the two branch currents add up to the supply current.`,
+    ],
+    given: [["_V", V], ["_R1", R1], ["_R2", R2], ["_R3", R3]],
+    hints: [
+      "Work from the inside out: replace the parallel pair by a single resistance first.",
+      "All of the supply current flows through R1, then it splits between R2 and R3.",
+      "The parallel resistors share the same voltage: the supply voltage minus the voltage across R1.",
+    ],
+  });
+}
+
+// series-parallel / expert: which resistor in parallel gives a target total? Then its current.
+function xFindR(rng) {
+  const R1 = rng.int(10, 200);
+  const Rt = rng.int(Math.ceil(R1 * 0.2), R1 - 2);
+  const Rx = (R1 * Rt) / (R1 - Rt);
+  if (Rx > 5000) return null;
+  const V = rng.int(30, 240) / 10;
+  const Ix = V / Rx;
+  return xMulti({
+    kind: "x-findr",
+    v: { R1, Rt, V },
+    prompt: `A ${R1} Ω resistor is in a circuit, but the design needs a resistance of ${Rt} Ω there. An extra resistor Rx is connected in parallel with it, and the pair is placed across a ${xs(V)} V supply. ${X_UNROUNDED}`,
+    parts: [
+      xNum("Rx", "Rx", "Resistance Rx needed, in Ω", Rx, 2, "Use the reciprocal rule: 1/R_total = 1/R1 + 1/Rx, and rearrange for 1/Rx."),
+      xNum("Ix", "Current in Rx", "Current through Rx, in A", Ix, 3, "Each resistor in parallel has the full supply voltage across it."),
+      xNum("I", "Total current", "Total current from the supply, in A", V / Rt, 3, "Supply voltage ÷ the combined resistance."),
+    ],
+    steps: [
+      `\`1/Rx = 1/_Rt - 1/_R1\`, so \`_Rx = 1 / (1/_Rt - 1/_R1)\` → ${xs(Rx)}, which rounds to **${xr(Rx, 2)} Ω**.`,
+      `\`_V / _Rx\` → ${xs(Ix)}, which rounds to **${xr(Ix, 3)} A**.`,
+      `\`_V / _Rt\` → ${xs(V / Rt)}, which rounds to **${xr(V / Rt, 3)} A**. Check: the ${R1} Ω resistor carries ${xs(V / R1)} A, and the two branch currents add up to this.`,
+    ],
+    given: [["_R1", R1], ["_Rt", Rt], ["_V", V]],
+    hints: [
+      "Adding a resistor in parallel lowers the total, which is why this works. Work backwards with reciprocals.",
+      "`1/_Rt = 1/_R1 + 1/Rx`: subtract to find 1/Rx, then take the reciprocal.",
+      "In parallel, every branch has the full supply voltage across it.",
+    ],
+  });
+}
+
+// series-parallel / expert: two resistors in series and then in parallel on the same supply; compare powers.
+function xLamps(rng) {
+  const what = rng.pick(["heating elements", "lamps", "resistors", "heater coils"]);
+  const V = rng.pick([6, 9, 12, 24, 230]);
+  const scale = V === 230 ? 10 : 1;
+  const R1 = rng.int(2, 60) * scale;
+  let R2;
+  do R2 = rng.int(2, 60) * scale;
+  while (R2 === R1);
+  const Is = V / (R1 + R2);
+  const Pser = V * Is;
+  const Pr1 = Is * Is * R1;
+  const Ppar = (V * V) / ((R1 * R2) / (R1 + R2));
+  return xMulti({
+    kind: "x-lamps",
+    v: { V, R1, R2 },
+    prompt: `Two ${what}, R1 = ${R1} Ω and R2 = ${R2} Ω, are connected to a ${V} V supply, first in series and then in parallel. Treat their resistances as constant. ${X_UNROUNDED}`,
+    parts: [
+      xNum("Pser", "Series power", "Total power in series, in W", Pser, 2, "In series: add the resistances, find the current, then P = V × I."),
+      xNum("Pr1", "R1 in series", "Power in R1 when in series, in W", Pr1, 2, "P = I² × R for R1 alone, with the series current."),
+      xNum("Ppar", "Parallel power", "Total power in parallel, in W", Ppar, 2, "In parallel each one has the full supply voltage: P = V² ÷ R for each, then add (or use the combined resistance)."),
+    ],
+    steps: [
+      `Series: \`_Is = _V / (_R1 + _R2)\` → ${xs(Is)} A. \`_V * _Is\` → ${xs(Pser)}, which rounds to **${xr(Pser, 2)} W**.`,
+      `\`_Is^2 * _R1\` → ${xs(Pr1)}, which rounds to **${xr(Pr1, 2)} W**.`,
+      `Parallel: \`_V^2 / (_R1 * _R2 / (_R1 + _R2))\` → ${xs(Ppar)}, which rounds to **${xr(Ppar, 2)} W**, far more than in series.`,
+    ],
+    given: [["_V", V], ["_R1", R1], ["_R2", R2]],
+    hints: [
+      "In series the current is shared and the total resistance is bigger; in parallel each one gets the full voltage.",
+      "For the series parts, find the single series current first.",
+      "For parallel, `V² ÷ R` for each, added together, equals `V² ÷ (combined resistance)`.",
+    ],
+  });
+}
+
+function genExpert(subtopic, rng) {
+  const pick = (list) => list[rng.int(0, list.length - 1)];
+  if (subtopic === "ohms-law") return xTry(pick([xEmf, xDivider, xDelta]), rng);
+  if (subtopic === "power") return xTry(pick([xFuse, xKettle, xCable]), rng);
+  if (subtopic === "series-parallel") return xTry(pick([xNetwork, xFindR, xLamps]), rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Independent truth for verify: Kirchhoff's loop or a nodal equation solved by bisection, energy per
+// second instead of per run, summed branch powers instead of a combined resistance.
+const X_TRUTH = {
+  "x-emf": ({ emf, r, R }) => {
+    const I = xRoot((i) => emf - i * r - i * R, 0, 1e4);
+    return { I, Vt: emf - I * r, lost: I * r };
+  },
+  "x-divider": ({ Vin, R1, Vout }) => {
+    const R2 = xRoot((x) => (Vin * x) / (R1 + x) - Vout, 1e-9, 1e7);
+    return { R2, I: Vout / R2 };
+  },
+  "x-delta": ({ V1, V2, dmA }) => {
+    const R = xRoot((x) => ((V2 - V1) / x) * 1000 - dmA, 1e-6, 1e9);
+    return { R, I1: (V1 * 1000) / R, I2: (V1 * 1000) / R + dmA };
+  },
+  "x-fuse": ({ P, V, hours, days, price }) => {
+    const I = xRoot((i) => V * i - P, 0, 1e4);
+    let fuse = null;
+    for (const f of [3, 5, 13]) if (fuse === null && f >= I) fuse = `${f} A`;
+    const joules = P * hours * 3600 * days;
+    return { I, fuse, cost: (joules / 3.6e6) * price };
+  },
+  "x-kettle": ({ P, eff, m, T1 }) => {
+    const rate = (P * eff) / 100 / (m * 4200); // °C per second
+    return { Q: (m * 4200 * (100 - T1)) / 1000, t: (100 - T1) / rate, I: xRoot((i) => 230 * i - P, 0, 1e4) };
+  },
+  "x-cable": ({ P, V, R }) => {
+    const I = xRoot((i) => V * i - P * 1000, 0, 1e7);
+    const drop = I * R; // voltage across the cable
+    const loss = (drop * drop) / R;
+    return { I, loss, pct: (loss / (P * 1000)) * 100 };
+  },
+  // Nodal: (V - Vn)/R1 = Vn/R2 + Vn/R3.
+  "x-network": ({ V, R1, R2, R3 }) => {
+    const Vn = xRoot((x) => (V - x) / R1 - x / R2 - x / R3, 0, V);
+    const I = (V - Vn) / R1;
+    return { Rt: V / I, I, I2: Vn / R2 };
+  },
+  "x-findr": ({ R1, Rt, V }) => {
+    const Rx = xRoot((x) => 1 / R1 + 1 / x - 1 / Rt, 1e-6, 1e9);
+    return { Rx, Ix: V / Rx, I: V / R1 + V / Rx };
+  },
+  "x-lamps": ({ V, R1, R2 }) => {
+    const I = xRoot((i) => V - i * R1 - i * R2, 0, 1e4);
+    return { Pser: I * I * R1 + I * I * R2, Pr1: I * I * R1, Ppar: (V * V) / R1 + (V * V) / R2 };
+  },
+};
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "ohms-law") return genOhm(difficulty, rng);
   if (subtopic === "power") return genPower(difficulty, rng);
   if (subtopic === "series-parallel") return genCircuit(difficulty, rng);
@@ -555,6 +1053,7 @@ export function generate({ subtopic, difficulty, rng }) {
 // For rounded answers the allowed residual is 0.005 × (how strongly the relation reacts to the unknown).
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (!p || !p.values) return false;
 
   if (question.answerType === "choice") {

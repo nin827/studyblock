@@ -17,6 +17,8 @@ Example: `WHERE age > 5 AND species = 'Dog'` keeps only dogs older than 5.
 
 **Watch out:** `>` leaves out the value itself; `>=` includes it.
 
+**Expert: missing numbers and precedence.** For `col > ?`, the returned rows must pass and every other row the AND lets through must fail, so ? sits between the two groups; check both edge values. Without brackets, AND is worked out before OR: `a OR b AND c` means `a OR (b AND c)`.
+
 ## ORDER BY and LIMIT
 
 1. Apply WHERE first, if there is one.
@@ -27,6 +29,8 @@ Example: `WHERE age > 5 AND species = 'Dog'` keeps only dogs older than 5.
 Example: prices 5, 9, 2 with `ORDER BY price DESC LIMIT 2` gives 9, 5.
 
 **Watch out:** LIMIT is a maximum: if fewer rows pass WHERE, you get fewer.
+
+**Expert: pages and sort keys.** Page p of k rows is `LIMIT k OFFSET (p − 1) × k`. To find which ORDER BY gives an order, see which column keeps equal values together (the first key, A to Z or Z to A), then how the rows run inside each group (the second key).
 
 ## Aggregates
 
@@ -39,6 +43,8 @@ Example: scores 4, 6 and 11 give `AVG(score)` = 21 ÷ 3 = 7.
 
 **Watch out:** `COUNT(DISTINCT col)` counts each different value only once.
 
+**Expert: working backwards from an average.** AVG × number of rows = their total; take away the values you can see to find a hidden one. A subquery like `(SELECT AVG(x) FROM t)` is one number for the whole table, worked out first.
+
 ## GROUP BY and JOIN
 
 1. GROUP BY: sort the rows into piles with the same value; each pile becomes one result row.
@@ -49,3 +55,5 @@ Example: scores 4, 6 and 11 give `AVG(score)` = 21 ÷ 3 = 7.
 Example: species Cat, Dog, Cat with `GROUP BY species` gives 2 rows: Cat (2) and Dog (1).
 
 **Watch out:** WHERE filters rows before grouping; HAVING filters whole groups after.
+
+**Expert: long queries.** Work in this order: subquery, JOIN (unmatched rows drop out), WHERE, GROUP BY, HAVING. A subquery on the left table still averages every row of it, even rows that won't join. A name with no joined rows makes no group at all.

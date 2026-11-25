@@ -925,9 +925,530 @@ function quadRule(x, y) {
   return "the angle is 360° minus that value.";
 }
 
+// ======================= Expert =======================
+// Multi-step problems that combine two or more ideas (easy/medium/hard above are untouched).
+// Every template draws all of its rng values first; hints and explanations only use values
+// already drawn (no rng calls). Every params.kind starts with "x-" and has its own CHECK below.
+
+const LR = ["Left (counter-clockwise)", "Right (clockwise)"];
+const YN = ["Yes", "No"];
+const dot2 = (ax, ay, bx, by) => ax * bx + ay * by;
+const cap1 = (s) => s[0].toUpperCase() + s.slice(1);
+// "3t² − 5t + 2" style signed terms for explanations.
+const sgn = (n) => (n < 0 ? `− ${num(-n)}` : `+ ${num(n)}`);
+
+// vectors / expert 0: mirror bounce off a sloped wall (dot product + scaling).
+function xReflect(rng) {
+  const NORMALS = [[1, 1], [1, 2], [2, 1], [-1, 2], [2, -1], [1, 3], [3, 1], [-1, 1], [1, -2], [3, -4], [4, 3], [-2, 3]];
+  const who = rng.pick(["ball", "bullet", "puck", "laser bolt", "bouncing slime"]);
+  let vx, vy, nx, ny;
+  do {
+    [nx, ny] = rng.pick(NORMALS);
+    vx = nz(rng, -12, 12);
+    vy = nz(rng, -12, 12);
+  } while (dot2(vx, vy, nx, ny) === 0);
+  if (dot2(vx, vy, nx, ny) > 0) { nx = -nx; ny = -ny; } // the normal points back out of the wall
+  const dn = dot2(vx, vy, nx, ny), nn = nx * nx + ny * ny;
+  const k = (2 * dn) / nn;
+  const rx = vx - k * nx, ry = vy - k * ny;
+  const calc = (c) => `_v${c} - 2 * (_vx*_nx + _vy*_ny) / (_nx^2 + _ny^2) * _n${c}`;
+  return multi({
+    prompt: `${YUP} A ${who} moving with velocity v = ${vec(vx, vy)} hits a straight, sloped wall and bounces off like a mirror, losing no speed. The wall's normal (a vector at right angles to the wall, pointing out of it towards the ${who}) is n = ${vec(nx, ny)}; it is not length 1. In a mirror bounce the part of v along n flips and the part along the wall stays. What is the velocity after the bounce?${END}`,
+    parts: [
+      numPart("x", "x component", "x of the new velocity", rx, true, `x: \`${calc("x")}\`.${THEN}`),
+      numPart("y", "y component", "y of the new velocity", ry, true, `y: \`${calc("y")}\`.${THEN}`),
+    ],
+    explanation:
+      `Remove the part of v along n twice (once to cancel it, once to flip it): \`r = v − 2 × (v·n / n·n) × n\`.\n\n` +
+      `- \`v · n = ${par(vx)} × ${par(nx)} + ${par(vy)} × ${par(ny)} = ${dn}\`\n` +
+      `- \`n · n = ${par(nx)}² + ${par(ny)}² = ${nn}\`\n` +
+      `- \`2 × ${par(dn)} / ${nn}\` ≈ ${num(k)}\n` +
+      `- x: \`${num(vx)} − ${par(k)} × ${par(nx)}\` ${res(rx, true)}\n` +
+      `- y: \`${num(vy)} − ${par(k)} × ${par(ny)}\` ${res(ry, true)}\n\n` +
+      `Check: the speed is unchanged, |r| = |v| ≈ ${num(Math.hypot(vx, vy))}.`,
+    hints: [
+      "A mirror bounce keeps the part of v along the wall and flips the part along the normal: `r = v − 2 × (v·n / n·n) × n`. n need not be length 1, because you divide by n·n.",
+      `Here \`v · n = ${dn}\` and \`n · n = ${nn}\`. Work out 2 × (v·n) / (n·n), then subtract that many n's from v, component by component.`,
+    ],
+    given: giv({ vx, vy, nx, ny }),
+    params: { kind: "x-reflect", v: { vx, vy, nx, ny } },
+    rounded: true,
+  });
+}
+
+// vectors / expert 1: closest point on a patrol segment (projection, then clamp at the ends).
+function xClosest(rng) {
+  let ax, ay, bx, by, px, py, abx, aby, apx, apy, ab2, tRaw;
+  do {
+    ax = rng.int(-15, 15); ay = rng.int(-15, 15);
+    bx = rng.int(-15, 15); by = rng.int(-15, 15);
+    px = rng.int(Math.min(ax, bx) - 6, Math.max(ax, bx) + 6);
+    py = rng.int(Math.min(ay, by) - 6, Math.max(ay, by) + 6);
+    abx = bx - ax; aby = by - ay; apx = px - ax; apy = py - ay;
+    ab2 = abx * abx + aby * aby;
+    tRaw = ab2 ? dot2(apx, apy, abx, aby) / ab2 : 0;
+  } while (ab2 < 36 || abx * apy - aby * apx === 0 || Math.abs(tRaw) < 0.03 || Math.abs(tRaw - 1) < 0.03);
+  const t = Math.min(1, Math.max(0, tRaw));
+  const cx = ax + t * abx, cy = ay + t * aby;
+  const dist = Math.hypot(px - cx, py - cy);
+  const apab = dot2(apx, apy, abx, aby);
+  const clampLine =
+    tRaw < 0 ? `That is below 0, so the closest point is past the end A: clamp to **t = 0** (C = A).`
+      : tRaw > 1 ? `That is above 1, so the closest point is past the end B: clamp to **t = 1** (C = B).`
+        : `That is between 0 and 1, so the closest point is inside the path: t ${res(t, true)}.`;
+  return multi({
+    prompt: `${YUP} A guard patrols the straight path from A = ${vec(ax, ay)} to B = ${vec(bx, by)}; points on it are A + t·(B − A) with t from 0 (at A) to 1 (at B). The player stands at P = ${vec(px, py)}. Which t gives the point C on the path closest to the player, and how far is the player from the path?${END}`,
+    parts: [
+      numPart("t", "t", "t of the closest point (0 to 1)", t, true, "Project AP onto AB, then clamp the result into 0 to 1."),
+      numPart("dist", "Distance", "Distance from P to the path", dist, true, `Find C = A + t·(B − A) with the clamped t, then the length of P − C.${THEN}`),
+    ],
+    explanation:
+      `Project P onto the line through A and B, then keep the result on the segment.\n\n` +
+      `- \`AB = B − A = ${vec(abx, aby)}\`, \`AP = P − A = ${vec(apx, apy)}\`\n` +
+      `- \`t = (AP · AB) / (AB · AB) = ${apab} / ${ab2}\` ≈ ${num(tRaw)}\n` +
+      `- ${clampLine}\n` +
+      `- \`C = A + t·AB\` = ${vec(cx, cy)}\n` +
+      `- distance \`= √((${num(px)} − ${par(cx)})² + (${num(py)} − ${par(cy)})²)\` ${res(dist, true)}`,
+    hints: [
+      "The closest point on the whole line is the projection: `t = (AP · AB) / (AB · AB)`, with AB = B − A and AP = P − A.",
+      `Here AB = ${vec(abx, aby)} and AP = ${vec(apx, apy)}. The path stops at A and B, so if t comes out below 0 or above 1, clamp it to the nearer end.`,
+      "Then C = A + t·AB, and the distance is the length of P − C (Pythagoras).",
+    ],
+    given: giv({ ax, ay, bx, by, px, py }),
+    params: { kind: "x-closest", v: { ax, ay, bx, by, px, py } },
+    rounded: true,
+  });
+}
+
+// vectors / expert 2: working backwards, choose k so a + k·b is perpendicular to c.
+function xPerp(rng) {
+  let ax, ay, bx, by, cx, cy, ac, bc, k, wx, wy;
+  do {
+    ax = rng.int(-10, 10); ay = rng.int(-10, 10);
+    bx = nz(rng, -8, 8); by = rng.int(-8, 8);
+    cx = nz(rng, -8, 8); cy = nz(rng, -8, 8);
+    ac = dot2(ax, ay, cx, cy);
+    bc = dot2(bx, by, cx, cy);
+    k = bc ? -ac / bc : 0;
+    wx = ax + k * bx; wy = ay + k * by;
+  } while (Math.abs(bc) < 3 || ac === 0 || Math.abs(k) > 12 || Math.hypot(wx, wy) < 0.5);
+  const len = Math.hypot(wx, wy);
+  return multi({
+    prompt: `${YUP} A drone flies with velocity a = ${vec(ax, ay)}. Its side thruster can add any multiple k of the thrust vector b = ${vec(bx, by)} (k may be negative). A security beam runs along the direction c = ${vec(cx, cy)}. For which k is the new velocity a + k·b at right angles to the beam? Then, using the unrounded k, what is the drone's new speed |a + k·b|?${END}`,
+    parts: [
+      numPart("k", "k", "The value of k", k, true, "At right angles means the dot product with c is 0. Expand (a + k·b)·c and solve for k."),
+      numPart("speed", "Speed", "New speed |a + k·b|", len, true, `Build a + k·b component by component with the unrounded k, then take its length.${THEN}`),
+    ],
+    explanation:
+      `Perpendicular vectors have a dot product of 0, and the dot product splits over addition: \`(a + k·b)·c = a·c + k(b·c)\`.\n\n` +
+      `- \`a · c = ${par(ax)} × ${par(cx)} + ${par(ay)} × ${par(cy)} = ${ac}\`\n` +
+      `- \`b · c = ${par(bx)} × ${par(cx)} + ${par(by)} × ${par(cy)} = ${bc}\`\n` +
+      `- \`${ac} + k × ${par(bc)} = 0\`, so \`k = −(${ac}) / ${par(bc)}\` ${res(k, true)}\n` +
+      `- \`a + k·b\` ≈ ${vec(wx, wy)}\n` +
+      `- speed \`= √(${par(wx)}² + ${par(wy)}²)\` ${res(len, true)}`,
+    hints: [
+      "Two vectors are at right angles when their dot product is 0. So you need `(a + k·b) · c = 0`.",
+      "The dot product splits over addition: `(a + k·b)·c = a·c + k × (b·c)`. Work out a·c and b·c as plain numbers.",
+      "Solve the linear equation for k (in the calculator: `-(_ax*_cx + _ay*_cy) / (_bx*_cx + _by*_cy)`), then find a + k·b and its length.",
+    ],
+    given: giv({ ax, ay, bx, by, cx, cy }),
+    params: { kind: "x-perp", v: { ax, ay, bx, by, cx, cy } },
+    rounded: true,
+  });
+}
+
+// movement / expert 0: intercept a moving target (vectors + a quadratic in time).
+function xIntercept(rng) {
+  let tx, ty, ex, ey, ux, uy, s, dx, dy;
+  do {
+    tx = rng.int(-10, 10); ty = rng.int(-10, 10);
+    ex = rng.int(-20, 20); ey = rng.int(-20, 20);
+    ux = rng.int(-6, 6); uy = rng.int(-6, 6);
+    s = rng.int(8, 20);
+    dx = ex - tx; dy = ey - ty;
+  } while (Math.hypot(dx, dy) < 8 || (ux === 0 && uy === 0) || s <= Math.hypot(ux, uy) + 1);
+  const A = ux * ux + uy * uy - s * s, B = 2 * dot2(dx, dy, ux, uy), C = dx * dx + dy * dy;
+  const disc = B * B - 4 * A * C;
+  const t = (-B - Math.sqrt(disc)) / (2 * A); // A < 0 and C > 0: this is the one positive root
+  const hx = ex + ux * t, hy = ey + uy * t;
+  return multi({
+    prompt: `${YUP} A turret at T = ${vec(tx, ty)} fires bullets that fly in a straight line at ${s} units per second. An enemy at E = ${vec(ex, ey)} moves with constant velocity u = ${vec(ux, uy)} units per second. The turret fires now, aiming where the enemy will be. After how many seconds does the bullet hit, and where?${END}`,
+    parts: [
+      numPart("t", "Time", "Seconds until the hit", t, true, "Only one root of the quadratic in t is positive: that is the time."),
+      numPart("x", "Hit x", "x of the hit point", hx, true, `x = E's x + u's x × t (use the unrounded t).${THEN}`),
+      numPart("y", "Hit y", "y of the hit point", hy, true, `y = E's y + u's y × t (use the unrounded t).${THEN}`),
+    ],
+    explanation:
+      `After t seconds the enemy is at E + u·t and the bullet has flown s·t, so a hit needs \`|d + u·t| = s·t\` with d = E − T.\n\n` +
+      `- \`d = E − T = ${vec(dx, dy)}\`\n` +
+      `- Square both sides: \`(u·u − s²)t² + 2(d·u)t + d·d = 0\`, here \`${A}t² ${sgn(B)}t ${sgn(C)} = 0\`\n` +
+      `- \`t = (−B − √(B² − 4AC)) / (2A)\`; A is negative, so this is the positive root: t ${res(t, true)} s\n` +
+      `- hit x: \`${num(ex)} + ${par(ux)} × t\` ${res(hx, true)}\n` +
+      `- hit y: \`${num(ey)} + ${par(uy)} × t\` ${res(hy, true)}`,
+    hints: [
+      "After t seconds the enemy is at E + u·t, and the bullet has flown s·t units. It hits when the distance from T to the enemy equals s·t.",
+      `With d = E − T = ${vec(dx, dy)}, square both sides: \`|d + u·t|² = (s·t)²\` expands to \`(u·u − s²)t² + 2(d·u)t + d·d = 0\`.`,
+      `Here \`u·u − s² = ${A}\`, \`2(d·u) = ${B}\` and \`d·d = ${C}\`. Use the quadratic formula (calculator rows _A, _B, _C help), keep the positive root, then put t into E + u·t.`,
+    ],
+    given: giv({ tx, ty, ex, ey, ux, uy, s }),
+    params: { kind: "x-intercept", v: { tx, ty, ex, ey, ux, uy, s } },
+    rounded: true,
+  });
+}
+
+// movement / expert 1: accelerate to a top speed, then cruise (two phases, one worked backwards).
+function xDash(rng) {
+  const who = rng.pick(WHO);
+  const a = rng.int(4, 20);
+  const vmax = rng.int(6, 30);
+  const t1 = vmax / a;
+  const d1 = (vmax * vmax) / (2 * a);
+  const T = Math.ceil(t1 * 2) / 2 + rng.int(1, 8) / 2;
+  const D = Math.ceil(d1) + rng.int(3, 60);
+  const distT = d1 + vmax * (T - t1);
+  const tD = t1 + (D - d1) / vmax;
+  return multi({
+    prompt: `${cap1(who)} dashes in a straight line. It starts at rest, speeds up at ${a} units/s² until it reaches its top speed of ${vmax} units per second, then keeps that speed. How long does it take to reach top speed, how far has it gone after ${num(T)} seconds, and how long does it take to cover ${D} units?${END}`,
+    parts: [
+      numPart("t1", "Time to top speed", "Seconds to reach top speed", t1, true, `Speed = acceleration × time, so time = top speed ÷ acceleration.${THEN}`),
+      numPart("dist", `After ${num(T)} s`, `Distance after ${num(T)} seconds`, distT, true, `Speed-up distance, plus top speed × the time left after reaching top speed.${THEN}`),
+      numPart("time", `${D} units`, `Seconds to cover ${D} units`, tD, true, `Subtract the speed-up distance from ${D}, divide what is left by the top speed, and add the speed-up time.${THEN}`),
+    ],
+    explanation:
+      `Split the dash into a speed-up phase and a constant-speed phase.\n\n` +
+      `- Time to top speed: \`t1 = ${vmax} / ${a}\` ${res(t1, true, "s")}\n` +
+      `- Distance while speeding up (the triangle under the speed–time graph): \`${vmax}² / (2 × ${a})\` ≈ ${num(d1)}\n` +
+      `- After ${num(T)} s: \`${num(d1)} + ${vmax} × (${num(T)} − ${num(t1)})\` ${res(distT, true)}\n` +
+      `- ${D} is more than ${num(d1)}, so it is reached while cruising: \`${num(t1)} + (${D} − ${num(d1)}) / ${vmax}\` ${res(tD, true, "s")}`,
+    hints: [
+      "Split the motion into two phases: speeding up (speed = acceleration × time) until top speed, then constant speed.",
+      "The distance covered while speeding up is the area of the triangle under the speed–time graph: ½ × time × top speed, which is `_vmax^2 / (2 * _a)`.",
+      `After that the distance grows by ${vmax} units every second. Compare ${D} with the speed-up distance first to see which phase it ends in.`,
+    ],
+    given: giv({ a, vmax, T, D }),
+    params: { kind: "x-dash", v: { a, vmax, T, D } },
+    rounded: true,
+  });
+}
+
+// movement / expert 2: semi-implicit Euler jump, peak and landing step (edge: "0 or below").
+function xLand(rng) {
+  let dt, a, v0, p0, ys, vs;
+  do {
+    dt = rng.pick([0.05, 0.1, 0.2, 0.25]);
+    a = -rng.pick([9.8, 10, 15, 20, 30]);
+    v0 = rng.int(4, 20);
+    p0 = rng.int(0, 10);
+    let v = v0, p = p0;
+    ys = [p0]; vs = [v0];
+    while ((p > 0 || ys.length === 1) && ys.length < 200) {
+      v = v + a * dt;
+      p = p + v * dt;
+      ys.push(p); vs.push(v);
+    }
+  } while (ys.length > 120 || ys.slice(1).some((y) => Math.abs(y) < 1e-6));
+  const L = ys.length - 1;
+  let peakStep = 0;
+  ys.forEach((y, i) => { if (y > ys[peakStep]) peakStep = i; });
+  const peak = ys[peakStep];
+  const thing = rng.pick(["frog", "knight", "robot", "ball", "rabbit"]);
+  const show = [...new Set([0, peakStep - 1, peakStep, peakStep + 1, L - 1, L].filter((i) => i >= 0 && i <= L))].sort((x, y) => x - y);
+  const rows = [];
+  show.forEach((i, j) => {
+    if (j > 0 && i - show[j - 1] > 1) rows.push("| … | … | … |");
+    rows.push(`| ${i} | ${num(vs[i])} | ${num(ys[i])} |`);
+  });
+  return multi({
+    prompt: `${YUP} A jumping ${thing} starts at height y = ${p0} with upward velocity ${v0}, and gravity gives acceleration ${a} (units/s²). The game updates every dt = ${num(dt)} s, and each step does first v = v + a·dt, then y = y + v·dt (using the new v). What is the highest y it reaches (counting the start and the end of every step), and on which step does y first reach 0 or below, so it lands?${END} Give the landing step as a whole number.`,
+    parts: [
+      numPart("peak", "Peak height", "Highest y", peak, true, `v drops by ${num(-a * dt)} each step. y rises while the new v is positive, so the peak is at the last step where v is still above 0.${THEN}`),
+      numPart("land", "Landing step", "Step where y first reaches 0 or below", L, false, "Use y after n steps = y0 + n·v0·dt + a·dt²·n(n + 1)/2 and try whole numbers until it is 0 or below."),
+    ],
+    explanation:
+      `After n steps \`v = ${v0} ${sgn(a * dt)} × n\` and, adding up the steps, \`y = ${p0} + n × ${num(v0 * dt)} ${sgn(a * dt * dt / 2)} × n(n + 1)\`.\n\n` +
+      `| Step | v | y |\n| --- | --- | --- |\n${rows.join("\n")}\n\n` +
+      `- Highest point: step ${peakStep}, y ${res(peak, true)}\n` +
+      `- Landing: y first reaches 0 or below on step **${L}**.\n\n` +
+      `(The smooth physics formula v0²/(2g) gives a slightly different peak: a game's step-by-step update is not exact.)`,
+    hints: [
+      `Each step changes v by a·dt = ${num(a * dt)}. y keeps rising while the new v is positive.`,
+      `Adding up the steps: after n steps \`v = v0 + n·a·dt\` and \`y = y0 + n·v0·dt + a·dt²·n(n + 1)/2\` (in the calculator: \`_y0 + _n*_v0*_dt + _a*_dt^2*_n*(_n+1)/2\` with a row _n).`,
+      "The peak is at the last step with v above 0. For the landing, find the first whole n where y is 0 or below: try values near where it changes sign.",
+    ],
+    given: giv({ y0: p0, v0, a, dt }),
+    params: { kind: "x-land", v: { p0, v0, a, dt } },
+    rounded: true,
+  });
+}
+
+// interpolation / expert 0: frame-rate independent smoothing (powers, then working backwards).
+function xFpsDamp(rng) {
+  const F1 = rng.pick([30, 60]);
+  const F2 = rng.pick([50, 75, 90, 120, 144, 165, 240]);
+  let f, G;
+  do {
+    f = rng.int(2, 20);
+    G = rng.int(20, 500);
+  } while (G * (1 - f / 100) ** F1 < 0.5);
+  const r1 = 1 - f / 100;
+  const keep = r1 ** F1;
+  const r2 = r1 ** (F1 / F2);
+  const pct2 = (1 - r2) * 100;
+  const gap = G * keep;
+  return multi({
+    prompt: `A smooth-follow camera was tuned for a game running at ${F1} fps: every frame it closes ${f}% of the remaining gap to its target (x = x + (target − x) × ${num(f / 100)}). The game now runs at ${F2} fps, so the fraction per frame must change to keep the same feel: after each whole second the gap must shrink by the same factor as before. What percentage of the gap should it close each frame at ${F2} fps (without the % sign)? And if the gap starts at ${G} units and the target stays still, how big is the gap after 1 second?${END}`,
+    parts: [
+      numPart("pct", `% per frame at ${F2} fps`, `Percentage closed per frame at ${F2} fps`, pct2, true, `Find r with r^${F2} = ${num(r1)}^${F1}; the percentage closed is (1 − r) × 100.${THEN}`),
+      numPart("gap", "Gap after 1 s", "Gap after 1 second", gap, true, `Start gap × the one-second factor, which is the same at both frame rates.${THEN}`),
+    ],
+    explanation:
+      `Each frame keeps a fixed fraction of the gap, so over a second the fractions multiply.\n\n` +
+      `- At ${F1} fps one second keeps \`${num(r1)}^${F1}\` ≈ ${keep.toPrecision(6)} of the gap\n` +
+      `- At ${F2} fps you need a per-frame factor r with \`r^${F2}\` equal to that, so \`r = ${num(r1)}^(${F1}/${F2})\` ≈ ${r2.toFixed(6)}\n` +
+      `- Closed per frame: \`(1 − r) × 100\` ${res(pct2, true, "%")}\n` +
+      `- Gap after 1 s: \`${G} × ${num(r1)}^${F1}\` ${res(gap, true)}`,
+    hints: [
+      `Per frame the gap keeps ${100 - f}% of itself, so after one second at ${F1} fps it keeps \`${num(r1)}^${F1}\` of itself.`,
+      `At ${F2} fps a second has ${F2} frames. You need a per-frame factor r with \`r^${F2} = ${num(r1)}^${F1}\`, so \`r = ${num(r1)}^(${F1}/${F2})\` (in the calculator: \`(1 - _f/100)^(_fps1/_fps2)\`).`,
+      "The fraction closed per frame is 1 − r (times 100 for a percentage). The gap after a second is the start gap times the one-second factor.",
+    ],
+    given: giv({ f, fps1: F1, fps2: F2, gap: G }),
+    params: { kind: "x-fpsdamp", v: { f, F1, F2, G } },
+    rounded: true,
+  });
+}
+
+// interpolation / expert 1: quadratic Bézier by repeated lerp, plus its heading (lerp + angles).
+function xBezier(rng) {
+  let x0, y0, x1, y1, x2, y2, t, q0x, q0y, q1x, q1y, tx, ty, h;
+  do {
+    x0 = rng.int(-20, 20); y0 = rng.int(-20, 20);
+    x1 = rng.int(-20, 20); y1 = rng.int(-20, 20);
+    x2 = rng.int(-20, 20); y2 = rng.int(-20, 20);
+    t = rng.int(5, 95) / 100;
+    q0x = x0 + (x1 - x0) * t; q0y = y0 + (y1 - y0) * t;
+    q1x = x1 + (x2 - x1) * t; q1y = y1 + (y2 - y1) * t;
+    tx = q1x - q0x; ty = q1y - q0y;
+    h = wrap360(deg(Math.atan2(ty, tx)));
+  } while (Math.abs(tx) < 0.01 || Math.abs(ty) < 0.01 || h < 0.01 || h > 359.99);
+  const bx = q0x + (q1x - q0x) * t, by = q0y + (q1y - q0y) * t;
+  const base = deg(Math.atan(Math.abs(ty) / Math.abs(tx)));
+  return multi({
+    prompt: `${YUP} ${ANG} A homing missile follows a quadratic Bézier curve with control points P0 = ${vec(x0, y0)}, P1 = ${vec(x1, y1)} and P2 = ${vec(x2, y2)}. Its position at parameter t comes from lerping twice: Q0 = lerp(P0, P1, t) and Q1 = lerp(P1, P2, t), then B = lerp(Q0, Q1, t). At that moment it flies in the direction from Q0 to Q1. At t = ${num(t)}, where is the missile, and what heading is it flying at?${END}`,
+    parts: [
+      numPart("x", "x", "x of the missile", bx, true, `Lerp the x values: Q0's x, Q1's x, then between those.${THEN}`),
+      numPart("y", "y", "y of the missile", by, true, `Same for y, with the same t.${THEN}`),
+      numPart("heading", "Heading", "Heading in degrees", h, true, `Angle of Q1 − Q0: atan(|dy| / |dx|), then fix it for the quarter the vector is in.${THEN}`),
+    ],
+    explanation:
+      `De Casteljau's method: three lerps with the same t.\n\n` +
+      `- \`Q0 = lerp(P0, P1, ${num(t)})\` = ${vec(q0x, q0y)}\n` +
+      `- \`Q1 = lerp(P1, P2, ${num(t)})\` = ${vec(q1x, q1y)}\n` +
+      `- x: \`${num(q0x)} + (${num(q1x)} − ${par(q0x)}) × ${num(t)}\` ${res(bx, true)}\n` +
+      `- y: \`${num(q0y)} + (${num(q1y)} − ${par(q0y)}) × ${num(t)}\` ${res(by, true)}\n` +
+      `- direction \`Q1 − Q0\` = ${vec(tx, ty)}; \`atan(${num(Math.abs(ty))} / ${num(Math.abs(tx))})\` ≈ ${num(base)}°, and it is in the ${quadrant(tx, ty)} quarter, so ${quadRule(tx, ty)}\n` +
+      `- heading ${res(h, true, "°")}`,
+    hints: [
+      "Lerp twice: P0→P1 and P1→P2 with the same t give Q0 and Q1. Then lerp from Q0 to Q1 with that t again.",
+      `Q0's x is \`${num(x0)} + (${num(x1)} − ${par(x0)}) × ${num(t)}\` (in the calculator: \`_x0 + (_x1 - _x0) * _t\`). Do the same for y and for Q1.`,
+      "The heading is the angle of the vector Q1 − Q0: find atan(|dy| / |dx|), then adjust it for the quarter the vector points into.",
+    ],
+    given: giv({ x0, y0, x1, y1, x2, y2, t }),
+    params: { kind: "x-bezier", v: { x0, y0, x1, y1, x2, y2, t } },
+    rounded: true,
+  });
+}
+
+// interpolation / expert 2: clamp + smoothstep + lerp (edge case: time outside the animation).
+function xEase(rng) {
+  const thing = rng.pick(["A pause menu slides", "A door slides", "A camera pans", "A platform glides", "A health bar's end moves"]);
+  const start = rng.int(0, 10) * 100;
+  const dur = rng.pick([400, 500, 600, 800, 1000, 1200, 1500]);
+  const mode = rng.next();
+  let time;
+  if (mode < 0.1 && start >= 100) time = start - rng.int(10, 90);
+  else if (mode < 0.2) time = start + dur + rng.int(10, 300);
+  else time = start + Math.round((dur * rng.int(5, 95)) / 100);
+  const a = rng.int(-100, 100);
+  let b;
+  do b = rng.int(-100, 200);
+  while (Math.abs(b - a) < 20);
+  const tRaw = (time - start) / dur;
+  const t = Math.min(1, Math.max(0, tRaw));
+  const s = t * t * (3 - 2 * t);
+  const x = a + (b - a) * s;
+  const clampLine =
+    tRaw < 0 ? "That is below 0 (the animation hasn't started), so clamp to **t = 0**."
+      : tRaw > 1 ? "That is above 1 (the animation has finished), so clamp to **t = 1**."
+        : "That is between 0 and 1, so no clamping is needed.";
+  return multi({
+    prompt: `${thing} from x = ${a} to x = ${b}. The animation starts at ${start} ms and lasts ${dur} ms. Each frame the game computes t = clamp((time − start) / duration, 0, 1), eases it with smoothstep s = t² × (3 − 2t), then sets x = lerp(${a}, ${b}, s). At time = ${time} ms, what are s and x?${END} For x, use the unrounded s.`,
+    parts: [
+      numPart("s", "Eased s", "The eased value s", s, true, `First t = (${time} − ${start}) / ${dur}, clamped into 0 to 1; then s = t² × (3 − 2t).${THEN}`),
+      numPart("x", "x", "x at that time", x, true, `x = a + (b − a) × s (in the calculator: \`_a + (_b - _a) * _s\` with a row _s).${THEN}`),
+    ],
+    explanation:
+      `Three steps: progress, ease, lerp.\n\n` +
+      `- \`t = (${time} − ${start}) / ${dur}\` ≈ ${num(tRaw)}. ${clampLine}\n` +
+      `- \`s = ${num(t)}² × (3 − 2 × ${num(t)})\` ${res(s, true)}\n` +
+      `- \`x = ${a} + (${b} − ${par(a)}) × s\` ${res(x, true)}`,
+    hints: [
+      "Work in three steps: how far through the animation you are (t), the eased value (s), then the lerp.",
+      `\`t = (${time} − ${start}) / ${dur}\`. Clamp means: if t is below 0 use 0, and if it is above 1 use 1.`,
+      "Then `s = t² × (3 − 2t)` and `x = a + (b − a) × s`.",
+    ],
+    given: giv({ a, b, start, dur, time }),
+    params: { kind: "x-ease", v: { a, b, start, dur, time } },
+    rounded: true,
+  });
+}
+
+// angles / expert 0: rotate by any angle (rotation formulas + the new heading).
+function xRotate(rng) {
+  let x, y, th, ccw, phi, rx, ry, h;
+  do {
+    x = nz(rng, -12, 12);
+    y = nz(rng, -12, 12);
+    th = rng.int(1, 71) * 5;
+    ccw = rng.next() < 0.5;
+    phi = ccw ? th : -th;
+    rx = x * Math.cos(rad(phi)) - y * Math.sin(rad(phi));
+    ry = x * Math.sin(rad(phi)) + y * Math.cos(rad(phi));
+    h = wrap360(deg(Math.atan2(ry, rx)));
+  } while (th % 90 === 0 || h < 0.01 || h > 359.99);
+  const h0 = wrap360(deg(Math.atan2(y, x)));
+  const what = rng.pick(["A turret's aim vector", "A spaceship's velocity", "A sword swing's direction", "A camera's forward vector"]);
+  return multi({
+    prompt: `${YUP} ${ANG} ${what} is ${vec(x, y)}. It rotates by ${th}° ${ccw ? "counter-clockwise (left)" : "clockwise (right)"}. What is the new vector, and what angle does it point at?${END}`,
+    parts: [
+      numPart("x", "x component", "x after rotating", rx, true, `x' = x·cos φ − y·sin φ with φ = ${phi}° (in the calculator: \`_x * cos(_phi) - _y * sin(_phi)\`).${THEN}`),
+      numPart("y", "y component", "y after rotating", ry, true, `y' = x·sin φ + y·cos φ (in the calculator: \`_x * sin(_phi) + _y * cos(_phi)\`).${THEN}`),
+      numPart("angle", "Angle", "Angle of the new vector", h, true, `The old angle plus φ, wrapped into 0 to 360.${THEN}`),
+    ],
+    explanation:
+      `Rotate counter-clockwise by φ with \`x' = x·cos φ − y·sin φ\`, \`y' = x·sin φ + y·cos φ\`. A clockwise turn uses a negative φ, so φ = ${phi}°.\n\n` +
+      `- \`cos(${phi}°)\` ≈ ${num(Math.cos(rad(phi)))}, \`sin(${phi}°)\` ≈ ${num(Math.sin(rad(phi)))}\n` +
+      `- x': \`${par(x)} × cos φ − ${par(y)} × sin φ\` ${res(rx, true)}\n` +
+      `- y': \`${par(x)} × sin φ + ${par(y)} × cos φ\` ${res(ry, true)}\n` +
+      `- The old vector points at about ${num(h0)}°; add ${phi}° and wrap into 0 to 360: angle ${res(h, true, "°")}`,
+    hints: [
+      "Rotating counter-clockwise by an angle φ: `x' = x·cos φ − y·sin φ` and `y' = x·sin φ + y·cos φ`. A clockwise turn is a negative φ.",
+      `Here φ = ${phi}°. The calculator's cos and sin work in degrees.`,
+      "For the angle, either use atan on the new vector (fixing the quarter), or find the old vector's angle and add φ, wrapping into 0 to 360.",
+    ],
+    given: giv({ x, y, phi }),
+    params: { kind: "x-rotate", v: { x, y, phi } },
+    rounded: true,
+  });
+}
+
+// angles / expert 1: turn towards a target at a limited turn rate (shortest way, wrap-around).
+function xTurnRate(rng) {
+  let facing, dx, dy, rate, hdg, turn, time, t1;
+  do {
+    facing = rng.int(0, 71) * 5;
+    dx = nz(rng, -15, 15);
+    dy = nz(rng, -15, 15);
+    rate = rng.pick([30, 45, 60, 90, 120, 180]);
+    t1 = rng.int(1, 16) / 4;
+    hdg = wrap360(deg(Math.atan2(dy, dx)));
+    turn = ((hdg - facing + 540) % 360) - 180;
+    time = Math.abs(turn) / rate;
+  } while (Math.abs(turn) < 10 || Math.abs(turn) > 170 || t1 >= time - 0.05);
+  const left = turn > 0;
+  const h1 = wrap360(facing + (left ? 1 : -1) * rate * t1);
+  return multi({
+    prompt: `${YUP} ${ANG} A tank turret faces ${facing}°. Its target is in the direction ${vec(dx, dy)}. The turret turns at ${rate}° per second and always takes the shorter way round. Which way does it turn, how long does it take to face the target, and what heading does it face ${num(t1)} s after it starts turning?${END}`,
+    parts: [
+      choicePart("dir", "Direction", "Which way does it turn?", left ? LR[0] : LR[1], LR, "Wrap (target heading − facing) into −180 to 180: positive is a left turn, negative a right turn."),
+      numPart("time", "Time", "Seconds to face the target", time, true, `Size of the turn (ignore its sign) ÷ ${rate}.${THEN}`),
+      numPart("heading", `After ${num(t1)} s`, `Heading after ${num(t1)} s`, h1, true, `It has turned ${rate} × ${num(t1)} degrees from ${facing}° in its turning direction; wrap into 0 to 360.`),
+    ],
+    explanation:
+      `Find the target heading, the signed turn, then the time.\n\n` +
+      `- Target heading: \`atan2(${dy}, ${dx})\` ≈ ${num(hdg)}°\n` +
+      `- \`${num(hdg)} − ${facing}\` = ${num(hdg - facing)}°` +
+      (Math.abs(hdg - facing - turn) > 1e-9 ? `, more than half a turn, so ${hdg - facing > 0 ? "subtract" : "add"} 360°` : "") +
+      `: turn ≈ ${num(turn)}°, so it turns **${left ? LR[0] : LR[1]}**\n` +
+      `- Time: \`${num(Math.abs(turn))} / ${rate}\` ${res(time, true, "s")}\n` +
+      `- After ${num(t1)} s: \`${facing} ${left ? "+" : "−"} ${rate} × ${num(t1)}\` = ${num(facing + (left ? 1 : -1) * rate * t1)}°, wrapped into 0 to 360 ${res(h1, true, "°")}`,
+    hints: [
+      `First find the target's heading: \`atan(${Math.abs(dy)} / ${Math.abs(dx)})\` is the angle to the x axis, and the vector is in the ${quadrant(dx, dy)} quarter, so ${quadRule(dx, dy)}`,
+      `Subtract the facing (${facing}°) and wrap the difference into −180 to 180. Positive means turning left (counter-clockwise), negative means right.`,
+      `Time = size of the turn ÷ ${rate}. For the heading after ${num(t1)} s, move ${rate} × ${num(t1)} degrees from ${facing}° in the turning direction, and wrap below 0 or at 360 and above.`,
+    ],
+    given: giv({ dx, dy, facing, rate, t1 }),
+    params: { kind: "x-turnrate", v: { dx, dy, facing, rate, t1 } },
+    rounded: true,
+  });
+}
+
+// angles / expert 2: field-of-view cone check (angle between directions + range + a decision).
+function xFov(rng) {
+  let gx, gy, facing, W, R, px, py, ddx, ddy, hp, ang, dist;
+  do {
+    gx = rng.int(-10, 10); gy = rng.int(-10, 10);
+    facing = rng.int(0, 71) * 5;
+    W = rng.pick([60, 90, 100, 120, 140]);
+    R = rng.int(6, 15);
+    if (rng.next() < 0.6) {
+      const off = rng.int(-(W / 2 + 25), W / 2 + 25);
+      const r = rng.int(3, R + 4);
+      px = gx + Math.round(r * Math.cos(rad(facing + off)));
+      py = gy + Math.round(r * Math.sin(rad(facing + off)));
+    } else {
+      px = gx + rng.int(-15, 15);
+      py = gy + rng.int(-15, 15);
+    }
+    px = fix0(px); py = fix0(py);
+    ddx = px - gx; ddy = py - gy;
+    hp = wrap360(deg(Math.atan2(ddy, ddx)));
+    ang = Math.abs(((hp - facing + 540) % 360) - 180);
+    dist = Math.hypot(ddx, ddy);
+  } while ((ddx === 0 && ddy === 0) || Math.abs(ang - W / 2) < 1 || Math.abs(dist - R) < 0.2);
+  const inCone = ang <= W / 2, inRange = dist <= R;
+  const seen = inCone && inRange ? YN[0] : YN[1];
+  return multi({
+    prompt: `${YUP} ${ANG} A guard at G = ${vec(gx, gy)} faces ${facing}°. It sees anything inside a cone ${W}° wide (up to ${W / 2}° either side of its facing) and at most ${R} units away. The player is at P = ${vec(px, py)}. What is the angle between the guard's facing and the direction to the player (0 to 180), how far away is the player, and can the guard see them?${END}`,
+    parts: [
+      numPart("angle", "Angle", "Angle from the facing (0 to 180)", ang, true, "Heading of P − G minus the facing, wrapped into −180 to 180, then drop the sign."),
+      numPart("dist", "Distance", "Distance to the player", dist, true, `Length of P − G (Pythagoras).${THEN}`),
+      choicePart("seen", "Seen?", "Can the guard see the player?", seen, YN, `Both must hold: angle ≤ ${W / 2}° and distance ≤ ${R}.`),
+    ],
+    explanation:
+      `Make the vector from the guard to the player, then compare its direction and length with the view cone.\n\n` +
+      `- \`d = P − G = ${vec(ddx, ddy)}\`, heading ≈ ${num(hp)}°\n` +
+      `- Angle from the facing: \`${num(hp)} − ${facing}\` wrapped into −180 to 180, without the sign ${res(ang, true, "°")}\n` +
+      `- Distance: \`√(${par(ddx)}² + ${par(ddy)}²)\` ${res(dist, true)}\n` +
+      `- ${inCone ? `${num(round2(ang))}° ≤ ${W / 2}°: inside the cone` : `${num(round2(ang))}° > ${W / 2}°: outside the cone`}; ${inRange ? `${num(round2(dist))} ≤ ${R}: in range` : `${num(round2(dist))} > ${R}: out of range`}. So **${seen}**.`,
+    hints: [
+      "Make the vector from the guard to the player, d = P − G, and find its heading (atan, then fix the quarter).",
+      `The angle between two headings is their difference wrapped into −180 to 180, without the sign. (Or use the dot product: cos(angle) = f·d / |d| with f = (cos ${facing}°, sin ${facing}°).)`,
+      `The guard sees the player only if both checks pass: angle ≤ ${W / 2}° and distance ≤ ${R}.`,
+    ],
+    given: giv({ gx, gy, px, py, facing, range: R }),
+    params: { kind: "x-fov", v: { gx, gy, px, py, facing, W, R } },
+    rounded: true,
+  });
+}
+
+const EXPERT = {
+  vectors: [xReflect, xClosest, xPerp],
+  movement: [xIntercept, xDash, xLand],
+  interpolation: [xFpsDamp, xBezier, xEase],
+  angles: [xRotate, xTurnRate, xFov],
+};
+
+function genExpert(subtopic, rng) {
+  const list = EXPERT[subtopic];
+  if (!list) throw new Error(`Unknown subtopic: ${subtopic}`);
+  return list[rng.int(0, list.length - 1)](rng);
+}
+
 // ======================= entry points =======================
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "vectors") return genVectors(difficulty, rng);
   if (subtopic === "movement") return genMovement(difficulty, rng);
@@ -1088,7 +1609,166 @@ const CHECK = {
     if (diff > 180) diff = 360 - diff;
     return r ? diff <= 0.005 + 1e-7 : diff < 1e-6;
   },
+
+  // ---- Expert checkers: none reuses its generator's formula ----
+
+  // Mirror bounce in polar form: reflecting direction θ across a wall at angle α gives 2α − θ.
+  "x-reflect": (v, f, x) => {
+    const L = polarLen(v.vx, v.vy);
+    const wall = Math.atan2(v.ny, v.nx) + Math.PI / 2;
+    const out = 2 * wall - Math.atan2(v.vy, v.vx);
+    return near(x, f === "x" ? L * Math.cos(out) : L * Math.sin(out), true);
+  },
+  // Ternary search for the smallest distance over t in [0, 1] (no projection formula).
+  "x-closest": (v, f, x) => {
+    const d2 = (t) => {
+      const cx = v.ax + t * (v.bx - v.ax) - v.px, cy = v.ay + t * (v.by - v.ay) - v.py;
+      return cx * cx + cy * cy;
+    };
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 200; i++) {
+      const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+      if (d2(m1) <= d2(m2)) hi = m2;
+      else lo = m1;
+    }
+    const t = (lo + hi) / 2;
+    return near(x, f === "t" ? t : Math.sqrt(d2(t)), true);
+  },
+  // Bisection on the (linear) dot product, then the length in polar form.
+  "x-perp": (v, f, x) => {
+    const g = (k) => (v.ax + k * v.bx) * v.cx + (v.ay + k * v.by) * v.cy;
+    let lo = -1000, hi = 1000;
+    const up = g(hi) > g(lo);
+    for (let i = 0; i < 100; i++) {
+      const m = (lo + hi) / 2;
+      if (g(m) > 0 === up) hi = m;
+      else lo = m;
+    }
+    const k = (lo + hi) / 2;
+    return near(x, f === "k" ? k : polarLen(v.ax + k * v.bx, v.ay + k * v.by), true);
+  },
+  // Bisection on "distance to the enemy minus bullet distance" (strictly decreasing since s > |u|).
+  "x-intercept": (v, f, x) => {
+    const g = (t) => polarLen(v.ex - v.tx + v.ux * t, v.ey - v.ty + v.uy * t) - v.s * t;
+    let lo = 0, hi = 1000;
+    for (let i = 0; i < 100; i++) {
+      const m = (lo + hi) / 2;
+      if (g(m) > 0) lo = m;
+      else hi = m;
+    }
+    const t = (lo + hi) / 2;
+    return near(x, f === "t" ? t : f === "x" ? v.ex + v.ux * t : v.ey + v.uy * t, true);
+  },
+  // Time to top speed by substitution; distances and times by a fine step-by-step simulation.
+  "x-dash": (v, f, x) => {
+    if (f === "t1") {
+      const n = Number(x);
+      if (typeof x === "object" || x === "" || x === null || !Number.isFinite(n)) return false;
+      return Math.abs(n * v.a - v.vmax) <= 0.005 * v.a + 1e-7;
+    }
+    const h = 2e-4;
+    let t = 0, p = 0, vel = 0;
+    if (f === "dist") {
+      const steps = Math.round(v.T / h);
+      for (let i = 0; i < steps; i++) {
+        const nv = Math.min(v.vmax, vel + v.a * h);
+        p += ((vel + nv) / 2) * h;
+        vel = nv;
+      }
+      return near(x, p, true);
+    }
+    while (t < 1000) {
+      const nv = Math.min(v.vmax, vel + v.a * h);
+      const np = p + ((vel + nv) / 2) * h;
+      if (np >= v.D) { t += (h * (v.D - p)) / (np - p); break; }
+      p = np; vel = nv; t += h;
+    }
+    return near(x, t, true);
+  },
+  // Closed form of the semi-implicit Euler steps (the generator simulates).
+  "x-land": (v, f, x) => {
+    const y = (n) => v.p0 + n * v.v0 * v.dt + (v.a * v.dt * v.dt * n * (n + 1)) / 2;
+    let n = 1;
+    while (y(n) > 0 && n < 10000) n++;
+    if (f === "land") return near(x, n, false);
+    let best = -Infinity;
+    for (let k = 0; k <= n; k++) best = Math.max(best, y(k));
+    return near(x, best, true);
+  },
+  // Frame-by-frame simulation; the new fraction by bisection (the generator uses powers).
+  "x-fpsdamp": (v, f, x) => {
+    const run = (frames, frac) => {
+      let g = 1;
+      for (let i = 0; i < frames; i++) g -= g * frac;
+      return g;
+    };
+    const keep = run(v.F1, v.f / 100);
+    if (f === "gap") return near(x, v.G * keep, true);
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 80; i++) {
+      const m = (lo + hi) / 2;
+      if (run(v.F2, m) > keep) lo = m;
+      else hi = m;
+    }
+    return near(x, (100 * (lo + hi)) / 2, true);
+  },
+  // Bernstein form and its derivative (the generator lerps), heading via acos.
+  "x-bezier": (v, f, x) => {
+    const t = v.t, u = 1 - t;
+    if (f === "x") return near(x, u * u * v.x0 + 2 * t * u * v.x1 + t * t * v.x2, true);
+    if (f === "y") return near(x, u * u * v.y0 + 2 * t * u * v.y1 + t * t * v.y2, true);
+    const dx = 2 * (u * (v.x1 - v.x0) + t * (v.x2 - v.x1));
+    const dy = 2 * (u * (v.y1 - v.y0) + t * (v.y2 - v.y1));
+    return circNear(x, acosAngle(dx, dy));
+  },
+  // Branch clamp and the expanded smoothstep t + t(1 − t)(2t − 1), lerp as (1 − s)a + s·b.
+  "x-ease": (v, f, x) => {
+    let t = (v.time - v.start) / v.dur;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    const s = t + t * (1 - t) * (2 * t - 1);
+    return near(x, f === "s" ? s : (1 - s) * v.a + s * v.b, true);
+  },
+  // Polar form: same length, angle + φ.
+  "x-rotate": (v, f, x) => {
+    const L = polarLen(v.x, v.y);
+    const a = Math.atan2(v.y, v.x) + rad(v.phi);
+    const nx = L * Math.cos(a), ny = L * Math.sin(a);
+    if (f === "x") return near(x, nx, true);
+    if (f === "y") return near(x, ny, true);
+    return circNear(x, acosAngle(nx, ny));
+  },
+  // Cross product for the side, acos of the dot product for the size, a rotated unit vector for the heading.
+  "x-turnrate": (v, f, x) => {
+    const fx = Math.cos(rad(v.facing)), fy = Math.sin(rad(v.facing));
+    const L = polarLen(v.dx, v.dy);
+    const left = fx * v.dy - fy * v.dx > 0;
+    if (f === "dir") return String(x) === (left ? LR[0] : LR[1]);
+    const ang = deg(Math.acos(Math.max(-1, Math.min(1, (fx * v.dx + fy * v.dy) / L))));
+    if (f === "time") return near(x, ang / v.rate, true);
+    const r = rad((left ? 1 : -1) * v.rate * v.t1);
+    return circNear(x, acosAngle(fx * Math.cos(r) - fy * Math.sin(r), fx * Math.sin(r) + fy * Math.cos(r)));
+  },
+  // Dot product with the facing unit vector (the generator subtracts headings).
+  "x-fov": (v, f, x) => {
+    const dx = v.px - v.gx, dy = v.py - v.gy;
+    const L = polarLen(dx, dy);
+    const ang = deg(Math.acos(Math.max(-1, Math.min(1, (Math.cos(rad(v.facing)) * dx + Math.sin(rad(v.facing)) * dy) / L))));
+    if (f === "angle") return near(x, ang, true);
+    if (f === "dist") return near(x, L, true);
+    return String(x) === (ang <= v.W / 2 && L <= v.R ? YN[0] : YN[1]);
+  },
 };
+
+// Angles in degrees compared around the circle (so 0 and 359.999… are 0.001 apart).
+function circNear(x, truth) {
+  if (x === "" || x === null || x === undefined || typeof x === "object" || typeof x === "boolean") return false;
+  const n = Number(x);
+  if (!Number.isFinite(n) || n < 0 || n >= 360) return false;
+  let d = Math.abs(n - truth) % 360;
+  if (d > 180) d = 360 - d;
+  return d <= 0.005 + 1e-7;
+}
 
 export function verify(question, answer) {
   const p = question && question.params;

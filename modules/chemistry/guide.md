@@ -18,6 +18,8 @@ Example: 36 g of H₂O, where M = 2 × 1 + 16 = 18, gives `n = 36 / 18 = 2` mol.
 
 **Watch out:** a subscript after a bracket multiplies everything inside it. Ca(OH)₂ has 2 O and 2 H.
 
+**Expert:** for reacting masses go mass → moles → mole ratio (the numbers in front in the equation) → moles → mass. For a limiting reactant, divide each reactant's moles by its own number in the equation: the smaller result runs out first and fixes the product. Percentage yield = actual ÷ theoretical × 100; to plan for a yield, divide the 100% amount by the yield as a decimal.
+
 ## Concentration and dilution
 
 1. Use `c = n / V` with V in dm³. Rearrange it to `n = c × V` or `V = n / c`.
@@ -28,6 +30,8 @@ Example: 36 g of H₂O, where M = 2 × 1 + 16 = 18, gives `n = 36 / 18 = 2` mol.
 Example: 0.5 mol in 250 cm³ gives `c = 0.5 / 0.25 = 2` mol/dm³.
 
 **Watch out:** in a "how much water to add" question, the final volume from `c1 × V1 = c2 × V2` is not the answer yet. Subtract the volume you started with.
+
+**Expert:** in a titration start from the solution you know fully (n = c × V), use the equation's ratio (H₂SO₄ neutralises 2 NaOH), then c = n ÷ V for the other. When mixing two solutions, add the moles and divide by the total volume; never average the concentrations.
 
 ## Balancing equations
 
@@ -40,6 +44,8 @@ Example: in ? H₂ + 1 O₂ → 2 H₂O there are 4 H on the right, so `? × 2 =
 
 **Watch out:** count atoms, not molecules, and remember the coefficient multiplies every atom in the formula.
 
+**Expert:** to balance a whole equation, start with an element found in one formula on each side and leave lone elements (O₂, H₂, metals) until last. If you need half an O₂, double everything. Finish by checking that every element balances and the numbers share no common factor.
+
 ## Percent composition and formulae
 
 1. Percentage by mass: `(mass of the element in one formula unit ÷ M) × 100`.
@@ -51,3 +57,5 @@ Example: in ? H₂ + 1 O₂ → 2 H₂O there are 4 H on the right, so `? × 2 =
 Example: in H₂O, O is `16 / 18 × 100 ≈ 88.9` %.
 
 **Watch out:** in the empirical formula, divide by the atomic mass, not by the percentage. And don't round 1.5 to 2: multiply everything by 2 instead.
+
+**Expert:** for a hydrate such as CuSO₄·xH₂O, the mass lost on heating is water. Turn the water and the anhydrous salt into moles; x is their ratio, rounded to a whole number. The percentage of water is x × 18 ÷ the hydrate's molar mass × 100.

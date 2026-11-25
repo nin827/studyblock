@@ -1090,7 +1090,704 @@ function genComposition(d, rng) {
 
 const GENERATORS = { moles: genMoles, concentration: genConcentration, balancing: genBalancing, composition: genComposition };
 
+// ---------------------------------------------------------------------------------------------
+// Expert level: a separate branch. generate() sends "expert" here before any other code runs, so
+// easy/medium/hard draw exactly the same rng values as before. Expert questions are multi-part,
+// state the rounding on every part, and keep their inputs in params.v with params.kind "x-…".
+// verify() recomputes the true values a different way (the product each reactant could make, atom
+// counting for any candidate coefficients, the empirical formula rebuilt from the data) and compares
+// each part. Hint code never calls rng.
+
+// Round half away from zero to dp decimals; never "-0".
+function xr(n, dp) {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+}
+// Display form for stated values and working: up to 4 decimals (6 for small numbers).
+const xs = (n) => String(Math.abs(n) < 0.1 ? xr(n, 6) : xr(n, 4));
+// True when n sits within 2% of a unit of a rounding tie at dp decimals.
+function xTie(n, dp) {
+  const f = Math.abs(n) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 0.02;
+}
+const xDpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
+
+// A rounded numeric part (accepted within half a unit of the stated precision).
+const xNum = (id, label, ask, exact, dp, hint) => ({
+  id, label, ask: `${ask}, ${xDpWord(dp)}`, answerType: "number", answer: xr(exact, dp), tolerance: 0.5 * 10 ** -dp, hint, _exact: exact, _dp: dp,
+});
+// An exact whole-number part.
+const xInt = (id, label, ask, value, hint) => ({ id, label, ask, answerType: "number", answer: value, tolerance: 0, hint, _exact: value, _dp: null });
+// A choice part.
+const xChoice = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
+
+// Assemble a multi-part question. Returns null (regenerate) on a rounding tie, a zero or
+// non-finite answer, a given value equal to an answer, or NaN/undefined in the text.
+// sameOk: part ids whose answer may legitimately equal a given value (whole-number counts).
+// "a 8 kg" -> "an 8 kg" (eight, eleven, eighteen, eighty... start with a vowel sound).
+function xArticles(text) {
+  return text.replace(/\b([Aa]n?) (\d+)/g, (all, art, digits) => {
+    const vowel = digits[0] === "8" || (digits.length % 3 === 2 && /^1[18]/.test(digits));
+    return `${art[0] === "A" ? (vowel ? "An" : "A") : vowel ? "an" : "a"} ${digits}`;
+  });
+}
+
+function xMulti({ kind, v, prompt, parts, steps, given, hints, sameOk = false }) {
+  prompt = xArticles(prompt);
+  const dp = {};
+  const out = [];
+  for (const p of parts) {
+    const { _exact, _dp, ...part } = p;
+    part.id = part.id.toLowerCase(); // ids must match ^[a-z0-9-]+$
+    if (part.answerType === "number") {
+      if (!Number.isFinite(_exact) || part.answer === 0) return null;
+      if (_dp === null ? !Number.isInteger(_exact) : xTie(_exact, _dp)) return null;
+      if (!sameOk && given.some(([, g]) => Math.abs(g - part.answer) < 1e-9)) return null;
+      dp[part.id] = _dp;
+    } else {
+      if (!part.choices.includes(part.answer) || new Set(part.choices).size !== part.choices.length) return null;
+      dp[part.id] = "choice";
+    }
+    out.push(part);
+  }
+  const text = [prompt, ...steps, ...hints, ...out.map((p) => `${p.ask} ${p.hint} ${p.answer}`)].join(" ");
+  if (/NaN|undefined|Infinity/.test(text)) return null;
+  const q = {
+    prompt,
+    answerType: "multi",
+    parts: out,
+    explanation: steps.join("\n\n"),
+    params: { kind, v, dp },
+    hints,
+  };
+  if (given.length) q.given = given.map(([label, value]) => ({ label, value }));
+  return q;
+}
+
+// Bisection: a root of f between lo and hi (f must change sign), else NaN.
+function xRoot(f, lo, hi) {
+  let a = lo;
+  let b = hi;
+  let fa = f(a);
+  const fb = f(b);
+  if (fa === 0) return a;
+  if (fb === 0) return b;
+  if (!Number.isFinite(fa) || !Number.isFinite(fb) || Math.sign(fa) === Math.sign(fb)) return NaN;
+  for (let i = 0; i < 200; i++) {
+    const m = (a + b) / 2;
+    const fm = f(m);
+    if (fm === 0) return m;
+    if (Math.sign(fm) === Math.sign(fa)) {
+      a = m;
+      fa = fm;
+    } else b = m;
+  }
+  return (a + b) / 2;
+}
+
+// Check every part against the independently recomputed truth { partId: number | string }.
+function xVerify(question, answer, truthFns) {
+  const p = question.params;
+  const fn = truthFns[p.kind];
+  if (!fn || !p.v || !p.dp) return false;
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  let truth;
+  try {
+    truth = fn(p.v, answer);
+  } catch {
+    return false;
+  }
+  if (truth) truth = Object.fromEntries(Object.entries(truth).map(([k, x]) => [k.toLowerCase(), x]));
+  if (!truth || Object.keys(truth).length !== question.parts.length) return false;
+  for (const part of question.parts) {
+    if (!(part.id in truth)) return false;
+    const want = truth[part.id];
+    const got = answer[part.id];
+    if (typeof want === "string") {
+      const ch = part.choices;
+      if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(got)) || String(got) !== want) return false;
+      continue;
+    }
+    if (got === "" || got === null || got === undefined || typeof got === "boolean" || typeof got === "object") return false;
+    const x = Number(got);
+    if (!Number.isFinite(x) || !Number.isFinite(want)) return false;
+    const dp = p.dp[part.id];
+    if (dp === null) {
+      if (Math.abs(x - want) > 1e-9 * Math.max(1, Math.abs(want))) return false;
+    } else if (typeof dp !== "number" || Math.abs(x - want) > 0.5 * 10 ** -dp + 1e-9) return false;
+  }
+  return true;
+}
+
+// Retry a template until it returns a question (deterministic: only the rng passed in).
+function xTry(make, rng) {
+  for (let i = 0; i < 80; i++) {
+    const q = make(rng);
+    if (q) return q;
+  }
+  throw new Error("Expert: could not generate a question");
+}
+
+const X_UNROUNDED = "Use unrounded values from earlier parts.";
+
+// Balanced equations for the Expert level, in lowest whole-number terms (checked on load).
+const X_EQ = [
+  "4 Fe + 3 O2 = 2 Fe2O3", "4 Al + 3 O2 = 2 Al2O3", "2 Na + 2 H2O = 2 NaOH + 1 H2", "1 Fe2O3 + 3 CO = 2 Fe + 3 CO2",
+  "2 Al + 6 HCl = 2 AlCl3 + 3 H2", "1 Mg + 2 HCl = 1 MgCl2 + 1 H2", "1 Ca(OH)2 + 2 HCl = 1 CaCl2 + 2 H2O", "4 NH3 + 5 O2 = 4 NO + 6 H2O",
+  "4 P + 5 O2 = 2 P2O5", "2 Fe + 3 Cl2 = 2 FeCl3", "2 KClO3 = 2 KCl + 3 O2", "2 H2O2 = 2 H2O + 1 O2",
+  "2 Al + 1 Fe2O3 = 1 Al2O3 + 2 Fe", "1 Cu + 2 AgNO3 = 1 Cu(NO3)2 + 2 Ag", "1 Al2(SO4)3 + 6 NaOH = 2 Al(OH)3 + 3 Na2SO4", "2 Fe2O3 + 3 C = 4 Fe + 3 CO2",
+  "2 ZnS + 3 O2 = 2 ZnO + 2 SO2", "1 Fe3O4 + 4 H2 = 3 Fe + 4 H2O", "1 N2 + 3 H2 = 2 NH3", "2 SO2 + 1 O2 = 2 SO3",
+  "3 NO2 + 1 H2O = 2 HNO3 + 1 NO", "1 H2SO4 + 2 NaOH = 1 Na2SO4 + 2 H2O", "2 Mg + 1 O2 = 2 MgO", "2 Na + 1 Cl2 = 2 NaCl",
+  "2 K + 2 H2O = 2 KOH + 1 H2", "1 Ca + 2 H2O = 1 Ca(OH)2 + 1 H2", "3 Fe + 4 H2O = 1 Fe3O4 + 4 H2", "1 PCl5 + 4 H2O = 1 H3PO4 + 5 HCl",
+  "1 Mg3N2 + 6 H2O = 3 Mg(OH)2 + 2 NH3", "1 CaCO3 = 1 CaO + 1 CO2", "2 Cu + 1 O2 = 2 CuO", "1 Zn + 2 HCl = 1 ZnCl2 + 1 H2",
+  "2 Mg + 1 CO2 = 2 MgO + 1 C", "1 CuO + 1 H2 = 1 Cu + 1 H2O", "2 NaHCO3 = 1 Na2CO3 + 1 H2O + 1 CO2", "1 Zn + 1 CuSO4 = 1 ZnSO4 + 1 Cu",
+];
+// Complete combustion fuels: [formula, name].
+const X_FUELS = [
+  ["CH4", "methane"], ["C2H6", "ethane"], ["C3H8", "propane"], ["C4H10", "butane"], ["C5H12", "pentane"], ["C6H14", "hexane"],
+  ["C7H16", "heptane"], ["C8H18", "octane"], ["C9H20", "nonane"], ["C10H22", "decane"],
+  ["C2H4", "ethene"], ["C3H6", "propene"], ["C4H8", "butene"], ["C5H10", "pentene"], ["C6H12", "hexene"], ["C7H14", "heptene"], ["C8H16", "octene"],
+  ["CH3OH", "methanol"], ["C2H5OH", "ethanol"], ["C3H7OH", "propanol"], ["C4H9OH", "butanol"], ["C5H11OH", "pentanol"],
+  ["C6H13OH", "hexanol"], ["C7H15OH", "heptanol"], ["C8H17OH", "octanol"],
+];
+// "1 Fe2O3 + 3 CO = 2 Fe + 3 CO2" for a fuel's complete combustion.
+function xCombustion(f) {
+  const c = parseFormula(f);
+  const x = c.C;
+  const y = c.H;
+  const z = c.O || 0;
+  // CxHyOz + (x + y/4 - z/2) O2 = x CO2 + y/2 H2O, scaled by 4 then reduced.
+  let k = [4, 4 * x + y - 2 * z, 4 * x, 2 * y];
+  const g = k.reduce(gcd);
+  k = k.map((n) => n / g);
+  return `${k[0]} ${f} + ${k[1]} O2 = ${k[2]} CO2 + ${k[3]} H2O`;
+}
+for (const text of [...X_EQ, ...X_FUELS.map(([f]) => xCombustion(f))]) {
+  const sides = parseEquation(text);
+  const coefs = sides.flat().map((t) => t.coef);
+  if (!balanced(sides, coefs) || coefs.reduce(gcd) !== 1 || coefs.length > 4) throw new Error(`Chemistry: bad Expert equation: ${text}`);
+}
+
+// "2 Mg + O₂ → 2 MgO" (coefficient 1 left out), or without coefficients for a balancing question.
+function xShowEq(text, withCoefs = true) {
+  return parseEquation(text)
+    .map((side) => side.map((t) => `${withCoefs && t.coef !== 1 ? `${t.coef} ` : ""}${pretty(t.f)}`).join(" + "))
+    .join(" → ");
+}
+
+// balancing / expert: balance a whole equation (every coefficient, lowest whole numbers).
+function xBalance(rng) {
+  let text, intro;
+  if (rng.next() < 0.4) {
+    const [f, name] = rng.pick(X_FUELS);
+    text = xCombustion(f);
+    intro = `Balance the equation for the complete combustion of ${name}`;
+  } else {
+    text = rng.pick(X_EQ);
+    intro = "Balance this equation";
+  }
+  const terms = parseEquation(text).flat();
+  const ids = ["a", "b", "c", "d"];
+  const parts = terms.map((t, i) =>
+    xInt(ids[i], pretty(t.f), `Coefficient of ${pretty(t.f)}`, t.coef, i === 0 ? "Use 1 when no number is needed in front." : `Count each element's atoms on both sides once ${pretty(t.f)} has its number.`)
+  );
+  const sides = parseEquation(text);
+  const els = [];
+  for (const t of terms) for (const el of Object.keys(parseFormula(t.f))) if (!els.includes(el)) els.push(el);
+  const count = (side, el) => side.reduce((s, t) => s + t.coef * (parseFormula(t.f)[el] || 0), 0);
+  return xMulti({
+    kind: "x-balance",
+    v: { eq: sides.map((side) => side.map((t) => t.f)) },
+    prompt: `${intro}, using the lowest whole-number coefficients (write 1 where no number is needed):\n\n${xShowEq(text, false)}`,
+    parts,
+    steps: [
+      `Balanced: **${xShowEq(text)}**.`,
+      `Check every element: ${els.map((el) => `${el}: ${count(sides[0], el)} = ${count(sides[1], el)}`).join("; ")}.`,
+      "The coefficients have no common factor, so they are the lowest whole numbers.",
+    ],
+    given: [],
+    sameOk: true,
+    hints: [
+      "Start with an element that appears in only one formula on each side, and leave elements that appear alone (like O₂, H₂ or a metal) until last.",
+      "Change only the numbers in front of formulas, never the subscripts. After each change, recount the atoms it affects.",
+      "If you need half a molecule (often O₂), double every coefficient. At the end, check there is no common factor.",
+    ],
+  });
+}
+
+// Equations used for reacting masses (any reactant with any product).
+const X_REACT = X_EQ;
+
+// moles / expert: reacting masses from a balanced equation.
+function xReact(rng) {
+  const text = rng.pick(X_REACT);
+  const [lhs, rhs] = parseEquation(text);
+  const R = rng.pick(lhs);
+  const P = rng.pick(rhs);
+  const MR = molarMass(parseFormula(R.f));
+  const MP = molarMass(parseFormula(P.f));
+  const m = rng.int(10, 2000) / 10;
+  const nR = m / MR;
+  const nP = (nR * P.coef) / R.coef;
+  const mP = nP * MP;
+  return xMulti({
+    kind: "x-react",
+    v: { eq: text, r: R.f, p: P.f, m },
+    prompt: `${xShowEq(text)}\n\nA reaction uses ${xs(m)} g of ${pretty(R.f)} completely. Use ${massNote([R.f, P.f])}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("n", `Moles of ${pretty(R.f)}`, `Moles of ${pretty(R.f)} used, in mol`, nR, 4, "n = m ÷ M, where M is the sum of the atomic masses in the formula."),
+      xNum("m", `Mass of ${pretty(P.f)}`, `Mass of ${pretty(P.f)} formed, in g`, mP, 2, "Use the equation's numbers as a mole ratio, then m = n × M."),
+    ],
+    steps: [
+      `\`_M_R = ${massExpr(R.f)}\` → ${xs(MR)} g/mol. \`_n = _m / _M_R\` → ${xs(nR)}, which rounds to **${xr(nR, 4)} mol**.`,
+      `Mole ratio ${pretty(R.f)} : ${pretty(P.f)} = ${R.coef} : ${P.coef}, so moles of ${pretty(P.f)} = \`_n * ${P.coef} / ${R.coef}\` → ${xs(nP)} mol.`,
+      `\`_M_P = ${massExpr(P.f)}\` → ${xs(MP)} g/mol. Mass: \`_n * ${P.coef} / ${R.coef} * _M_P\` → ${xs(mP)}, which rounds to **${xr(mP, 2)} g**.`,
+    ],
+    given: [["_m", m]],
+    hints: [
+      `Change the mass of ${pretty(R.f)} into moles first.`,
+      "The big numbers in front of the formulas give the mole ratio between any two substances.",
+      `Turn the moles of ${pretty(P.f)} back into a mass with its own molar mass.`,
+    ],
+  });
+}
+
+// moles / expert: limiting reactant, product mass and the excess left over.
+function xLimit(rng) {
+  const text = rng.pick(X_EQ.filter((t) => parseEquation(t)[0].length === 2));
+  const [lhs, rhs] = parseEquation(text);
+  const P = rng.pick(rhs);
+  const [A1, B1] = lhs;
+  const MA = molarMass(parseFormula(A1.f));
+  const MB = molarMass(parseFormula(B1.f));
+  const MP = molarMass(parseFormula(P.f));
+  const mA = rng.int(10, 1000) / 10;
+  // B's amount: between 0.4 and 2.5 times what reacts exactly with A.
+  const exactB = ((mA / MA) * B1.coef) / A1.coef * MB;
+  const mB = xr(exactB * (rng.int(40, 250) / 100), 1);
+  const rA = mA / MA / A1.coef;
+  const rB = mB / MB / B1.coef;
+  if (Math.abs(rA - rB) / Math.max(rA, rB) < 0.1 || mB <= 0) return null;
+  const lim = rA < rB ? A1 : B1;
+  const exc = lim === A1 ? B1 : A1;
+  const r = Math.min(rA, rB); // moles of "reaction"
+  const mP = r * P.coef * MP;
+  const left = (lim === A1 ? mB : mA) - r * exc.coef * molarMass(parseFormula(exc.f));
+  return xMulti({
+    kind: "x-limit",
+    v: { eq: text, p: P.f, mA, mB },
+    prompt: `${xShowEq(text)}\n\n${xs(mA)} g of ${pretty(A1.f)} is mixed with ${xs(mB)} g of ${pretty(B1.f)} and they react until one runs out. Use ${massNote([A1.f, B1.f, P.f])}. ${X_UNROUNDED}`,
+    parts: [
+      xChoice("lim", "Limiting reactant", "Which reactant is used up first (the limiting reactant)?", pretty(lim.f), [pretty(A1.f), pretty(B1.f)], "Divide each reactant's moles by its number in the equation. The smaller result runs out first."),
+      xNum("m", `Mass of ${pretty(P.f)}`, `Mass of ${pretty(P.f)} formed, in g`, mP, 2, "Only the limiting reactant decides how much product forms."),
+      xNum("left", "Excess left", `Mass of ${pretty(exc.f)} left over, in g`, left, 2, "Find how much of the other reactant actually reacts, using the mole ratio, and subtract."),
+    ],
+    steps: [
+      `Moles: ${pretty(A1.f)} \`_mA / ${xs(MA)}\` → ${xs(mA / MA)}; ${pretty(B1.f)} \`_mB / ${xs(MB)}\` → ${xs(mB / MB)}.`,
+      `Divide by the equation's numbers: ${xs(rA)} for ${pretty(A1.f)} and ${xs(rB)} for ${pretty(B1.f)}. The smaller is **${pretty(lim.f)}**, so it is limiting.`,
+      `${pretty(P.f)}: ${xs(r)} × ${P.coef} = ${xs(r * P.coef)} mol, × ${xs(MP)} g/mol → ${xs(mP)}, which rounds to **${xr(mP, 2)} g**.`,
+      `${pretty(exc.f)} used: ${xs(r)} × ${exc.coef} = ${xs(r * exc.coef)} mol = ${xs(r * exc.coef * molarMass(parseFormula(exc.f)))} g, so ${xs(left)} g is left, which rounds to **${xr(left, 2)} g**.`,
+    ],
+    given: [["_mA", mA], ["_mB", mB]],
+    hints: [
+      "Turn both masses into moles.",
+      "Compare them with the equation: divide each by its own number in front. The smaller result is the limiting reactant.",
+      "Base the product on the limiting reactant. For the excess, work out how many moles of it react and subtract from what you had.",
+    ],
+  });
+}
+
+// moles / expert: percentage yield, or working back to the mass of reactant needed.
+function xYield(rng) {
+  const text = rng.pick(X_EQ);
+  const [lhs, rhs] = parseEquation(text);
+  const R = rng.pick(lhs);
+  const P = rng.pick(rhs);
+  const MR = molarMass(parseFormula(R.f));
+  const MP = molarMass(parseFormula(P.f));
+  const ratio = (P.coef * MP) / (R.coef * MR); // g of P per g of R
+  if (rng.next() < 0.5) {
+    const m = rng.int(20, 2000) / 10;
+    const theo = m * ratio;
+    const actual = xr(theo * (rng.int(40, 97) / 100), 2);
+    if (!(actual > 0)) return null;
+    const y = (100 * actual) / theo;
+    return xMulti({
+      kind: "x-yield",
+      v: { eq: text, r: R.f, p: P.f, m, actual },
+      prompt: `${xShowEq(text)}\n\nStarting from ${xs(m)} g of ${pretty(R.f)}, a student collects ${xs(actual)} g of ${pretty(P.f)}. Use ${massNote([R.f, P.f])}. ${X_UNROUNDED}`,
+      parts: [
+        xNum("theo", "Theoretical yield", `Maximum (theoretical) mass of ${pretty(P.f)}, in g`, theo, 2, "Mass → moles of reactant, use the mole ratio, then moles → mass of product."),
+        xNum("y", "Percentage yield", "Percentage yield, in %", y, 1, "Percentage yield = actual mass ÷ theoretical mass × 100."),
+      ],
+      steps: [
+        `Moles of ${pretty(R.f)}: \`_m / ${xs(MR)}\` → ${xs(m / MR)} mol; × ${P.coef}/${R.coef} → ${xs(((m / MR) * P.coef) / R.coef)} mol of ${pretty(P.f)}.`,
+        `\`_theo = ${xs(((m / MR) * P.coef) / R.coef)} * ${xs(MP)}\` → ${xs(theo)}, which rounds to **${xr(theo, 2)} g**.`,
+        `\`_actual / _theo * 100\` → ${xs(y)}, which rounds to **${xr(y, 1)}%**.`,
+      ],
+      given: [["_m", m], ["_actual", actual]],
+      hints: [
+        "First find the most product the reactant could ever make (100% yield), by the usual mass → moles → ratio → mass route.",
+        `Use the equation's numbers ${R.coef} : ${P.coef} as the mole ratio.`,
+        "Then compare what was collected with that maximum, as a percentage.",
+      ],
+    });
+  }
+  const want = rng.int(10, 1000) / 10;
+  const yPct = rng.int(50, 95);
+  const nP = want / MP;
+  const need = want / ratio / (yPct / 100);
+  return xMulti({
+    kind: "x-yieldback",
+    v: { eq: text, r: R.f, p: P.f, want, yPct },
+    prompt: `${xShowEq(text)}\n\nA chemist needs ${xs(want)} g of ${pretty(P.f)}. The process has a ${yPct}% yield. Use ${massNote([R.f, P.f])}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("n", `Moles of ${pretty(P.f)}`, `Moles of ${pretty(P.f)} needed, in mol`, nP, 4, "n = m ÷ M for the product."),
+      xNum("m", `Mass of ${pretty(R.f)}`, `Mass of ${pretty(R.f)} to start with, in g`, need, 2, `Use the mole ratio for the 100% amount, then allow for the yield: only ${yPct}% of it turns into product.`),
+    ],
+    steps: [
+      `\`_n = _want / ${xs(MP)}\` → ${xs(nP)}, which rounds to **${xr(nP, 4)} mol**.`,
+      `At 100% yield: ${xs(nP)} × ${R.coef}/${P.coef} = ${xs((nP * R.coef) / P.coef)} mol of ${pretty(R.f)} = ${xs((nP * R.coef * MR) / P.coef)} g.`,
+      `Only ${yPct}% becomes product, so divide by ${yPct / 100}: → ${xs(need)}, which rounds to **${xr(need, 2)} g**.`,
+    ],
+    given: [["_want", want], ["_yield", yPct]],
+    hints: [
+      "Work backwards from the product: its mass → its moles.",
+      `Use the mole ratio ${pretty(R.f)} : ${pretty(P.f)} = ${R.coef} : ${P.coef} to get the reactant needed at 100% yield.`,
+      "A lower yield means you need more to start with: divide by the yield as a decimal, don't multiply.",
+    ],
+  });
+}
+
+const X_ACIDS = [["hydrochloric acid", "HCl", 1], ["nitric acid", "HNO3", 1], ["sulfuric acid", "H2SO4", 2]];
+const X_BASES = [["sodium hydroxide", "NaOH"], ["potassium hydroxide", "KOH"]];
+
+// concentration / expert: a titration; moles of acid, moles of base, then the base concentration.
+function xTitration(rng) {
+  const [acid, af, k] = rng.pick(X_ACIDS);
+  const [base, bf] = rng.pick(X_BASES);
+  const Vb = rng.pick([10, 20, 25]);
+  const cb = rng.int(20, 200) / 100;
+  const ca = rng.int(5, 200) / 100;
+  const titre = xr((cb * Vb) / k / ca, 2);
+  if (titre < 8 || titre > 49) return null;
+  const na = (ca * titre) / 1000;
+  const nb = na * k;
+  const cbx = nb / (Vb / 1000);
+  const eq = k === 1 ? `${pretty(af)} + ${pretty(bf)} → ${bf[0] === "N" ? "Na" : "K"}${af === "HCl" ? "Cl" : "NO₃"} + H₂O` : `H₂SO₄ + 2 ${pretty(bf)} → ${bf[0] === "N" ? "Na" : "K"}₂SO₄ + 2 H₂O`;
+  return xMulti({
+    kind: "x-titration",
+    v: { ca, titre, Vb, k },
+    prompt: `In a titration, ${Vb} cm³ of ${base} solution is exactly neutralised by ${xs(titre)} cm³ of ${xs(ca)} mol/dm³ ${acid}.\n\n${eq}\n\n${X_UNROUNDED}`,
+    parts: [
+      xNum("na", "Moles of acid", "Moles of acid used, in mol", na, 5, "n = c × V, with V in dm³ (cm³ ÷ 1000)."),
+      xNum("nb", "Moles of base", `Moles of ${pretty(bf)} neutralised, in mol`, nb, 5, `Use the equation: 1 ${pretty(af)} reacts with ${k} ${pretty(bf)}.`),
+      xNum("cb", "Concentration", `Concentration of the ${base}, in mol/dm³`, cbx, 3, "c = n ÷ V with the base's volume in dm³."),
+    ],
+    steps: [
+      `\`_na = _ca * _titre / 1000\` → ${xs(na)}, which rounds to **${xr(na, 5)} mol**.`,
+      `Ratio 1 : ${k}: \`_nb = _na * ${k}\` → ${xs(nb)}, which rounds to **${xr(nb, 5)} mol**.`,
+      `\`_nb / (_Vb / 1000)\` → ${xs(cbx)}, which rounds to **${xr(cbx, 3)} mol/dm³**.`,
+    ],
+    given: [["_Vb", Vb], ["_titre", titre], ["_ca", ca]],
+    hints: [
+      "Start with the solution you know everything about: the acid. Moles = concentration × volume in dm³.",
+      `Read the mole ratio from the equation${k === 2 ? ": sulfuric acid has two H⁺ to give, so it neutralises twice as much base" : ""}.`,
+      "Then divide the moles of base by its volume in dm³.",
+    ],
+  });
+}
+
+const X_SOLIDS = [
+  ["sodium chloride", "NaCl"], ["sodium hydroxide", "NaOH"], ["potassium chloride", "KCl"], ["copper(II) sulfate", "CuSO4"],
+  ["sodium carbonate", "Na2CO3"], ["potassium nitrate", "KNO3"], ["magnesium sulfate", "MgSO4"], ["glucose", "C6H12O6"], ["silver nitrate", "AgNO3"],
+];
+
+// concentration / expert: make a standard solution, then dilute a sample of it.
+function xMakeDilute(rng) {
+  const [name, f] = rng.pick(X_SOLIDS);
+  const M = molarMass(parseFormula(f));
+  const m = rng.int(10, 500) / 10;
+  const V1 = rng.pick([100, 250, 500, 1000]);
+  const a = rng.pick([5, 10, 20, 25, 50]);
+  const V2 = rng.pick([100, 250, 500, 1000].filter((x) => x > a * 2));
+  const c1 = m / M / (V1 / 1000);
+  const c2 = (c1 * a) / V2;
+  const g2 = c2 * M;
+  return xMulti({
+    kind: "x-makedilute",
+    v: { f, m, V1, a, V2 },
+    prompt: `${xs(m)} g of ${name} (${pretty(f)}) is dissolved in water and made up to ${V1} cm³. Then ${a} cm³ of this solution is diluted with water to ${V2} cm³. Use ${massNote([f])}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("c1", "First solution", "Concentration of the first solution, in mol/dm³", c1, 3, "Mass → moles, then c = n ÷ V with V in dm³."),
+      xNum("c2", "Diluted solution", "Concentration after dilution, in mol/dm³", c2, 4, "c1 × V1 = c2 × V2 for the sample you took and the volume it was made up to."),
+      xNum("g2", "In g/dm³", "Concentration after dilution, in g/dm³", g2, 3, "Multiply mol/dm³ by the molar mass."),
+    ],
+    steps: [
+      `\`_M = ${massExpr(f)}\` → ${xs(M)} g/mol. \`_c1 = _m / _M / (_V1 / 1000)\` → ${xs(c1)}, which rounds to **${xr(c1, 3)} mol/dm³**.`,
+      `\`_c2 = _c1 * _a / _V2\` → ${xs(c2)}, which rounds to **${xr(c2, 4)} mol/dm³**.`,
+      `\`_c2 * _M\` → ${xs(g2)}, which rounds to **${xr(g2, 3)} g/dm³**.`,
+    ],
+    given: [["_m", m], ["_V1", V1], ["_a", a], ["_V2", V2]],
+    hints: [
+      "Two stages: making the first solution, then diluting a sample of it.",
+      "For the dilution only the sample matters: its moles are spread through the new, bigger volume.",
+      "To change mol/dm³ to g/dm³, multiply by the molar mass.",
+    ],
+  });
+}
+
+// concentration / expert: mix two solutions of the same solute, then dilute to a target.
+function xMix(rng) {
+  const [name] = rng.pick(X_SOLIDS);
+  const c1 = rng.int(5, 200) / 100;
+  let c2;
+  do c2 = rng.int(5, 200) / 100;
+  while (c2 === c1);
+  const V1 = rng.int(2, 60) * 5;
+  const V2 = rng.int(2, 60) * 5;
+  const n = (c1 * V1 + c2 * V2) / 1000;
+  const c = n / ((V1 + V2) / 1000);
+  const c3 = xr(c * (rng.int(20, 80) / 100), 3);
+  if (!(c3 > 0)) return null;
+  const water = (n / c3) * 1000 - (V1 + V2);
+  return xMulti({
+    kind: "x-mix",
+    v: { c1, V1, c2, V2, c3 },
+    prompt: `${V1} cm³ of ${xs(c1)} mol/dm³ ${name} solution is mixed with ${V2} cm³ of ${xs(c2)} mol/dm³ ${name} solution. Assume the volumes add. ${X_UNROUNDED}`,
+    parts: [
+      xNum("c", "Mixed concentration", "Concentration of the mixture, in mol/dm³", c, 3, "Add the moles from both solutions and divide by the total volume. Don't average the concentrations."),
+      xNum("w", "Water to add", `Volume of water to add to the mixture to bring it down to ${xs(c3)} mol/dm³, in cm³`, water, 1, "The moles stay the same: find the final volume from n ÷ c, then subtract the volume you already have."),
+    ],
+    steps: [
+      `Moles: \`(_c1 * _V1 + _c2 * _V2) / 1000\` → ${xs(n)} mol, in ${V1 + V2} cm³.`,
+      `\`_c = ${xs(n)} / ((_V1 + _V2) / 1000)\` → ${xs(c)}, which rounds to **${xr(c, 3)} mol/dm³**.`,
+      `Final volume: \`${xs(n)} / _c3 * 1000\` → ${xs((n / c3) * 1000)} cm³. Water: minus ${V1 + V2} → ${xs(water)}, which rounds to **${xr(water, 1)} cm³**.`,
+    ],
+    given: [["_c1", c1], ["_V1", V1], ["_c2", c2], ["_V2", V2], ["_c3", c3]],
+    hints: [
+      "Concentrations don't simply average unless the volumes are equal. Work in moles: n = c × V (V in dm³) for each solution.",
+      "Total moles ÷ total volume (in dm³) gives the mixture's concentration.",
+      "Adding water keeps the moles the same. The final volume is n ÷ c; take away the volume already there.",
+    ],
+  });
+}
+
+// [molecular formula, name] for empirical → molecular formula questions (C, H, O only).
+const X_MOLS = [
+  ["C2H4O2", "ethanoic acid"], ["C6H12O6", "glucose"], ["C3H6O3", "lactic acid"], ["C4H8", "butene"], ["C6H12", "cyclohexane"],
+  ["C2H2", "ethyne"], ["C6H6", "benzene"], ["C8H8", "styrene"], ["C2H6", "ethane"], ["C4H10", "butane"], ["C10H8", "naphthalene"],
+  ["C4H8O2", "ethyl ethanoate"], ["C5H10", "pentene"], ["C8H18", "octane"], ["C6H14", "hexane"], ["C4H6", "butadiene"],
+  ["C3H4", "propyne"], ["C6H10O4", "adipic acid"], ["C4H4O4", "fumaric acid"], ["C2H6O2", "ethane-1,2-diol"], ["C8H10", "xylene"],
+];
+
+// composition / expert: from percentages (or masses in a sample) and the molar mass, to the molecular formula.
+function xEmpMol(rng) {
+  const [f, name] = rng.pick(X_MOLS);
+  const c = parseFormula(f);
+  const Mm = molarMass(c);
+  const els = Object.keys(c);
+  const useMass = rng.next() < 0.5;
+  const sample = rng.int(100, 900) / 100;
+  const data = {};
+  for (const el of els) {
+    const frac = (c[el] * A[el]) / Mm;
+    data[el] = useMass ? xr(frac * sample, 3) : xr(frac * 100, 1);
+  }
+  const sr = simplestRatio(data);
+  if (!sr) return null;
+  const Me = molarMass(sr.counts);
+  const k = Mm / Me;
+  if (Math.abs(k - Math.round(k)) > 1e-9 || els.some((el) => sr.counts[el] * Math.round(k) !== c[el])) return null;
+  const list = els.map((el) => (useMass ? `${xs(data[el])} g of ${EL_NAME[el]}` : `${xs(data[el])}% ${EL_NAME[el]}`));
+  const dataText = useMass
+    ? `A ${xs(sample)} g sample of ${name} contains ${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}.`
+    : `By mass, ${name} is ${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}.`;
+  const empF = els.map((el) => `${el}${sr.counts[el] === 1 ? "" : sr.counts[el]}`).join("");
+  return xMulti({
+    kind: "x-empmol",
+    v: { data, Mm },
+    prompt: `${dataText} Its relative molecular mass is ${Mm}. Use ${massNote([f])}. Find its molecular formula.`,
+    parts: els.map((el) =>
+      xInt(el.toLowerCase(), `${EL_NAME[el][0].toUpperCase()}${EL_NAME[el].slice(1)} atoms`, `Number of ${el} atoms in one molecule`, c[el], el === "C" ? "Find the empirical formula first: divide each amount by the atomic mass, then by the smallest result." : "Scale the empirical formula up so its mass matches the relative molecular mass.")
+    ),
+    steps: [
+      `Divide by the atomic masses: ${els.map((el) => `${el} ${xs(data[el])} ÷ ${A[el]} = ${xs(data[el] / A[el])}`).join(", ")}.`,
+      `Divide by the smallest and round to whole numbers${sr.k > 1 ? ` (after multiplying by ${sr.k})` : ""}: empirical formula **${pretty(empF)}**, mass ${xs(Me)}.`,
+      `${Mm} ÷ ${xs(Me)} = ${Math.round(k)}, so multiply every subscript by ${Math.round(k)}: **${pretty(f)}**.`,
+    ],
+    given: [...els.map((el) => [`_${el}`, data[el]]), ["_Mr", Mm]],
+    sameOk: true,
+    hints: [
+      `Find the empirical formula first: divide each ${useMass ? "mass" : "percentage"} by its atomic mass, then divide every result by the smallest.`,
+      "If a ratio ends in about .5 or .33, multiply them all by the small whole number that clears it (double or triple them).",
+      "Divide the relative molecular mass by the empirical formula's mass, and multiply each subscript by that whole number.",
+    ],
+  });
+}
+
+// [anhydrous formula, name, water count]
+const X_HYDRATES = [
+  ["CuSO4", "copper(II) sulfate", 5], ["MgSO4", "magnesium sulfate", 7], ["Na2CO3", "sodium carbonate", 10], ["CaCl2", "calcium chloride", 6],
+  ["FeSO4", "iron(II) sulfate", 7], ["ZnSO4", "zinc sulfate", 7], ["Na2SO4", "sodium sulfate", 10], ["MgCl2", "magnesium chloride", 6],
+  ["CaSO4", "calcium sulfate", 2], ["Na2S2O3", "sodium thiosulfate", 5],
+];
+
+// composition / expert: water of crystallisation from heating a hydrate to constant mass.
+function xHydrate(rng) {
+  const [f, name, x] = rng.pick(X_HYDRATES);
+  const Ma = molarMass(parseFormula(f));
+  const m1 = rng.int(150, 1200) / 100;
+  const m2 = xr((m1 * Ma) / (Ma + 18 * x), 2);
+  const w = m1 - m2;
+  const ns = m2 / Ma;
+  const nw = w / 18;
+  if (Math.abs(nw / ns - x) > 0.15) return null;
+  return xMulti({
+    kind: "x-hydrate",
+    v: { f, m1, m2 },
+    prompt: `${xs(m1)} g of hydrated ${name}, ${pretty(f)}·xH₂O, is heated to constant mass. ${xs(m2)} g of the anhydrous salt is left. Use ${massNote([f, "H2O"])}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("w", "Water lost", "Mass of water driven off, in g", w, 2, "The mass lost on heating is all water."),
+      xNum("ns", "Moles of salt", `Moles of anhydrous ${pretty(f)}, in mol`, ns, 4, "n = m ÷ M for the anhydrous salt."),
+      xInt("x", "x", "Value of x (a whole number)", x, "Divide the moles of water by the moles of salt and round to the nearest whole number."),
+    ],
+    steps: [
+      `\`_w = _m1 - _m2\` → **${xr(w, 2)} g** of water.`,
+      `\`_ns = _m2 / (${massExpr(f)})\` → ${xs(ns)}, which rounds to **${xr(ns, 4)} mol**. Water: \`_w / 18\` → ${xs(nw)} mol.`,
+      `Ratio: ${xs(nw)} ÷ ${xs(ns)} = ${xs(nw / ns)}, so **x = ${x}**: ${pretty(f)}·${x}H₂O.`,
+    ],
+    given: [["_m1", m1], ["_m2", m2]],
+    hints: [
+      "Heating drives off the water of crystallisation, so the loss in mass is the water.",
+      "Change both the water and the anhydrous salt into moles.",
+      "x is the number of water molecules per formula unit of salt: a mole ratio, rounded to a whole number.",
+    ],
+  });
+}
+
+// composition / expert: percentage of water in a hydrate, and the mass left after heating a sample.
+function xPctWater(rng) {
+  const [f, name, x] = rng.pick(X_HYDRATES);
+  const Ma = molarMass(parseFormula(f));
+  const Mh = Ma + 18 * x;
+  const pct = (100 * 18 * x) / Mh;
+  const m = rng.int(100, 5000) / 100;
+  const left = (m * Ma) / Mh;
+  return xMulti({
+    kind: "x-pctwater",
+    v: { f, x, m },
+    prompt: `Hydrated ${name} has the formula ${pretty(f)}·${x}H₂O. A ${xs(m)} g sample is heated until all its water is driven off. Use ${massNote([f, "H2O"])}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("Mh", "Molar mass", `Molar mass of ${pretty(f)}·${x}H₂O, in g/mol`, Mh, 1, "Add the anhydrous salt's molar mass and x times the molar mass of water."),
+      xNum("pct", "Percentage water", "Percentage of water by mass", pct, 1, "Mass of the water in one formula unit ÷ the whole molar mass × 100."),
+      xNum("left", "Mass left", "Mass of anhydrous salt left, in g", left, 2, "The salt's share of the mass is what remains: 100% minus the water percentage."),
+    ],
+    steps: [
+      `\`_Mh = ${massExpr(f)} + ${x}*18\` → **${xs(Mh)} g/mol**.`,
+      `\`${x} * 18 / _Mh * 100\` → ${xs(pct)}, which rounds to **${xr(pct, 1)}%**.`,
+      `\`_m * (1 - ${x} * 18 / _Mh)\` → ${xs(left)}, which rounds to **${xr(left, 2)} g**.`,
+    ],
+    given: [["_m", m]],
+    sameOk: true,
+    hints: [
+      "The dot means the water is part of the formula: add x × 18 to the salt's molar mass.",
+      "Percentage of water = water's mass in the formula ÷ the whole molar mass × 100.",
+      "After heating only the anhydrous salt is left: the rest of the percentage.",
+    ],
+  });
+}
+
+function genExpert(subtopic, rng) {
+  const pick = (list) => list[rng.int(0, list.length - 1)];
+  if (subtopic === "moles") return xTry(pick([xReact, xLimit, xYield]), rng);
+  if (subtopic === "concentration") return xTry(pick([xTitration, xMakeDilute, xMix]), rng);
+  if (subtopic === "balancing") return xTry(xBalance, rng);
+  if (subtopic === "composition") return xTry(pick([xEmpMol, xHydrate, xPctWater]), rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Independent truth for verify. Molar masses are recomputed from the formula; coefficients are
+// checked by counting atoms for the learner's own numbers; formulas are rebuilt from the data.
+const xM = (f) => molarMass(parseFormula(f));
+const xCoef = (text, f, side) => parseEquation(text)[side].find((t) => t.f === f).coef;
+const X_TRUTH = {
+  "x-react": ({ eq, r, p, m }) => {
+    // Mass of product per mole "of reaction", times the moles of reaction the reactant supplies.
+    const reactions = m / xM(r) / xCoef(eq, r, 0);
+    return { n: reactions * xCoef(eq, r, 0), m: reactions * xCoef(eq, p, 1) * xM(p) };
+  },
+  "x-limit": ({ eq, p, mA, mB }) => {
+    const [[A1, B1]] = parseEquation(eq);
+    const fromA = (mA / xM(A1.f) / A1.coef) * xCoef(eq, p, 1) * xM(p);
+    const fromB = (mB / xM(B1.f) / B1.coef) * xCoef(eq, p, 1) * xM(p);
+    const limA = fromA < fromB;
+    const mP = Math.min(fromA, fromB);
+    // Mass conservation per reactant pair: excess used = product formed × (its share of the ratio).
+    const exc = limA ? B1 : A1;
+    const used = (mP / (xCoef(eq, p, 1) * xM(p))) * exc.coef * xM(exc.f);
+    return { lim: pretty(limA ? A1.f : B1.f), m: mP, left: (limA ? mB : mA) - used };
+  },
+  "x-yield": ({ eq, r, p, m, actual }) => {
+    const theo = xRoot((x) => x / xM(p) / xCoef(eq, p, 1) - m / xM(r) / xCoef(eq, r, 0), 0, 1e7);
+    return { theo, y: (actual / theo) * 100 };
+  },
+  "x-yieldback": ({ eq, r, p, want, yPct }) => {
+    const n = want / xM(p);
+    const need = xRoot((x) => ((x * yPct) / 100 / xM(r)) * (xCoef(eq, p, 1) / xCoef(eq, r, 0)) * xM(p) - want, 0, 1e8);
+    return { n, m: need };
+  },
+  "x-titration": ({ ca, titre, Vb, k }) => {
+    const nb = (k * ca * titre) / 1000;
+    return { na: nb / k, nb, cb: (k * ca * titre) / Vb };
+  },
+  "x-makedilute": ({ f, m, V1, a, V2 }) => {
+    const gPerDm3 = (m / V1) * 1000 * (a / V2); // mass route
+    return { c1: (m / xM(f)) * (1000 / V1), c2: gPerDm3 / xM(f), g2: gPerDm3 };
+  },
+  "x-mix": ({ c1, V1, c2, V2, c3 }) => {
+    const n = (c1 * V1 + c2 * V2) / 1000;
+    return { c: (c1 * V1 + c2 * V2) / (V1 + V2), w: xRoot((x) => (n * 1000) / (V1 + V2 + x) - c3, 0, 1e8) };
+  },
+  // Any coefficients the learner gives are accepted if they balance every element and share no factor.
+  "x-balance": ({ eq }, answer) => {
+    const ids = ["a", "b", "c", "d"];
+    const flat = eq.flat();
+    const coefs = flat.map((_, i) => Number(answer && answer[ids[i]]));
+    const tally = [{}, {}];
+    let i = 0;
+    eq.forEach((side, s) => {
+      for (const f of side) {
+        for (const [el, k] of Object.entries(parseFormula(f))) tally[s][el] = (tally[s][el] || 0) + coefs[i] * k;
+        i++;
+      }
+    });
+    const ok =
+      coefs.every((c) => Number.isInteger(c) && c >= 1) &&
+      coefs.reduce(gcd) === 1 &&
+      [...new Set([...Object.keys(tally[0]), ...Object.keys(tally[1])])].every((el) => tally[0][el] === tally[1][el]);
+    // When the answer balances, it is the truth; otherwise return an impossible value for each part.
+    return Object.fromEntries(flat.map((_, j) => [ids[j], ok ? coefs[j] : -1]));
+  },
+  "x-empmol": ({ data, Mm }) => {
+    const sr = simplestRatio(data);
+    const k = Math.round(Mm / molarMass(sr.counts));
+    return Object.fromEntries(Object.entries(sr.counts).map(([el, n]) => [el.toLowerCase(), n * k]));
+  },
+  "x-hydrate": ({ f, m1, m2 }) => {
+    const ns = m2 / xM(f);
+    return { w: m1 - m2, ns, x: Math.round((m1 - m2) / xM("H2O") / ns) };
+  },
+  "x-pctwater": ({ f, x, m }) => {
+    const Mh = xM(`${f}`) + x * xM("H2O");
+    const waterShare = (x * xM("H2O")) / Mh;
+    return { Mh, pct: waterShare * 100, left: m - m * waterShare };
+  },
+};
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   const gen = GENERATORS[subtopic];
   if (!gen) throw new Error(`Unknown subtopic: ${subtopic}`);
   for (let i = 0; i < 80; i++) {
@@ -1197,6 +1894,7 @@ function answerOk(q, raw) {
 
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (!p || !p.values || typeof p.kind !== "string") return false;
   if (question.answerType === "choice") {
     const ch = question.choices;

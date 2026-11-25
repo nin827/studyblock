@@ -440,7 +440,593 @@ function genMotion(difficulty, rng) {
   return finish(base, exact, rounded, candidates, rng);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Expert level: a separate branch. generate() sends "expert" here before any other code runs, so
+// easy/medium/hard draw exactly the same rng values as before. Expert questions are multi-part,
+// state the rounding on every part, and keep their inputs in params.v with params.kind "x-…".
+// verify() recomputes the true values a different way (bisection on the original relation,
+// suvat instead of graph areas, positions instead of formulas) and compares each part.
+// Hint code never calls rng.
+
+// Round half away from zero to dp decimals; never "-0".
+function xr(n, dp) {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+}
+// Display form for stated values and working: up to 4 decimals.
+const xs = (n) => String(xr(n, 4));
+// True when n sits within 2% of a unit of a rounding tie at dp decimals.
+function xTie(n, dp) {
+  const f = Math.abs(n) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 0.02;
+}
+const xDpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
+
+// A rounded numeric part (accepted within half a unit of the stated precision).
+const xNum = (id, label, ask, exact, dp, hint) => ({
+  id, label, ask: `${ask}, ${xDpWord(dp)}`, answerType: "number", answer: xr(exact, dp), tolerance: 0.5 * 10 ** -dp, hint, _exact: exact, _dp: dp,
+});
+
+// Assemble a multi-part question. Returns null (regenerate) on a rounding tie, a zero or
+// non-finite answer, a given value equal to an answer, or NaN/undefined in the text.
+// "a 8 kg" -> "an 8 kg" (eight, eleven, eighteen, eighty... start with a vowel sound).
+function xArticles(text) {
+  return text.replace(/\b([Aa]n?) (\d+)/g, (all, art, digits) => {
+    const vowel = digits[0] === "8" || (digits.length % 3 === 2 && /^1[18]/.test(digits));
+    return `${art[0] === "A" ? (vowel ? "An" : "A") : vowel ? "an" : "a"} ${digits}`;
+  });
+}
+
+function xMulti({ kind, v, prompt, parts, steps, given, hints }) {
+  prompt = xArticles(prompt);
+  const dp = {};
+  const out = [];
+  for (const p of parts) {
+    const { _exact, _dp, ...part } = p;
+    part.id = part.id.toLowerCase(); // ids must match ^[a-z0-9-]+$
+    if (part.answerType === "number") {
+      if (!Number.isFinite(_exact) || part.answer === 0) return null;
+      if (_dp === null ? !Number.isInteger(_exact) : xTie(_exact, _dp)) return null;
+      if (given.some(([, g]) => Math.abs(g - part.answer) < 1e-9)) return null;
+      dp[part.id] = _dp;
+    } else {
+      if (!part.choices.includes(part.answer) || new Set(part.choices).size !== part.choices.length) return null;
+      dp[part.id] = "choice";
+    }
+    out.push(part);
+  }
+  const text = [prompt, ...steps, ...hints, ...out.map((p) => `${p.ask} ${p.hint} ${p.answer}`)].join(" ");
+  if (/NaN|undefined|Infinity/.test(text)) return null;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: out,
+    explanation: steps.join("\n\n"),
+    params: { kind, v, dp },
+    given: given.map(([label, value]) => ({ label, value })),
+    hints,
+  };
+}
+
+// Bisection: a root of f between lo and hi (f must change sign), else NaN.
+function xRoot(f, lo, hi) {
+  let a = lo;
+  let b = hi;
+  let fa = f(a);
+  const fb = f(b);
+  if (fa === 0) return a;
+  if (fb === 0) return b;
+  if (!Number.isFinite(fa) || !Number.isFinite(fb) || Math.sign(fa) === Math.sign(fb)) return NaN;
+  for (let i = 0; i < 200; i++) {
+    const m = (a + b) / 2;
+    const fm = f(m);
+    if (fm === 0) return m;
+    if (Math.sign(fm) === Math.sign(fa)) {
+      a = m;
+      fa = fm;
+    } else b = m;
+  }
+  return (a + b) / 2;
+}
+
+// Check every part against the independently recomputed truth { partId: number | string }.
+function xVerify(question, answer, truthFns) {
+  const p = question.params;
+  const fn = truthFns[p.kind];
+  if (!fn || !p.v || !p.dp) return false;
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  let truth;
+  try {
+    truth = fn(p.v);
+  } catch {
+    return false;
+  }
+  if (truth) truth = Object.fromEntries(Object.entries(truth).map(([k, x]) => [k.toLowerCase(), x]));
+  if (!truth || Object.keys(truth).length !== question.parts.length) return false;
+  for (const part of question.parts) {
+    if (!(part.id in truth)) return false;
+    const want = truth[part.id];
+    const got = answer[part.id];
+    if (typeof want === "string") {
+      const ch = part.choices;
+      if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(got)) || String(got) !== want) return false;
+      continue;
+    }
+    if (got === "" || got === null || got === undefined || typeof got === "boolean" || typeof got === "object") return false;
+    const x = Number(got);
+    if (!Number.isFinite(x) || !Number.isFinite(want)) return false;
+    const dp = p.dp[part.id];
+    if (dp === null) {
+      if (Math.abs(x - want) > 1e-9 * Math.max(1, Math.abs(want))) return false;
+    } else if (typeof dp !== "number" || Math.abs(x - want) > 0.5 * 10 ** -dp + 1e-9) return false;
+  }
+  return true;
+}
+
+// Retry a template until it returns a question (deterministic: only the rng passed in).
+function xTry(make, rng) {
+  for (let i = 0; i < 80; i++) {
+    const q = make(rng);
+    if (q) return q;
+  }
+  throw new Error("Expert: could not generate a question");
+}
+
+const X_UNROUNDED = "Use unrounded values from earlier parts.";
+// Travellers with a realistic steady speed range, in tenths of a m/s.
+const X_TRAVELLERS = [
+  { who: "A runner", lo: 25, hi: 60 },
+  { who: "A cyclist", lo: 40, hi: 120 },
+  { who: "A rower", lo: 20, hi: 50 },
+  { who: "A horse rider", lo: 30, hi: 90 },
+  { who: "A kayaker", lo: 15, hi: 45 },
+  { who: "A walker", lo: 10, hi: 22 },
+];
+
+// speed / expert: two legs at different speeds; the average speed is not the mean of the speeds.
+function xLegs(rng) {
+  const P = rng.pick(X_TRAVELLERS);
+  const d1 = rng.int(8, 60) * 50;
+  const d2 = rng.int(8, 60) * 50;
+  const v1 = rng.int(P.lo, P.hi) / 10;
+  let v2;
+  do v2 = rng.int(P.lo, P.hi) / 10;
+  while (Math.abs(v2 - v1) < 0.5);
+  const t1 = d1 / v1;
+  const t2 = d2 / v2;
+  const T = t1 + t2;
+  const V = (d1 + d2) / T;
+  return xMulti({
+    kind: "x-legs",
+    v: { d1, v1, d2, v2 },
+    prompt: `${P.who} covers ${d1} m at a steady ${xs(v1)} m/s, then another ${d2} m at a steady ${xs(v2)} m/s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("time", "Total time", "Total time for both legs, in s", T, 1, "Find the time for each leg with `t = d / v`, then add them."),
+      xNum("avg", "Average speed", "Average speed for the whole trip, in m/s", V, 2, "Average speed = total distance ÷ total time."),
+    ],
+    steps: [
+      `Each leg has its own time, \`t = d / v\`: \`_t1 = _d1 / _v1\` → ${xs(t1)} s and \`_t2 = _d2 / _v2\` → ${xs(t2)} s.`,
+      `Total time: \`_T = _t1 + _t2\` → ${xs(T)} s, which rounds to **${xr(T, 1)} s**.`,
+      `Average speed = total distance ÷ total time: \`(_d1 + _d2) / _T\` → ${xs(V)}, which rounds to **${xr(V, 2)} m/s**.`,
+      `Watch out: the mean of the two speeds, (${xs(v1)} + ${xs(v2)}) / 2 = ${xs((v1 + v2) / 2)} m/s, is wrong, because more time is spent at the slower speed.`,
+    ],
+    given: [["_d1", d1], ["_v1", v1], ["_d2", d2], ["_v2", v2]],
+    hints: [
+      "Average speed is total distance ÷ total time. It is not the mean of the two speeds.",
+      "Work out the time for each leg separately with `t = d / v` (in the calculator: `_d1 / _v1` and `_d2 / _v2`).",
+      "Add the two times, then divide the total distance `_d1 + _d2` by that total time.",
+    ],
+  });
+}
+
+// speed / expert: work backwards from a target average speed to the speed needed on the rest.
+function xTarget(rng) {
+  const P = rng.pick(X_TRAVELLERS);
+  const V = rng.int(P.lo + 6, P.hi) / 10;
+  const D = rng.int(10, 80) * 100;
+  const d1 = D * rng.pick([0.2, 0.25, 0.4, 0.5, 0.6]);
+  const v1 = rng.int(P.lo, Math.round(V * 10) - 3) / 10;
+  const t1 = Math.round(d1 / v1);
+  const T = D / V;
+  const left = T - t1;
+  if (!(left > 1)) return null;
+  const v2 = (D - d1) / left;
+  if (v2 > 2 * V) return null;
+  return xMulti({
+    kind: "x-target",
+    v: { D, V, d1, t1 },
+    prompt: `${P.who} wants to cover ${D} m at an average speed of ${xs(V)} m/s. The first ${d1} m take ${t1} s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("left", "Time left", "Time left for the rest of the distance, in s", left, 1, "The whole trip may take total distance ÷ target average speed. Subtract the time already used."),
+      xNum("speed", "Speed needed", "Steady speed needed for the rest, in m/s", v2, 2, "Divide the distance still to go by the time left."),
+    ],
+    steps: [
+      `At an average of ${xs(V)} m/s the whole ${D} m may take \`_T = _D / _V\` → ${xs(T)} s.`,
+      `Time left: \`_left = _T - _t1\` → ${xs(left)}, which rounds to **${xr(left, 1)} s**.`,
+      `Distance left: \`_D - _d1\` → ${D - d1} m. Speed needed: \`(_D - _d1) / _left\` → ${xs(v2)}, which rounds to **${xr(v2, 2)} m/s**.`,
+    ],
+    given: [["_D", D], ["_V", V], ["_d1", d1], ["_t1", t1]],
+    hints: [
+      "Work backwards from the target: the average speed fixes the total time allowed for the whole distance.",
+      "Total time allowed = `_D / _V`. Take away the time already used, `_t1`.",
+      "The rest of the distance is `_D - _d1`; divide it by the time left.",
+    ],
+  });
+}
+
+const X_CHASERS = [
+  ["A bus", "a car", "stop"],
+  ["A cyclist", "a moped", "junction"],
+  ["A lorry", "a motorbike", "depot"],
+  ["A tractor", "a van", "farm gate"],
+];
+
+// speed / expert: catch-up (same direction, later start) or meeting (towards each other, later start).
+function xChase(rng) {
+  if (rng.next() < 0.5) {
+    const [A, B, place] = rng.pick(X_CHASERS);
+    const vA = rng.int(40, 160) / 10;
+    const vB = vA + rng.int(20, 120) / 10;
+    const t0 = rng.int(10, 120);
+    const t = (vA * t0) / (vB - vA);
+    const d = vB * t;
+    return xMulti({
+      kind: "x-chase",
+      v: { vA, vB, t0 },
+      prompt: `${A} leaves a ${place} at a steady ${xs(vA)} m/s. ${t0} s later, ${B} leaves the same ${place} along the same road at a steady ${xs(vB)} m/s. ${X_UNROUNDED}`,
+      parts: [
+        xNum("time", "Catch-up time", `Time from when ${B} leaves until it catches up, in s`, t, 2, `When they meet, both have travelled the same distance from the ${place}.`),
+        xNum("dist", "Distance", `Distance from the ${place} where it catches up, in m`, d, 1, `Use the catch-up time with ${B}'s speed.`),
+      ],
+      steps: [
+        `Let t be the time after ${B} leaves. ${A} has then been moving for t + ${t0} s.`,
+        `Same distance: \`${xs(vA)}(t + ${t0}) = ${xs(vB)}t\`, so \`(${xs(vB)} - ${xs(vA)})t = ${xs(vA)} × ${t0}\`.`,
+        `\`_t = _vA * _t0 / (_vB - _vA)\` → ${xs(t)}, which rounds to **${xr(t, 2)} s**.`,
+        `Distance: \`_vB * _t\` → ${xs(d)}, which rounds to **${xr(d, 1)} m**.`,
+      ],
+      given: [["_vA", vA], ["_vB", vB], ["_t0", t0]],
+      hints: [
+        `Call the time after ${B} leaves t. ${A} has been moving for t + ${t0} s by then.`,
+        "They meet when their distances from the start are equal: write each distance as speed × its own time and set them equal.",
+        "Expand the bracket, collect the t terms on one side and solve for t.",
+      ],
+    });
+  }
+  const v1 = rng.int(30, 90) / 10;
+  const v2 = rng.int(30, 90) / 10;
+  const D = rng.int(10, 60) * 100;
+  const t0 = rng.int(10, 200);
+  if (v1 * t0 >= 0.7 * D) return null;
+  const t = (D - v1 * t0) / (v1 + v2);
+  const x = v1 * (t + t0);
+  return xMulti({
+    kind: "x-meet",
+    v: { D, v1, v2, t0 },
+    prompt: `Two cyclists, A and B, are ${D} m apart on a straight path and ride towards each other. A sets off at a steady ${xs(v1)} m/s; B sets off ${t0} s later at a steady ${xs(v2)} m/s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("time", "Meeting time", "Time from when B sets off until they meet, in s", t, 2, "Before B starts, A closes part of the gap alone. After that the gap closes at the sum of the two speeds."),
+      xNum("dist", "Distance", "Distance from A's start to the meeting point, in m", x, 1, "A rides for B's time plus the head start."),
+    ],
+    steps: [
+      `In the first ${t0} s only A moves: \`_v1 * _t0\` → ${xs(v1 * t0)} m, leaving a gap of \`_D - _v1 * _t0\` → ${xs(D - v1 * t0)} m.`,
+      `Moving towards each other, the gap closes at \`_v1 + _v2\` → ${xs(v1 + v2)} m/s.`,
+      `\`_t = (_D - _v1 * _t0) / (_v1 + _v2)\` → ${xs(t)}, which rounds to **${xr(t, 2)} s**.`,
+      `A has ridden for t + ${t0} s: \`_v1 * (_t + _t0)\` → ${xs(x)}, which rounds to **${xr(x, 1)} m**.`,
+    ],
+    given: [["_D", D], ["_v1", v1], ["_v2", v2], ["_t0", t0]],
+    hints: [
+      "Split the motion in two: the head start, when only A moves, then the time when both move.",
+      "During the head start A covers `_v1 * _t0`. The rest of the gap closes at the combined speed `_v1 + _v2`.",
+      "Divide the remaining gap by the combined speed for the time. For the distance, remember A has also been riding during the head start.",
+    ],
+  });
+}
+
+const X_PHASE_WHO = ["A tram", "A train", "A metro train", "An electric car", "A funicular car"];
+
+// acceleration / expert: speed up, cruise, brake; top speed, braking time, distance from the v-t graph.
+function xPhases(rng) {
+  const who = rng.pick(X_PHASE_WHO);
+  const a1 = rng.int(5, 30) / 10;
+  const t1 = rng.int(4, Math.min(30, Math.floor(30 / a1)));
+  const tc = rng.pick([0, rng.int(5, 60)]);
+  const a2 = rng.int(8, 40) / 10;
+  const v = a1 * t1;
+  const t2 = v / a2;
+  const s = 0.5 * v * t1 + v * tc + 0.5 * v * t2;
+  const cruise = tc ? `, travels at that speed for ${tc} s,` : "";
+  return xMulti({
+    kind: "x-phases",
+    v: { a1, t1, tc, a2 },
+    prompt: `${who} starts from rest and accelerates uniformly at ${xs(a1)} m/s² for ${t1} s${cruise} then brakes uniformly at ${xs(a2)} m/s² until it stops. ${X_UNROUNDED}`,
+    parts: [
+      xNum("top", "Top speed", "Top speed, in m/s", v, 2, "From rest, the speed gained is acceleration × time."),
+      xNum("brake", "Braking time", "Time taken to brake to a stop, in s", t2, 2, "Braking removes the top speed at the braking rate: time = speed lost ÷ deceleration."),
+      xNum("dist", "Total distance", "Total distance travelled, in m", s, 1, "Sketch the velocity-time graph: the distance is the area under it."),
+    ],
+    steps: [
+      `Top speed: \`_v = _a1 * _t1\` → ${xs(v)}, so **${xr(v, 2)} m/s**.`,
+      `Braking time: \`_t2 = _v / _a2\` → ${xs(t2)}, which rounds to **${xr(t2, 2)} s**.`,
+      `Distance = area under the velocity-time graph: \`0.5 * _v * _t1${tc ? " + _v * _tc" : ""} + 0.5 * _v * _t2\` → ${xs(s)}, which rounds to **${xr(s, 1)} m**.`,
+    ],
+    given: tc ? [["_a1", a1], ["_t1", t1], ["_tc", tc], ["_a2", a2]] : [["_a1", a1], ["_t1", t1], ["_a2", a2]],
+    hints: [
+      `There are ${tc ? "three" : "two"} stages. Handle each one with \`v = u + at\`, then sketch the velocity-time graph.`,
+      "The speed at the end of the first stage is the start speed for braking. Braking ends at 0 m/s.",
+      "The distance is the area under the velocity-time graph: a triangle for each speed change" + (tc ? " and a rectangle for the steady part." : "."),
+    ],
+  });
+}
+
+// acceleration / expert: two velocity readings; work back to a and u, then forward to a target.
+function xReadings(rng) {
+  const tA = rng.int(1, 6);
+  const tB = tA + rng.int(2, 8);
+  let a;
+  do a = rng.int(-30, 40) / 10;
+  while (Math.abs(a) < 0.5);
+  const u = rng.int(a < 0 ? 100 : 0, 200) / 10;
+  const vA = xr(u + a * tA, 2);
+  const vB = xr(u + a * tB, 2);
+  if (vB <= 0.5) return null;
+  const V = a > 0 ? xr(vB + rng.int(5, 100) / 10, 1) : 0;
+  const tV = (V - u) / a;
+  const ask = a > 0 ? `Time at which it reaches ${xs(V)} m/s, in s` : "Time at which it comes to rest, in s";
+  return xMulti({
+    kind: "x-readings",
+    v: { tA, vA, tB, vB, V },
+    prompt: `A trolley moves in a straight line with constant acceleration. A data logger records ${xs(vA)} m/s at t = ${tA} s and ${xs(vB)} m/s at t = ${tB} s. ${X_UNROUNDED}`,
+    parts: [
+      xNum("a", "Acceleration", "Acceleration, in m/s² (negative if slowing)", a, 2, "Acceleration = change in velocity ÷ time between the readings."),
+      xNum("u", "Velocity at t = 0", "Velocity at t = 0, in m/s", u, 2, "Work backwards from the first reading: take away the speed gained before it."),
+      xNum("t", "Time", ask, tV, 2, "Use `v = u + at` with the velocity at t = 0 and solve for t."),
+    ],
+    steps: [
+      `\`_a = (_vB - _vA) / (_tB - _tA)\` → ${xs(a)}, so **${xr(a, 2)} m/s²**.`,
+      `Back to t = 0: \`_u = _vA - _a * _tA\` → ${xs(u)}, so **${xr(u, 2)} m/s**.`,
+      `\`v = u + at\` gives \`t = (${a > 0 ? "_V" : "0"} - _u) / _a\` → ${xs(tV)}, which rounds to **${xr(tV, 2)} s**.`,
+    ],
+    given: a > 0 ? [["_tA", tA], ["_vA", vA], ["_tB", tB], ["_vB", vB], ["_V", V]] : [["_tA", tA], ["_vA", vA], ["_tB", tB], ["_vB", vB]],
+    hints: [
+      "Both readings lie on one straight velocity-time line. Its gradient is the acceleration.",
+      "The velocity at t = 0 is not the first reading: the trolley was already accelerating for `_tA` seconds before it.",
+      `Then use \`v = u + at\` with ${a > 0 ? "v = `_V`" : "v = 0"} and rearrange for t.`,
+    ],
+  });
+}
+
+// acceleration / expert: km/h conversion, acceleration and a braking stage.
+function xKmh(rng) {
+  const X = rng.int(30, 130);
+  const t = rng.int(40, 150) / 10;
+  const b = rng.int(40, 90) / 10;
+  const v = X / 3.6;
+  const a = v / t;
+  if (a > 8) return null;
+  const tb = v / b;
+  const sb = (v * v) / (2 * b);
+  return xMulti({
+    kind: "x-kmh",
+    v: { X, t, b },
+    prompt: `A car accelerates uniformly from rest to ${X} km/h in ${xs(t)} s. Later it brakes from ${X} km/h to rest with a deceleration of ${xs(b)} m/s². ${X_UNROUNDED}`,
+    parts: [
+      xNum("a", "Acceleration", "Acceleration while speeding up, in m/s²", a, 2, "Convert the speed to m/s first: divide km/h by 3.6."),
+      xNum("tb", "Braking time", "Time taken to brake to rest, in s", tb, 2, "Time = speed lost ÷ deceleration, with the speed in m/s."),
+      xNum("sb", "Braking distance", "Distance covered while braking, in m", sb, 1, "No time is needed if you use `v² = u² + 2as` with v = 0."),
+    ],
+    steps: [
+      `Convert: \`_v = _X / 3.6\` → ${xs(v)} m/s (1 km/h = 1000 m ÷ 3600 s).`,
+      `\`_a = _v / _t\` → ${xs(a)}, which rounds to **${xr(a, 2)} m/s²**.`,
+      `Braking time: \`_v / _b\` → ${xs(tb)}, which rounds to **${xr(tb, 2)} s**.`,
+      `Braking distance from \`0 = u² - 2bs\`: \`_v^2 / (2 * _b)\` → ${xs(sb)}, which rounds to **${xr(sb, 1)} m**.`,
+    ],
+    given: [["_X", X], ["_t", t], ["_b", b]],
+    hints: [
+      "Everything must be in m/s and s. Divide the km/h speed by 3.6 first.",
+      "Speeding up from rest: a = v ÷ t. Braking to rest: t = v ÷ deceleration.",
+      "For the braking distance use `v² = u² + 2as` with final speed 0 and a negative acceleration.",
+    ],
+  });
+}
+
+// motion-equations / expert: stopping distance (forward), or the highest safe speed (backwards).
+function xStop(rng) {
+  const tr = rng.int(5, 15) / 10;
+  const b = rng.int(50, 90) / 10;
+  if (rng.next() < 0.5) {
+    const X = rng.int(30, 120);
+    const v = X / 3.6;
+    const think = v * tr;
+    const brake = (v * v) / (2 * b);
+    return xMulti({
+      kind: "x-stop",
+      v: { X, tr, b },
+      prompt: `A driver travelling at ${X} km/h sees a hazard. Their reaction time is ${xs(tr)} s, then the car brakes uniformly at ${xs(b)} m/s². ${X_UNROUNDED}`,
+      parts: [
+        xNum("think", "Thinking distance", "Distance travelled during the reaction time, in m", think, 2, "During the reaction time the car does not slow down: distance = speed × time, with the speed in m/s."),
+        xNum("brake", "Braking distance", "Braking distance, in m", brake, 2, "Use `v² = u² + 2as` with v = 0."),
+        xNum("total", "Stopping distance", "Total stopping distance, in m", think + brake, 1, "Stopping distance = thinking distance + braking distance."),
+      ],
+      steps: [
+        `Convert: \`_v = _X / 3.6\` → ${xs(v)} m/s.`,
+        `Thinking distance (steady speed): \`_v * _tr\` → ${xs(think)}, which rounds to **${xr(think, 2)} m**.`,
+        `Braking distance: \`_v^2 / (2 * _b)\` → ${xs(brake)}, which rounds to **${xr(brake, 2)} m**.`,
+        `Total: ${xs(think)} + ${xs(brake)} = ${xs(think + brake)}, which rounds to **${xr(think + brake, 1)} m**.`,
+      ],
+      given: [["_X", X], ["_tr", tr], ["_b", b]],
+      hints: [
+        "Convert the speed to m/s (divide by 3.6). The stop has two stages: reacting at a steady speed, then braking.",
+        "Thinking distance = speed × reaction time. Braking distance comes from `v² = u² + 2as` with v = 0.",
+      ],
+    });
+  }
+  const D = rng.int(25, 120);
+  // u·tr + u²/(2b) = D  ->  u = b(-tr + √(tr² + 2D/b))
+  const u = b * (-tr + Math.sqrt(tr * tr + (2 * D) / b));
+  const kmh = u * 3.6;
+  return xMulti({
+    kind: "x-stopback",
+    v: { D, tr, b },
+    prompt: `A driver sees a hazard ${D} m ahead. Their reaction time is ${xs(tr)} s and the car can brake at ${xs(b)} m/s². What is the highest speed at which the car can still stop in time? ${X_UNROUNDED}`,
+    parts: [
+      xNum("u", "Speed in m/s", "Highest speed, in m/s", u, 2, "Write thinking distance + braking distance in terms of the unknown speed u and set the total equal to the gap."),
+      xNum("kmh", "Speed in km/h", "The same speed in km/h", kmh, 1, "Multiply m/s by 3.6."),
+    ],
+    steps: [
+      `Stopping distance for speed u: \`u × ${xs(tr)} + u² / (2 × ${xs(b)})\`. Set it equal to ${D} m: \`u²/${xs(2 * b)} + ${xs(tr)}u - ${D} = 0\`.`,
+      `Multiply by 2b and use the quadratic formula, keeping the positive root: \`_u = _b * (-_tr + sqrt(_tr^2 + 2 * _D / _b))\` → ${xs(u)}, which rounds to **${xr(u, 2)} m/s**.`,
+      `In km/h: \`_u * 3.6\` → ${xs(kmh)}, which rounds to **${xr(kmh, 1)} km/h**.`,
+    ],
+    given: [["_D", D], ["_tr", tr], ["_b", b]],
+    hints: [
+      "Work backwards. For an unknown speed u, the thinking distance is `u × _tr` and the braking distance is `u² ÷ (2 × _b)`.",
+      "Their sum must equal the distance to the hazard, which gives a quadratic in u.",
+      "Solve it with the quadratic formula and keep the positive root (a speed can't be negative).",
+    ],
+  });
+}
+
+// motion-equations / expert: thrown upwards from a cliff top; the time needs the later root.
+function xCliff(rng) {
+  const u = rng.int(20, 250) / 10;
+  const H = rng.int(50, 800) / 10;
+  const g = 9.8;
+  const top = H + (u * u) / (2 * g);
+  const vImp = Math.sqrt(u * u + 2 * g * H);
+  const t = (u + vImp) / g;
+  const thing = rng.pick(["A stone", "A ball", "A pebble", "A tennis ball", "A small rock"]);
+  return xMulti({
+    kind: "x-cliff",
+    v: { u, H },
+    prompt: `${thing} is thrown straight up at ${xs(u)} m/s from the top of a cliff ${xs(H)} m above the beach. It misses the cliff on the way down. Take g = 9.8 m/s² and ignore air resistance. ${X_UNROUNDED}`,
+    parts: [
+      xNum("top", "Highest point", "Greatest height above the beach, in m", top, 2, "At the highest point the velocity is 0. Remember to add the cliff height."),
+      xNum("time", "Time to land", "Time from the throw until it hits the beach, in s", t, 2, "Take up as positive: the displacement to the beach is negative. Solve the quadratic and keep the positive time."),
+      xNum("speed", "Impact speed", "Speed just before it hits the beach, in m/s", vImp, 2, "Use `v² = u² + 2as` over the whole flight, with s = the drop to the beach and a = g downwards."),
+    ],
+    steps: [
+      `Rise above the cliff: \`_u^2 / (2 * 9.8)\` → ${xs((u * u) / (2 * g))} m, so the highest point is \`_H + _u^2 / (2 * 9.8)\` → ${xs(top)}, which rounds to **${xr(top, 2)} m**.`,
+      `Up is positive, so the displacement to the beach is s = -${xs(H)}: \`-${xs(H)} = ${xs(u)}t - 4.9t²\`, i.e. \`4.9t² - ${xs(u)}t - ${xs(H)} = 0\`.`,
+      `Quadratic formula, positive root: \`(_u + sqrt(_u^2 + 2 * 9.8 * _H)) / 9.8\` → ${xs(t)}, which rounds to **${xr(t, 2)} s**. The negative root is before the throw.`,
+      `Speed: \`v² = u² + 2gH\`, \`sqrt(_u^2 + 2 * 9.8 * _H)\` → ${xs(vImp)}, which rounds to **${xr(vImp, 2)} m/s**.`,
+    ],
+    given: [["_u", u], ["_H", H]],
+    hints: [
+      "Choose up as positive, so a = -9.8 m/s² for the whole flight, and the beach is at displacement -H.",
+      "For the highest point, set v = 0 in `v² = u² + 2as`, then add the cliff height.",
+      "For the time, `s = ut + ½at²` gives a quadratic in t. One root is negative: reject it.",
+    ],
+  });
+}
+
+// motion-equations / expert: a police car from rest (maybe after a delay) catches a speeding car.
+function xPolice(rng) {
+  const v = rng.int(150, 300) / 10;
+  const td = rng.pick([0, rng.int(5, 40) / 10]);
+  const a = rng.int(20, 60) / 10;
+  const s = (v + Math.sqrt(v * v + 2 * a * v * td)) / a; // time the police car accelerates
+  const T = td + s;
+  const vp = a * s;
+  if (vp > 75) return null;
+  const start = td ? `${xs(td)} s later the police car sets off` : "At that instant the police car sets off";
+  return xMulti({
+    kind: "x-police",
+    v: { v, td, a },
+    prompt: `A car speeding at a steady ${xs(v)} m/s passes a parked police car. ${start} from rest, accelerating uniformly at ${xs(a)} m/s² until it draws level. ${X_UNROUNDED}`,
+    parts: [
+      xNum("time", "Time", "Time from when the car passes until the police car draws level, in s", T, 2, "Both have covered the same distance when they draw level. The speeding car has been moving for the whole time." + (td ? " The police car moves for less time." : "")),
+      xNum("dist", "Distance", "Distance from the parking spot, in m", v * T, 1, "Use the speeding car: steady speed × total time."),
+      xNum("speed", "Police speed", "Speed of the police car as it draws level, in m/s", vp, 2, "From rest, v = a × (time the police car has been accelerating)."),
+    ],
+    steps: td
+      ? [
+          `Let s be the police car's driving time; the speeding car has then moved for s + ${xs(td)} s. Equal distances: \`½ × ${xs(a)} × s² = ${xs(v)}(s + ${xs(td)})\`.`,
+          `Quadratic formula, positive root: \`_s = (_v + sqrt(_v^2 + 2 * _a * _v * _td)) / _a\` → ${xs(s)} s, so the total time is \`_T = _td + _s\` → ${xs(T)}, which rounds to **${xr(T, 2)} s**.`,
+          `Distance: \`_v * _T\` → ${xs(v * T)}, which rounds to **${xr(v * T, 1)} m**.`,
+          `Police speed: \`_a * _s\` → ${xs(vp)}, which rounds to **${xr(vp, 2)} m/s**.`,
+        ]
+      : [
+          `Equal distances after time t: \`½ × ${xs(a)} × t² = ${xs(v)}t\`, so t = 0 (the pass) or t = 2v / a.`,
+          `\`_T = 2 * _v / _a\` → ${xs(T)}, which rounds to **${xr(T, 2)} s**.`,
+          `Distance: \`_v * _T\` → ${xs(v * T)}, which rounds to **${xr(v * T, 1)} m**.`,
+          `Police speed: \`_a * _T\` → ${xs(vp)}, which rounds to **${xr(vp, 2)} m/s**: exactly twice the speeding car's speed.`,
+        ],
+    given: td ? [["_v", v], ["_td", td], ["_a", a]] : [["_v", v], ["_a", a]],
+    hints: [
+      "Write the distance of each car from the parking spot as a function of time: steady speed for one, `½at²` from rest for the other.",
+      td ? "The police car starts late, so its driving time is shorter than the speeding car's by the delay." : "Both cars start timing at the same moment.",
+      "Set the distances equal and solve. Ignore the solution that is before the police car moves.",
+    ],
+  });
+}
+
+function genExpert(subtopic, rng) {
+  const pick = (list) => list[rng.int(0, list.length - 1)];
+  if (subtopic === "speed") return xTry(pick([xLegs, xTarget, xChase]), rng);
+  if (subtopic === "acceleration") return xTry(pick([xPhases, xReadings, xKmh]), rng);
+  if (subtopic === "motion-equations") return xTry(pick([xStop, xCliff, xPolice]), rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Independent truth for verify: bisection on the original (un-rearranged) relations, or a different
+// route to the same quantity (suvat instead of graph areas, positions instead of formulas).
+const X_TRUTH = {
+  "x-legs": ({ d1, v1, d2, v2 }) => {
+    const T = xRoot((t) => t * v1 * v2 - (d1 * v2 + d2 * v1), 0, 1e7);
+    return { time: T, avg: xRoot((V) => V * T - (d1 + d2), 0, 1e4) };
+  },
+  "x-target": ({ D, V, d1, t1 }) => {
+    const left = xRoot((x) => V * (x + t1) - D, -1e6, 1e7);
+    return { left, speed: xRoot((w) => w * left - (D - d1), 0, 1e4) };
+  },
+  "x-chase": ({ vA, vB, t0 }) => {
+    const t = xRoot((x) => vB * x - vA * (x + t0), 0, 1e7);
+    return { time: t, dist: vA * (t + t0) };
+  },
+  "x-meet": ({ D, v1, v2, t0 }) => {
+    const t = xRoot((x) => v1 * (x + t0) + v2 * x - D, 0, 1e7);
+    return { time: t, dist: D - v2 * t };
+  },
+  "x-phases": ({ a1, t1, tc, a2 }) => {
+    const v = xRoot((w) => w - a1 * t1, 0, 1e4);
+    const tb = xRoot((t) => v - a2 * t, 0, 1e4);
+    return { top: v, brake: tb, dist: 0.5 * a1 * t1 * t1 + v * tc + (v * v) / (2 * a2) };
+  },
+  "x-readings": ({ tA, vA, tB, vB, V }) => {
+    const a = (vB - vA) / (tB - tA);
+    const u = (vA * tB - vB * tA) / (tB - tA);
+    return { a, u, t: xRoot((t) => u + a * t - V, tB, 1e6) };
+  },
+  "x-kmh": ({ X, t, b }) => {
+    const v = (X * 1000) / 3600;
+    return { a: v / t, tb: xRoot((x) => v - b * x, 0, 1e4), sb: v * (v / b) - 0.5 * b * (v / b) ** 2 };
+  },
+  "x-stop": ({ X, tr, b }) => {
+    const v = (X * 1000) / 3600;
+    const tb = v / b;
+    const brake = v * tb - 0.5 * b * tb * tb;
+    return { think: v * tr, brake, total: v * tr + brake };
+  },
+  "x-stopback": ({ D, tr, b }) => {
+    const u = xRoot((x) => x * tr + (x * x) / (2 * b) - D, 0, 1e4);
+    return { u, kmh: (u * 3600) / 1000 };
+  },
+  "x-cliff": ({ u, H }) => {
+    const g = 9.8;
+    const y = (t) => H + u * t - 0.5 * g * t * t;
+    const tTop = u / g;
+    const t = xRoot(y, tTop, 1e4);
+    return { top: y(tTop), time: t, speed: Math.abs(u - g * t) };
+  },
+  "x-police": ({ v, td, a }) => {
+    const T = xRoot((x) => 0.5 * a * (x - td) ** 2 - v * x, td + 1e-9, 1e5);
+    return { time: T, dist: v * T, speed: a * (T - td) };
+  },
+};
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "speed") return genSpeed(difficulty, rng);
   if (subtopic === "acceleration") return genAccel(difficulty, rng);
   if (subtopic === "motion-equations") return genMotion(difficulty, rng);
@@ -451,6 +1037,7 @@ export function generate({ subtopic, difficulty, rng }) {
 // For rounded answers the allowed residual is 0.005 × (how strongly the formula reacts to the unknown).
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (!p || !p.values) return false; // regenerate from the seed to get params back
 
   if (question.answerType === "choice") {

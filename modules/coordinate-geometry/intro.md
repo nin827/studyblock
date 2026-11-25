@@ -9,6 +9,8 @@ Coordinate geometry puts shapes on a grid, so you can measure them with numbers.
 | Parallel & perpendicular | Comparing gradients, lines through a point, perpendicular bisectors |
 | Intersections | Where lines cross the axes and each other, lines and circles, triangle areas |
 
+**Levels:** Easy and Medium practise one idea at a time; Hard combines two. **Expert** questions are multi-step and often have several answer boxes: dividing a segment in a ratio, finding the point on an axis that is equally far from two points, triangle heights, the fourth corner of a parallelogram, a straight-line price model you set up from two data points, the foot of a perpendicular and the shortest distance to a line, the circle through three points, a line meeting a parabola, the triangle made by three lines, and the edge cases where two lines never meet or are the same line.
+
 | Formula | Meaning |
 | --- | --- |
 | `((x1 + x2) / 2, (y1 + y2) / 2)` | midpoint |
@@ -22,6 +24,7 @@ Coordinate geometry puts shapes on a grid, so you can measure them with numbers.
 - **Gradients and intercepts:** a whole number like `3` or a fraction in simplest form like `-3/4` (minus sign in front, no spaces).
 - **Lengths:** whole numbers when they come out exactly; otherwise round to 2 decimal places, as the question says.
 - **Midpoints and areas** may be decimals like `2.5`.
+- **Money** answers in Expert are in £, exact, like `1.25`.
 - Points, exact surds like `3√5`, and line equations are picked from a list.
 - Lines in options are written `y = mx + c` when m and c are whole, otherwise as `ax + by = c` with whole numbers. A fractional gradient in a question looks like `y = (3/4)x - 2`.
 

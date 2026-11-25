@@ -1506,7 +1506,706 @@ function momentumMulti(rng) {
 
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Expert level: a separate branch. generate() sends "expert" here before any other code runs, so
+// easy/medium/hard draw exactly the same rng values as before. Expert questions are multi-part,
+// state the rounding on every part, and keep their inputs in params.v with params.kind "x-…".
+// verify() recomputes the true values a different way (energy instead of forces, impulse instead
+// of work, Cramer's rule on each body's own equation, a bounce-by-bounce loop) and compares each part.
+// Hint code never calls rng.
+
+// Round half away from zero to dp decimals; never "-0".
+function xr(n, dp) {
+  const f = 10 ** dp;
+  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
+  return Object.is(r, -0) ? 0 : r;
+}
+// Display form for stated values and working: up to 4 decimals.
+const xs = (n) => String(xr(n, 4));
+// True when n sits within 2% of a unit of a rounding tie at dp decimals.
+function xTie(n, dp) {
+  const f = Math.abs(n) * 10 ** dp;
+  return Math.abs(f - Math.floor(f) - 0.5) < 0.02;
+}
+const xDpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
+
+// A rounded numeric part (accepted within half a unit of the stated precision).
+const xNum = (id, label, ask, exact, dp, hint) => ({
+  id, label, ask: `${ask}, ${xDpWord(dp)}`, answerType: "number", answer: xr(exact, dp), tolerance: 0.5 * 10 ** -dp, hint, _exact: exact, _dp: dp,
+});
+// A choice part.
+const xChoice = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
+
+// Assemble a multi-part question. Returns null (regenerate) on a rounding tie, a zero or
+// non-finite answer, a given value equal to an answer, or NaN/undefined in the text.
+// "a 8 kg" -> "an 8 kg" (eight, eleven, eighteen, eighty... start with a vowel sound).
+function xArticles(text) {
+  return text.replace(/\b([Aa]n?) (\d+)/g, (all, art, digits) => {
+    const vowel = digits[0] === "8" || (digits.length % 3 === 2 && /^1[18]/.test(digits));
+    return `${art[0] === "A" ? (vowel ? "An" : "A") : vowel ? "an" : "a"} ${digits}`;
+  });
+}
+
+function xMulti({ kind, v, prompt, parts, steps, given, hints }) {
+  prompt = xArticles(prompt);
+  const dp = {};
+  const out = [];
+  for (const p of parts) {
+    const { _exact, _dp, ...part } = p;
+    part.id = part.id.toLowerCase(); // ids must match ^[a-z0-9-]+$
+    if (part.answerType === "number") {
+      if (!Number.isFinite(_exact) || part.answer === 0) return null;
+      if (_dp === null ? !Number.isInteger(_exact) : xTie(_exact, _dp)) return null;
+      if (given.some(([, g]) => Math.abs(g - part.answer) < 1e-9)) return null;
+      dp[part.id] = _dp;
+    } else {
+      if (!part.choices.includes(part.answer) || new Set(part.choices).size !== part.choices.length) return null;
+      dp[part.id] = "choice";
+    }
+    out.push(part);
+  }
+  const text = [prompt, ...steps, ...hints, ...out.map((p) => `${p.ask} ${p.hint} ${p.answer}`)].join(" ");
+  if (/NaN|undefined|Infinity/.test(text)) return null;
+  return {
+    prompt,
+    answerType: "multi",
+    parts: out,
+    explanation: steps.join("\n\n"),
+    params: { kind, v, dp },
+    given: given.map(([label, value]) => ({ label, value })),
+    hints,
+  };
+}
+
+// Check every part against the independently recomputed truth { partId: number | string }.
+function xVerify(question, answer, truthFns) {
+  const p = question.params;
+  const fn = truthFns[p.kind];
+  if (!fn || !p.v || !p.dp) return false;
+  if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
+  let truth;
+  try {
+    truth = fn(p.v);
+  } catch {
+    return false;
+  }
+  if (truth) truth = Object.fromEntries(Object.entries(truth).map(([k, x]) => [k.toLowerCase(), x]));
+  if (!truth || Object.keys(truth).length !== question.parts.length) return false;
+  for (const part of question.parts) {
+    if (!(part.id in truth)) return false;
+    const want = truth[part.id];
+    const got = answer[part.id];
+    if (typeof want === "string") {
+      const ch = part.choices;
+      if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(got)) || String(got) !== want) return false;
+      continue;
+    }
+    if (got === "" || got === null || got === undefined || typeof got === "boolean" || typeof got === "object") return false;
+    const x = Number(got);
+    if (!Number.isFinite(x) || !Number.isFinite(want)) return false;
+    const dp = p.dp[part.id];
+    if (dp === null) {
+      if (Math.abs(x - want) > 1e-9 * Math.max(1, Math.abs(want))) return false;
+    } else if (typeof dp !== "number" || Math.abs(x - want) > 0.5 * 10 ** -dp + 1e-9) return false;
+  }
+  return true;
+}
+
+// Retry a template until it returns a question (deterministic: only the rng passed in).
+function xTry(make, rng) {
+  for (let i = 0; i < 80; i++) {
+    const q = make(rng);
+    if (q) return q;
+  }
+  throw new Error("Expert: could not generate a question");
+}
+
+const X_UNROUNDED = "Use unrounded values from earlier parts.";
+const X_G = "Take g = 9.8 N/kg.";
+
+// forces / expert: a lift accelerating; the cable tension and a person's scale reading.
+function xLift(rng) {
+  const M = rng.int(40, 160) * 10; // lift car + load, kg
+  const mp = rng.int(45, 110);
+  let a;
+  do a = rng.int(-25, 25) / 10;
+  while (Math.abs(a) < 0.3);
+  const T = M * (G + a);
+  const R = mp * (G + a);
+  const dir = a > 0 ? "upwards" : "downwards";
+  if (rng.next() < 0.5) {
+    const Tn = xr(T, 0);
+    const aa = Tn / M - G;
+    const Rr = mp * (G + aa);
+    return xMulti({
+      kind: "x-lift",
+      v: { M, mp, T: Tn },
+      prompt: `A lift has a total mass of ${M} kg, including a passenger of mass ${mp} kg standing on bathroom scales. The cable pulls up with a tension of ${Tn} N. ${X_G} ${X_UNROUNDED}`,
+      parts: [
+        xNum("a", "Acceleration", "Acceleration of the lift, in m/s² (positive = upwards, negative = downwards)", aa, 2, "Resultant force = tension - total weight. Then a = resultant ÷ total mass."),
+        xNum("R", "Scale reading", "Force the scales push up on the passenger, in N", Rr, 1, "Apply F = ma to the passenger alone: scale force - passenger's weight = passenger's mass × a."),
+      ],
+      steps: [
+        `Total weight: \`_M * 9.8\` → ${xs(M * G)} N. Resultant (up positive): \`_T - _M * 9.8\` → ${xs(Tn - M * G)} N.`,
+        `\`_a = (_T - _M * 9.8) / _M\` → ${xs(aa)}, which rounds to **${xr(aa, 2)} m/s²**.`,
+        `For the passenger alone: \`R - ${mp} × 9.8 = ${mp} × a\`, so \`_mp * (9.8 + _a)\` → ${xs(Rr)}, which rounds to **${xr(Rr, 1)} N**.`,
+        `The scales read ${aa > 0 ? "more" : "less"} than the passenger's weight (${xs(mp * G)} N) because the lift accelerates ${aa > 0 ? "upwards" : "downwards"}.`,
+      ],
+      given: [["_M", M], ["_mp", mp], ["_T", Tn]],
+      hints: [
+        "Take up as positive. Two forces act on the whole lift: the cable tension up and the total weight down.",
+        "Resultant ÷ total mass gives the acceleration of the lift (and everything in it).",
+        "For the scale reading, draw the forces on the passenger only: the scale's push up and their weight down. Their resultant is mass × a.",
+      ],
+    });
+  }
+  const Rn = xr(R, 0);
+  const aa = Rn / mp - G;
+  const Tt = M * (G + aa);
+  return xMulti({
+    kind: "x-liftback",
+    v: { M, mp, R: Rn },
+    prompt: `A passenger of mass ${mp} kg stands on bathroom scales in a lift. While the lift accelerates, the scales read ${Rn} N. The lift's total mass, passenger included, is ${M} kg. ${X_G} ${X_UNROUNDED}`,
+    parts: [
+      xNum("a", "Acceleration", "Acceleration of the lift, in m/s² (positive = upwards, negative = downwards)", aa, 2, "Work backwards from the passenger: scale force - weight = mass × a."),
+      xNum("T", "Cable tension", "Tension in the lift cable, in N", Tt, 0, "Now apply F = ma to the whole lift with its total mass."),
+    ],
+    steps: [
+      `Passenger: \`R - mg = ma\`, so \`_a = _R / _mp - 9.8\` → ${xs(aa)}, which rounds to **${xr(aa, 2)} m/s²** (${dir}).`,
+      `Whole lift: \`T - Mg = Ma\`, so \`_M * (9.8 + _a)\` → ${xs(Tt)}, which rounds to **${xr(Tt, 0)} N**.`,
+    ],
+    given: [["_M", M], ["_mp", mp], ["_R", Rn]],
+    hints: [
+      "Start with the passenger, because you know both forces on them: the scale reading up and their weight down.",
+      "Their resultant force ÷ their mass is the acceleration of the lift.",
+      "Then use the same acceleration for the whole lift: tension - total weight = total mass × a.",
+    ],
+  });
+}
+
+const X_TOWS = [
+  ["A truck", "trailer", "tow bar"],
+  ["A tractor", "trailer", "coupling"],
+  ["A locomotive", "wagon", "coupling"],
+  ["A 4x4", "caravan", "tow bar"],
+];
+
+// forces / expert: connected bodies with resistance on each; acceleration and the coupling force.
+function xTow(rng) {
+  const [puller, towed, link] = rng.pick(X_TOWS);
+  const m1 = rng.int(8, 60) * 50;
+  const m2 = rng.int(4, 40) * 50;
+  const f1 = rng.int(10, 80) * 10;
+  const f2 = rng.int(5, 60) * 10;
+  const F = f1 + f2 + Math.round((m1 + m2) * (rng.int(2, 25) / 10) / 10) * 10;
+  const a = (F - f1 - f2) / (m1 + m2);
+  const T = m2 * a + f2;
+  return xMulti({
+    kind: "x-tow",
+    v: { F, m1, m2, f1, f2 },
+    prompt: `${puller} of mass ${m1} kg pulls a ${towed} of mass ${m2} kg along a level road. The driving force is ${F} N. Resistive forces are ${f1} N on the ${puller.slice(2).toLowerCase()} and ${f2} N on the ${towed}. ${X_UNROUNDED}`,
+    parts: [
+      xNum("a", "Acceleration", "Acceleration, in m/s²", a, 2, "Treat both as one object: total mass, driving force minus all the resistance."),
+      xNum("T", "Coupling force", `Force in the ${link}, in N`, T, 0, `Now look at the ${towed} on its own: the ${link} pulls it forward and its resistance holds it back.`),
+    ],
+    steps: [
+      `Whole system: \`_a = (_F - _f1 - _f2) / (_m1 + _m2)\` → ${xs(a)}, which rounds to **${xr(a, 2)} m/s²**.`,
+      `The ${towed} alone: \`T - ${f2} = ${m2} × a\`, so \`_T = _m2 * _a + _f2\` → ${xs(T)}, which rounds to **${xr(T, 0)} N**.`,
+      `Check with the ${puller.slice(2).toLowerCase()} alone: \`_F - _f1 - _T\` → ${xs(F - f1 - T)} N = ${m1} × a.`,
+    ],
+    given: [["_F", F], ["_m1", m1], ["_m2", m2], ["_f1", f1], ["_f2", f2]],
+    hints: [
+      "Both move together with the same acceleration. For the whole system, the coupling force is internal and cancels.",
+      "Resultant on the system = driving force - both resistive forces; divide by the total mass.",
+      `For the ${link} force, apply F = ma to the ${towed} alone.`,
+    ],
+  });
+}
+
+// forces / expert: braking from a speed in km/h over a distance; deceleration, force and time.
+function xBrake(rng) {
+  const vehicle = rng.pick([["car", 900, 2000], ["van", 1500, 3500], ["motorbike", 150, 350], ["bus", 8000, 15000], ["lorry", 10000, 30000]]);
+  const m = rng.int(vehicle[1] / 50, vehicle[2] / 50) * 50;
+  const X = rng.int(20, 110);
+  const s = rng.int(150, 900) / 10;
+  const v = X / 3.6;
+  const a = (v * v) / (2 * s);
+  if (a > 9 || a < 0.8) return null;
+  const F = (m * a) / 1000;
+  const t = v / a;
+  return xMulti({
+    kind: "x-brake",
+    v: { m, X, s },
+    prompt: `A ${vehicle[0]} of mass ${m} kg brakes uniformly from ${X} km/h to rest in ${xs(s)} m. ${X_UNROUNDED}`,
+    parts: [
+      xNum("a", "Deceleration", "Deceleration, in m/s²", a, 2, "Convert to m/s (÷ 3.6), then use `v² = u² + 2as` with v = 0."),
+      xNum("F", "Braking force", "Braking force, in kN", F, 2, "F = m × a gives newtons; divide by 1000 for kN."),
+      xNum("t", "Stopping time", "Time taken to stop, in s", t, 2, "Time = speed lost ÷ deceleration."),
+    ],
+    steps: [
+      `\`_v = _X / 3.6\` → ${xs(v)} m/s.`,
+      `\`_a = _v^2 / (2 * _s)\` → ${xs(a)}, which rounds to **${xr(a, 2)} m/s²**.`,
+      `\`_m * _a / 1000\` → ${xs(F)}, which rounds to **${xr(F, 2)} kN**.`,
+      `\`_v / _a\` → ${xs(t)}, which rounds to **${xr(t, 2)} s**.`,
+    ],
+    given: [["_m", m], ["_X", X], ["_s", s]],
+    hints: [
+      "This joins kinematics to forces: first find the deceleration from the speed and distance, then the force from F = ma.",
+      "Convert km/h to m/s by dividing by 3.6. With no time given, `v² = u² + 2as` links speed, distance and deceleration.",
+      "The force comes out in newtons: convert to kN at the end.",
+    ],
+  });
+}
+
+// work-power / expert: a motor lifting a load; useful work, useful power, efficiency (or time, backwards).
+function xHoist(rng) {
+  const what = rng.pick(["A crane", "A winch", "An electric hoist", "A lift motor", "A builder's hoist"]);
+  const m = rng.int(5, 120) * 5;
+  const h = rng.int(20, 300) / 10;
+  if (rng.next() < 0.5) {
+    const t = rng.int(5, 60);
+    const eff = rng.int(35, 90) / 100;
+    const Pin = xr((m * G * h) / t / eff / 10, 0) * 10;
+    const Wu = m * G * h;
+    const Pu = Wu / t;
+    const e = (100 * Pu) / Pin;
+    if (e >= 98) return null;
+    return xMulti({
+      kind: "x-hoist",
+      v: { m, h, t, Pin },
+      prompt: `${what} lifts a ${m} kg load ${xs(h)} m straight up at a steady speed in ${t} s. Its input power is ${Pin} W. ${X_G} ${X_UNROUNDED}`,
+      parts: [
+        xNum("W", "Useful work", "Useful work done on the load, in J", Wu, 0, "At a steady speed the useful work is the gain in potential energy: m × g × h."),
+        xNum("P", "Useful power", "Useful output power, in W", Pu, 1, "Power = work ÷ time."),
+        xNum("e", "Efficiency", "Efficiency, in %", e, 1, "Efficiency = useful power out ÷ power in × 100."),
+      ],
+      steps: [
+        `\`_W = _m * 9.8 * _h\` → ${xs(Wu)}, which rounds to **${xr(Wu, 0)} J**.`,
+        `\`_P = _W / _t\` → ${xs(Pu)}, which rounds to **${xr(Pu, 1)} W**.`,
+        `\`_P / _Pin * 100\` → ${xs(e)}, which rounds to **${xr(e, 1)} %**.`,
+      ],
+      given: [["_m", m], ["_h", h], ["_t", t], ["_Pin", Pin]],
+      hints: [
+        "Lifting at a steady speed, the useful energy output is the potential energy gained.",
+        "Useful power = useful work ÷ time.",
+        "Efficiency compares the useful output power with the input power, as a percentage.",
+      ],
+    });
+  }
+  const effPct = rng.int(30, 90);
+  const Pin = rng.int(5, 200) * 10;
+  const Wu = m * G * h;
+  const Ein = Wu / (effPct / 100);
+  const t = Ein / Pin;
+  if (t < 2 || t > 600) return null;
+  return xMulti({
+    kind: "x-hoistback",
+    v: { m, h, effPct, Pin },
+    prompt: `${what} with an input power of ${Pin} W and an efficiency of ${effPct}% lifts a ${m} kg load ${xs(h)} m straight up at a steady speed. ${X_G} ${X_UNROUNDED}`,
+    parts: [
+      xNum("Ein", "Energy supplied", "Total energy supplied to the motor, in J", Ein, 0, "Find the useful energy (m × g × h) first; the energy supplied is larger, because only part of it is useful."),
+      xNum("t", "Time", "Time taken for the lift, in s", t, 1, "Time = energy supplied ÷ input power."),
+    ],
+    steps: [
+      `Useful energy: \`_m * 9.8 * _h\` → ${xs(Wu)} J.`,
+      `Only ${effPct}% is useful, so \`_Ein = _m * 9.8 * _h / (_eff / 100)\` → ${xs(Ein)}, which rounds to **${xr(Ein, 0)} J**.`,
+      `\`_Ein / _Pin\` → ${xs(t)}, which rounds to **${xr(t, 1)} s**.`,
+    ],
+    given: [["_m", m], ["_h", h], ["_eff", effPct], ["_Pin", Pin]],
+    hints: [
+      "Work backwards from the useful energy, m × g × h.",
+      "Efficiency = useful ÷ supplied × 100, so supplied = useful ÷ (efficiency ÷ 100). It must come out bigger than the useful energy.",
+      "The motor delivers the supplied energy at its input power: time = energy ÷ power.",
+    ],
+  });
+}
+
+// work-power / expert: a vehicle at top speed; the resistive force from P = Fv, then energy over a trip.
+function xDrag(rng) {
+  const veh = rng.pick([["car", 40, 150, 90, 200], ["motorbike", 15, 90, 80, 220], ["van", 50, 130, 80, 160], ["lorry", 150, 400, 80, 100]]);
+  const P = rng.int(veh[1], veh[2]); // kW
+  const X = rng.int(veh[3], veh[4]); // km/h
+  const d = rng.int(5, 200) / 10; // km
+  const v = X / 3.6;
+  const F = (P * 1000) / v;
+  const E = (F * d * 1000) / 1e6; // MJ
+  const tmin = (d * 1000) / v / 60;
+  return xMulti({
+    kind: "x-drag",
+    v: { P, X, d },
+    prompt: `A ${veh[0]}'s engine delivers a useful output power of ${P} kW while it travels at a steady top speed of ${X} km/h. ${X_UNROUNDED}`,
+    parts: [
+      xNum("F", "Resistive force", "Total resistive force at this speed, in N", F, 0, "At a steady speed the driving force equals the resistance. Use P = F × v with P in W and v in m/s."),
+      xNum("E", "Energy", `Work done against resistance over ${xs(d)} km, in MJ`, E, 2, "Work = force × distance, with the distance in metres; a megajoule is a million joules."),
+      xNum("t", "Time", `Time to travel the ${xs(d)} km, in minutes`, tmin, 1, "Time = distance ÷ speed, in seconds; then divide by 60."),
+    ],
+    steps: [
+      `Convert: \`_v = _X / 3.6\` → ${xs(v)} m/s and ${P} kW = ${P * 1000} W.`,
+      `Steady speed, so driving force = resistance: \`_F = _P * 1000 / _v\` → ${xs(F)}, which rounds to **${xr(F, 0)} N**.`,
+      `\`_F * _d * 1000 / 1e6\` → ${xs(E)}, which rounds to **${xr(E, 2)} MJ**.`,
+      `\`_d * 1000 / _v / 60\` → ${xs(tmin)}, which rounds to **${xr(tmin, 1)} minutes**.`,
+    ],
+    given: [["_P", P], ["_X", X], ["_d", d]],
+    hints: [
+      "At a steady top speed the resultant force is zero: the driving force exactly balances the resistance.",
+      "Convert first: kW to W (× 1000), km/h to m/s (÷ 3.6), km to m (× 1000). Then P = F × v gives the force.",
+      "Work = force × distance. For the time, distance ÷ speed gives seconds.",
+    ],
+  });
+}
+
+// work-power / expert: a force at an angle; only the horizontal component does work.
+function xAngle(rng) {
+  const who = rng.pick(["A child", "A worker", "A gardener", "A hiker", "A dog walker"]);
+  const what = rng.pick(["sledge", "trolley", "suitcase", "cart", "toboggan"]);
+  const F = rng.int(20, 300) / 2;
+  const th = rng.int(10, 60);
+  const d = rng.int(5, 80);
+  const t = rng.int(5, 90);
+  const Fx = F * Math.cos((th * Math.PI) / 180);
+  const W = Fx * d;
+  const P = W / t;
+  return xMulti({
+    kind: "x-angle",
+    v: { F, th, d, t },
+    prompt: `${who} pulls a ${what} ${d} m along level ground in ${t} s, with a rope at ${th}° above the horizontal and a tension of ${xs(F)} N. ${X_UNROUNDED}`,
+    parts: [
+      xNum("Fx", "Horizontal force", "Horizontal component of the pull, in N", Fx, 2, "Only the part of the force along the motion does work: F × cos(angle)."),
+      xNum("W", "Work done", "Work done by the pull, in J", W, 1, "Work = horizontal component × distance."),
+      xNum("P", "Power", "Average power, in W", P, 2, "Power = work ÷ time."),
+    ],
+    steps: [
+      `\`_Fx = _F * cos(_th)\` → ${xs(Fx)}, which rounds to **${xr(Fx, 2)} N** (the calculator's cos uses degrees).`,
+      `\`_W = _Fx * _d\` → ${xs(W)}, which rounds to **${xr(W, 1)} J**.`,
+      `\`_W / _t\` → ${xs(P)}, which rounds to **${xr(P, 2)} W**.`,
+      `Watch out: \`F × d\` = ${xs(F * d)} J would count the upward part of the pull, which does no work along the ground.`,
+    ],
+    given: [["_F", F], ["_th", th], ["_d", d], ["_t", t]],
+    hints: [
+      "Split the rope's pull into a horizontal part and a vertical part. Only the horizontal part acts along the motion.",
+      "Horizontal part = F × cos(angle). The calculator's cos works in degrees.",
+      "Work = horizontal part × distance; power = work ÷ time.",
+    ],
+  });
+}
+
+// energy / expert: a slope with friction; energy lost and the speed at the bottom.
+function xSlope(rng) {
+  const who = rng.pick(["A skier", "A sledger", "A mountain biker", "A skateboarder", "A snowboarder"]);
+  const m = rng.int(40, 100);
+  const h = rng.int(20, 400) / 10;
+  const L = Math.round(h * (rng.int(15, 50) / 10));
+  const u = rng.pick([0, rng.int(10, 60) / 10]);
+  const f = rng.int(5, 80);
+  const lost = f * L;
+  const Ek = 0.5 * m * u * u + m * G * h - lost;
+  if (!(Ek > 0.2 * m * G * h)) return null;
+  const v = Math.sqrt((2 * Ek) / m);
+  const start = u ? `at ${xs(u)} m/s` : "from rest";
+  return xMulti({
+    kind: "x-slope",
+    v: { m, h, L, u, f },
+    prompt: `${who} of mass ${m} kg (with kit) sets off ${start} down a slope ${L} m long that drops ${xs(h)} m vertically. An average resistive force of ${f} N acts along the slope. ${X_G} ${X_UNROUNDED}`,
+    parts: [
+      xNum("lost", "Energy lost", "Energy transferred by the resistive force, in J", lost, 0, "Work done against resistance = force × distance along the slope."),
+      xNum("v", "Speed at the bottom", "Speed at the bottom, in m/s", v, 2, "Energy at the bottom = starting kinetic energy + potential energy lost - energy lost to resistance."),
+    ],
+    steps: [
+      `\`_lost = _f * _L\` → ${xs(lost)}, so **${xr(lost, 0)} J**.`,
+      `Energy in: ${u ? `\`0.5 * _m * _u^2\` → ${xs(0.5 * m * u * u)} J plus ` : ""}\`_m * 9.8 * _h\` → ${xs(m * G * h)} J.`,
+      `Kinetic energy at the bottom: \`_Ek = ${u ? "0.5 * _m * _u^2 + " : ""}_m * 9.8 * _h - _lost\` → ${xs(Ek)} J.`,
+      `\`sqrt(2 * _Ek / _m)\` → ${xs(v)}, which rounds to **${xr(v, 2)} m/s**.`,
+    ],
+    given: u ? [["_m", m], ["_h", h], ["_L", L], ["_u", u], ["_f", f]] : [["_m", m], ["_h", h], ["_L", L], ["_f", f]],
+    hints: [
+      "Use an energy balance: energy at the top = energy at the bottom + energy lost to resistance.",
+      "The resistive force acts along the whole slope length, not the vertical drop. The potential energy uses the vertical drop.",
+      "Whatever is left becomes kinetic energy at the bottom: v = √(2 × Ek ÷ m).",
+    ],
+  });
+}
+
+// energy / expert: a dropped ball that keeps a fraction of its energy at each bounce.
+function xBounce(rng) {
+  const ball = rng.pick(["A tennis ball", "A rubber ball", "A basketball", "A golf ball", "A football"]);
+  const h = rng.int(10, 300) / 10;
+  const lossPct = rng.int(10, 45);
+  const n = rng.int(2, 4);
+  const v0 = Math.sqrt(2 * G * h);
+  const k = 1 - lossPct / 100;
+  const hn = h * k ** n;
+  const vUp = v0 * Math.sqrt(k);
+  const ord = ["", "first", "second", "third", "fourth"][n];
+  return xMulti({
+    kind: "x-bounce",
+    v: { h, lossPct, n },
+    prompt: `${ball} is dropped from ${xs(h)} m onto a hard floor. Each bounce transfers ${lossPct}% of its kinetic energy to heat and sound. Ignore air resistance. ${X_G} ${X_UNROUNDED}`,
+    parts: [
+      xNum("v0", "Impact speed", "Speed just before it first hits the floor, in m/s", v0, 2, "Potential energy becomes kinetic energy: mgh = ½mv², and the mass cancels."),
+      xNum("vUp", "Rebound speed", "Speed just after the first bounce, in m/s", vUp, 2, "The kinetic energy is multiplied by the fraction kept. Speed goes with the square root of kinetic energy."),
+      xNum("hn", "Height", `Height reached after the ${ord} bounce, in m`, hn, 2, "Each bounce multiplies the energy, and so the height, by the same fraction kept."),
+    ],
+    steps: [
+      `\`sqrt(2 * 9.8 * _h)\` → ${xs(v0)}, which rounds to **${xr(v0, 2)} m/s**.`,
+      `Fraction of energy kept per bounce: \`_k = 1 - _loss / 100\` → ${xs(k)}. Kinetic energy ∝ v², so the rebound speed is \`sqrt(_k) * ${xs(v0)}\` → ${xs(vUp)}, which rounds to **${xr(vUp, 2)} m/s**.`,
+      `Height ∝ energy, so after ${n} bounces: \`_h * _k^${n}\` → ${xs(hn)}, which rounds to **${xr(hn, 2)} m**.`,
+      `Watch out: multiplying the speed (not the energy) by ${xs(k)} would be wrong.`,
+    ],
+    given: [["_h", h], ["_loss", lossPct]],
+    hints: [
+      "The mass is not given because it cancels: mgh = ½mv² gives v = √(2gh).",
+      "Each bounce keeps the same fraction of the kinetic energy. Since Ek = ½mv², the speed changes by the square root of that fraction.",
+      "The rebound height is proportional to the energy kept, so each bounce multiplies the height by the same fraction.",
+    ],
+  });
+}
+
+// energy / expert: work backwards from a target speed to the start height, with and without losses.
+function xRamp(rng) {
+  const who = rng.pick(["skateboarder", "BMX rider", "roller-coaster car", "toboggan", "soapbox racer"]);
+  const m = rng.int(30, 400);
+  const v = rng.int(40, 200) / 10;
+  const loss = rng.int(10, 40);
+  const h0 = (v * v) / (2 * G);
+  const h1 = h0 / (1 - loss / 100);
+  const wasted = m * G * h1 * (loss / 100);
+  return xMulti({
+    kind: "x-ramp",
+    v: { m, v, loss },
+    prompt: `A ${who} of mass ${m} kg starts from rest at the top of a ramp and must reach ${xs(v)} m/s at the bottom. ${X_G} ${X_UNROUNDED}`,
+    parts: [
+      xNum("h0", "Height, no losses", "Minimum starting height if no energy is lost, in m", h0, 2, "All the potential energy becomes kinetic energy: mgh = ½mv². The mass cancels."),
+      xNum("h1", "Height with losses", `Minimum starting height if ${loss}% of the potential energy is lost to friction, in m`, h1, 2, "Only part of the potential energy becomes kinetic energy, so the start must be higher."),
+      xNum("E", "Energy wasted", "Energy lost to friction from that higher start, in J", wasted, 0, "It is the lost percentage of the potential energy at the higher start."),
+    ],
+    steps: [
+      `\`_h0 = _v^2 / (2 * 9.8)\` → ${xs(h0)}, which rounds to **${xr(h0, 2)} m**.`,
+      `Only ${100 - loss}% becomes kinetic energy: \`(1 - _loss/100) × mgh = ½mv²\`, so \`_h1 = _h0 / (1 - _loss / 100)\` → ${xs(h1)}, which rounds to **${xr(h1, 2)} m**.`,
+      `\`_m * 9.8 * _h1 * _loss / 100\` → ${xs(wasted)}, which rounds to **${xr(wasted, 0)} J**.`,
+      `Watch out: ${xs(h0)} × ${1 + loss / 100} would not be right; dividing by the fraction kept is.`,
+    ],
+    given: [["_m", m], ["_v", v], ["_loss", loss]],
+    hints: [
+      "Work backwards from the kinetic energy needed at the bottom. The mass cancels for the heights.",
+      "With losses, only (1 - loss ÷ 100) of the potential energy turns into kinetic energy. Set that fraction of mgh equal to ½mv².",
+      "For the energy wasted, use the mass: the lost percentage of m × g × (the higher start height).",
+    ],
+  });
+}
+
+// momentum / expert: a collision where the objects couple; common velocity and kinetic energy lost.
+function xCouple(rng) {
+  const pair = rng.pick([["railway wagon", 4000, 30000], ["dodgem", 150, 300], ["trolley", 1, 5], ["ice skater", 40, 90], ["shunting engine", 20000, 60000]]);
+  const scale = pair[2] < 10 ? 10 : 1;
+  const m1 = rng.int(pair[1] * scale, pair[2] * scale) / scale;
+  const m2 = rng.int(pair[1] * scale, pair[2] * scale) / scale;
+  const u1 = rng.int(10, 80) / 10;
+  const mode = rng.int(0, 2); // 0: m2 at rest, 1: same direction slower, 2: head-on
+  const u2 = mode === 0 ? 0 : mode === 1 ? rng.int(1, Math.round(u1 * 10) - 1) / 10 : -rng.int(5, 50) / 10;
+  if (mode === 1 && !(u2 > 0)) return null;
+  const v = (m1 * u1 + m2 * u2) / (m1 + m2);
+  if (Math.abs(v) < 0.3) return null;
+  const KEb = 0.5 * m1 * u1 * u1 + 0.5 * m2 * u2 * u2;
+  const KEa = 0.5 * (m1 + m2) * v * v;
+  const lost = KEb - KEa;
+  const big = lost > 10000;
+  const lostOut = big ? lost / 1000 : lost;
+  const unit = big ? "kJ" : "J";
+  const mom = mode === 0 ? "_m1 * _u1" : "_m1 * _u1 + _m2 * _u2";
+  const second = mode === 0 ? "at rest" : mode === 1 ? `moving at ${xs(u2)} m/s in the same direction` : `moving at ${xs(-u2)} m/s towards it`;
+  return xMulti({
+    kind: "x-couple",
+    v: { m1, u1, m2, u2, big },
+    prompt: `${An(pair[0])} of mass ${xs(m1)} kg moving at ${xs(u1)} m/s collides with a second ${pair[0]} of mass ${xs(m2)} kg ${second}. They couple together. Take the first ${pair[0]}'s direction as positive. ${X_UNROUNDED}`,
+    parts: [
+      xNum("v", "Common velocity", "Velocity just after the collision, in m/s (negative if backwards)", v, 2, "Total momentum before = total momentum after; afterwards they move as one mass."),
+      xNum("lost", "Kinetic energy lost", `Kinetic energy lost in the collision, in ${unit}`, lostOut, big ? 2 : 1, "Work out the total kinetic energy before (both objects) and after (combined mass), then subtract."),
+    ],
+    steps: [
+      `Momentum before: \`${mom}\` →${xs(m1 * u1 + m2 * u2)} kg m/s${mode === 2 ? " (the second one's velocity is negative)" : ""}.`,
+      `\`_v = (${mom}) / (_m1 + _m2)\` → ${xs(v)}, which rounds to **${xr(v, 2)} m/s**.`,
+      `KE before: ${xs(KEb)} J; KE after: \`0.5 * (_m1 + _m2) * _v^2\` → ${xs(KEa)} J.`,
+      `Lost: ${xs(KEb)} - ${xs(KEa)} = ${xs(lost)} J${big ? `, which is ${xs(lost / 1000)} kJ and rounds to **${xr(lostOut, 2)} kJ**` : `, which rounds to **${xr(lostOut, 1)} J**`}.`,
+    ],
+    given: [["_m1", m1], ["_u1", u1], ["_m2", m2], ["_u2", u2]].filter(([, x]) => x !== 0),
+    hints: [
+      "Momentum is conserved in the collision; kinetic energy is not, because the objects couple.",
+      mode === 2 ? "The second object moves the other way, so its velocity (and momentum) is negative." : "Add the two momenta, then divide by the combined mass.",
+      "Kinetic energy is ½mv² for each object before, and for the combined mass after. The difference is the energy lost.",
+    ],
+  });
+}
+
+// momentum / expert: given both velocities after the first object's bounce, find the second's and decide elastic or not.
+function xElastic(rng) {
+  const m1 = rng.int(1, 8);
+  let m2;
+  do m2 = rng.int(1, 8);
+  while (m2 === m1);
+  const k = rng.int(2, 12);
+  const e = rng.next() < 0.4 ? 1 : rng.int(2, 8) / 10;
+  const u1 = ((m1 + m2) * k) / 10;
+  const v1 = ((m1 - e * m2) * k) / 10;
+  if (Math.abs(v1) < 0.05) return null;
+  const v2 = (m1 * (1 + e) * k) / 10;
+  const after = v1 > 0 ? `carries on at ${xs(v1)} m/s in the same direction` : `bounces back at ${xs(-v1)} m/s`;
+  const type = e === 1 ? "Elastic" : "Inelastic";
+  return xMulti({
+    kind: "x-elastic",
+    v: { m1, u1, m2, v1 },
+    prompt: `A ${m1} kg trolley moving at ${xs(u1)} m/s hits a stationary ${m2} kg trolley on a level, frictionless track. Afterwards the ${m1} kg trolley ${after}. Take its original direction as positive. ${X_UNROUNDED}`,
+    parts: [
+      xNum("v2", "Velocity of the other trolley", `Velocity of the ${m2} kg trolley after the collision, in m/s`, v2, 2, "Momentum is conserved. A trolley that bounces back has negative velocity and momentum."),
+      xChoice("type", "Type of collision", "Is the collision elastic (no kinetic energy lost) or inelastic?", type, ["Elastic", "Inelastic"], "Compare the total kinetic energy before and after."),
+    ],
+    steps: [
+      `Momentum before: \`_m1 * _u1\` → ${xs(m1 * u1)} kg m/s. After: \`_m1 * _v1 + _m2 * v2\`, with v1 = ${xs(v1)}${v1 < 0 ? " (negative: it bounced back)" : ""}.`,
+      `\`(_m1 * _u1 - _m1 * _v1) / _m2\` → ${xs(v2)}, so **${xr(v2, 2)} m/s**.`,
+      `KE before: \`0.5 * _m1 * _u1^2\` → ${xs(0.5 * m1 * u1 * u1)} J. KE after: ${xs(0.5 * m1 * v1 * v1)} + ${xs(0.5 * m2 * v2 * v2)} = ${xs(0.5 * m1 * v1 * v1 + 0.5 * m2 * v2 * v2)} J.`,
+      e === 1 ? "The totals are equal, so the collision is **Elastic**." : "Kinetic energy has been lost, so the collision is **Inelastic**.",
+    ],
+    given: [["_m1", m1], ["_u1", u1], ["_m2", m2], ["_v1", v1]],
+    hints: [
+      `Momentum before = momentum after. Only the ${m1} kg trolley moves before the collision.`,
+      v1 < 0 ? "The first trolley bounces back, so its velocity afterwards is negative: subtracting a negative momentum adds." : "Subtract the first trolley's momentum after from the total, then divide by the other mass.",
+      "For the type, add up ½mv² for every moving trolley before and after the collision. Equal totals mean elastic.",
+    ],
+  });
+}
+
+// momentum / expert: recoil, then the force that stops the recoil over a distance.
+function xRecoil(rng) {
+  const kit = rng.pick([
+    ["A cannon", "cannonball", 800, 3000, 4, 20, "kg", 150, 400],
+    ["A rifle", "bullet", 2, 6, 5, 15, "g", 300, 900],
+    ["A toy launcher", "foam dart", 1, 3, 2, 8, "g", 10, 30],
+  ]);
+  const [what, shot, Mlo, Mhi, mlo, mhi, mu, vlo, vhi] = kit;
+  const M = what === "A rifle" ? rng.int(Mlo * 10, Mhi * 10) / 10 : what === "A toy launcher" ? rng.int(Mlo * 10, Mhi * 10) / 100 : rng.int(Mlo, Mhi);
+  const m = rng.int(mlo, mhi); // in mu
+  const vb = rng.int(vlo, vhi);
+  const d = rng.int(5, 80) / 100; // m
+  const mkg = mu === "g" ? m / 1000 : m;
+  const V = (mkg * vb) / M;
+  const F = (0.5 * M * V * V) / d;
+  if (V < 0.05) return null;
+  return xMulti({
+    kind: "x-recoil",
+    v: { M, m, mu, vb, d },
+    prompt: `${what} of mass ${xs(M)} kg, at rest, fires a ${m} ${mu} ${shot} at ${vb} m/s. Its recoil is brought to a stop over ${xs(d * 100)} cm. ${X_UNROUNDED}`,
+    parts: [
+      xNum("V", "Recoil speed", "Recoil speed, in m/s", V, 2, mu === "g" ? "Total momentum is zero before and after. Convert grams to kilograms first." : "Total momentum is zero before and after, so the two momenta are equal and opposite."),
+      xNum("F", "Stopping force", "Average force that stops the recoil, in N", F, F < 10 ? 2 : 1, "The force removes the recoil's kinetic energy over the stopping distance: F × d = ½MV²."),
+    ],
+    steps: [
+      `${mu === "g" ? `\`_m / 1000\` → ${xs(mkg)} kg. ` : ""}Momentum zero before, so \`M V = m v\`: \`_V = ${mu === "g" ? "_m / 1000" : "_m"} * _vb / _Mgun\` → ${xs(V)}, which rounds to **${xr(V, 2)} m/s**.`,
+      `Kinetic energy of the recoil: \`0.5 * _Mgun * _V^2\` → ${xs(0.5 * M * V * V)} J.`,
+      `\`F × d = ½MV²\`, with d = \`_d_cm / 100\` m: \`0.5 * _Mgun * _V^2 / (_d_cm / 100)\` → ${xs(F)}, which rounds to **${xr(F, F < 10 ? 2 : 1)} N**.`,
+    ],
+    given: [["_Mgun", M], ["_m", m], ["_vb", vb], ["_d_cm", xr(d * 100, 4)]],
+    hints: [
+      "Before firing nothing moves, so the total momentum is zero before and after: the recoil momentum equals the shot's momentum.",
+      "Use consistent units: kilograms, metres and m/s.",
+      "To stop the recoil, the force must do work equal to the recoil's kinetic energy over the stopping distance.",
+    ],
+  });
+}
+
+function genExpert(subtopic, rng) {
+  const pick = (list) => list[rng.int(0, list.length - 1)];
+  if (subtopic === "forces") return xTry(pick([xLift, xTow, xBrake]), rng);
+  if (subtopic === "work-power") return xTry(pick([xHoist, xDrag, xAngle]), rng);
+  if (subtopic === "energy") return xTry(pick([xSlope, xBounce, xRamp]), rng);
+  if (subtopic === "momentum") return xTry(pick([xCouple, xElastic, xRecoil]), rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
+// Independent truth for verify: a different route to each quantity.
+const X_TRUTH = {
+  // Passenger's scale force from the lift's own equation, via the ratio R / mp = T / M.
+  "x-lift": ({ M, mp, T }) => ({ a: (T - M * 9.8) / M, R: (T * mp) / M }),
+  "x-liftback": ({ M, mp, R }) => ({ a: (R - mp * 9.8) / mp, T: (R * M) / mp }),
+  // Two equations, one per body (Cramer's rule): F - f1 - T = m1 a ; T - f2 = m2 a.
+  "x-tow": ({ F, m1, m2, f1, f2 }) => {
+    // [m1  1][a]   [F - f1]
+    // [m2 -1][T] = [-f2  ]
+    const det = -m1 - m2;
+    const a = (-(F - f1) - (-f2)) / det;
+    const T = (m1 * -f2 - m2 * (F - f1)) / det;
+    return { a, T };
+  },
+  // Work-energy: F d = ½mv², then a = F/m; time from the average speed v/2.
+  "x-brake": ({ m, X, s }) => {
+    const v = (X * 1000) / 3600;
+    const F = (0.5 * m * v * v) / s;
+    return { a: F / m, F: F / 1000, t: s / (v / 2) };
+  },
+  "x-hoist": ({ m, h, t, Pin }) => {
+    const Ein = Pin * t;
+    const Eu = m * 9.8 * h;
+    return { W: Eu, P: Eu / t, e: (Eu / Ein) * 100 };
+  },
+  "x-hoistback": ({ m, h, effPct, Pin }) => {
+    const Pu = (Pin * effPct) / 100; // useful power
+    const t = (m * 9.8 * h) / Pu;
+    return { Ein: Pin * t, t };
+  },
+  // Energy over the trip from P × t; force from that energy ÷ distance.
+  "x-drag": ({ P, X, d }) => {
+    const v = (X * 1000) / 3600;
+    const t = (d * 1000) / v;
+    const E = P * 1000 * t;
+    return { F: E / (d * 1000), E: E / 1e6, t: t / 60 };
+  },
+  // Horizontal component from Pythagoras with the vertical component.
+  "x-angle": ({ F, th, d, t }) => {
+    const Fy = F * Math.sin((th * Math.PI) / 180);
+    const Fx = Math.sqrt(F * F - Fy * Fy);
+    return { Fx, W: Fx * d, P: (Fx * d) / t };
+  },
+  // Forces along the slope: a = g h/L - f/m, then v² = u² + 2aL.
+  "x-slope": ({ m, h, L, u, f }) => {
+    const a = (9.8 * h) / L - f / m;
+    return { lost: f * L, v: Math.sqrt(u * u + 2 * a * L) };
+  },
+  // Bounce by bounce with energies (per kg).
+  "x-bounce": ({ h, lossPct, n }) => {
+    let E = 9.8 * h;
+    const v0 = Math.sqrt(2 * E);
+    let vUp = 0;
+    for (let i = 1; i <= n; i++) {
+      E -= (E * lossPct) / 100;
+      if (i === 1) vUp = Math.sqrt(2 * E);
+    }
+    return { v0, vUp, hn: E / 9.8 };
+  },
+  "x-ramp": ({ m, v, loss }) => {
+    const Ek = 0.5 * m * v * v;
+    const h0 = Ek / (m * 9.8);
+    const Ep = Ek / (1 - loss / 100);
+    return { h0, h1: Ep / (m * 9.8), E: Ep - Ek };
+  },
+  // KE lost from the reduced mass: ½ μ (u1 - u2)², μ = m1 m2 / (m1 + m2).
+  "x-couple": ({ m1, u1, m2, u2, big }) => {
+    const v = (m1 * u1 + m2 * u2) / (m1 + m2);
+    const lost = (0.5 * m1 * m2 * (u1 - u2) ** 2) / (m1 + m2);
+    return { v, lost: big ? lost / 1000 : lost };
+  },
+  // Elastic when the relative speed of separation equals the speed of approach.
+  "x-elastic": ({ m1, u1, m2, v1 }) => {
+    const v2 = (m1 * (u1 - v1)) / m2;
+    const e = (v2 - v1) / u1;
+    return { v2, type: Math.abs(e - 1) < 1e-9 ? "Elastic" : "Inelastic" };
+  },
+  // Impulse route: the recoil stops in t = 2d / V, so F = M V / t.
+  "x-recoil": ({ M, m, mu, vb, d }) => {
+    const V = ((mu === "g" ? m / 1000 : m) * vb) / M;
+    return { V, F: (M * V) / ((2 * d) / V) };
+  },
+};
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return genExpert(subtopic, rng);
   if (difficulty !== "easy" && difficulty !== "medium" && difficulty !== "hard") throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "forces") return genForces(difficulty, rng);
   if (subtopic === "work-power") return genWork(difficulty, rng);
@@ -1596,6 +2295,7 @@ function checkOne(spec, answer) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false; // regenerate from the seed to get params back
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (p.multi) {
     if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
     return p.parts.length === question.parts.length && p.parts.every((spec) => checkOne(spec, answer[spec.id]));

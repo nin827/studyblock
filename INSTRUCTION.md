@@ -94,7 +94,7 @@ You can't install from `index.html` opened directly (a `file:///…` address), o
 |---|---|
 | **Home** | Domain cards with your progress, a "Continue" shortcut, and the mixed quiz with quick-start presets |
 | **Domain** | The subdomains in that domain (for example, Math → Arithmetic, Algebra, Fractions…) |
-| **Module** | An introduction to the topic, then a grid of subtopic × difficulty with your best score in each |
+| **Module** | An introduction to the topic, then a grid of subtopic × difficulty with your best score in each. Each subject offers the levels that suit it: Easy, Medium and Hard, and **Expert** (marked with a flame) for subjects with room for multi-step problems. |
 | **Mix** | The mixed-quiz builder and your presets |
 | **History** | Every quiz you've taken, with full question-by-question review |
 | **Settings** | Theme, accent colour, installing, data folder, export, import, clearing data |
@@ -141,7 +141,7 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 
 - **Calculus Basics:** derivatives, integrals and tangent lines are multiple choice, written like `6x² − 4x + 1`, `x⁻²` and `x^(1/2)`, with `+ C` on indefinite integrals. Hard answers are rounded to 2 decimal places; an area counts every part as positive.
 - **Exponents & Logarithms:** exact answers are a whole number or a simplest fraction like `3/2` (improper, never mixed). In the calculator `log` is base 10 and `ln` is base e; for another base use `log(x) / log(b)`.
-- **Number Theory:** whole numbers or choices, no calculator. `p^k` means p to the power k; *a mod n* is the remainder from 0 to n − 1; a 12-hour clock shows 1–12 and a 24-hour clock 0–23.
+- **Number Theory:** whole numbers, words or choices, no calculator. **Ciphers**: Caesar shifts go forward and wrap from Z to A, Vigenère uses A = 0, and you type words like `APPLE`. **Keys & RSA**: counting keys, inverses mod 26 and toy RSA with small primes, all by hand. `p^k` means p to the power k; *a mod n* is the remainder from 0 to n − 1; a 12-hour clock shows 1–12 and a 24-hour clock 0–23.
 - **Coordinate Geometry:** type gradients and intercepts as a whole number or a simplest fraction like `-3/4`. Points, surds like `3√5` and line equations are picked from a list.
 - **Probability:** probabilities are fractions in simplest form, like `3/8`. Counting answers are whole numbers; expected values are rounded to 2 decimal places (a loss is negative).
 - **Forces & Energy:** SI units throughout. Medium and hard questions may state values in g, km/h, minutes, kJ, km, kN or ms, so convert first; a calculator label like `_m_g` or `_t_min` shows the unit of the given value. Head-on collision velocities can be negative.
@@ -150,22 +150,28 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 - **Astronomy:** every constant and planet value is given. Very large answers ask for A × 10ⁿ: type just A. Orbits use T² = a³ with T in years and a in AU.
 - **Data Representation:** each size question says whether KB means 1000 or KiB 1024; files are uncompressed. Run-length encoding is count then character, like `3W2B1W`.
 - **SQL Queries:** work out by hand what the query returns from the small table shown. No calculator.
-- **Cryptography Basics:** Caesar shifts go forward and wrap from Z to A; Vigenère uses A = 0; mod answers run from 0 to n − 1.
 - **Algorithms:** lists are written like `[4, 9, 2, 7]`, with indexes starting at 0. Whole lists are picked from options; counts, values and indexes are whole numbers. Each question states the exact version of the algorithm it uses.
 - **Networking:** type addresses in dotted decimal with no leading zeros, like `192.168.1.0`. A binary octet needs all 8 bits (`00101101`); a prefix length is just the number (`26` for /26). Each data question says whether its prefixes mean 1000 (MB, Mbps) or 1024 (MiB, GiB); link speeds always use 1000.
 - **Economics:** every formula is stated; price elasticity is given as a positive number. Countries are fictional.
 - **Map Skills:** grid references are digits with no spaces, easting first (`343176`). Bearings can be `045` or `45`. Times are 24-hour `HH:MM` with two digits each (`07:05`); time zones use the fixed UTC offsets given, with no daylight saving.
 - **Timelines:** there is no year 0, so 44 BC to AD 79 is 122 years. Centuries are a number (`15` for the 15th century) and decades their first year (`1960`). Only *Famous dates (recall)* needs memorised years; every other topic gives them.
-- **Pixels & Colour:** type hex with the `#` (`#1A2B3C`) and single bytes as two digits (`0F`); either case counts. Ratios like `16:9`, channel lists like `12, 200, 7`; sprite frames, columns and rows count from 0.
-- **Balancing & Progression:** every formula and rounding rule is stated in the question.
-- **Game Dev:** vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). In Collision, touching never counts as overlapping, and tiles are counted from (0, 0) at the top-left. Game Probability percentages are typed without `%`, to 2 decimal places.
+- **Game Dev:** vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). Game Probability percentages are typed without `%`, to 2 decimal places.
 - **Music Theory:** written notation only, no audio. Notes, intervals, keys and chords are multiple choice, so you never type ♯ or ♭; counts are whole numbers. Rhythm treats a quarter note as one beat unless told otherwise (in 6/8, a dotted quarter).
 - **Biology:** Genetics, Cells & Microscopy and Ecology build fresh crosses, micrographs and field data every time. Genotypes and ratios are picked from a list, in the order the question names; probabilities are typed as a percentage or a simplest-form fraction, as asked. Sizes use µm and nm; a magnification is a plain number (`400` for ×400).
 - **Medical:** every question states its formula and conversion factors, so nothing needs memorising. These subjects are for learning only and are **not medical advice**: they stick to general facts and standard calculations, with no medication, diagnosis or treatment.
 
+### Expert questions
+
+Expert is offered in subjects with room above Hard: most of Math, Science, Computing, Business, Game Dev and Music Theory, plus Genetics and Ecology. Fact lists and simple skills (for example Capitals, Vocabulary, Elements, Unit Conversion) stop at Hard. Expert questions aren't bigger numbers. They combine two or more ideas, work backwards from a result, test edge cases, or ask you to set up a realistic problem yourself. Most have 2–4 parts.
+- **Rounding:** each part says how to round. Keep unrounded values in calculator rows between parts, and don't retype a rounded earlier answer.
+- **Round up / round down:** some parts ask for a whole number rounded up or down (strokes of a jack, snowshoe area, animals a reserve can support). Type that exact whole number.
+- **Other formats:** a "1 in X" risk is typed as just X. "Type 0 if …" means 0 is a valid answer. Binary fractions are written like `110.101`, with no trailing zeros. A hex IPv4 address is 8 digits with leading zeros (`0A000001`), and each UTF-8 byte is 2 hex digits (`C3`).
+- **Code subjects:** you trace longer programs, work a blank out backwards from the output, and hunt for two bugs at once. In Expert *Fix the bug*, the right fix must pass all three examples.
+- **Number Theory:** Expert stays by hand, without a calculator. It includes cracking an affine cipher and breaking a toy RSA key.
+
 ### Questions with several answers
 
-Some Business Case questions ask for more than one thing about the same scenario, for example a **Calculation** (the NPV) and a **Recommendation** (invest or not). Each part has its own numbered box:
+Some questions, such as Business Case and every Expert level, ask for more than one thing about the same scenario, for example a **Calculation** (the NPV) and a **Recommendation** (invest or not). Each part has its own numbered box:
 
 - Fill in every part, then press **Check**. Tapping a choice in a part only selects it; it doesn't submit.
 - **Enter** jumps to the next empty part, and checks the answer once every part is filled.
@@ -227,7 +233,7 @@ Open **Mix** to build a quiz across several domains.
 1. **Tick the domains** you want. Within each one, tick or untick its subdomains.
 2. **Set weights.** Each domain and subdomain has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
 3. Watch the **share bar** and the percentages update as you change things.
-4. Choose a **difficulty** (Any, Easy, Medium or Hard) and the **number of questions** (1–50).
+4. Choose a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (1–50).
 5. Press **Start**.
 
 How a question is picked: first a domain (by domain weight), then a subdomain inside it (by subdomain weight), then a random subtopic. If a subtopic doesn't have the difficulty you chose, the closest one is used.
@@ -278,6 +284,9 @@ StudyBlock only ever touches `studyblock-data.json` in that folder; it never rea
 
   Official presets are never imported or exported; they come from the app.
 
+### Retired subjects
+A few subjects have been retired or merged into others: Cryptography Basics is now part of Number Theory, and Anatomy part of Biology Basics. Your past attempts on retired subjects stay in History, grouped under **Archived**.
+
 ### Clearing data
 **Settings → Clear all data** deletes your quiz history, after you confirm. Export first if you might want it back.
 
@@ -308,7 +317,7 @@ Subjects live in `modules/`, one folder each, and are grouped into domains in `m
   "type": "generator",
   "questionsPerQuiz": 10,
   "subtopics": [
-    { "id": "simplify", "title": "Simplify", "difficulties": ["easy", "medium", "hard"] }
+    { "id": "simplify", "title": "Simplify", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }
 ```
@@ -390,7 +399,7 @@ Official presets live in `presets/`.
 Rules:
 - A domain you leave out isn't included.
 - A domain without `modules` includes all of its subdomains, each at weight 1.
-- `difficulty` is `any`, `easy`, `medium` or `hard`; `count` is 1–50.
+- `difficulty` is `any`, `easy`, `medium`, `hard` or `expert`; `count` is 1–50.
 - Unknown domain or module ids are skipped, with a warning in the browser console.
 
 ---

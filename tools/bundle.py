@@ -8,6 +8,8 @@ How it works
 - Every js/**/*.js and modules/**/*.js becomes a data: URL in an import map, keyed by the
   specifier "sb:/<path>". Relative import specifiers ("./x.js", "../lib/y.js") in those files are
   rewritten to "sb:/<resolved path>", since relative URLs can't resolve inside data: modules.
+- Only module folders listed in a domain of modules/index.json are bundled; archived or unlisted
+  folders are skipped (and named in the summary line).
 - Non-JS data (modules/**/*.json|csv|md, presets/**/*.json) is embedded as text in
   window.__SB_BUNDLE__ = { files: { "<path>": "<text>" } }, read by js/lib/source.js.
 - The app's module script tag is replaced by an inline `import "sb:/js/app.js";`.
@@ -56,14 +58,44 @@ def read_text(p: Path) -> str:
         fail(f"{rel(p)} is not valid UTF-8")
 
 
+ID_RE = re.compile(r"^[a-z0-9-]+$")
+
+
+def listed_modules():
+    """Module ids listed in some domain of modules/index.json (archived or unlisted folders are skipped)."""
+    try:
+        idx = json.loads(read_text(ROOT / "modules" / "index.json"))
+    except (OSError, ValueError) as e:
+        fail(f"modules/index.json could not be read: {e}")
+    ids = set()
+    domains = idx.get("domains") if isinstance(idx, dict) else None
+    if isinstance(domains, list):
+        for d in domains:
+            mods = d.get("modules") if isinstance(d, dict) else None
+            for mid in mods if isinstance(mods, list) else []:
+                if isinstance(mid, str) and ID_RE.match(mid):
+                    ids.add(mid)
+    elif isinstance(idx, dict) and isinstance(idx.get("modules"), list):  # legacy flat registry
+        ids = {m for m in idx["modules"] if isinstance(m, str) and ID_RE.match(m)}
+    return ids
+
+
 def collect():
-    """Returns (js_paths, data_paths) as sorted lists of root-relative posix paths."""
+    """Returns (js_paths, data_paths, skipped_dirs): sorted root-relative posix paths, and the
+    module folders left out because no domain lists them (e.g. archived modules)."""
     js, data = set(), set()
     for p in (ROOT / "js").rglob("*.js"):
         if p.is_file():
             js.add(rel(p))
+    listed = listed_modules()
+    skipped = set()
     for p in (ROOT / "modules").rglob("*"):
         if p.is_file() and p.suffix.lower() in MODULE_EXTS:
+            parts = p.relative_to(ROOT / "modules").parts
+            # Files directly under modules/ (index.json) always; modules/<id>/... only when listed.
+            if len(parts) > 1 and parts[0] not in listed:
+                skipped.add(parts[0])
+                continue
             (js if p.suffix.lower() == ".js" else data).add(rel(p))
     for p in (ROOT / "presets").rglob("*.json"):
         if p.is_file():
@@ -71,7 +103,7 @@ def collect():
     for path in js | data:
         if not PATH_RE.match(path) or ".." in path:
             fail(f"unsupported file name: {path}")
-    return sorted(js), sorted(data)
+    return sorted(js), sorted(data), sorted(skipped)
 
 
 def rewrite_imports(path: str, src: str, js_set: set) -> str:
@@ -140,7 +172,7 @@ def main():
     if not index.is_file() or not css.is_file():
         fail("run from a StudyBlock checkout (index.html and css/style.css are required)")
 
-    js_paths, data_paths = collect()
+    js_paths, data_paths, skipped = collect()
     if "js/app.js" not in js_paths:
         fail("js/app.js not found")
     js_set = set(js_paths)
@@ -201,6 +233,8 @@ def main():
 
     print(f"Wrote {rel(OUT)}: {len(js_paths)} JS modules, {len(data_paths)} data files, "
           f"{len(out_bytes) / 1024:.1f} KiB. Lucide: {lucide_note}.")
+    if skipped:
+        print(f"Skipped {len(skipped)} module folder(s) not listed in any domain: {', '.join(skipped)}")
 
 
 if __name__ == "__main__":

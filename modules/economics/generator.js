@@ -844,7 +844,521 @@ function genInt(diff, rng) {
   };
 }
 
+// =============================================================================================
+// Expert: multi-step, multi-part questions (easy/medium/hard above are untouched). Each template
+// draws all of its rng values first, then builds text; hints use only values already drawn.
+
+const xMulti = (kind, params, prompt, parts, explanation, given, hints) =>
+  ({ prompt, answerType: "multi", parts, explanation, given, hints, params: { kind, ...params } });
+const signed = (n) => (n < 0 ? `(${num(n)})` : num(n));
+const XKEEP = " Keep full precision between steps and round each answer to 2 decimal places.";
+const choicePart = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
+const xYears = (n) => (n === 1 ? "1 year" : `${n} years`);
+
+// supply-demand / expert 0: work backwards to the supply curve, then shift demand.
+function xBacksolve(rng) {
+  const good = rng.pick(GOODS);
+  let m, D, P2, Q2;
+  for (let t = 0; t < 200; t++) {
+    m = intMarket(rng, 5, 40);
+    D = 5 * rng.int(-20, 30);
+    P2 = (m.a + D - m.c) / (m.b + m.d);
+    Q2 = m.a + D - m.b * P2;
+    if (D !== 0 && !Number.isInteger(P2) && Q2 > 10 && P2 > 1 && safe2(P2) && safe2(Q2)) break;
+  }
+  const { a, b, c, d, P } = m;
+  const prompt =
+    `In a market for ${good}, demand is \`${demandEq(a, b)}\`. Supply is a straight line \`Qs = c + ${coefP(d)}\` with an unknown number c, ` +
+    `and the market clears at a price of $${P}. Later, demand ${D > 0 ? "rises" : "falls"} by ${Math.abs(D)} units at every price.${XKEEP}`;
+  const explanation =
+    `Use the known equilibrium to find c, then solve the shifted market.\n\n` +
+    `- At $${P}: Qd = ${num(a)} − ${b} × ${P} = ${a - b * P}, and supply must equal it\n` +
+    `- c = ${a - b * P} − ${d} × ${P} = **${c}**\n` +
+    `- New demand: Qd = ${num(a + D)} − ${coefP(b)}\n` +
+    `- P = (${num(a + D)} − ${signed(c)}) ÷ (${b} + ${d}) ${result(P2, true, $)}\n` +
+    `- Q = ${num(a + D)} − ${b} × P ${result(Q2, true)}`;
+  return xMulti("x-backsolve", { a, b, d, P, D }, prompt, [
+    numPart("c", "Supply intercept", "The number c in the supply equation (it may be negative)", c, "int",
+      "At equilibrium Qs equals Qd. Work out Qd at the equilibrium price, then subtract the P term of supply."),
+    numPart("price", "New price", "New equilibrium price, in dollars", P2, "2dp",
+      "Change the number at the front of demand by the shift, keep the slope, and set it equal to supply."),
+    numPart("qty", "New quantity", "New equilibrium quantity", Q2, "2dp",
+      "Put the unrounded new price into either equation."),
+  ], explanation, givenFrom({ a, b, d, p: P, shift: D }), [
+    "Two steps: use the old equilibrium to pin down the supply curve, then solve the market again with the new demand.",
+    "At the equilibrium price, supply gives the same quantity as demand, so c = (quantity demanded at that price) − d × price (in the calculator: `_a - _b * _p - _d * _p`).",
+    "The shifted demand has the shift added to its front number (subtracted for a fall). Set it equal to supply and solve for P.",
+  ]);
+}
+
+// supply-demand / expert 1: consumer and producer surplus.
+function xSurplus(rng) {
+  const good = rng.pick(GOODS);
+  let m, cs, ps;
+  for (let t = 0; t < 300; t++) {
+    m = intMarket(rng, 6, 40);
+    if (m.c >= 0) continue;
+    cs = 0.5 * m.Q * (m.a / m.b - m.P);
+    ps = 0.5 * m.Q * (m.P + m.c / m.d);
+    if (safe2(cs) && safe2(ps) && ps > 1) break;
+  }
+  const { a, b, c, d, P, Q } = m;
+  const prompt =
+    `${marketTxt(good, a, b, c, d)} Consumer surplus is the area between the demand curve and the price; producer surplus is the area between the price and the supply curve, both up to the quantity traded.` +
+    ` Round money answers to 2 decimal places.`;
+  const choke = a / b;
+  const floorP = -c / d;
+  const explanation =
+    `Find the equilibrium, then the two triangles.\n\n` +
+    `- ${num(a)} − ${coefP(b)} = ${coefP(d)} − ${num(-c)}, so P = ${num(a - c)} ÷ ${b + d} = $${P} and Q = **${Q}**\n` +
+    `- Demand reaches zero at P = ${num(a)} ÷ ${b} ≈ ${num(choke)}; supply starts at P = ${num(-c)} ÷ ${d} ≈ ${num(floorP)}\n` +
+    `- Consumer surplus = ½ × ${Q} × (${num(choke)} − ${P}) ${result(cs, true, $)}\n` +
+    `- Producer surplus = ½ × ${Q} × (${P} − ${num(floorP)}) ${result(ps, true, $)}`;
+  return xMulti("x-surplus", { a, b, c, d }, prompt, [
+    numPart("qty", "Quantity", "Equilibrium quantity", Q, "int", "Set Qd = Qs, solve for P, then put P into either equation."),
+    numPart("cs", "Consumer surplus", "Consumer surplus, in dollars", cs, "2dp",
+      "A triangle: ½ × quantity × (price where demand hits zero − equilibrium price)."),
+    numPart("ps", "Producer surplus", "Producer surplus, in dollars", ps, "2dp",
+      "A triangle: ½ × quantity × (equilibrium price − price where supply starts)."),
+  ], explanation, givenFrom({ a, b, c, d }), [
+    "Find the equilibrium first: set Qd = Qs.",
+    "The demand line meets the price axis where Qd = 0, at P = a ÷ b. The supply line meets it where Qs = 0, at P = −c ÷ d.",
+    "Each surplus is a triangle with base = the equilibrium quantity and height = the gap between the equilibrium price and where that line meets the price axis.",
+  ]);
+}
+
+// supply-demand / expert 2: demand and supply both shift at once.
+function xDouble(rng) {
+  const good = rng.pick(GOODS);
+  let m, D, S, P2, Q2;
+  for (let t = 0; t < 300; t++) {
+    m = intMarket(rng, 5, 40);
+    D = 5 * rng.int(-12, 20);
+    S = 5 * rng.int(-12, 20);
+    P2 = (m.a + D - (m.c - S)) / (m.b + m.d);
+    Q2 = m.a + D - m.b * P2;
+    if (D !== 0 && S !== 0 && Q2 > 10 && P2 > 1 && !Number.isInteger(P2) && safe2(P2) && safe2(Q2 - m.Q) && Math.abs(Q2 - m.Q) >= 0.5) break;
+  }
+  const { a, b, c, d, P, Q } = m;
+  const dWhy = D > 0 ? "rises" : "falls";
+  const sWhy = S > 0 ? "falls (higher costs)" : "rises (cheaper inputs)";
+  const dQ = Q2 - Q;
+  const prompt =
+    `${marketTxt(good, a, b, c, d)} The equilibrium is $${P} and ${Q} units. Then two things happen at once: demand ${dWhy} by ${Math.abs(D)} units at every price, ` +
+    `and supply ${sWhy} by ${Math.abs(S)} units at every price.${XKEEP}`;
+  const c2 = c - S;
+  const explanation =
+    `Shift both curves, then solve again.\n\n` +
+    `- New demand: Qd = ${num(a + D)} − ${coefP(b)}\n- New supply: ${supplyEq(c2, d)}\n` +
+    `- P = (${num(a + D)} − ${signed(c2)}) ÷ (${b} + ${d}) ${result(P2, true, $)}\n` +
+    `- Q = ${num(a + D)} − ${b} × P ≈ ${num(Q2)}\n- Change in quantity = ${num(Q2)} − ${Q} ${result(dQ, true)}`;
+  return xMulti("x-double", { a, b, c, d, D, S }, prompt, [
+    numPart("price", "New price", "New equilibrium price, in dollars", P2, "2dp",
+      "Change the front number of both equations (a supply fall lowers c, a rise raises it), then set them equal."),
+    numPart("dq", "Change in quantity", "Change in the equilibrium quantity (new − old; negative for a fall)", dQ, "2dp",
+      "With both curves moving, the direction of the quantity change depends on the sizes. Work it out rather than guess."),
+  ], explanation, givenFrom({ a, b, c, d, dshift: D, sshift: S }), [
+    `A shift "at every price" changes only the number at the front. Demand ${D > 0 ? "rises, so a goes up" : "falls, so a goes down"}; supply ${S > 0 ? "falls, so c goes down" : "rises, so c goes up"}.`,
+    "Set the new demand equal to the new supply and solve for P (in the calculator: `(_a + _dshift - (_c - _sshift)) / (_b + _d)`, with the shifts entered as signed numbers).",
+    "Put the unrounded new price into the new demand equation, then subtract the old quantity.",
+  ]);
+}
+
+// elasticity / expert 0: point elasticity on a straight-line demand curve and the revenue-maximising price.
+function xPoint(rng) {
+  const good = rng.pick(GOODS);
+  let a, b, P0, Q0, E, Pm;
+  for (let t = 0; t < 300; t++) {
+    a = rng.int(100, 1000);
+    b = rng.int(1, 20);
+    P0 = rng.int(1, Math.floor(a / b) - 1);
+    Q0 = a - b * P0;
+    E = (b * P0) / Q0;
+    Pm = a / (2 * b);
+    if (Q0 >= 5 && Math.abs(E - 1) > 0.1 && safe2(E) && safe2(Pm)) break;
+  }
+  const raise = E < 1;
+  const prompt =
+    `Demand for ${good} is \`${demandEq(a, b)}\` (P in dollars), and the price is now $${P0}. ` +
+    `On a straight-line demand curve the point elasticity is (fall in Q per $1 rise in price) × P ÷ Q, given here as its size.` +
+    ` Round numbers to 2 decimal places.`;
+  const explanation =
+    `Elasticity changes along a straight line, so work it out at this price.\n\n` +
+    `- Q = ${num(a)} − ${b} × ${P0} = ${Q0}\n- PED size = ${b} × ${P0} ÷ ${Q0} ${result(E, true)}\n` +
+    `- Revenue P × (${num(a)} − ${coefP(b)}) is highest halfway down the line, at P = ${num(a)} ÷ (2 × ${b}) ${result(Pm, true, $)} (where PED = 1)\n` +
+    `- PED is ${raise ? "below" : "above"} 1 here, so **${raise ? "raising" : "lowering"} the price** raises revenue`;
+  return xMulti("x-point", { a, b, P0 }, prompt, [
+    numPart("ped", "PED", "Size of the point elasticity at the current price", E, "2dp",
+      "Quantity falls by b units for each $1, so PED = b × P ÷ Q at the current point."),
+    numPart("pmax", "Best price", "Price that maximises total revenue, in dollars", Pm, "2dp",
+      "Revenue = P × (a − bP) is hill-shaped; its peak is where the elasticity equals 1, halfway between P = 0 and the price where demand hits zero."),
+    choicePart("move", "Advice", "To raise revenue from the current price, the seller should…", raise ? "Raise the price" : "Lower the price", ["Raise the price", "Lower the price"],
+      "Inelastic demand (PED below 1): revenue moves with the price. Elastic: against it."),
+  ], explanation, givenFrom({ a, b, p: P0 }), [
+    "First find the quantity at the current price. Point PED = slope × P ÷ Q, using the slope b as a positive number.",
+    "Total revenue R = P × (a − bP). It peaks at the middle of the demand line, where PED = 1: P = a ÷ (2b).",
+    "Compare the current PED with 1 to decide which way the price should move.",
+  ]);
+}
+
+// elasticity / expert 1: work backwards from a sales target to the price change.
+function xTarget(rng) {
+  const good = rng.pick(GOODS);
+  let E, P1, Q1, g, Q2, P2, dR;
+  for (let t = 0; t < 300; t++) {
+    E = rng.pick([0.3, 0.4, 0.5, 0.6, 0.75, 0.8, 1.2, 1.25, 1.5, 1.6, 2, 2.5, 3]);
+    P1 = rng.int(400, 9000) / 100;
+    Q1 = 100 * rng.int(2, 90);
+    g = rng.pick([-1, 1]) * rng.int(2, 30);
+    Q2 = (Q1 * (100 + g)) / 100;
+    P2 = P1 * (1 - g / (100 * E));
+    dR = P2 * Q2 - P1 * Q1;
+    if (Number.isInteger(Q2) && P2 > 0.5 && safe2(P2) && safe2(dR) && Math.abs(dR) >= 1) break;
+  }
+  const prompt =
+    `A shop sells ${Q1} ${good} a week at ${cash(P1)} each. The price elasticity of demand is ${num(E)} in size (PED = % change in quantity ÷ % change in price, ` +
+    `each measured from the original value). The shop wants weekly sales to ${g > 0 ? "rise" : "fall"} to ${Q2}.${XKEEP}`;
+  const pctP = -g / E;
+  const explanation =
+    `Turn the sales target into a % change, then use PED backwards.\n\n` +
+    `- % change in quantity = (${Q2} − ${Q1}) ÷ ${Q1} × 100 = ${num(g)}%\n` +
+    `- % change in price = ${num(g)} ÷ ${num(E)}, with the opposite sign = ${num(pctP)}%\n` +
+    `- New price = ${num(P1)} × (1 ${pctP < 0 ? "−" : "+"} ${num(Math.abs(pctP) / 100)}) ${result(P2, true, $)}\n` +
+    `- Revenue change = ${num(P2)} × ${Q2} − ${num(P1)} × ${Q1} ${result(dR, true, $)}`;
+  return xMulti("x-target", { E, P1, Q1, Q2 }, prompt, [
+    numPart("price", "New price", "What price should it charge, in dollars?", P2, "2dp",
+      "% change in price = % change in quantity ÷ PED, and it goes the opposite way to the quantity."),
+    numPart("rev", "Revenue change", "By how much does weekly revenue change (new − old, negative for a fall), in dollars?", dR, "2dp",
+      "Revenue = price × quantity. Use the unrounded new price."),
+  ], explanation, givenFrom({ p: P1, q: Q1, q2: Q2, ped: E }), [
+    "Work backwards: from the target quantity to the % change in quantity, then to the % change in price.",
+    "% change in price = (% change in quantity) ÷ PED. To sell more the price must fall, and to sell less it must rise.",
+    "Apply the % change to the old price, then compare price × quantity before and after (in the calculator: `_p * (1 - ((_q2 - _q) / _q) / _ped)`).",
+  ]);
+}
+
+// elasticity / expert 2: cross or income elasticity (midpoint method) and what it says about the good.
+function xCrossIncome(rng) {
+  const cross = rng.next() < 0.5;
+  const good = rng.pick(GOODS);
+  let X1, X2, Y1, Y2, E;
+  for (let t = 0; t < 400; t++) {
+    if (cross) {
+      Y1 = rng.int(4, 90);
+      Y2 = Y1 + rng.pick([-1, 1]) * rng.int(1, Math.max(1, Math.floor(Y1 / 2)));
+    } else {
+      Y1 = 1000 * rng.int(20, 90);
+      Y2 = Y1 + rng.pick([-1, 1]) * 1000 * rng.int(2, 20);
+    }
+    X1 = 10 * rng.int(5, 150);
+    X2 = 10 * rng.int(5, 150);
+    if (Y2 <= 0 || Y2 === Y1 || X2 === X1) continue;
+    E = ((X2 - X1) / ((X1 + X2) / 2)) / ((Y2 - Y1) / ((Y1 + Y2) / 2));
+    const okBand = cross ? Math.abs(E) > 0.1 : Math.abs(E) > 0.1 && Math.abs(E - 1) > 0.1;
+    if (okBand && safe2(E) && Math.abs(E) < 20) break;
+  }
+  const other = cross ? rng.pick(GOODS.filter((g) => g !== good)) : null;
+  let answer, choices, prompt, label, hintClass;
+  if (cross) {
+    answer = E > 0 ? "Substitutes" : "Complements";
+    choices = ["Substitutes", "Complements", "Unrelated"];
+    prompt =
+      `When the price of ${other} moves from $${Y1} to $${Y2}, sales of ${good} move from ${X1} to ${X2} a week. ` +
+      `Cross elasticity of demand = % change in quantity of ${good} ÷ % change in price of ${other}. Use the midpoint method (% change = change ÷ average × 100) and keep the sign.`;
+    label = "XED";
+    hintClass = "A positive cross elasticity means the goods are substitutes (one replaces the other); a negative one means complements (used together).";
+  } else {
+    answer = E < 0 ? "Inferior good" : E < 1 ? "Normal necessity" : "Luxury";
+    choices = ["Inferior good", "Normal necessity", "Luxury"];
+    prompt =
+      `When average household income moves from ${cash(Y1)} to ${cash(Y2)} a year, sales of ${good} move from ${X1} to ${X2} a week. ` +
+      `Income elasticity of demand = % change in quantity ÷ % change in income. Use the midpoint method (% change = change ÷ average × 100) and keep the sign.`;
+    label = "YED";
+    hintClass = "Below 0: inferior (people buy less as they get richer). Between 0 and 1: a normal necessity. Above 1: a luxury.";
+  }
+  const qPct = ((X2 - X1) / ((X1 + X2) / 2)) * 100;
+  const yPct = ((Y2 - Y1) / ((Y1 + Y2) / 2)) * 100;
+  const explanation =
+    `Midpoint % changes, then divide and read the sign${cross ? "" : " and size"}.\n\n` +
+    `- % change in quantity = (${X2} − ${X1}) ÷ ${num((X1 + X2) / 2)} × 100 ≈ ${num(qPct)}%\n` +
+    `- % change in ${cross ? "price" : "income"} = (${num(Y2)} − ${num(Y1)}) ÷ ${num((Y1 + Y2) / 2)} × 100 ≈ ${num(yPct)}%\n` +
+    `- ${label} = ${num(qPct)} ÷ ${num(yPct)} ${result(E, true)}\n- So: **${answer}**`;
+  const gv = cross ? { q1: X1, q2: X2, p1: Y1, p2: Y2 } : { q1: X1, q2: X2, y1: Y1, y2: Y2 };
+  return xMulti("x-crossinc", { cross, X1, X2, Y1, Y2 }, `${prompt} Round to 2 decimal places.`, [
+    numPart("e", label, `${label}, with its sign (negative if they move in opposite directions)`, E, "2dp",
+      "Divide the midpoint % change in quantity by the midpoint % change in the other variable, keeping signs."),
+    choicePart("kind", "Meaning", cross ? `How are ${good} and ${other} related?` : `What kind of good is ${good}?`, answer, choices, hintClass),
+  ], explanation, givenFrom(gv), [
+    "Midpoint method: % change = (new − old) ÷ average of old and new × 100. Do it for both variables.",
+    `${label} = % change in quantity ÷ % change in ${cross ? "the other good's price" : "income"}. Unlike PED, the sign matters here.`,
+    hintClass,
+  ]);
+}
+
+// macro / expert 0: real interest rate and purchasing power (exact, not the r − π shortcut).
+function xRealRate(rng) {
+  let r, pi, X, n, real, value;
+  for (let t = 0; t < 200; t++) {
+    r = rng.int(5, 90) / 10;
+    pi = rng.int(5, 120) / 10;
+    X = 500 * rng.int(2, 100);
+    n = rng.int(3, 25);
+    real = ((1 + r / 100) / (1 + pi / 100) - 1) * 100;
+    value = X * Math.pow((1 + r / 100) / (1 + pi / 100), n);
+    if (r !== pi && safe2(real) && safe2(value) && Math.abs(real) >= 0.05) break;
+  }
+  const C = ctry(rng);
+  const prompt =
+    `In ${C} (a fictional country), a savings account pays ${num(r)}% a year and inflation is steady at ${num(pi)}% a year. ` +
+    `Use the exact real rate, (1 + nominal) ÷ (1 + inflation) − 1, not the shortcut nominal − inflation. A saver leaves ${cash(X)} in the account for ${xYears(n)}.${XKEEP}`;
+  const explanation =
+    `Divide out inflation each year.\n\n` +
+    `- Real rate = (1 + ${num(r / 100)}) ÷ (1 + ${num(pi / 100)}) − 1 ${result(real, true, pct)}\n` +
+    `- Value in today's dollars = ${num(X)} × (1 + ${num(r / 100)})^${n} ÷ (1 + ${num(pi / 100)})^${n} ${result(value, true, $)}`;
+  return xMulti("x-realrate", { r, pi, X, n }, prompt, [
+    numPart("real", "Real rate", "Real interest rate, in percent (negative if savings lose value)", real, "2dp",
+      "Write both rates as decimals, divide (1 + nominal) by (1 + inflation), subtract 1, then × 100."),
+    numPart("value", "Real value", "What will the balance be worth at the end, in today's dollars?", value, "2dp",
+      "Grow the money at the nominal rate, then shrink it by inflation over the same years."),
+  ], explanation, givenFrom({ nominal: r, inflation: pi, savings: X, years: n }), [
+    "Nominal growth multiplies money by (1 + nominal) each year; inflation multiplies prices by (1 + inflation). Real growth is the ratio of the two.",
+    "In the calculator: `((1 + _nominal / 100) / (1 + _inflation / 100) - 1) * 100`.",
+    "For the value in today's dollars, apply that yearly ratio once for each year: `_savings * ((1 + _nominal / 100) / (1 + _inflation / 100))^_years`.",
+  ]);
+}
+
+// macro / expert 1: total and average yearly inflation from a price index, then a price in later dollars.
+function xAvgInfl(rng) {
+  let I1, I2, k, price, tot, avg, today;
+  for (let t = 0; t < 200; t++) {
+    I1 = rng.int(800, 1500) / 10;
+    I2 = Math.round(I1 * (1 + rng.int(30, 900) / 1000) * 10) / 10;
+    k = rng.int(3, 20);
+    price = rng.int(500, 99999) / 100;
+    tot = (I2 / I1 - 1) * 100;
+    avg = (Math.pow(I2 / I1, 1 / k) - 1) * 100;
+    today = (price * I2) / I1;
+    if (safe2(tot) && safe2(avg) && safe2(today) && Math.abs(round2(avg) - round2(tot / k)) >= 0.02) break;
+  }
+  const C = ctry(rng);
+  const y1 = rng.int(1990, 2030);
+  const item = rng.pick(["a bus pass", "a cinema ticket", "a bicycle", "a winter coat", "a week of groceries", "a pair of trainers"]);
+  const prompt =
+    `${C}'s consumer price index (CPI) was ${num(I1)} in ${y1} and ${num(I2)} in ${y1 + k}, ${xYears(k)} later. In ${y1}, ${item} cost ${cash(price)}. ` +
+    `The average yearly inflation rate is the steady rate that, compounded over all ${k} years, gives the same total rise.${XKEEP}`;
+  const explanation =
+    `Total change first, then spread it over the years by compounding.\n\n` +
+    `- Total inflation = (${num(I2)} ÷ ${num(I1)} − 1) × 100 ${result(tot, true, pct)}\n` +
+    `- Average yearly = ((${num(I2)} ÷ ${num(I1)})^(1/${k}) − 1) × 100 ${result(avg, true, pct)} (not the total ÷ ${k})\n` +
+    `- Price in ${y1 + k} dollars = ${num(price)} × ${num(I2)} ÷ ${num(I1)} ${result(today, true, $)}`;
+  return xMulti("x-avginfl", { I1, I2, k, price }, prompt, [
+    numPart("total", "Total inflation", `Total inflation from ${y1} to ${y1 + k}, in percent`, tot, "2dp",
+      "Percentage change in the index from the first year to the last."),
+    numPart("avg", "Average per year", "Average yearly inflation rate, in percent", avg, "2dp",
+      "Raise the index ratio to the power 1 ÷ years, subtract 1 and × 100. Dividing the total by the years ignores compounding."),
+    numPart("price", "Price later", `That ${y1} price in ${y1 + k} dollars`, today, "2dp",
+      "Scale the old price by the index ratio: price × CPI now ÷ CPI then."),
+  ], explanation, givenFrom({ cpi1: I1, cpi2: I2, years: k, price }), [
+    "Everything here comes from the ratio of the two index values, CPI now ÷ CPI then.",
+    "Total inflation = (ratio − 1) × 100. The average yearly rate r satisfies (1 + r)^years = ratio, so r = ratio^(1/years) − 1 (in the calculator: `((_cpi2 / _cpi1)^(1 / _years) - 1) * 100`).",
+    "A price scales with the index, so multiply the old price by the ratio.",
+  ]);
+}
+
+// macro / expert 2: expenditure approach, working backwards to government spending.
+function xGdpExp(rng) {
+  let Cn, I, G, X, M, Y, nx, Gx, share;
+  for (let t = 0; t < 200; t++) {
+    Cn = rng.int(500, 9000) / 10;
+    I = rng.int(100, 3000) / 10;
+    G = rng.int(100, 3000) / 10;
+    X = rng.int(50, 3000) / 10;
+    M = rng.int(50, 3000) / 10;
+    Y = Math.round((Cn + I + G + X - M) * 10) / 10;
+    nx = Math.round((X - M) * 10) / 10;
+    Gx = Math.round((Y - Cn - I - nx) * 10) / 10;
+    share = (Gx / Y) * 100;
+    if (Y > 0 && X !== M && safe2(share)) break;
+  }
+  const C = ctry(rng);
+  const y1 = rng.int(2001, 2040);
+  const prompt =
+    `In ${y1}, the fictional country of ${C} had a GDP of ${bn(Y)}. Households spent ${bn(Cn)} on consumption, firms invested ${bn(I)}, ` +
+    `exports were ${bn(X)} and imports ${bn(M)}. Use GDP = C + I + G + (X − M).`;
+  const explanation =
+    `Rearrange the expenditure identity for G.\n\n` +
+    `- Net exports = ${num(X)} − ${num(M)} = **${num(nx)}**\n` +
+    `- G = ${num(Y)} − ${num(Cn)} − ${num(I)} − ${signed(nx)} = **${num(Gx)}**\n` +
+    `- Share of GDP = ${num(Gx)} ÷ ${num(Y)} × 100 ${result(share, true, pct)}`;
+  return xMulti("x-gdpexp", { Y, Cn, I, X, M }, prompt, [
+    numPart("nx", "Net exports", "Net exports X − M, in $ billion (negative for a trade deficit)", nx, "2dp",
+      "Exports minus imports. Imports are spending that leaves the country, so they are subtracted."),
+    numPart("g", "Government spending", "Government spending G, in $ billion", Gx, "2dp",
+      "Rearrange: G = GDP − C − I − (X − M). Subtracting a negative number adds it."),
+    numPart("share", "Share of GDP", "G as a percentage of GDP (round to 2 decimal places)", share, "2dp",
+      "Share = G ÷ GDP × 100."),
+  ], explanation, givenFrom({ gdp: Y, c: Cn, i: I, x: X, m: M }), [
+    "GDP adds up all spending on the country's output: consumption, investment, government spending and net exports.",
+    "Net exports = X − M. Then rearrange: `_gdp - _c - _i - (_x - _m)`.",
+    "For the share, divide G by GDP and multiply by 100.",
+  ]);
+}
+
+// macro / expert 3: growth per person and how long until it doubles.
+function xPerCap(rng) {
+  let g, p, pc, yrs, nx;
+  for (let t = 0; t < 300; t++) {
+    g = rng.int(5, 90) / 10;
+    p = rng.int(0, 40) / 10;
+    pc = ((1 + g / 100) / (1 + p / 100) - 1) * 100;
+    nx = Math.log(2) / Math.log(1 + pc / 100);
+    yrs = Math.ceil(nx);
+    const fr = nx - Math.floor(nx);
+    if (pc >= 0.5 && safe2(pc) && fr > 0.02 && fr < 0.98 && yrs <= 150) break;
+  }
+  const C = ctry(rng);
+  const prompt =
+    `The fictional country of ${C} has real GDP growing at a steady ${num(g)}% a year, while its population grows at ${num(p)}% a year. ` +
+    `Use the exact per-person rate, (1 + GDP growth) ÷ (1 + population growth) − 1.`;
+  const explanation =
+    `Per-person growth first, then count the years.\n\n` +
+    `- Per person = (1 + ${num(g / 100)}) ÷ (1 + ${num(p / 100)}) − 1 ${result(pc, true, pct)}\n` +
+    `- Doubling: (1 + rate)^n ≥ 2, so n ≥ ln 2 ÷ ln(1 + rate) ≈ ${num(nx)}\n- Round up: **${yrs} years**`;
+  return xMulti("x-percap", { g, p }, prompt, [
+    numPart("pc", "Per-person growth", "Real GDP per person growth rate, in percent (2 decimal places)", pc, "2dp",
+      "GDP per person = GDP ÷ population, so divide the growth factors, not subtract the rates."),
+    numPart("years", "Years to double", "After how many whole years will real GDP per person first be at least double today's?", yrs, "int",
+      "Solve (1 + rate)^n = 2 with logarithms, then round up: a part-year doesn't reach the target."),
+  ], explanation, givenFrom({ gdp_growth: g, pop_growth: p }), [
+    "GDP per person = GDP ÷ population, so its growth factor is (1 + GDP growth) ÷ (1 + population growth).",
+    "In the calculator: `((1 + _gdp_growth / 100) / (1 + _pop_growth / 100) - 1) * 100`.",
+    "Doubling time: n = ln 2 ÷ ln(1 + rate as a decimal). Round up to a whole year.",
+  ]);
+}
+
+// interventions / expert 0: work backwards from a revenue target to the tax.
+function xTaxTarget(rng) {
+  const good = rng.pick(GOODS);
+  let m, R, tt, Q1, dwl, kk;
+  for (let t = 0; t < 400; t++) {
+    m = intMarket(rng, 6, 40);
+    const t0 = rng.int(1, Math.min(12, m.P));
+    kk = (m.b * m.d) / (m.b + m.d);
+    const R0 = t0 * (m.Q - kk * t0);
+    R = Math.round(R0);
+    const disc = m.Q * m.Q - 4 * kk * R;
+    if (R <= 0 || disc <= 0) continue;
+    tt = (m.Q - Math.sqrt(disc)) / (2 * kk);
+    Q1 = m.Q - kk * tt;
+    dwl = 0.5 * tt * (m.Q - Q1);
+    if (tt > 0.05 && Q1 > 5 && safe2(tt) && safe2(Q1) && safe2(dwl) && Math.abs(R - R0) > 1e-9) break;
+  }
+  const { a, b, c, d, P, Q } = m;
+  const prompt =
+    `${marketTxt(good, a, b, c, d)} The government wants to raise exactly $${R} with a per-unit tax t paid by sellers (supply becomes \`Qs = c + d(P − t)\`). ` +
+    `Two tax rates raise that amount; it picks the smaller one.${XKEEP}`;
+  const explanation =
+    `Write revenue as a function of t and solve the quadratic.\n\n` +
+    `- Without the tax: P = $${P}, Q = ${Q}\n` +
+    `- With a tax t, the quantity falls to Q(t) = ${Q} − (${b} × ${d} ÷ ${b + d}) × t ≈ ${Q} − ${num(kk)}t\n` +
+    `- Revenue t × Q(t) = ${R} gives ${num(kk)}t² − ${Q}t + ${R} = 0\n` +
+    `- Smaller root: t = (${Q} − √(${Q}² − 4 × ${num(kk)} × ${R})) ÷ (2 × ${num(kk)}) ${result(tt, true, $)}\n` +
+    `- Quantity after the tax ${result(Q1, true)}\n- Deadweight loss = ½ × t × (${Q} − Q) ${result(dwl, true, $)}`;
+  return xMulti("x-taxtarget", { a, b, c, d, R }, prompt, [
+    numPart("tax", "Tax", "Per-unit tax, in dollars", tt, "2dp",
+      "Revenue = t × the quantity traded with the tax. Write that quantity in terms of t, set revenue equal to the target and solve the quadratic."),
+    numPart("qty", "Quantity", "Quantity traded after the tax", Q1, "2dp",
+      "Put the unrounded tax into the taxed market, or divide the revenue by the tax."),
+    numPart("dwl", "Deadweight loss", "Deadweight loss = ½ × tax × (quantity before − quantity after), in dollars", dwl, "2dp",
+      "Use the quantity before the tax and the one you just found."),
+  ], explanation, givenFrom({ a, b, c, d, revenue: R }), [
+    "Find the equilibrium without the tax first. A tax t then cuts the quantity by (b × d ÷ (b + d)) × t.",
+    "Revenue = t × (quantity without tax − (b × d ÷ (b + d)) × t). Set it equal to the target: that is a quadratic in t.",
+    "Use the quadratic formula and take the smaller root. Keep it unrounded for the quantity and the deadweight loss.",
+  ]);
+}
+
+// interventions / expert 1: a per-unit subsidy to sellers.
+function xSubsidy(rng) {
+  const good = rng.pick(GOODS);
+  let m, s, Pb, Q1, cost;
+  for (let t = 0; t < 400; t++) {
+    m = intMarket(rng, 6, 40);
+    s = rng.int(1, Math.max(1, Math.min(10, m.P - 2))) + rng.pick([0, 0.5]);
+    Pb = m.P - (m.d * s) / (m.b + m.d);
+    Q1 = m.a - m.b * Pb;
+    cost = s * Q1;
+    if (Pb > 0.5 && !Number.isInteger(Pb) && safe2(Pb) && safe2(Pb + s) && safe2(cost)) break;
+  }
+  const { a, b, c, d, P, Q } = m;
+  const Ps = Pb + s;
+  const prompt =
+    `${marketTxt(good, a, b, c, d)} The government pays sellers a subsidy of ${cash(s)} per unit sold, so supply becomes \`Qs = c + d(P + ${num(s)})\`, where P is the price buyers pay.${XKEEP}`;
+  const explanation =
+    `A subsidy is a negative tax: it shifts supply out.\n\n` +
+    `- Before: P = $${P}, Q = ${Q}\n` +
+    `- ${num(a)} − ${coefP(b)} = ${signed(c)} + ${d}(P + ${num(s)}), so P = (${num(a)} − ${signed(c)} − ${d} × ${num(s)}) ÷ (${b} + ${d}) ${result(Pb, true, $)}\n` +
+    `- Sellers receive P + ${num(s)} ${result(Ps, true, $)}\n` +
+    `- Quantity = ${num(a)} − ${b} × P ≈ ${num(Q1)}; cost = ${num(s)} × Q ${result(cost, true, $)}`;
+  return xMulti("x-subsidy", { a, b, c, d, s }, prompt, [
+    numPart("buyers", "Buyers pay", "Price buyers pay, in dollars", Pb, "2dp",
+      "Set demand equal to the subsidised supply and solve for P."),
+    numPart("sellers", "Sellers get", "Price sellers receive per unit, including the subsidy, in dollars", Ps, "2dp",
+      "Sellers get what buyers pay plus the subsidy."),
+    numPart("cost", "Cost", "Total cost of the subsidy to the government, in dollars", cost, "2dp",
+      "Subsidy per unit × the quantity traded with the subsidy (unrounded)."),
+  ], explanation, givenFrom({ a, b, c, d, s }), [
+    "A subsidy works like a tax in reverse: sellers act as if the price were P + subsidy.",
+    "Solve a − bP = c + d(P + s): P = (a − c − d × s) ÷ (b + d) (in the calculator: `(_a - _c - _d * _s) / (_b + _d)`).",
+    "The buyers' price falls by less than the subsidy; the rest goes to sellers. The cost is the subsidy times the new quantity.",
+  ]);
+}
+
+// interventions / expert 2: a binding price ceiling, the black-market price and the deadweight loss.
+function xCeiling(rng) {
+  const good = rng.pick(GOODS);
+  let m, Pc, qs, Pd, dwl;
+  for (let t = 0; t < 400; t++) {
+    m = intMarket(rng, 8, 40);
+    Pc = m.P - rng.int(1, Math.min(m.P - 2, 12));
+    qs = m.c + m.d * Pc;
+    Pd = (m.a - qs) / m.b;
+    dwl = 0.5 * (m.Q - qs) * (Pd - Pc);
+    if (qs > 5 && !Number.isInteger(Pd) && safe2(Pd) && safe2(dwl)) break;
+  }
+  const { a, b, c, d, P, Q } = m;
+  const prompt =
+    `${marketTxt(good, a, b, c, d)} The equilibrium is $${P} and ${Q} units. The government sets a price ceiling of $${Pc}.` +
+    ` Round money answers to 2 decimal places.`;
+  const explanation =
+    `Only the sellers' quantity trades; buyers value that last unit well above the ceiling.\n\n` +
+    `- Qs = ${signed(c)} + ${d} × ${Pc} = **${qs}** (Qd would be ${a - b * Pc})\n` +
+    `- Buyers would pay up to P where ${num(a)} − ${coefP(b)} = ${qs}: P = (${num(a)} − ${qs}) ÷ ${b} ${result(Pd, true, $)}\n` +
+    `- Deadweight loss = ½ × (${Q} − ${qs}) × (${num(Pd)} − ${Pc}) ${result(dwl, true, $)}`;
+  return xMulti("x-ceiling", { a, b, c, d, Pc }, prompt, [
+    numPart("qty", "Quantity traded", "How many units are bought and sold?", qs, "int",
+      "Below equilibrium, sellers are the short side: only what they supply at the ceiling trades."),
+    numPart("black", "Black-market price", "The highest price buyers would pay for that quantity (the black-market price), in dollars", Pd, "2dp",
+      "Read the demand curve backwards: which price makes Qd equal to the quantity traded?"),
+    numPart("dwl", "Deadweight loss", "Deadweight loss (the triangle between the curves, from the quantity traded to the equilibrium quantity), in dollars", dwl, "2dp",
+      "½ × (equilibrium quantity − quantity traded) × (black-market price − ceiling)."),
+  ], explanation, givenFrom({ a, b, c, d, ceiling: Pc }), [
+    "A ceiling below equilibrium means sellers supply less than buyers want, so the quantity supplied at the ceiling is what trades.",
+    "For the black-market price, solve the demand equation for P at that quantity: P = (a − Q) ÷ b.",
+    "The lost trades form a triangle between demand and supply, from the traded quantity to the equilibrium quantity. Its height at the traded quantity is the gap between the two curves there.",
+  ]);
+}
+
+function generateExpert(subtopic, rng) {
+  if (subtopic === "supply-demand") return [xBacksolve, xSurplus, xDouble][rng.int(0, 2)](rng);
+  if (subtopic === "elasticity") return [xPoint, xTarget, xCrossIncome][rng.int(0, 2)](rng);
+  if (subtopic === "macro") return [xRealRate, xAvgInfl, xGdpExp, xPerCap][rng.int(0, 3)](rng);
+  if (subtopic === "interventions") return [xTaxTarget, xSubsidy, xCeiling][rng.int(0, 2)](rng);
+  throw new Error(`Unknown subtopic: ${subtopic}`);
+}
+
 export function generate({ subtopic, difficulty, rng }) {
+  if (difficulty === "expert") return generateExpert(subtopic, rng);
   if (subtopic === "supply-demand") return genSD(difficulty, rng);
   if (subtopic === "elasticity") return genEl(difficulty, rng);
   if (subtopic === "macro") return genMacro(difficulty, rng);
@@ -878,6 +1392,127 @@ function bisect(f, lo = -1e4, hi = 1e5) {
   return (lo + hi) / 2;
 }
 const eqPrice = (p, t = 0) => bisect((P) => (p.a - p.b * P) - (p.c + p.d * (P - t)));
+
+// ---- Expert checkers: equilibria by bisection, areas by numerical integration, rates by
+// substitution or year-by-year loops (never the generator's closed forms).
+function integrate(f, lo, hi, steps = 2000) {
+  const h = (hi - lo) / steps;
+  let s = (f(lo) + f(hi)) / 2;
+  for (let i = 1; i < steps; i++) s += f(lo + i * h);
+  return s * h;
+}
+const numOf = (x) => (numLike(x) ? Number(x) : NaN);
+
+function expertCheckers(p) {
+  switch (p.kind) {
+    case "x-backsolve": {
+      const cRef = bisect((c) => (p.a - p.b * p.P) - (c + p.d * p.P), -1e5, 1e5);
+      const cInt = Math.round(cRef);
+      const m = { a: p.a + p.D, b: p.b, c: cInt, d: p.d };
+      const P2 = eqPrice(m);
+      return {
+        c: (x) => numLike(x) && Number.isInteger(Number(x)) && Number(x) + p.d * p.P === p.a - p.b * p.P,
+        price: near(P2, "2dp"),
+        qty: near(m.c + m.d * P2, "2dp"),
+      };
+    }
+    case "x-surplus": {
+      const P = eqPrice(p), Q = p.a - p.b * P;
+      const cs = integrate((q) => (p.a - q) / p.b - P, 0, Q);
+      const ps = integrate((q) => P - (q - p.c) / p.d, 0, Q);
+      return { qty: near(Q, "int"), cs: near(cs, "2dp"), ps: near(ps, "2dp") };
+    }
+    case "x-double": {
+      const Q0 = p.a - p.b * eqPrice(p);
+      const m = { a: p.a + p.D, b: p.b, c: p.c - p.S, d: p.d };
+      const P2 = eqPrice(m);
+      return { price: near(P2, "2dp"), dq: near(m.c + m.d * P2 - Q0, "2dp") };
+    }
+    case "x-point": {
+      const Qf = (P) => p.a - p.b * P;
+      const h = 1e-3;
+      const slope = (Qf(p.P0 + h) - Qf(p.P0 - h)) / (2 * h);
+      const E = Math.abs(slope * p.P0 / Qf(p.P0));
+      let lo = 0, hi = p.a / p.b; // ternary search for the revenue peak
+      for (let i = 0; i < 200; i++) {
+        const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+        if (m1 * Qf(m1) < m2 * Qf(m2)) lo = m1; else hi = m2;
+      }
+      const up = (p.P0 + 0.01) * Qf(p.P0 + 0.01) > p.P0 * Qf(p.P0);
+      return { ped: near(E, "2dp"), pmax: near((lo + hi) / 2, "2dp"), move: (x) => x === (up ? "Raise the price" : "Lower the price") };
+    }
+    case "x-target": {
+      // PED (from the original values) must equal E with price and quantity moving in opposite directions.
+      const dq = (p.Q2 - p.Q1) / p.Q1;
+      const P2 = bisect((P) => -(((P - p.P1) / p.P1) * p.E + dq), -1e4, 1e5);
+      return { price: near(P2, "2dp"), rev: near(P2 * p.Q2 - p.P1 * p.Q1, "2dp") };
+    }
+    case "x-crossinc": {
+      const E = ((p.X2 - p.X1) * (p.Y1 + p.Y2)) / ((p.Y2 - p.Y1) * (p.X1 + p.X2));
+      const want = p.cross ? (E > 0 ? "Substitutes" : "Complements") : E < 0 ? "Inferior good" : E < 1 ? "Normal necessity" : "Luxury";
+      return { e: near(E, "2dp"), kind: (x) => x === want };
+    }
+    case "x-realrate": {
+      let v = p.X;
+      for (let t = 0; t < p.n; t++) v = (v * (100 + p.r)) / (100 + p.pi);
+      return {
+        real: (x) => { const n = numOf(x); return isDp2(n) && Math.abs((1 + n / 100) * (1 + p.pi / 100) - (1 + p.r / 100)) < (0.005 - 1e-7) / 100 * (1 + p.pi / 100); },
+        value: near(v, "2dp"),
+      };
+    }
+    case "x-avginfl": {
+      const grow = (r) => { let v = p.I1; for (let t = 0; t < p.k; t++) v *= 1 + r / 100; return v; };
+      const avg = bisect((r) => p.I2 - grow(r), -50, 100);
+      return {
+        total: (x) => { const n = numOf(x); return isDp2(n) && Math.abs(p.I1 * (1 + n / 100) - p.I2) < (0.005 - 1e-7) * p.I1 / 100; },
+        avg: near(avg, "2dp"),
+        price: (x) => { const n = numOf(x); return isDp2(n) && Math.abs(n * p.I1 - p.price * p.I2) < (0.005 - 1e-7) * p.I1; },
+      };
+    }
+    case "x-gdpexp": {
+      const nxRef = p.X - p.M;
+      const gRef = p.Y - p.Cn - p.I - nxRef;
+      return {
+        nx: near(nxRef, "2dp"),
+        g: (x) => { const n = numOf(x); return isDp2(n) && Math.abs(p.Cn + p.I + n + nxRef - p.Y) < 0.005 - 1e-7; },
+        share: (x) => { const n = numOf(x); return isDp2(n) && Math.abs((n * p.Y) / 100 - gRef) < (0.005 - 1e-7) * p.Y / 100; },
+      };
+    }
+    case "x-percap": {
+      const f = (100 + p.g) / (100 + p.p);
+      let v = 1, yrs = 0;
+      while (v < 2 && yrs < 1000) { v *= f; yrs++; }
+      return {
+        pc: (x) => { const n = numOf(x); return isDp2(n) && Math.abs((1 + n / 100) * (1 + p.p / 100) - (1 + p.g / 100)) < (0.005 - 1e-7) / 100 * (1 + p.p / 100); },
+        years: near(yrs, "int"),
+      };
+    }
+    case "x-taxtarget": {
+      const P0 = eqPrice(p), Q0 = p.a - p.b * P0;
+      const rev = (t) => t * (p.a - p.b * eqPrice(p, t));
+      let lo = 0, hi = P0 * 4 + 100; // ternary search for the revenue-maximising tax
+      for (let i = 0; i < 100; i++) {
+        const m1 = lo + (hi - lo) / 3, m2 = hi - (hi - lo) / 3;
+        if (rev(m1) < rev(m2)) lo = m1; else hi = m2;
+      }
+      const t = bisect((x) => p.R - rev(x), 0, (lo + hi) / 2);
+      const Q1 = p.a - p.b * eqPrice(p, t);
+      return { tax: near(t, "2dp"), qty: near(Q1, "2dp"), dwl: near(((Q0 - Q1) * t) / 2, "2dp") };
+    }
+    case "x-subsidy": {
+      const Pb = eqPrice(p, -p.s);
+      return { buyers: near(Pb, "2dp"), sellers: near(Pb + p.s, "2dp"), cost: near(p.s * (p.a - p.b * Pb), "2dp") };
+    }
+    case "x-ceiling": {
+      const qs = p.c + p.d * p.Pc;
+      const Q0 = p.a - p.b * eqPrice(p);
+      const Pd = bisect((P) => (p.a - p.b * P) - qs);
+      const dwl = integrate((q) => (p.a - q) / p.b - (q - p.c) / p.d, qs, Q0);
+      return { qty: near(qs, "int"), black: near(Pd, "2dp"), dwl: near(dwl, "2dp") };
+    }
+    default: return null;
+  }
+}
 
 function checkers(p) {
   switch (p.kind) {
@@ -980,7 +1615,7 @@ function checkers(p) {
       if (p.kind === "dwl") return { _: near(((Q0 - Q1) * p.t) / 2, p.fmt) };
       return { buyers: near(Pb, p.fmt), qty: near(Q1, p.fmt), rev: near(p.t * Q1, p.fmt) };
     }
-    default: return null;
+    default: return expertCheckers(p);
   }
 }
 

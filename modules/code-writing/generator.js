@@ -21,7 +21,7 @@ const bl = () => E.blank(BLANK);
 const V = E.var;
 const tk = s => '`' + s + '`';
 const MAX_STEPS = 4000;
-const DIFFS = ['easy', 'medium', 'hard'];
+const DIFFS = ['easy', 'medium', 'hard', 'expert'];
 
 // ── running ───────────────────────────────────────────────────────────────────────────────────
 
@@ -31,7 +31,7 @@ function exec(prog, test = {}) {
     const r = run(prog, { maxSteps: MAX_STEPS, ...(test.entry ? { entry: test.entry, args: test.args } : {}) });
     return { ok: !r.timedOut, output: r.output, returned: r.returned };
   } catch (e) {
-    return { ok: false, output: e && Array.isArray(e.output) ? e.output : [], returned: undefined, error: true };
+    return { ok: false, output: e && Array.isArray(e.output) ? e.output : [], returned: undefined, error: true, index: /out of range/.test(String(e && e.message)) };
   }
 }
 
@@ -78,7 +78,8 @@ function partOk(m, part, choices, val) {
   if (part.kind === 'output') {
     const n = toInt(val);
     if (n === null) return false;
-    const prog = buildWith(m, E.int(m.solution));
+    // Expert parts name what fills the blank (`fill`: an int or an option); older parts use m.solution.
+    const prog = buildWith(m, part.fill || E.int(m.solution));
     if (!prog) return false;
     const r = exec(prog);
     return r.ok && r.output[part.line] !== undefined && Number(r.output[part.line]) === n;
@@ -139,18 +140,20 @@ function pickOptions(rng, m, correct, pool, spec, renderOpt) {
 
 // A short reason why a wrong option fails: the first example it gets wrong.
 function whyWrong(m, opt, spec, lang, show) {
+  // C++ doesn't bounds-check std::string/vector [], so an index error there is a wrong result, not a crash.
+  const errText = r => (lang === 'cpp' && r.index ? 'reads past the end (C++ does not check this, so the result is wrong)' : 'causes an error');
   const prog = buildWith(m, opt);
   if (!prog) return 'does not work here';
   if (spec.tests) {
     for (const t of spec.tests) {
       const r = exec(prog, t);
-      if (!r.ok) return `causes an error for ${tk(show(t))}`;
+      if (!r.ok) return `${errText(r)} for ${tk(show(t))}`;
       if (r.returned !== t.expect) return `gives ${tk(fmtVal(r.returned))} for ${tk(show(t))}, not ${tk(fmtVal(t.expect))}`;
     }
     return 'does not match';
   }
   const r = exec(prog);
-  if (!r.ok) return 'causes an error';
+  if (!r.ok) return errText(r);
   return `prints ${r.output.join(', ') || 'nothing'} instead`;
 }
 const fmtVal = v => (typeof v === 'string' ? `"${v}"` : String(v));
@@ -1072,6 +1075,465 @@ function fnBodyLine(rng, lang) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
+// Expert: longer programs, working backwards, edge cases. Multi-part where it fits.
+// These makers are only reached from the expert cells, so easy/medium/hard never change.
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+
+// Multi-part question from parts in order. Kinds:
+//   blank  { solution, spec, smallest, floor, lo, hi }  a number for the blank (checked like numberQ)
+//   choice { correct, pool, spec, renderOpt }           pick what fills the blank (checked like choiceQ)
+//   output { line }                                     what printed line `line` shows once the blank
+//                                                       holds the blank/choice answer above
+// explanation may be a function (opts, correctIndex) when there is a choice part.
+function multiQ({ rng, m, lang, prompt, explanation, parts }) {
+  const metaParts = {}, out = [];
+  let fill = null, opts = null, ci = -1;
+  for (const pt of parts) {
+    const base = { id: pt.id, label: pt.label, ask: pt.ask, ...(pt.hint ? { hint: pt.hint } : {}) };
+    if (pt.kind === 'blank') {
+      const bp = { kind: 'blank', spec: pt.spec, smallest: !!pt.smallest, floor: pt.floor || 0 };
+      checkBlank(m, bp, pt.solution, pt.lo, pt.hi);
+      fill = E.int(pt.solution);
+      metaParts[pt.id] = bp;
+      out.push({ ...base, answerType: 'number', answer: pt.solution, tolerance: 0 });
+    } else if (pt.kind === 'choice') {
+      ({ opts, correctIndex: ci } = pickOptions(rng, m, pt.correct, pt.pool, pt.spec, pt.renderOpt));
+      fill = pt.correct;
+      const choices = opts.map(o => tk(pt.renderOpt(o, lang)));
+      metaParts[pt.id] = { kind: 'choice', spec: pt.spec, opts };
+      out.push({ ...base, answerType: 'choice', answer: choices[ci], choices });
+    } else {
+      const op = { kind: 'output', line: pt.line, fill };
+      const r = exec(buildWith(m, fill) || program());
+      const val = r.ok ? toInt(r.output[pt.line]) : null;
+      if (val === null || !partOk(m, op, null, val)) throw new Error(`template ${m.t}: output part failed`);
+      metaParts[pt.id] = op;
+      out.push({ ...base, answerType: 'number', answer: val, tolerance: 0 });
+    }
+  }
+  return {
+    prompt, answerType: 'multi', lang, parts: out,
+    explanation: typeof explanation === 'function' ? explanation(opts, ci) : explanation,
+    meta: { t: m.t, p: m.p, lang, parts: metaParts },
+  };
+}
+const divOp = lang => langNotes(lang).intDiv;
+
+// ── Expressions (expert) ──────────────────────────────────────────────────────────────────────
+
+// x = ___; y = x*K + C | (x + C)*K; z = y / D; w = y - z*D | z*M + y % D; print(z); print(w)
+MAKE.exprChain = (p, X) => {
+  const x = V(p.x), y = V(p.y), z = V(p.z);
+  const yv = p.shape === 0 ? E.bin('+', E.bin('*', x, p.K), p.C) : E.bin('*', E.bin('+', x, p.C), p.K);
+  const wv = p.wshape === 0 ? E.bin('-', y, E.bin('*', z, p.D)) : E.bin('+', E.bin('*', z, p.M), E.bin('%', y, p.D));
+  return program([], [S.decl(p.x, X, 'int'), S.decl(p.y, yv, null, 'ly'), S.decl(p.z, E.bin('/', y, p.D)), S.decl(p.w, wv, null, 'lw'), S.print(z), S.print(V(p.w))]);
+};
+const chainJs = (p, x) => {
+  const y = p.shape === 0 ? x * p.K + p.C : (x + p.C) * p.K, z = Math.floor(y / p.D);
+  return { y, z, w: p.wshape === 0 ? y - z * p.D : z * p.M + (y % p.D) };
+};
+function exprChain(rng, lang) {
+  const [x, y, z, w] = rng.pick([['start', 'scaled', 'groups', 'left_over'], ['given_n', 'grown', 'boxes', 'spare'],
+    ['base', 'mid', 'teams', 'extra'], ['amount', 'step_one', 'rows', 'rest']]);
+  const shape = rng.int(0, 1), wshape = rng.int(0, 1);
+  const K = rng.int(2, 7), C = rng.int(1, 15), D = rng.int(3, 9), M = rng.int(2, 9), x0 = rng.int(4, 30);
+  const p = { x, y, z, w, shape, wshape, K, C, D, M };
+  const z0 = chainJs(p, x0).z;
+  let ans = 0;
+  while (chainJs(p, ans).z !== z0) ans++;
+  if (ans === 0) throw new Error('exprChain: trivial');
+  const { y: y1, w: w1 } = chainJs(p, ans);
+  const m = { t: 'exprChain', p };
+  const prog = MAKE.exprChain(p, bl());
+  const R = render(MAKE.exprChain(p, E.int(ans)), lang);
+  const yLine = lineAt(R, 'ly'), wLine = lineAt(R, 'lw');
+  const yWords = shape === 0 ? `${tk(vn(x, lang))} × ${K} + ${C}` : `(${tk(vn(x, lang))} + ${C}) × ${K}`;
+  const lowY = z0 * D, highY = z0 * D + D - 1;
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(z0)}.\n\n${code(prog, lang)}`,
+    explanation: `${intDivNote(lang)}\n\n` +
+      `${tk(vn(z, lang))} is ${tk(`${vn(y, lang)} ${divOp(lang)} ${D}`)} and prints ${z0}, so ${tk(vn(y, lang))} is somewhere from ${z0} × ${D} = ${lowY} to ${highY}.\n\n` +
+      `${tk(vn(y, lang))} = ${yWords}. The smallest ${tk(vn(x, lang))} (0 or more) that makes it at least ${lowY} is **${ans}**, giving ${tk(vn(y, lang))} = ${y1}.\n\n` +
+      `Then ${tk(wLine)} gives **${w1}**, the second line.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (0 or more) that can fill the blank ${tk(BLANK)}?`,
+        solution: ans, smallest: true, floor: 0, spec: { out: [String(z0)], prefix: true },
+        hint: `Work backwards. ${tk(vn(z, lang))} = ${tk(`${vn(y, lang)} ${divOp(lang)} ${D}`)} drops the remainder, so it is ${z0} for every ${tk(vn(y, lang))} from ${lowY} to ${highY}. ` +
+          `${tk(vn(y, lang))} is ${yWords}: find the smallest ${tk(vn(x, lang))} that brings it up to ${lowY} or more.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
+        hint: `Put your blank in and go line by line: ${tk(yLine)}, then ${tk(vn(z, lang))}, then ${tk(wLine)}. ` +
+          `${wshape === 0 ? `${tk(`${vn(y, lang)} - ${vn(z, lang)} * ${D}`)} is what is left after taking out whole groups of ${D}.` : `${tk('%')} gives the remainder.`}` },
+    ] });
+}
+
+// n = ___ (100 or more); split into hundreds, tens, units; print(f(h,t,u)); print(reversed)
+MAKE.exprDigits = (p, X) => {
+  const n = V(p.n), h = V(p.h), t = V(p.t), u = V(p.u);
+  const first = p.f === 0 ? E.bin('+', E.bin('+', h, t), u) : p.f === 1 ? E.bin('+', E.bin('*', h, u), t) : E.bin('-', E.bin('+', E.bin('*', h, 10), u), t);
+  return program([], [
+    S.decl(p.n, X, 'int'), S.decl(p.h, E.bin('/', n, 100)), S.decl(p.t, E.bin('%', E.bin('/', n, 10), 10)), S.decl(p.u, E.bin('%', n, 10)),
+    S.print(first), S.print(E.bin('+', E.bin('+', E.bin('*', u, 100), E.bin('*', t, 10)), h)),
+  ]);
+};
+const digitsJs = (f, n) => {
+  const h = Math.floor(n / 100), t = Math.floor(n / 10) % 10, u = n % 10;
+  return { h, t, u, first: f === 0 ? h + t + u : f === 1 ? h * u + t : h * 10 + u - t, rev: u * 100 + t * 10 + h };
+};
+function exprDigits(rng, lang) {
+  const n = rng.pick(['code', 'number', 'pin', 'ticket']);
+  const [h, t, u] = rng.pick([['hundreds', 'tens', 'units'], ['h', 't', 'u'], ['top', 'mid', 'low']]);
+  const f = rng.int(0, 2), n0 = rng.int(101, 999);
+  const target = digitsJs(f, n0).first;
+  let ans = 100;
+  while (digitsJs(f, ans).first !== target) ans++;
+  if (ans === 100) throw new Error('exprDigits: trivial');
+  const d = digitsJs(f, ans);
+  const p = { n, h, t, u, f };
+  const m = { t: 'exprDigits', p };
+  const prog = MAKE.exprDigits(p, bl());
+  const R = render(prog, lang);
+  const firstLine = R.lines.find(l => /print|WriteLine|cout|println/.test(l)).trim();
+  const H = tk(vn(h, lang)), T = tk(vn(t, lang)), U = tk(vn(u, lang));
+  const rule = f === 0 ? `${H} + ${T} + ${U}` : f === 1 ? `${H} × ${U} + ${T}` : `${H} × 10 + ${U} − ${T}`;
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(target)}.\n\n${code(prog, lang)}`,
+    explanation: `${intDivNote(lang)} So ${H} is the hundreds digit, ${T} the tens digit and ${U} the units digit of ${tk(vn(n, lang))}.\n\n` +
+      `The first line is ${rule}, which must be ${target}. Counting up from 100, the first number that works is **${ans}** (${d.h}, ${d.t}, ${d.u}).\n\n` +
+      `The second line puts the digits in reverse order: ${d.u} × 100 + ${d.t} × 10 + ${d.h} = **${d.rev}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (100 or more) that can fill the blank ${tk(BLANK)}?`,
+        solution: ans, smallest: true, floor: 100, spec: { out: [String(target)], prefix: true },
+        hint: `${tk(`${vn(n, lang)} ${divOp(lang)} 100`)} is the hundreds digit, ${tk(`${vn(n, lang)} ${divOp(lang)} 10 % 10`)} the tens digit and ${tk(`${vn(n, lang)} % 10`)} the units digit. ` +
+          `The first line ${tk(firstLine)} is ${rule} = ${target}. Keep the hundreds digit as small as you can, then the tens digit.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
+        hint: `Split your number into its three digits. The second line builds ${U} × 100 + ${T} × 10 + ${H}: the digits in reverse order.` },
+    ] });
+}
+
+// ── Conditionals (expert) ─────────────────────────────────────────────────────────────────────
+
+// def f(n): if ___: return both; elif n % A == 0: wa; elif n % B == 0: wb; else none
+// main: count how many i in 1..N-1 give wa
+MAKE.condFizz = (p, X) => {
+  const n = V(p.par), mult = k => E.bin('==', E.bin('%', n, k), 0);
+  const f = S.fn(p.fn, [p.par], [S.if(X, [S.return(E.str(p.both))],
+    [[mult(p.A), [S.return(E.str(p.wa))]], [mult(p.B), [S.return(E.str(p.wb))]]], [S.return(E.str(p.none))])], 'str');
+  return program([f], [S.decl(p.c, 0),
+    S.forRange(p.i, 1, p.N, 1, [S.if(E.bin('==', E.call(p.fn, [V(p.i)]), E.str(p.wa)), [S.augAssign(p.c, '+', 1)])]),
+    S.print(V(p.c))]);
+};
+const gcd = (a, b) => (b ? gcd(b, a % b) : a);
+function condFizz(rng, lang) {
+  const [A, B] = rng.pick([[4, 6], [6, 8], [6, 9], [4, 10], [6, 10], [8, 12], [9, 12], [10, 15], [6, 15], [4, 14], [3, 5], [2, 7], [3, 4], [5, 6]]);
+  const [wa, wb, both] = rng.pick([['fizz', 'buzz', 'fizzbuzz'], ['red', 'blue', 'purple'], ['ping', 'pong', 'pingpong'], ['tick', 'tock', 'ticktock'], ['hot', 'cold', 'warm']]);
+  const fn = rng.pick(['label_for', 'tag_of', 'sort_out', 'classify']), par = rng.pick(['n', 'num', 'k']);
+  const c = rng.pick(['count', 'tally', 'hits']), i = rng.pick(['i', 'x', 'step']);
+  const L = A * B / gcd(A, B), N = rng.int(Math.max(20, L + 2), 60);
+  const none = 'plain';
+  const label = n => (n % A === 0 && n % B === 0 ? both : n % A === 0 ? wa : n % B === 0 ? wb : none);
+  let other = 1;
+  while (label(other) !== none) other++;
+  const xs = [...new Set([A, B, L, other, ...(A * B <= 99 ? [A * B] : [])])].sort((a, b) => a - b);
+  const tests = xs.map(x => ({ entry: fn, args: [x], expect: label(x) }));
+  const p = { fn, par, A, B, wa, wb, both, none, c, i, N };
+  const m = { t: 'condFizz', p };
+  const prog = MAKE.condFizz(p, bl());
+  const P = V(par), mult = k => E.bin('==', E.bin('%', P, k), 0), notMult = k => E.bin('!=', E.bin('%', P, k), 0);
+  const correct = E.and(mult(A), mult(B));
+  const pool = [E.or(mult(A), mult(B)), mult(A * B), mult(A + B), E.and(mult(A), notMult(B)), mult(A), mult(B), E.not(E.and(mult(A), mult(B)))];
+  const renderOpt = (o, l) => renderExpr(o, l, { program: prog, fn });
+  const count = Array.from({ length: N - 1 }, (_, k) => k + 1).filter(k => label(k) === wa).length;
+  const notes = langNotes(lang), F = tk(fnName(fn, lang));
+  return multiQ({ rng, m, lang,
+    prompt: `${F} should return ${tk(`"${both}"`)} for multiples of both ${A} and ${B}, ${tk(`"${wa}"`)} for other multiples of ${A}, ` +
+      `${tk(`"${wb}"`)} for other multiples of ${B}, and ${tk(`"${none}"`)} otherwise. For example: ${examplesText(prog, fn, tests, lang)}.\n\n${code(prog, lang)}`,
+    explanation: (opts, ci) => `The checks run top to bottom and the first true one wins, so the "both" test has to come first and needs both conditions joined with ${tk(notes.and)}: ${tk(renderOpt(opts[ci], lang))}. ` +
+      opts.filter((_, k) => k !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' ') +
+      (L < A * B ? ` Note that ${L}, not ${A * B}, is the smallest number that both ${A} and ${B} go into.` : '') +
+      `\n\nThe loop counts ${tk(`"${wa}"`)} for ${tk(vn(i, lang))} from 1 to ${N - 1}: multiples of ${A} that are not multiples of ${B}. That is **${count}**.`,
+    parts: [
+      { kind: 'choice', id: 'cond', label: 'Condition', ask: `Which condition fills the blank ${tk(BLANK)}?`, correct, pool, spec: { tests }, renderOpt,
+        hint: `Only the first true branch runs. The blank must be true exactly for numbers that ${A} and ${B} both go into. Check ${L}: it should give ${tk(`"${label(L)}"`)}.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With the right condition in place, what does the program print?', line: 0,
+        hint: `The loop counts the values of ${tk(vn(i, lang))} from 1 to ${N - 1} that get ${tk(`"${wa}"`)}: multiples of ${A}, but not the ones that are also multiples of ${B} (those get ${tk(`"${both}"`)}). List the multiples of ${A} first, then cross some out.` },
+    ] });
+}
+
+// def zone(n): n < A → 1; n <= ___ and even → 2; n > C → 3; else 4. Count 4s over 0..N-1; print zone(V).
+MAKE.condZones = (p, X) => {
+  const n = V(p.par);
+  const f = S.fn(p.fn, [p.par], [S.if(E.bin('<', n, p.A), [S.return(1)],
+    [[E.and(E.bin('<=', n, X), E.bin('==', E.bin('%', n, 2), 0)), [S.return(2)]], [E.bin('>', n, p.C), [S.return(3)]]], [S.return(4)])], 'int');
+  return program([f], [S.decl(p.c, 0),
+    S.forRange(p.i, 0, p.N, 1, [S.if(E.bin('==', E.call(p.fn, [V(p.i)]), 4), [S.augAssign(p.c, '+', 1)])]),
+    S.print(V(p.c)), S.print(E.call(p.fn, [p.V]))]);
+};
+function condZones(rng, lang) {
+  const fn = rng.pick(['zone_of', 'band_for', 'tier_of', 'bucket']), par = rng.pick(['n', 'num', 'size']);
+  const c = rng.pick(['count', 'fours', 'tally']), i = rng.pick(['i', 'k', 'x']);
+  const A = rng.int(5, 20), C = A + rng.int(12, 30), N = C + rng.int(5, 20), B0 = rng.int(A + 2, C - 2), V0 = rng.int(A - 2, C + 2);
+  const zone = (n, b) => (n < A ? 1 : n <= b && n % 2 === 0 ? 2 : n > C ? 3 : 4);
+  const count = b => { let k = 0; for (let x = 0; x < N; x++) if (zone(x, b) === 4) k++; return k; };
+  const target = count(B0);
+  let ans = 0;
+  while (count(ans) !== target) ans++;
+  if (ans < A) throw new Error('condZones: trivial');
+  const p = { fn, par, A, C, N, V: V0, c, i };
+  const m = { t: 'condZones', p };
+  const prog = MAKE.condZones(p, bl());
+  const Pn = tk(vn(par, lang)), notes = langNotes(lang);
+  const evens = []; for (let x = A; x <= ans; x++) if (x % 2 === 0) evens.push(x);
+  const zv = zone(V0, ans);
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(target)}.\n\n${code(prog, lang)}`,
+    explanation: `A 4 comes only from ${A} to ${C}: below ${A} returns 1 and above ${C} returns 3. That is ${C - A + 1} numbers. ` +
+      `The ${tk(notes.elseIf)} for 2 takes the even ones up to the blank, so ${C - A + 1} − ${target} = ${C - A + 1 - target} even numbers must be taken: ${evens.join(', ')}. ` +
+      `The smallest blank that reaches ${evens[evens.length - 1]} is **${ans}** (${ans + 1} would work too, because ${ans + 1} is odd).\n\n` +
+      `${tk(callText(prog, fn, [V0], lang))}: ${V0 < A ? `${V0} is below ${A}, so 1` : V0 <= ans && V0 % 2 === 0 ? `${V0} is even and at most ${ans}, so 2` : V0 > C ? `${V0} is above ${C}, so 3` : `${V0} gets past every check, so 4`}. The second line is **${zv}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (0 or more) that can fill the blank ${tk(BLANK)}?`,
+        solution: ans, smallest: true, floor: 0, spec: { out: [String(target)], prefix: true },
+        hint: `Branches are checked in order. ${Pn} below ${A} returns 1 and above ${C} returns 3, so a 4 can only come from ${A} to ${C}. ` +
+          `The 2-branch steals the even numbers from ${A} up to the blank. How many must it steal to leave ${target}? Which even number is the last one stolen?` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
+        hint: `Run ${tk(callText(prog, fn, [V0], lang))} through the checks from the top, with your blank in place. The first true check decides.` },
+    ] });
+}
+
+// ── Loops (expert) ────────────────────────────────────────────────────────────────────────────
+
+// for i in range(1, ___): for j in range(i + 1, N): if i OP j > LIM: break; pairs += 1; last = i OP j
+MAKE.nestedBreak = (p, X) => {
+  const ij = () => E.bin(p.op, V(p.i), V(p.j));
+  return program([], [S.decl(p.c, 0), S.decl(p.last, 0),
+    S.forRange(p.i, 1, X, 1, [S.forRange(p.j, E.bin('+', V(p.i), 1), p.N, 1, [
+      S.if(E.bin('>', ij(), p.LIM), [S.break()]), S.augAssign(p.c, '+', 1), S.assign(p.last, ij())])]),
+    S.print(V(p.c)), S.print(V(p.last))]);
+};
+function nestedBreak(rng, lang) {
+  const c = rng.pick(['pairs', 'count', 'found']), last = rng.pick(['last', 'latest', 'final_val']);
+  const [i, j] = rng.pick([['i', 'j'], ['a', 'b'], ['row', 'col']]);
+  const op = rng.pick(['*', '+']), N = rng.int(6, 10), LIM = op === '*' ? rng.int(15, 50) : rng.int(8, 16);
+  const f = (a, b) => (op === '*' ? a * b : a + b);
+  const row = a => { let k = 0; for (let b = a + 1; b < N; b++) { if (f(a, b) > LIM) break; k++; } return k; };
+  const cands = [];
+  for (let a = 2; a <= N - 2; a++) if (row(a - 1) >= 1 && row(a) >= 1) cands.push(a);
+  if (!cands.length) throw new Error('nestedBreak: no candidates');
+  const ans = rng.pick(cands);
+  const rows = Array.from({ length: ans - 1 }, (_, k) => row(k + 1)), total = rows.reduce((a, b) => a + b, 0);
+  const li = ans - 1, lj = li + rows[li - 1], lastVal = f(li, lj);
+  const p = { c, last, i, j, op, N, LIM };
+  const m = { t: 'nestedBreak', p };
+  const prog = MAKE.nestedBreak(p, bl());
+  const I = tk(vn(i, lang)), J = tk(vn(j, lang)), sym = op === '*' ? '×' : '+';
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(total)}.\n\n${code(prog, lang)}`,
+    explanation: `${rangeText(lang)}. For each ${I}, ${J} starts at ${I} + 1 and the inner loop stops (${tk('break')}) at the first ${J} where ${I} ${sym} ${J} is more than ${LIM}.\n\n` +
+      rows.map((r, k) => `${I} = ${k + 1}: ${r} pair${r === 1 ? '' : 's'}`).join('; ') + `. That adds up to ${total}, so ${I} must run from 1 to ${ans - 1} and the end is **${ans}**. ` +
+      `(An end of ${ans + 1} would add the ${row(ans)} pair${row(ans) === 1 ? '' : 's'} for ${I} = ${ans}.)\n\n` +
+      `The last pair counted is ${I} = ${li}, ${J} = ${lj}, so the second line is ${li} ${sym} ${lj} = **${lastVal}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `Which whole number fills the blank ${tk(BLANK)}?`,
+        solution: ans, lo: -5, hi: N + 10, spec: { out: [String(total)], prefix: true },
+        hint: `Count the pairs one value of ${I} at a time. For ${I} = 1, ${J} runs 2, 3, … up to ${N - 1}, but ${tk('break')} leaves the inner loop as soon as ${I} ${sym} ${J} is more than ${LIM}. ` +
+          `Keep a running total; the outer loop stops before its end (${rangeText(lang)}).` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'What does the second line print?', line: 1,
+        hint: `${tk(vn(last, lang))} is overwritten by every pair that is counted, so it holds the value from the very last pair: the last ${J} that passed for the last ${I} that ran.` },
+    ] });
+}
+
+// a = A; b = ___; steps = 0; while a < b: a += P (or a = a * 2); b -= Q; steps += 1; print(steps); print(b)
+MAKE.whileTwo = (p, X) => program([], [
+  S.decl(p.a, p.A), S.decl(p.b, X, 'int'), S.decl(p.s, 0),
+  S.while(E.bin('<', V(p.a), V(p.b)), [p.mul ? S.assign(p.a, E.bin('*', V(p.a), 2)) : S.augAssign(p.a, '+', p.P), S.augAssign(p.b, '-', p.Q), S.augAssign(p.s, '+', 1)]),
+  S.print(V(p.s)), S.print(V(p.b)),
+]);
+function whileTwo(rng, lang) {
+  const [a, b] = rng.pick([['low', 'high'], ['left', 'right'], ['hare', 'goal'], ['climber', 'rope'], ['saved', 'target']]);
+  const s = rng.pick(['steps', 'rounds', 'days', 'turns']);
+  const mul = rng.next() < 0.35, A = mul ? rng.int(1, 4) : rng.int(0, 10), P = rng.int(2, 6), Q = rng.int(1, 5), b0 = rng.int(A + 15, A + 60);
+  const sim = bv => { let x = A, y = bv, k = 0; while (x < y && k < 1000) { x = mul ? x * 2 : x + P; y -= Q; k++; } return { k, x, y }; };
+  const T = sim(b0).k;
+  let ans = 0;
+  while (sim(ans).k !== T) ans++;
+  const r = sim(ans);
+  const trace = []; { let x = A, y = ans; trace.push(`${x}, ${y}`); while (x < y) { x = mul ? x * 2 : x + P; y -= Q; trace.push(`${x}, ${y}`); } }
+  const p = { a, b, s, mul, A, P, Q };
+  const m = { t: 'whileTwo', p };
+  const prog = MAKE.whileTwo(p, bl());
+  const Av = tk(vn(a, lang)), Bv = tk(vn(b, lang));
+  const before = (() => { let x = A; for (let k = 0; k < T - 1; k++) x = mul ? x * 2 : x + P; return x; })();
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(T)}.\n\n${code(prog, lang)}`,
+    explanation: `The loop runs while ${Av} < ${Bv}. Each pass ${mul ? `doubles ${Av}` : `adds ${P} to ${Av}`} and takes ${Q} from ${Bv}.\n\n` +
+      `For exactly ${T} passes, the check must still be true after ${T - 1} passes. Then ${Av} is ${before} and ${Bv} is the blank − ${(T - 1) * Q}, ` +
+      `so the blank must be more than ${before} + ${(T - 1) * Q} = ${before + (T - 1) * Q}: the smallest is **${ans}**. (The loop always stops after the next pass.)\n\n` +
+      `With ${ans}, (${Av}, ${Bv}) goes ${trace.join(' → ')}. The second line prints ${Bv}: **${r.y}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (0 or more) that can fill the blank ${tk(BLANK)}?`,
+        solution: ans, smallest: true, floor: 0, spec: { out: [String(T)], prefix: true },
+        hint: `The first line is how many passes ran. Both variables move every pass: ${Av} ${mul ? 'doubles' : `goes up by ${P}`}, ${Bv} goes down by ${Q}. ` +
+          `For ${T} passes the condition ${tk(`${vn(a, lang)} < ${vn(b, lang)}`)} must still be true after ${T - 1} passes. Work out ${Av} at that point, and what ${Bv} is then in terms of the blank.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
+        hint: `Trace with your blank: write ${Av} and ${Bv} after every pass, and stop when ${tk(`${vn(a, lang)} < ${vn(b, lang)}`)} is false. The second line is the final ${Bv}.` },
+    ] });
+}
+
+// ── Lists and strings (expert) ────────────────────────────────────────────────────────────────
+
+// def longest(xs): best = 0; run = 0; for i in 1..len: if xs[i] CMP xs[i-1]: run += 1 else: ____; if run > best: best = run
+MAKE.listRun = (p, st) => program([S.fn(p.fn, [{ name: p.xs, type: 'list' }], [
+  S.decl(p.best, 0), S.decl(p.run, 0),
+  S.forRange(p.i, 1, E.len(p.xs), 1, [
+    S.if(E.bin(p.cmp, E.index(p.xs, V(p.i)), E.index(p.xs, E.bin('-', V(p.i), 1))), [S.augAssign(p.run, '+', 1)], [], [{ ...st, id: 'fill' }]),
+    S.if(E.bin('>', V(p.run), V(p.best)), [S.assign(p.best, V(p.run))]),
+  ]),
+  S.return(V(p.best)),
+], 'int')], [S.decl(p.data, E.list(p.items)), S.print(E.call(p.fn, [V(p.data)]))]);
+function listRun(rng, lang) {
+  const cmp = rng.pick(['>', '<']), fn = rng.pick(cmp === '>' ? ['longest_rise', 'rise_streak', 'best_climb'] : ['longest_drop', 'drop_streak', 'best_fall']);
+  const xs = rng.pick(['xs', 'nums', 'temps', 'prices']), best = rng.pick(['best', 'record', 'top']), run = rng.pick(['run', 'streak', 'current']);
+  const i = rng.pick(['i', 'k', 'pos']), data = rng.pick(['data', 'sample', 'week']);
+  const mk = () => Array.from({ length: rng.int(7, 9) }, () => rng.int(1, 20));
+  const lists = [mk(), mk(), mk()], items = mk();
+  const ref = a => { let b = 0, r = 0; for (let k = 1; k < a.length; k++) { r = cmpJs(cmp, a[k], a[k - 1]) ? r + 1 : 0; b = Math.max(b, r); } return b; };
+  const tests = lists.map(a => ({ entry: fn, args: [a], expect: ref(a) }));
+  const p = { fn, xs, best, run, i, cmp, data, items };
+  const m = { t: 'listRun', p };
+  const correct = S.assign(run, 0);
+  const pool = [S.assign(run, 1), S.assign(best, 0), S.augAssign(run, '-', 1), S.break(), S.continue(), S.augAssign(run, '+', 1), S.assign(best, V(run))];
+  const full = MAKE.listRun(p, correct);
+  const renderOpt = (o, l) => renderStmtLine(o, l, { program: full, fn });
+  const word = cmp === '>' ? 'bigger' : 'smaller';
+  const ex = tests.map(t => `${tk(fnName(fn, lang))} returns ${t.expect} for ${t.args[0].join(', ')}`).join('; ');
+  const ans = ref(items);
+  return multiQ({ rng, m, lang,
+    prompt: `${tk(fnName(fn, lang))} should return the most times in a row that a number is ${word} than the one before it. ` +
+      `Examples: ${ex}.\n\n${codeLineBlank(full, lang, 'fill')}`,
+    explanation: opts => `${tk(vn(run, lang))} counts the current streak and ${tk(vn(best, lang))} keeps the longest one seen. When a number is not ${word} than the one before, the streak is broken and must restart from nothing: ${tk(renderOpt(correct, lang))}. ` +
+      opts.filter(o => o !== correct).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, t => `${t.args[0].join(', ')}`)}.`).join(' ') +
+      `\n\nFor ${items.join(', ')} the longest streak is **${ans}**.`,
+    parts: [
+      { kind: 'choice', id: 'line', label: 'Line', ask: `Which line fills the blank ${tk(BLANK)}?`, correct, pool, spec: { tests }, renderOpt,
+        hint: `${tk(vn(run, lang))} is the current streak; ${tk(vn(best, lang))} remembers the longest. The blank runs when the streak is broken. ` +
+          `Trace the first example and watch what ${tk(vn(run, lang))} must be on the next pass after a break.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'With the right line in place, what does the program print?', line: 0,
+        hint: `Go through ${items.join(', ')} pair by pair: is each number ${word} than the one before? Count the longest unbroken run of yeses.` },
+    ] });
+}
+
+// def is_mirror(word): for i in range(0, len(word) / 2): if ___: return "no"; return "yes"
+MAKE.strMirror = (p, X) => program([S.fn(p.fn, [{ name: p.w, type: 'str' }], [
+  S.forRange(p.i, 0, E.bin('/', E.len(p.w), 2), 1, [S.if(X, [S.return(E.str(p.no))])]),
+  S.return(E.str(p.yes)),
+], 'str')], []);
+const PALS = ['level', 'radar', 'rotor', 'refer', 'kayak', 'madam', 'civic', 'stats', 'tenet', 'racecar', 'noon', 'deed', 'peep', 'abba', 'sees', 'redder', 'boob'];
+const SAME_ENDS = ['trust', 'eagle', 'dread', 'stairs', 'toast', 'tent', 'sauces', 'that', 'yearly', 'gang', 'roller', 'kick', 'needn'];
+const PLAIN_WORDS = ['rocket', 'planet', 'bridge', 'window', 'summer', 'apple', 'garden', 'pencil', 'tunnel', 'castle'];
+function strMirror(rng, lang) {
+  const fn = rng.pick(['is_mirror', 'same_backwards', 'reads_both_ways']), w = rng.pick(['word', 'text']), i = rng.pick(['i', 'k', 'pos']);
+  const [yes, no] = rng.pick([['yes', 'no'], ['mirror', 'plain'], ['match', 'differ']]);
+  const ws = [rng.pick(PALS.filter(x => x.length % 2 === 1)), rng.pick(PALS.filter(x => x.length % 2 === 0)), rng.pick(SAME_ENDS), rng.pick(PLAIN_WORDS)];
+  const order = rng.shuffle(ws);
+  const tests = order.map(x => ({ entry: fn, args: [x], expect: [...x].reverse().join('') === x ? yes : no }));
+  const p = { fn, w, i, yes, no };
+  const m = { t: 'strMirror', p };
+  const prog = MAKE.strMirror(p, bl());
+  const I = V(i), at = x => E.index(w, x), last = E.bin('-', E.len(w), 1);
+  const correct = E.bin('!=', at(I), at(E.bin('-', last, I)));
+  const pool = [E.bin('==', at(I), at(E.bin('-', last, I))), E.bin('!=', at(I), at(E.bin('-', E.len(w), I))), E.bin('!=', at(I), at(E.bin('+', I, 1))),
+    E.bin('!=', at(0), at(last)), E.bin('!=', at(I), at(last)), E.bin('!=', at(E.bin('+', I, 1)), at(E.bin('-', last, I)))];
+  const renderOpt = (o, l) => renderExpr(o, l, { program: prog, fn });
+  const Wn = tk(vn(w, lang)), In = tk(vn(i, lang));
+  return choiceQ({ rng, m, lang, correct, pool, spec: { tests }, renderOpt,
+    prompt: `${tk(fnName(fn, lang))} should return ${tk(`"${yes}"`)} when ${Wn} reads the same backwards (like ${tk(`"${PALS[0]}"`)}), and ${tk(`"${no}"`)} otherwise. ` +
+      `For example: ${examplesText(prog, fn, tests, lang)}. Which condition fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
+    explain: (opts, ci) => `Position ${In} from the front pairs with position length − 1 − ${In} from the back (the last letter is at length − 1). ` +
+      `The loop only needs the first half, and returns ${tk(`"${no}"`)} at the first pair that differs: ${tk(renderOpt(opts[ci], lang))}. ` +
+      opts.filter((_, k) => k !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, fn, lang))}.`).join(' '),
+    hints: [
+      `The loop walks ${In} through the first half of ${Wn}. Each letter must match its partner counted from the other end. For ${In} = 0 the partner is the last letter; what position is that?`,
+      `Positions run from 0 to length − 1, so a partner at length − ${In} is one step past the end when ${In} = 0. Also watch the words whose first and last letters match but whose middle doesn't.`,
+      `Check each option on every example, including the edges: ${order.map(x => `${tk(`"${x}"`)}`).join(', ')}.`,
+    ] });
+}
+
+// ── Functions (expert) ────────────────────────────────────────────────────────────────────────
+
+// def f(n): if n <= ___: return BASE; return f(n - 1) * K + C | f(n - 1) + n * K ; print(f(A)); print(f(B))
+MAKE.fnRecur = (p, X) => {
+  const n = V(p.par), rec = E.call(p.fn, [E.bin('-', n, 1)]);
+  return program([S.fn(p.fn, [p.par], [
+    S.if(E.bin('<=', n, X), [S.return(p.base)]),
+    S.return(p.shape === 0 ? E.bin('+', E.bin('*', rec, p.K), p.C) : E.bin('+', rec, E.bin('*', n, p.K))),
+  ], 'int')], [S.print(E.call(p.fn, [p.A])), S.print(E.call(p.fn, [p.B]))]);
+};
+function fnRecur(rng, lang) {
+  const fn = rng.pick(['grow', 'build_up', 'stack_of', 'layers']), par = rng.pick(['n', 'level', 'depth']);
+  const shape = rng.int(0, 1), K = rng.int(2, shape === 0 ? 3 : 4), C = rng.int(1, 5), base = rng.int(1, 5);
+  const A = rng.int(4, 7), ans = rng.int(1, A - 2), B = rng.pick([A - 1, A + 1, A + 2].filter(x => x > ans && x !== A));
+  const f = (n, t) => (n <= t ? base : shape === 0 ? f(n - 1, t) * K + C : f(n - 1, t) + n * K);
+  const t1 = f(A, ans), t2 = f(B, ans);
+  const p = { fn, par, shape, K, C, base, A, B };
+  const m = { t: 'fnRecur', p };
+  const prog = MAKE.fnRecur(p, bl());
+  const F = fnName(fn, lang), Pn = tk(vn(par, lang));
+  const chain = []; for (let n = ans; n <= A; n++) chain.push(`${F}(${n}) = ${f(n, ans)}`);
+  const rule = shape === 0 ? `${F}(${vn(par, lang)} - 1) * ${K} + ${C}` : `${F}(${vn(par, lang)} - 1) + ${vn(par, lang)} * ${K}`;
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(t1)}.\n\n${code(prog, lang)}`,
+    explanation: `The function calls itself with ${Pn} − 1 until ${Pn} is at most the blank, where it returns ${base}. Build the values from the bottom up.\n\n` +
+      `With the blank as **${ans}**: ${chain.join(', ')}. Any other stopping point gives a different value for ${F}(${A}).\n\n` +
+      `The same rule gives ${F}(${B}) = **${t2}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `Which whole number fills the blank ${tk(BLANK)}?`,
+        solution: ans, lo: -6, hi: A + 10, spec: { out: [String(t1)], prefix: true },
+        hint: `Work from the bottom up. Where the recursion stops, the function returns ${base}. Each level above returns ${tk(rule)}. ` +
+          `Try a stopping point, build ${F}(stop + 1), ${F}(stop + 2), … up to ${F}(${A}), and compare with ${t1}.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'What does the second line print?', line: 1,
+        hint: `The blank is the same for every call. ${B > A ? `Carry on from ${F}(${A}) = ${t1} for ${B - A} more level${B - A === 1 ? '' : 's'}.` : `${F}(${B}) is one of the values you built on the way up to ${F}(${A}).`}` },
+    ] });
+}
+
+// digit_sum helper; count_hits(lo, hi) counts k in [lo, hi) with digit_sum(k) == ___
+MAKE.fnHelper = (p, X) => program([
+  S.fn(p.f1, [p.n], [S.decl(p.t, 0), S.while(E.bin('>', V(p.n), 0), [S.augAssign(p.t, '+', E.bin('%', V(p.n), 10)), S.augAssign(p.n, '/', 10)]), S.return(V(p.t))], 'int'),
+  S.fn(p.f2, ['lo', 'hi'], [S.decl(p.c, 0),
+    S.forRange(p.k, V('lo'), V('hi'), 1, [S.if(E.bin('==', E.call(p.f1, [V(p.k)]), X), [S.augAssign(p.c, '+', 1)])]), S.return(V(p.c))], 'int'),
+], [S.print(E.call(p.f2, [p.A1, p.B1])), S.print(E.call(p.f2, [p.A2, p.B2]))]);
+const dsum = n => String(n).split('').reduce((a, ch) => a + Number(ch), 0);
+function fnHelper(rng, lang) {
+  const f1 = rng.pick(['digit_sum', 'sum_digits', 'add_digits']), f2 = rng.pick(['count_hits', 'how_many', 'count_sums']);
+  const n = rng.pick(['n', 'num', 'rest']), t = rng.pick(['total', 'acc', 'sum_so_far']), c = rng.pick(['count', 'found', 'hits']), k = rng.pick(['k', 'x', 'v']);
+  const A1 = rng.int(10, 80), B1 = A1 + rng.int(20, 50), A2 = rng.int(100, 400), B2 = A2 + rng.int(20, 60);
+  const cnt = (d, a, b) => { let r = 0; for (let x = a; x < b; x++) if (dsum(x) === d) r++; return r; };
+  const counts = Array.from({ length: 46 }, (_, j) => cnt(j - 5, A1, B1));
+  const cands = [];
+  for (let d = 1; d <= 27; d++) { const v = counts[d + 5]; if (v > 0 && counts.filter(x => x === v).length === 1) cands.push(d); }
+  if (!cands.length) throw new Error('fnHelper: no unique digit sum');
+  const ans = rng.pick(cands), c1 = cnt(ans, A1, B1), c2 = cnt(ans, A2, B2);
+  const hits1 = []; for (let x = A1; x < B1; x++) if (dsum(x) === ans) hits1.push(x);
+  const p = { f1, f2, n, t, c, k, A1, B1, A2, B2 };
+  const m = { t: 'fnHelper', p };
+  const prog = MAKE.fnHelper(p, bl());
+  const F1 = fnName(f1, lang), call1 = callText(prog, f2, [A1, B1], lang), call2 = callText(prog, f2, [A2, B2], lang);
+  return multiQ({ rng, m, lang,
+    prompt: `The first line this program prints is ${tk(c1)}.\n\n${code(prog, lang)}`,
+    explanation: `${tk(F1)} adds up the digits of a number (${tk('% 10')} takes the last digit, ${tk(`${divOp(lang)} 10`)} removes it). ` +
+      `${tk(call1)} counts the numbers from ${A1} to ${B1 - 1} (${rangeText(lang)}) whose digit sum equals the blank.\n\n` +
+      `Exactly ${c1} numbers in that range have digit sum **${ans}**: ${hits1.join(', ')}. No other digit sum is shared by exactly ${c1} of them.\n\n` +
+      `${tk(call2)} counts digit sum ${ans} from ${A2} to ${B2 - 1}: **${c2}**.`,
+    parts: [
+      { kind: 'blank', id: 'blank', label: 'Blank', ask: `Which whole number fills the blank ${tk(BLANK)}?`,
+        solution: ans, lo: -5, hi: 40, spec: { out: [String(c1)], prefix: true },
+        hint: `${tk(F1)} returns the sum of the digits. ${tk(call1)} checks every number from ${A1} to ${B1 - 1}. ` +
+          `Write down each number's digit sum and tally how often each sum appears: you want the sum that appears exactly ${c1} times.` },
+      { kind: 'output', id: 'output', label: 'Output', ask: 'What does the second line print?', line: 1,
+        hint: `Same blank, new range: count the numbers from ${A2} to ${B2 - 1} whose digits add up to your blank.` },
+    ] });
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1080,26 +1542,31 @@ const CELLS = {
     easy: [exprBlankEasy, (r, l) => exprOpChoice(r, l, 'easy')],
     medium: [exprPrec, exprDiv, (r, l) => exprOpChoice(r, l, 'medium')],
     hard: [exprMulti, exprCompound],
+    expert: [exprChain, exprDigits],
   },
   conditionals: {
     easy: [condCmpChoice, (r, l) => condThreshold(r, l, 'easy')],
     medium: [condRangeChoice, condDivChoice, (r, l) => condThreshold(r, l, 'medium')],
     hard: [condElif, condHardChoice],
+    expert: [condFizz, condZones],
   },
   loops: {
     easy: [loopRange],
     medium: [whileStep, loopMultiples, loopStepEnd],
     hard: [whileLimit, nested],
+    expert: [nestedBreak, whileTwo],
   },
   'lists-strings': {
     easy: [indexPick],
     medium: [listFnChoice, appendLine],
     hard: [suffixSum, countLetter],
+    expert: [listRun, strMirror],
   },
   functions: {
     easy: [(r, l) => fnConst(r, l, 'easy'), fnReturnChoice],
     medium: [(r, l) => fnConst(r, l, 'medium'), fnLoopConst, fn2Choice],
     hard: [fnChain, fnBodyLine],
+    expert: [fnRecur, fnHelper],
   },
 };
 

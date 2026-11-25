@@ -18,6 +18,8 @@ Example: a heart or a king from 52 cards gives 13 + 4 - 1 = 16 cards, so P = 16/
 
 **Watch out:** 1 is not a prime number, and items taken out of a bag change both the count and the total.
 
+**Expert: working backwards.** If 6 red make P(red) = 2/5, then 2 parts are 6, so the whole bag is 5 parts = 15. With two probabilities (before and after adding some), write the colour you know about as a fraction of an unknown total T, set up one equation and solve for T. Adding items changes the total and the colour you add, not the other colours.
+
 ## Combined events
 
 1. Decide whether the events are independent (dice, coins, picks with replacement) or dependent (picks without replacement).
@@ -28,6 +30,10 @@ Example: a heart or a king from 52 cards gives 13 + 4 - 1 = 16 cards, so P = 16/
 Example: 3 red and 2 blue, two picks without replacement: P(both red) = 3/5 × 2/4 = 6/20 = 3/10.
 
 **Watch out:** with two dice, (1, 2) and (2, 1) are different outcomes. There are 36, not 21.
+
+**Expert: tree diagrams and "given that".** Multiply along each branch and add the branches that end in the event: P(late) = P(rain) × P(late | rain) + P(dry) × P(late | dry). For "given that it was late, was it rainy?", divide the rainy-and-late branch by P(late). Working with whole percentages (out of 10000) keeps it tidy.
+
+**Expert: Venn diagrams.** Put the "both" count in the middle first, then subtract it from each group. "Neither" is what's left outside both circles. "Given that they're in B" means the bottom of the fraction is the size of B, not the whole group.
 
 ## Counting
 
@@ -40,6 +46,8 @@ Example: a team of 3 from 8 people is (8 × 7 × 6) ÷ (3 × 2 × 1) = 56.
 
 **Watch out:** separate independent choices multiply (the product rule); don't add them.
 
+**Expert: restrictions.** To keep two letters together, glue them into one block, arrange the block with the other letters, and multiply by 2 for the order inside the block. "Not together" is the total minus "together". For "at least one" of a group in a committee, take the total minus the committees with none of them. For exactly one, multiply the ways to choose each group (e.g. 4 × C(8, 2)).
+
 ## Expected value
 
 1. List every outcome with its payout (0 for a loss).
@@ -50,3 +58,5 @@ Example: a team of 3 from 8 people is (8 × 7 × 6) ÷ (3 × 2 × 1) = 56.
 Example: win $6 on a 6 with a fair die costs $1.50: 6 × 1/6 - 1.50 = -0.50, so you lose 50 cents per game on average.
 
 **Watch out:** a negative expected profit means the game favours the organiser. Keep the minus sign.
+
+**Expert: fair games and missing values.** A game is fair when the expected winnings equal the cost, so the expected profit is 0: write the expected winnings with the prize as X, set it equal to the cost and solve. In a table, the probabilities add to 1, which gives a missing probability; if E(X) is given and a value is missing, write E(X) = Σ x × P(x) with the unknown and solve for it.
