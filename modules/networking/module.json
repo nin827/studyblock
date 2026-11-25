@@ -1,0 +1,14 @@
+{
+  "id": "networking",
+  "title": "Networking",
+  "description": "IPv4 addresses in binary, subnet masks and CIDR, network and broadcast addresses, and data transfer times.",
+  "icon": "network",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "ip-binary", "title": "IP addresses and binary", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "masks-cidr", "title": "Subnet masks and CIDR", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "network-broadcast", "title": "Network and broadcast", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "data-transfer", "title": "Data transfer", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "id": "body-measurements",
+  "title": "Body Measurements",
+  "description": "Convert body measurements between units, calculate BMI and work out simple body ratios. Every formula is given.",
+  "icon": "ruler",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "unit-conversions", "title": "Unit conversions", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "bmi", "title": "BMI", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "body-ratios", "title": "Body ratios", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

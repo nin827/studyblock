@@ -1,0 +1,14 @@
+{
+  "id": "vital-signs",
+  "title": "Vital Signs",
+  "description": "Calculations with heart rate, blood pressure, breathing and temperature, using the formulas given in each question.",
+  "icon": "heart-pulse",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "heart-rate", "title": "Heart rate", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "circulation", "title": "Circulation", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "breathing", "title": "Breathing", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "temperature", "title": "Temperature", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

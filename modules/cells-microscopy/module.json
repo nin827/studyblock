@@ -1,0 +1,14 @@
+{
+  "id": "cells-microscopy",
+  "title": "Cells & Microscopy",
+  "description": "Magnification, cell sizes and units, cell division and surface area to volume ratios.",
+  "icon": "microscope",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "magnification", "title": "Magnification", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "units", "title": "Units & sizes", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "division", "title": "Cell division", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sa-volume", "title": "Surface area to volume", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

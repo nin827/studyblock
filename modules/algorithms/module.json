@@ -1,0 +1,15 @@
+{
+  "id": "algorithms",
+  "title": "Algorithms",
+  "description": "Trace searches and sorts by hand, pick the Big-O, and run stacks and queues step by step.",
+  "icon": "arrow-down-up",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "searching", "title": "Searching", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sorting", "title": "Sorting", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "complexity", "title": "Complexity", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "data-structures", "title": "Stacks and queues", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

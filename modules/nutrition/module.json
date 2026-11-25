@@ -1,0 +1,14 @@
+{
+  "id": "nutrition",
+  "title": "Nutrition",
+  "description": "Energy in food, kcal and kJ, reading food labels and simple energy balance sums.",
+  "icon": "apple",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "energy-from-food", "title": "Energy from food", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "energy-units", "title": "Energy units", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "food-labels", "title": "Food labels", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "energy-balance", "title": "Energy balance", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

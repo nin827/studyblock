@@ -1,0 +1,14 @@
+{
+  "id": "game-probability",
+  "title": "Game Probability",
+  "description": "The odds behind games: drop rates, critical hits and DPS, weighted loot tables, and pity systems.",
+  "icon": "gem",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "drop-rates", "title": "Drop rates", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "crits", "title": "Critical hits and damage", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "loot", "title": "Loot tables", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "pity", "title": "Pity and streaks", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

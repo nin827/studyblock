@@ -1,0 +1,14 @@
+{
+  "id": "genetics",
+  "title": "Genetics",
+  "description": "Punnett squares, dihybrid crosses, sex-linked traits, blood groups and Hardy–Weinberg, worked out from fresh crosses every time.",
+  "icon": "dna",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "punnett", "title": "Punnett squares", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "dihybrid", "title": "Dihybrid crosses", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sex-linked", "title": "Sex-linked & blood groups", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "population", "title": "Population genetics", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

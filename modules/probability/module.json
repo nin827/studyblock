@@ -1,0 +1,14 @@
+{
+  "id": "probability",
+  "title": "Probability",
+  "description": "Chances from dice, coins, cards and bags, combined events, counting arrangements and expected value.",
+  "icon": "dices",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "basic", "title": "Basic probability", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "combined", "title": "Combined events", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "counting", "title": "Counting", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "expected-value", "title": "Expected value", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

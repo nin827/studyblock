@@ -1,0 +1,14 @@
+{
+  "id": "anatomy",
+  "title": "Anatomy",
+  "description": "Major bones, what the main organs do, body systems, and how blood circulates.",
+  "icon": "bone",
+  "type": "csv",
+  "questionsPerQuiz": 4,
+  "subtopics": [
+    { "id": "skeleton", "title": "Skeleton", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "organs", "title": "Organs", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "body-systems", "title": "Body systems", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "blood-circulation", "title": "Blood and circulation", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

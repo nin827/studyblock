@@ -160,6 +160,10 @@
 .dom-computing { --dom-bg: #DCEFFA; --dom-fg: #0B5A86; --dom-solid: #1A7FC1; --dom-bright: #5DB8EC; }
 .dom-history   { --dom-bg: #F8E3DF; --dom-fg: #8E2A1E; --dom-solid: #B23A2E; --dom-bright: #E57C70; }
 .dom-language  { --dom-bg: #E8EFD9; --dom-fg: #44591A; --dom-solid: #6B8A23; --dom-bright: #A5C55A; }
+.dom-game-dev  { --dom-bg: #FCE4EE; --dom-fg: #9D1B52; --dom-solid: #D02A6E; --dom-bright: #F27BA8; }
+.dom-music     { --dom-bg: #FBF1D2; --dom-fg: #765300; --dom-solid: #B07D0A; --dom-bright: #E6B840; }
+.dom-biology   { --dom-bg: #DFF3E4; --dom-fg: #1B5E2B; --dom-solid: #2E8B47; --dom-bright: #6CC985; }
+.dom-medical   { --dom-bg: #DDF4F8; --dom-fg: #0A5866; --dom-solid: #0E8FA6; --dom-bright: #5CCBDD; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dom-default   { --dom-bg: #2C2A25; --dom-fg: #CFCBC1; --dom-solid: #A19C90; }
@@ -170,6 +174,10 @@
   :root:not([data-theme="light"]) .dom-computing { --dom-bg: #13293A; --dom-fg: #9BD3F5; --dom-solid: #5DB8EC; }
   :root:not([data-theme="light"]) .dom-history   { --dom-bg: #3A1D19; --dom-fg: #F2B6AC; --dom-solid: #E57C70; }
   :root:not([data-theme="light"]) .dom-language  { --dom-bg: #252E15; --dom-fg: #C8DE9A; --dom-solid: #A5C55A; }
+  :root:not([data-theme="light"]) .dom-game-dev  { --dom-bg: #3A1626; --dom-fg: #F6B3CD; --dom-solid: #F27BA8; }
+  :root:not([data-theme="light"]) .dom-music     { --dom-bg: #362A0E; --dom-fg: #F0D58A; --dom-solid: #E6B840; }
+  :root:not([data-theme="light"]) .dom-biology   { --dom-bg: #15301D; --dom-fg: #A6E0B4; --dom-solid: #6CC985; }
+  :root:not([data-theme="light"]) .dom-medical   { --dom-bg: #0F2E35; --dom-fg: #9EE0EC; --dom-solid: #5CCBDD; }
 }
 :root[data-theme="dark"] .dom-default   { --dom-bg: #2C2A25; --dom-fg: #CFCBC1; --dom-solid: #A19C90; }
 :root[data-theme="dark"] .dom-math      { --dom-bg: #26264A; --dom-fg: #C3C0FB; --dom-solid: #8B85F5; }
@@ -179,6 +187,10 @@
 :root[data-theme="dark"] .dom-computing { --dom-bg: #13293A; --dom-fg: #9BD3F5; --dom-solid: #5DB8EC; }
 :root[data-theme="dark"] .dom-history   { --dom-bg: #3A1D19; --dom-fg: #F2B6AC; --dom-solid: #E57C70; }
 :root[data-theme="dark"] .dom-language  { --dom-bg: #252E15; --dom-fg: #C8DE9A; --dom-solid: #A5C55A; }
+:root[data-theme="dark"] .dom-game-dev  { --dom-bg: #3A1626; --dom-fg: #F6B3CD; --dom-solid: #F27BA8; }
+:root[data-theme="dark"] .dom-music     { --dom-bg: #362A0E; --dom-fg: #F0D58A; --dom-solid: #E6B840; }
+:root[data-theme="dark"] .dom-biology   { --dom-bg: #15301D; --dom-fg: #A6E0B4; --dom-solid: #6CC985; }
+:root[data-theme="dark"] .dom-medical   { --dom-bg: #0F2E35; --dom-fg: #9EE0EC; --dom-solid: #5CCBDD; }
 
 /* ================= base ================= */
 
@@ -727,6 +739,7 @@ a.chip-main { text-decoration: none; }
 
 .prompt { font-size: 18px; font-weight: 500; overflow-wrap: anywhere; line-height: 1.45; }
 .prompt p { margin: 0 0 0.5em; }
+.prompt th, .prompt td { overflow-wrap: normal; } /* tables scroll in .table-wrap instead of splitting numbers */
 /* Equations arrive as inline code: show them large in monospace. */
 .prompt code {
   font-family: var(--mono); font-size: 1.55em; font-weight: 650; letter-spacing: -0.01em;

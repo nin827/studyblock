@@ -1,0 +1,14 @@
+{
+  "id": "ecology",
+  "title": "Ecology",
+  "description": "Energy transfer in food chains, estimating populations, population growth and biodiversity indices.",
+  "icon": "trees",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "energy", "title": "Energy transfer", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "estimates", "title": "Population estimates", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "growth", "title": "Population growth", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "biodiversity", "title": "Biodiversity", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

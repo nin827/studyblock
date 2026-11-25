@@ -1,0 +1,15 @@
+{
+  "id": "intervals-scales",
+  "title": "Intervals & Scales",
+  "description": "Note names, semitones, intervals, major and minor scales, and key signatures, all spelled correctly.",
+  "icon": "keyboard-music",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "notes", "title": "Notes", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "intervals", "title": "Intervals", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "scales", "title": "Major & minor scales", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "keys", "title": "Key signatures", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

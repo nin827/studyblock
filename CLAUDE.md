@@ -43,6 +43,7 @@ js/lib/engine.js        loads modules, generates + verifies questions, checks an
 js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
 js/lib/languages.js     code languages list (python, csharp, cpp, gdscript, rust)
 js/lib/codelang.js      language-neutral code AST, 5 renderers, interpreter
+js/lib/music.js         note/interval/scale/chord helpers (build + independent check) for Music Theory
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
@@ -193,7 +194,7 @@ The engine samples rows with the seeded rng and shuffles choices.
 ### Answer checking
 
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
-- text: trim, collapse whitespace, case-insensitive, and spaces around `:` ignored (so `2 : 7` matches `2:7`).
+- text: trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
 - choice: exact match of the chosen string.
 
 ### Multi-part questions (`answerType: "multi"`)
@@ -267,7 +268,7 @@ Scores per module/subtopic/difficulty are derived from attempts. On import, `cre
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Intervals & Scales, Chords, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**
@@ -370,6 +371,10 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Computing | `#DCEFFA` / `#0B5A86` | `#1A7FC1` |
   | History | `#F8E3DF` / `#8E2A1E` | `#B23A2E` |
   | Language | `#E8EFD9` / `#44591A` | `#6B8A23` |
+  | Game Dev | `#FCE4EE` / `#9D1B52` | `#D02A6E` |
+  | Music | `#FBF1D2` / `#765300` | `#B07D0A` |
+  | Biology | `#DFF3E4` / `#1B5E2B` | `#2E8B47` |
+  | Medical | `#DDF4F8` / `#0A5866` | `#0E8FA6` |
 
   A domain can override these with `color` in `index.json`.
 - Correct and incorrect states always show an icon and a label, not colour alone.
@@ -473,6 +478,14 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - `README.md` is an introduction for newcomers: what StudyBlock is, what it can do, a three-way quick start, and a link to the guide. Keep it short and friendly, not a manual.
 - `INSTRUCTION.md` is the full user guide (running, using, data, adding subjects, presets, troubleshooting). Update it whenever user-facing behaviour changes.
 - `CLAUDE.md` is the developer and agent spec. The main session owns all three; agents report doc changes instead of editing them.
+
+## Subject notes
+
+- **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
+- **Medical domain:** general facts and standard calculations only. No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
+- **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **Collision:** touching never counts as overlapping. **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
+- Open choices for these are in ticket 012.
 
 ## Adding a module
 

@@ -1,0 +1,15 @@
+{
+  "id": "chords",
+  "title": "Chords",
+  "description": "Triads and seventh chords spelled from letter names, inversions, and the chords of a major key in Roman numerals.",
+  "icon": "piano",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "calculator": false,
+  "subtopics": [
+    { "id": "triads", "title": "Triads", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "identify", "title": "Identify", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "in-key", "title": "Chords in a key", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "sevenths", "title": "Seventh chords", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

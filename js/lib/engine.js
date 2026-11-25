@@ -768,7 +768,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 }
 
 // Spaces around ":" don't matter, so "2 : 7" matches the ratio "2:7".
-const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').toLowerCase();
+const normText = s => String(s ?? '').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
 
 /*
  * Single questions: returns a boolean (unchanged).

@@ -1,0 +1,14 @@
+{
+  "id": "health-statistics",
+  "title": "Health Statistics",
+  "description": "Population rates, screening-test accuracy, relative risk and odds, and averages of measurements.",
+  "icon": "chart-pie",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "rates", "title": "Rates", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "screening-tests", "title": "Screening tests", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "risk", "title": "Risk", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "averages-spread", "title": "Averages and spread", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

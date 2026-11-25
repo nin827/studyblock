@@ -1,0 +1,14 @@
+{
+  "id": "rhythm",
+  "title": "Rhythm",
+  "description": "Note values and dotted notes, time signatures, counting bars, and tempo in beats per minute.",
+  "icon": "drum",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "note-values", "title": "Note values", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "time-signatures", "title": "Time signatures", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "counting-bars", "title": "Counting bars", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "tempo", "title": "Tempo", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

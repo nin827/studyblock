@@ -13,6 +13,7 @@
         "statistics",
         "ratios-percentages",
         "sequences",
+        "probability",
         "trigonometry"
       ]
     },
@@ -20,13 +21,13 @@
       "id": "science",
       "title": "Science",
       "icon": "flask-conical",
-      "description": "Physics, chemistry, biology, waves and units.",
+      "description": "Physics, forces and energy, chemistry, waves and units.",
       "modules": [
         "kinematics",
+        "forces-energy",
         "electricity",
         "unit-conversion",
         "elements",
-        "biology",
         "chemistry",
         "waves"
       ]
@@ -41,7 +42,9 @@
         "boolean-logic",
         "computing-terms",
         "code-writing",
-        "code-reviewing"
+        "code-reviewing",
+        "algorithms",
+        "networking"
       ]
     },
     {
@@ -86,6 +89,53 @@
         "vocabulary",
         "word-roots",
         "grammar"
+      ]
+    },
+    {
+      "id": "game-dev",
+      "title": "Game Dev",
+      "icon": "gamepad-2",
+      "description": "The maths behind games: vectors and movement, collisions, and drop rates.",
+      "modules": [
+        "vectors-movement",
+        "collision",
+        "game-probability"
+      ]
+    },
+    {
+      "id": "music",
+      "title": "Music Theory",
+      "icon": "music",
+      "description": "Notes, intervals, scales, keys, chords and rhythm, written out (no audio).",
+      "modules": [
+        "intervals-scales",
+        "chords",
+        "rhythm"
+      ]
+    },
+    {
+      "id": "biology",
+      "title": "Biology",
+      "icon": "leaf",
+      "description": "Cells and microscopes, genetics, ecology and the basics of living things.",
+      "modules": [
+        "biology",
+        "cells-microscopy",
+        "genetics",
+        "ecology"
+      ]
+    },
+    {
+      "id": "medical",
+      "title": "Medical",
+      "icon": "stethoscope",
+      "description": "General health facts and standard calculations. For learning only, not medical advice.",
+      "modules": [
+        "anatomy",
+        "body-measurements",
+        "vital-signs",
+        "nutrition",
+        "health-statistics"
       ]
     }
   ]

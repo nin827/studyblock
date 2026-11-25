@@ -1,0 +1,14 @@
+{
+  "id": "collision",
+  "title": "Collision",
+  "description": "How games tell when things touch: boxes, circles, rays hitting walls, and tile grids.",
+  "icon": "combine",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "boxes", "title": "Boxes", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "circles", "title": "Circles", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "rays", "title": "Rays & lines", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "grids", "title": "Grids & tiles", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}
