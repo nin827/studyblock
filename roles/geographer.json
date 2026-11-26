@@ -40,6 +40,34 @@
         "continents": { "weight": 1, "subtopics": ["oceans-seas"] }
       },
       "exclusiveSubtopics": ["climate-table", "contour-slope"]
+    },
+    {
+      "id": "gis-analyst",
+      "title": "GIS Analyst",
+      "flags": ["tool_heavy"],
+      "icon": "map-pinned",
+      "description": "Grid references, coordinates, distances and gradients: locating and measuring features on a map layer.",
+      "mix": {
+        "map-skills": { "weight": 3, "subtopics": ["grid-references", "scale-distance", "bearings"] },
+        "coordinate-geometry": { "weight": 3, "subtopics": ["points-distance", "gradient-lines", "intersections"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr"] },
+        "trigonometry": { "weight": 1, "subtopics": ["right-sides"] }
+      },
+      "exclusiveSubtopics": ["grid-route", "scale-journey"]
+    },
+    {
+      "id": "physical-geographer",
+      "title": "Physical Geographer",
+      "icon": "mountain-snow",
+      "description": "Rivers, mountains and deserts: slopes, flows and climate figures behind the landscape.",
+      "mix": {
+        "physical-geography": { "weight": 4, "subtopics": ["rivers", "mountains", "deserts-lakes"] },
+        "trigonometry": { "weight": 2, "subtopics": ["right-angles"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr"] },
+        "fluid-systems": { "weight": 1, "subtopics": ["flow-rate"] },
+        "map-skills": { "weight": 1, "subtopics": ["scale-distance"] }
+      },
+      "exclusiveSubtopics": ["contour-slope", "climate-table"]
     }
   ]
 }

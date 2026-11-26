@@ -128,6 +128,109 @@
         "decay-safety",
         "heating-power"
       ]
+    },
+    {
+      "id": "optical-physicist",
+      "title": "Optical Physicist",
+      "icon": "aperture",
+      "description": "Light, lenses, refraction and the waves that carry signals over distance.",
+      "mix": {
+        "waves": {
+          "weight": 5
+        },
+        "trigonometry": {
+          "weight": 2,
+          "subtopics": [
+            "right-angles",
+            "non-right"
+          ]
+        },
+        "astronomy": {
+          "weight": 1,
+          "subtopics": [
+            "distances"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "index-laws",
+            "logarithms"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "length",
+            "time-speed"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "orbit-signals"
+      ]
+    },
+    {
+      "id": "geophysicist",
+      "title": "Geophysicist",
+      "icon": "mountain",
+      "description": "Seismic waves, rock pressure, heat from below and dating by decay.",
+      "mix": {
+        "waves": {
+          "weight": 3,
+          "subtopics": [
+            "wave-equation",
+            "period",
+            "refraction"
+          ]
+        },
+        "gases-pressure": {
+          "weight": 2,
+          "subtopics": [
+            "pressure",
+            "liquid-pressure",
+            "pressure-context"
+          ]
+        },
+        "radioactivity": {
+          "weight": 2,
+          "subtopics": [
+            "half-life"
+          ]
+        },
+        "thermal-physics": {
+          "weight": 2,
+          "subtopics": [
+            "specific-heat",
+            "latent-heat"
+          ]
+        },
+        "forces-energy": {
+          "weight": 1,
+          "subtopics": [
+            "forces",
+            "energy"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "logarithms",
+            "growth-decay"
+          ]
+        },
+        "trigonometry": {
+          "weight": 1,
+          "subtopics": [
+            "right-angles",
+            "non-right"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "decay-safety",
+        "heating-power"
+      ]
     }
   ]
 }

@@ -41,6 +41,33 @@
         "accounting-terms": { "weight": 1, "subtopics": ["terms"] }
       },
       "exclusiveSubtopics": ["markup-margin", "deal-compare", "stock-shrinkage"]
+    },
+    {
+      "id": "retail-buyer",
+      "title": "Retail Buyer",
+      "icon": "shopping-cart",
+      "description": "Buying in foreign currencies, cost per unit, markup and margin targets, and how much stock to order.",
+      "mix": {
+        "shopping-money": { "weight": 4, "subtopics": ["currency", "unit-price"] },
+        "business-math": { "weight": 3, "subtopics": ["margins", "percentages"] },
+        "statistics": { "weight": 1, "subtopics": ["weighted-average"] },
+        "ratios-percentages": { "weight": 1, "subtopics": ["proportion"] },
+        "marketing": { "weight": 1, "subtopics": ["pricing"] }
+      },
+      "exclusiveSubtopics": ["markup-margin", "deal-compare", "stock-shrinkage"]
+    },
+    {
+      "id": "ecommerce-manager",
+      "title": "E-commerce Manager",
+      "icon": "monitor-smartphone",
+      "description": "Site visits and conversion rates, basket size, online discounts and deals, and customer segments.",
+      "mix": {
+        "ratios-percentages": { "weight": 3, "subtopics": ["percentages", "proportion"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "marketing": { "weight": 2, "subtopics": ["segmentation", "pricing"] },
+        "shopping-money": { "weight": 2, "subtopics": ["discounts"] }
+      },
+      "exclusiveSubtopics": ["footfall-staffing", "deal-compare"]
     }
   ]
 }

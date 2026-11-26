@@ -33,6 +33,33 @@
         "grammar": { "weight": 1, "subtopics": ["parts-of-speech", "tenses"] }
       },
       "exclusiveSubtopics": ["word-building", "made-up-language"]
+    },
+    {
+      "id": "lexicographer",
+      "title": "Lexicographer",
+      "icon": "book-marked",
+      "description": "Meanings, synonyms and easily confused words, and building definitions from roots and affixes.",
+      "mix": {
+        "vocabulary": { "weight": 4 },
+        "word-roots": { "weight": 2, "subtopics": ["latin-roots", "greek-roots"] },
+        "grammar": { "weight": 2, "subtopics": ["parts-of-speech"] }
+      },
+      "exclusiveSubtopics": ["word-building", "readability"]
+    },
+    {
+      "id": "computational-linguist",
+      "title": "Computational Linguist",
+      "flags": ["tool_heavy"],
+      "icon": "file-code",
+      "description": "Grammar as rules, logic and counts: parsing word classes, applying stated rules and scoring text.",
+      "mix": {
+        "grammar": { "weight": 3, "subtopics": ["parts-of-speech", "agreement"] },
+        "boolean-logic": { "weight": 2, "subtopics": ["expressions", "truth-tables"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "probability": { "weight": 1, "subtopics": ["basic"] },
+        "word-roots": { "weight": 1, "subtopics": ["prefixes", "suffixes"] }
+      },
+      "exclusiveSubtopics": ["made-up-language", "readability"]
     }
   ]
 }

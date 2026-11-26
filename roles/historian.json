@@ -46,6 +46,37 @@
         "object-labels",
         "exhibit-timeline"
       ]
+    },
+    {
+      "id": "ancient-historian",
+      "title": "Ancient Historian",
+      "icon": "amphora",
+      "description": "The ancient and medieval worlds, counted across BC and AD with no year 0.",
+      "mix": {
+        "world-history": { "weight": 4, "subtopics": ["ancient", "medieval-early-modern"] },
+        "timelines": { "weight": 4, "subtopics": ["years-between", "centuries", "spans"] },
+        "inventions": { "weight": 1, "subtopics": ["communication", "transport"] }
+      },
+      "exclusiveSubtopics": [
+        "dating-sources",
+        "calendar-spans"
+      ]
+    },
+    {
+      "id": "science-historian",
+      "title": "Science Historian",
+      "icon": "flask-conical",
+      "description": "Inventions and discoveries put in order, dated and spaced out along a timeline.",
+      "mix": {
+        "inventions": { "weight": 4 },
+        "timelines": { "weight": 3, "subtopics": ["years-between", "ordering", "spans"] },
+        "world-history": { "weight": 1, "subtopics": ["modern", "20th-century"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": [
+        "dating-sources",
+        "exhibit-timeline"
+      ]
     }
   ]
 }

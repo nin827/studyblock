@@ -46,6 +46,36 @@
         "travel": { "weight": 1, "subtopics": ["journeys", "timetables"] }
       },
       "exclusiveSubtopics": ["chart-work", "eta-descent"]
+    },
+    {
+      "id": "flight-instructor",
+      "title": "Flight Instructor",
+      "icon": "graduation-cap",
+      "description": "The forces and energy behind flight, pressure and altitude, speeds and climbs, and every planning skill a student needs.",
+      "mix": {
+        "forces-energy": { "weight": 3, "subtopics": ["forces", "energy", "work-power"] },
+        "kinematics": { "weight": 2, "subtopics": ["speed", "acceleration", "motion-equations"] },
+        "gases-pressure": { "weight": 2, "subtopics": ["pressure", "gas-laws"] },
+        "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles", "non-right"] },
+        "map-skills": { "weight": 2, "subtopics": ["scale-distance", "bearings"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["length", "time-speed", "temperature"] }
+      },
+      "exclusiveSubtopics": ["wind-triangle", "fuel-planning", "chart-work", "eta-descent"]
+    },
+    {
+      "id": "cargo-pilot",
+      "title": "Cargo Pilot",
+      "icon": "package",
+      "description": "Loads balanced with moments, masses and volumes, fuel against payload, and wind and time zones on long legs.",
+      "mix": {
+        "structures": { "weight": 3, "subtopics": ["moments"] },
+        "unit-conversion": { "weight": 3, "subtopics": ["mass-volume", "length"] },
+        "travel": { "weight": 2, "subtopics": ["fuel-costs", "journeys"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+        "vectors-movement": { "weight": 1, "subtopics": ["vectors"] },
+        "time-dates": { "weight": 1, "subtopics": ["time-zones"] }
+      },
+      "exclusiveSubtopics": ["fuel-planning", "wind-triangle", "eta-descent"]
     }
   ]
 }

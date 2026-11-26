@@ -133,6 +133,90 @@
         "activity-energy",
         "fluid-volume"
       ]
+    },
+    {
+      "id": "menu-planner",
+      "title": "Menu Planner",
+      "icon": "utensils",
+      "description": "Scaling recipes, converting kitchen units and working out the energy per portion of a planned menu.",
+      "mix": {
+        "recipes-scaling": {
+          "weight": 4,
+          "subtopics": [
+            "scaling",
+            "kitchen-units"
+          ]
+        },
+        "nutrition": {
+          "weight": 3,
+          "subtopics": [
+            "energy-from-food",
+            "food-labels"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "proportion"
+          ]
+        },
+        "shopping-money": {
+          "weight": 1,
+          "subtopics": [
+            "unit-price"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "mass-volume"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "label-scale",
+        "label-energy"
+      ]
+    },
+    {
+      "id": "nutrition-researcher",
+      "title": "Nutrition Researcher",
+      "icon": "chart-column",
+      "description": "Averages, spreads and percentages from made-up survey figures on food energy and body measurements.",
+      "mix": {
+        "statistics": {
+          "weight": 4,
+          "subtopics": [
+            "mean-median-mode",
+            "range-iqr",
+            "weighted-average"
+          ]
+        },
+        "nutrition": {
+          "weight": 2,
+          "subtopics": [
+            "energy-balance",
+            "energy-units"
+          ]
+        },
+        "body-measurements": {
+          "weight": 2,
+          "subtopics": [
+            "bmi",
+            "body-ratios"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "percentages"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "label-energy",
+        "activity-energy"
+      ]
     }
   ]
 }

@@ -40,6 +40,34 @@
         "sql-queries": { "weight": 1, "subtopics": ["aggregates"] }
       },
       "exclusiveSubtopics": ["experiment-test", "regression-fit"]
+    },
+    {
+      "id": "forecasting-analyst",
+      "title": "Forecasting Analyst",
+      "icon": "trending-up",
+      "description": "Growth and decay models, sequences and trends, least-squares lines and the derivatives behind fitted curves.",
+      "mix": {
+        "exponents-logs": { "weight": 3, "subtopics": ["growth-decay", "logarithms", "solving"] },
+        "sequences": { "weight": 3, "subtopics": ["arithmetic", "geometric", "series"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "calculus": { "weight": 1, "subtopics": ["derivatives", "stationary"] }
+      },
+      "exclusiveSubtopics": ["regression-fit", "model-training"]
+    },
+    {
+      "id": "quantitative-researcher",
+      "title": "Quantitative Researcher",
+      "icon": "chart-candlestick",
+      "description": "Expected values and counting, risk and return, compound growth and the statistics used to test a trading idea.",
+      "mix": {
+        "probability": { "weight": 3, "subtopics": ["expected-value", "combined", "counting"] },
+        "finance-theory": { "weight": 2, "subtopics": ["risk-return", "appraisal"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr", "weighted-average"] },
+        "exponents-logs": { "weight": 1, "subtopics": ["growth-decay"] },
+        "finance": { "weight": 1, "subtopics": ["annuities-savings"] },
+        "calculus": { "weight": 1, "subtopics": ["stationary"] }
+      },
+      "exclusiveSubtopics": ["experiment-test", "regression-fit", "model-training"]
     }
   ]
 }

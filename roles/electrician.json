@@ -42,6 +42,33 @@
         "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] }
       },
       "exclusiveSubtopics": ["fault-finding", "running-cost"]
+    },
+    {
+      "id": "solar-pv-installer",
+      "title": "Solar PV Installer",
+      "icon": "sun",
+      "description": "Panel power and roof areas, cable and voltage drop, and the running cost and payback of an installation.",
+      "mix": {
+        "electricity": { "weight": 4, "subtopics": ["power", "ohms-law"] },
+        "business-math": { "weight": 2, "subtopics": ["percentages", "interest"] },
+        "geometry": { "weight": 2, "subtopics": ["perimeter-area"] },
+        "trigonometry": { "weight": 1, "subtopics": ["right-sides", "right-angles"] },
+        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] }
+      },
+      "exclusiveSubtopics": ["cable-drop", "running-cost", "breaker-load"]
+    },
+    {
+      "id": "controls-electrician",
+      "title": "Controls Electrician",
+      "icon": "circuit-board",
+      "description": "Resistor codes, voltage dividers, LED resistors, RC timing and logic gates in control circuits, plus fault finding.",
+      "mix": {
+        "electronics": { "weight": 4, "subtopics": ["resistor-codes", "dividers", "led-resistors", "rc-timing"] },
+        "electricity": { "weight": 3, "subtopics": ["ohms-law", "series-parallel"] },
+        "boolean-logic": { "weight": 2, "subtopics": ["gates", "truth-tables"] },
+        "number-bases": { "weight": 1, "subtopics": ["binary"] }
+      },
+      "exclusiveSubtopics": ["fault-finding", "breaker-load"]
     }
   ]
 }

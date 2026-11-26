@@ -106,6 +106,108 @@
         "field-ecology",
         "growth-diversity"
       ]
+    },
+    {
+      "id": "microbiologist",
+      "title": "Microbiologist",
+      "icon": "microscope",
+      "description": "Cells under the microscope, dilutions and the fast growth of microbe colonies.",
+      "mix": {
+        "cells-microscopy": {
+          "weight": 4
+        },
+        "exponents-logs": {
+          "weight": 3,
+          "subtopics": [
+            "growth-decay",
+            "logarithms"
+          ]
+        },
+        "ecology": {
+          "weight": 2,
+          "subtopics": [
+            "growth"
+          ]
+        },
+        "chemistry": {
+          "weight": 1,
+          "subtopics": [
+            "concentration"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode"
+          ]
+        },
+        "biology": {
+          "weight": 1,
+          "subtopics": [
+            "cells"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "growth-diversity"
+      ]
+    },
+    {
+      "id": "bioinformatician",
+      "title": "Bioinformatician",
+      "flags": [
+        "tool_heavy",
+        "tool_specific"
+      ],
+      "icon": "binary",
+      "description": "Genetic data at scale: queries, searches and statistics over many samples.",
+      "mix": {
+        "genetics": {
+          "weight": 3,
+          "subtopics": [
+            "punnett",
+            "dihybrid",
+            "population"
+          ]
+        },
+        "statistics": {
+          "weight": 2
+        },
+        "sql-queries": {
+          "weight": 2,
+          "subtopics": [
+            "select-where",
+            "aggregates",
+            "group-join"
+          ]
+        },
+        "algorithms": {
+          "weight": 2,
+          "subtopics": [
+            "searching",
+            "sorting",
+            "complexity"
+          ]
+        },
+        "code-writing": {
+          "weight": 1,
+          "subtopics": [
+            "loops",
+            "lists-strings"
+          ]
+        },
+        "probability": {
+          "weight": 1,
+          "subtopics": [
+            "combined",
+            "counting"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "hardy-weinberg",
+        "cross-counts"
+      ]
     }
   ]
 }

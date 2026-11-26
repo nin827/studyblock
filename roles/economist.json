@@ -42,6 +42,34 @@
         "business-math": { "weight": 1, "subtopics": ["percentages"] }
       },
       "exclusiveSubtopics": ["elasticity-revenue", "tax-incidence"]
+    },
+    {
+      "id": "policy-economist",
+      "title": "Policy Economist",
+      "icon": "scale",
+      "description": "Taxes, subsidies and price controls: who pays, what changes, and the real value of a budget over time.",
+      "mix": {
+        "economics": { "weight": 4, "subtopics": ["interventions", "macro"] },
+        "finance": { "weight": 2, "subtopics": ["loans", "annuities-savings"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages"] },
+        "exponents-logs": { "weight": 1, "subtopics": ["growth-decay"] },
+        "statistics": { "weight": 1, "subtopics": ["weighted-average"] }
+      },
+      "exclusiveSubtopics": ["tax-incidence", "inflation-real"]
+    },
+    {
+      "id": "financial-economist",
+      "title": "Financial Economist",
+      "icon": "piggy-bank",
+      "description": "Interest, compound growth, risk and return, and what inflation does to the value of money.",
+      "mix": {
+        "finance": { "weight": 3, "subtopics": ["loans", "annuities-savings"] },
+        "finance-theory": { "weight": 3, "subtopics": ["risk-return", "appraisal"] },
+        "exponents-logs": { "weight": 2, "subtopics": ["growth-decay", "solving"] },
+        "economics": { "weight": 2, "subtopics": ["macro"] },
+        "business-math": { "weight": 1, "subtopics": ["interest"] }
+      },
+      "exclusiveSubtopics": ["growth-doubling", "inflation-real"]
     }
   ]
 }

@@ -38,6 +38,35 @@
         "logic-puzzles": { "weight": 1, "subtopics": ["whodunit"] }
       },
       "exclusiveSubtopics": ["record-patterns", "flag-odds"]
+    },
+    {
+      "id": "digital-forensics-investigator",
+      "title": "Digital Forensics Investigator",
+      "icon": "hard-drive",
+      "description": "Log timelines across time zones, binary and hexadecimal data, IP addresses and odd entries in system records.",
+      "flags": ["tool_heavy"],
+      "mix": {
+        "number-bases": { "weight": 3, "subtopics": ["hexadecimal", "binary"] },
+        "time-dates": { "weight": 3, "subtopics": ["clock", "time-zones"] },
+        "networking": { "weight": 2, "subtopics": ["ip-binary", "data-transfer"] },
+        "data-representation": { "weight": 1, "subtopics": ["characters"] },
+        "logic-puzzles": { "weight": 1, "subtopics": ["ordering"] }
+      },
+      "exclusiveSubtopics": ["timeline", "record-patterns"]
+    },
+    {
+      "id": "insurance-investigator",
+      "title": "Insurance Investigator",
+      "icon": "umbrella",
+      "description": "Claim timelines, statements where one person lies, expected payouts and how likely a flagged claim is to be real.",
+      "mix": {
+        "probability": { "weight": 3, "subtopics": ["basic", "combined", "expected-value"] },
+        "logic-puzzles": { "weight": 2, "subtopics": ["whodunit", "knights-knaves"] },
+        "time-dates": { "weight": 2, "subtopics": ["clock", "calendar"] },
+        "business-math": { "weight": 2, "subtopics": ["percentages"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": ["statements", "flag-odds", "timeline"]
     }
   ]
 }

@@ -45,6 +45,35 @@
         "word-roots": { "weight": 1 }
       },
       "exclusiveSubtopics": ["diagnose-data", "diagnose-moles"]
+    },
+    {
+      "id": "moderator",
+      "title": "Moderator",
+      "icon": "scale",
+      "description": "Re-checking a sample of marked work and comparing marks so that marking stays consistent.",
+      "mix": {
+        "statistics": { "weight": 3, "subtopics": ["mean-median-mode", "range-iqr", "weighted-average"] },
+        "algebra": { "weight": 2, "subtopics": ["linear"] },
+        "chemistry": { "weight": 2, "subtopics": ["moles", "concentration"] },
+        "fractions": { "weight": 1 },
+        "kinematics": { "weight": 1, "subtopics": ["speed"] }
+      },
+      "exclusiveSubtopics": ["mark-equations", "mark-fractions", "diagnose-moles"]
+    },
+    {
+      "id": "learning-support",
+      "title": "Learning Support",
+      "icon": "hand-helping",
+      "description": "Working through number, fraction and sentence basics with a student and spotting where they slipped.",
+      "mix": {
+        "arithmetic": { "weight": 3 },
+        "fractions": { "weight": 3 },
+        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] },
+        "grammar": { "weight": 2 },
+        "vocabulary": { "weight": 1, "subtopics": ["meanings", "commonly-confused"] },
+        "word-roots": { "weight": 1, "subtopics": ["prefixes", "suffixes"] }
+      },
+      "exclusiveSubtopics": ["mark-fractions", "diagnose-data"]
     }
   ]
 }

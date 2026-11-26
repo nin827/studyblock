@@ -135,6 +135,112 @@
         "loot-odds",
         "xp-curve"
       ]
+    },
+    {
+      "id": "graphics-programmer",
+      "title": "Graphics Programmer",
+      "icon": "box",
+      "description": "Vectors, angles, colours and pixels: drawing a scene fast enough every frame.",
+      "mix": {
+        "vectors-movement": {
+          "weight": 3,
+          "subtopics": [
+            "vectors",
+            "interpolation",
+            "angles"
+          ]
+        },
+        "trigonometry": {
+          "weight": 3,
+          "subtopics": [
+            "right-sides",
+            "right-angles",
+            "non-right"
+          ]
+        },
+        "coordinate-geometry": {
+          "weight": 2,
+          "subtopics": [
+            "points-distance",
+            "gradient-lines",
+            "intersections"
+          ]
+        },
+        "data-representation": {
+          "weight": 2,
+          "subtopics": [
+            "images",
+            "compression"
+          ]
+        },
+        "number-bases": {
+          "weight": 1,
+          "subtopics": [
+            "binary",
+            "hexadecimal"
+          ]
+        },
+        "algorithms": {
+          "weight": 1,
+          "subtopics": [
+            "complexity"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "frame-budget",
+        "move-collide"
+      ]
+    },
+    {
+      "id": "economy-designer",
+      "title": "Economy Designer",
+      "icon": "coins",
+      "description": "In-game currencies, prices, drop tables and reward curves kept in balance.",
+      "mix": {
+        "game-probability": {
+          "weight": 3,
+          "subtopics": [
+            "drop-rates",
+            "loot",
+            "pity"
+          ]
+        },
+        "sequences": {
+          "weight": 2
+        },
+        "business-case": {
+          "weight": 2,
+          "subtopics": [
+            "pricing-decision",
+            "unit-economics"
+          ]
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "weighted-average"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "ratios",
+            "percentages"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "growth-decay"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "loot-odds",
+        "xp-curve"
+      ]
     }
   ]
 }

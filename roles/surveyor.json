@@ -39,6 +39,33 @@
         "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr"] }
       },
       "exclusiveSubtopics": ["levelling", "traverse-closure"]
+    },
+    {
+      "id": "engineering-surveyor",
+      "title": "Engineering Surveyor",
+      "icon": "construction",
+      "description": "Setting out from coordinates, levels and volumes for earthworks, and measurements checked against stated tolerances.",
+      "mix": {
+        "coordinate-geometry": { "weight": 3, "subtopics": ["points-distance", "gradient-lines", "intersections"] },
+        "tolerances": { "weight": 3, "subtopics": ["measurement", "limits", "stack-up"] },
+        "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] },
+        "geometry": { "weight": 2, "subtopics": ["volume", "pythagoras"] }
+      },
+      "exclusiveSubtopics": ["coordinates", "levelling", "traverse-closure"]
+    },
+    {
+      "id": "topographic-surveyor",
+      "title": "Topographic Surveyor",
+      "icon": "mountain",
+      "description": "Grid references, map scales and bearings, spot heights and gradients, and areas taken from a survey.",
+      "mix": {
+        "map-skills": { "weight": 4, "subtopics": ["scale-distance", "grid-references", "bearings"] },
+        "coordinate-geometry": { "weight": 2, "subtopics": ["gradient-lines", "points-distance"] },
+        "geometry": { "weight": 2, "subtopics": ["perimeter-area"] },
+        "trigonometry": { "weight": 1, "subtopics": ["right-angles"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": ["levelling", "plot-area", "coordinates"]
     }
   ]
 }

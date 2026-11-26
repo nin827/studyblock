@@ -149,6 +149,100 @@
         "gas-vessel",
         "batch-cost"
       ]
+    },
+    {
+      "id": "environmental-chemist",
+      "title": "Environmental Chemist",
+      "icon": "leaf",
+      "description": "Pollutant concentrations, gas levels and river flows, sampled and checked against limits.",
+      "mix": {
+        "chemistry": {
+          "weight": 4,
+          "subtopics": [
+            "concentration",
+            "moles",
+            "composition"
+          ]
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "range-iqr"
+          ]
+        },
+        "gases-pressure": {
+          "weight": 2,
+          "subtopics": [
+            "gas-laws",
+            "pressure"
+          ]
+        },
+        "fluid-systems": {
+          "weight": 1,
+          "subtopics": [
+            "flow-rate"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "mass-volume"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "logarithms"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "titration",
+        "gas-vessel"
+      ]
+    },
+    {
+      "id": "physical-chemist",
+      "title": "Physical Chemist",
+      "icon": "thermometer",
+      "description": "Energy, gases and rates: the physics that decides how a reaction behaves.",
+      "mix": {
+        "thermal-physics": {
+          "weight": 3
+        },
+        "gases-pressure": {
+          "weight": 3,
+          "subtopics": [
+            "gas-laws",
+            "pressure"
+          ]
+        },
+        "chemistry": {
+          "weight": 2,
+          "subtopics": [
+            "moles",
+            "balancing"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 2,
+          "subtopics": [
+            "logarithms",
+            "growth-decay"
+          ]
+        },
+        "calculus": {
+          "weight": 1,
+          "subtopics": [
+            "derivatives"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "gas-vessel",
+        "yield-purity"
+      ]
     }
   ]
 }

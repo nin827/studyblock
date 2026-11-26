@@ -137,6 +137,94 @@
         "staffing-plan",
         "stock-reorder"
       ]
+    },
+    {
+      "id": "warehouse-manager",
+      "title": "Warehouse Manager",
+      "icon": "warehouse",
+      "description": "Stock levels, reorder points, pallet and shelf space, and how much fits on each outbound load.",
+      "mix": {
+        "business-case": {
+          "weight": 4,
+          "subtopics": [
+            "inventory"
+          ]
+        },
+        "geometry": {
+          "weight": 2,
+          "subtopics": [
+            "perimeter-area",
+            "volume"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "proportion",
+            "percentages"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode"
+          ]
+        },
+        "business-math": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "stock-reorder",
+        "load-planning"
+      ]
+    },
+    {
+      "id": "workforce-planner",
+      "title": "Workforce Planner",
+      "icon": "calendar-clock",
+      "description": "Shift rotas, crew sizes, driving-time breaks and the dates a schedule has to hit.",
+      "mix": {
+        "business-case": {
+          "weight": 3,
+          "subtopics": [
+            "hiring"
+          ]
+        },
+        "time-dates": {
+          "weight": 3,
+          "subtopics": [
+            "clock",
+            "calendar"
+          ]
+        },
+        "project-scheduling": {
+          "weight": 2,
+          "subtopics": [
+            "gantt-dates",
+            "float"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "weighted-average"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "proportion"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "staffing-plan",
+        "route-timing"
+      ]
     }
   ]
 }

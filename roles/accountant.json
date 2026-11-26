@@ -142,6 +142,107 @@
         "break-even-review",
         "budget-variance"
       ]
+    },
+    {
+      "id": "tax-accountant",
+      "title": "Tax Accountant",
+      "icon": "receipt",
+      "description": "Percentages, allowances, depreciation and classification: the groundwork of a tax return.",
+      "mix": {
+        "business-math": {
+          "weight": 3
+        },
+        "finance": {
+          "weight": 2,
+          "subtopics": [
+            "depreciation"
+          ]
+        },
+        "accounting-theory": {
+          "weight": 2,
+          "subtopics": [
+            "classification",
+            "concepts",
+            "journal"
+          ]
+        },
+        "accounting-terms": {
+          "weight": 2,
+          "subtopics": [
+            "statements",
+            "terms"
+          ]
+        },
+        "economics": {
+          "weight": 1,
+          "subtopics": [
+            "interventions"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "transaction-review",
+        "asset-review"
+      ]
+    },
+    {
+      "id": "forensic-accountant",
+      "title": "Forensic Accountant",
+      "icon": "file-search",
+      "description": "Follows the money: journals, ratios, statistics and the entries that do not add up.",
+      "mix": {
+        "accounting-theory": {
+          "weight": 3,
+          "subtopics": [
+            "double-entry",
+            "journal",
+            "equation"
+          ]
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "range-iqr"
+          ]
+        },
+        "finance-theory": {
+          "weight": 2,
+          "subtopics": [
+            "ratios"
+          ]
+        },
+        "sql-queries": {
+          "weight": 1,
+          "subtopics": [
+            "select-where",
+            "aggregates"
+          ]
+        },
+        "accounting-terms": {
+          "weight": 1,
+          "subtopics": [
+            "assets-liabilities",
+            "terms"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "audit-review",
+        "transaction-review"
+      ]
     }
   ]
 }

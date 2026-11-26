@@ -40,6 +40,35 @@
         "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] }
       },
       "exclusiveSubtopics": ["concrete-batches", "setting-out"]
+    },
+    {
+      "id": "water-engineer",
+      "title": "Water Engineer",
+      "icon": "droplets",
+      "description": "Pipe flows, pumps, tanks and water pressure, with the volumes and levels that go with them.",
+      "mix": {
+        "fluid-systems": { "weight": 5 },
+        "gases-pressure": { "weight": 2, "subtopics": ["pressure", "liquid-pressure"] },
+        "geometry": { "weight": 2, "subtopics": ["volume", "perimeter-area"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["mass-volume"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": ["concrete-batches", "setting-out"]
+    },
+    {
+      "id": "geotechnical-engineer",
+      "title": "Geotechnical Engineer",
+      "icon": "layers",
+      "description": "Ground stresses, slopes, earthworks volumes and ground anchors, checked against a factor of safety.",
+      "mix": {
+        "structures": { "weight": 3, "subtopics": ["stress-strain", "factor-of-safety"] },
+        "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+        "gases-pressure": { "weight": 2, "subtopics": ["pressure", "liquid-pressure"] },
+        "geometry": { "weight": 2, "subtopics": ["volume"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["mass-volume"] },
+        "statistics": { "weight": 1, "subtopics": ["range-iqr"] }
+      },
+      "exclusiveSubtopics": ["concrete-batches", "tie-rod"]
     }
   ]
 }

@@ -99,6 +99,85 @@
         "bar-timing",
         "transposition"
       ]
+    },
+    {
+      "id": "music-analyst",
+      "title": "Music Analyst",
+      "icon": "file-music",
+      "description": "Naming chords and sevenths, placing them in a key and reading the cadences of a written score.",
+      "mix": {
+        "chords": {
+          "weight": 5,
+          "subtopics": [
+            "identify",
+            "sevenths",
+            "in-key"
+          ]
+        },
+        "intervals-scales": {
+          "weight": 3,
+          "subtopics": [
+            "intervals",
+            "keys"
+          ]
+        },
+        "rhythm": {
+          "weight": 1,
+          "subtopics": [
+            "time-signatures"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "key-chords",
+        "progression"
+      ]
+    },
+    {
+      "id": "music-producer",
+      "title": "Music Producer",
+      "flags": [
+        "tool_heavy"
+      ],
+      "icon": "audio-waveform",
+      "description": "Tempo, bar and track lengths, audio file sizes and the chord loops a track is built on.",
+      "mix": {
+        "rhythm": {
+          "weight": 4,
+          "subtopics": [
+            "tempo",
+            "counting-bars",
+            "note-values"
+          ]
+        },
+        "data-representation": {
+          "weight": 2,
+          "subtopics": [
+            "sound"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "ratios",
+            "proportion"
+          ]
+        },
+        "chords": {
+          "weight": 1,
+          "subtopics": [
+            "triads",
+            "in-key"
+          ]
+        },
+        "fractions": {
+          "weight": 1
+        }
+      },
+      "exclusiveSubtopics": [
+        "bar-timing",
+        "progression"
+      ]
     }
   ]
 }

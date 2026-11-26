@@ -132,6 +132,89 @@
         "cipher-decode",
         "log-flags"
       ]
+    },
+    {
+      "id": "network-architect",
+      "title": "Network Architect",
+      "icon": "waypoints",
+      "description": "Address blocks, link capacity and growth: designing a network that still fits next year's traffic.",
+      "mix": {
+        "networking": {
+          "weight": 4,
+          "subtopics": [
+            "masks-cidr",
+            "network-broadcast",
+            "data-transfer"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 2,
+          "subtopics": [
+            "index-laws",
+            "growth-decay"
+          ]
+        },
+        "data-representation": {
+          "weight": 2,
+          "subtopics": [
+            "images",
+            "sound",
+            "compression"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "time-speed"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode",
+            "weighted-average"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "subnet-plan",
+        "transfer-window"
+      ]
+    },
+    {
+      "id": "network-support-technician",
+      "title": "Network Support Technician",
+      "icon": "headset",
+      "description": "Hardware, data units and addresses in binary and hex: the everyday checks behind a support ticket.",
+      "mix": {
+        "computing-terms": {
+          "weight": 4
+        },
+        "networking": {
+          "weight": 3,
+          "subtopics": [
+            "ip-binary",
+            "network-broadcast"
+          ]
+        },
+        "number-bases": {
+          "weight": 2,
+          "subtopics": [
+            "binary",
+            "hexadecimal"
+          ]
+        },
+        "boolean-logic": {
+          "weight": 1,
+          "subtopics": [
+            "gates"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "subnet-plan",
+        "log-flags"
+      ]
     }
   ]
 }

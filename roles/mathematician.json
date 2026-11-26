@@ -146,6 +146,96 @@
         "claims-pricing",
         "growth-model"
       ]
+    },
+    {
+      "id": "pure-mathematician",
+      "title": "Pure Mathematician",
+      "icon": "infinity",
+      "description": "Primes, proofs, series and logic: maths studied for its own structure.",
+      "mix": {
+        "number-theory": {
+          "weight": 4
+        },
+        "algebra": {
+          "weight": 2
+        },
+        "sequences": {
+          "weight": 2
+        },
+        "syllogisms": {
+          "weight": 2
+        },
+        "calculus": {
+          "weight": 1,
+          "subtopics": [
+            "derivatives",
+            "integration"
+          ]
+        },
+        "geometry": {
+          "weight": 1,
+          "subtopics": [
+            "angles",
+            "pythagoras"
+          ]
+        },
+        "trigonometry": {
+          "weight": 1,
+          "subtopics": [
+            "right-angles",
+            "non-right"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "check-derivation"
+      ]
+    },
+    {
+      "id": "applied-mathematician",
+      "title": "Applied Mathematician",
+      "icon": "chart-spline",
+      "description": "Rates of change, models and curves fitted to how real things move and grow.",
+      "mix": {
+        "calculus": {
+          "weight": 4
+        },
+        "exponents-logs": {
+          "weight": 3
+        },
+        "coordinate-geometry": {
+          "weight": 2,
+          "subtopics": [
+            "gradient-lines",
+            "intersections"
+          ]
+        },
+        "trigonometry": {
+          "weight": 2,
+          "subtopics": [
+            "right-sides",
+            "non-right"
+          ]
+        },
+        "sequences": {
+          "weight": 1,
+          "subtopics": [
+            "geometric",
+            "series"
+          ]
+        },
+        "kinematics": {
+          "weight": 1,
+          "subtopics": [
+            "acceleration",
+            "motion-equations"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "growth-model",
+        "check-derivation"
+      ]
     }
   ]
 }

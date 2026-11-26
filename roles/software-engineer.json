@@ -159,6 +159,121 @@
         "hot-loop",
         "fx-payout"
       ]
+    },
+    {
+      "id": "security-engineer",
+      "title": "Security Engineer",
+      "icon": "lock-keyhole",
+      "description": "Ciphers, keys, networks and the bugs an attacker would look for first.",
+      "mix": {
+        "number-theory": {
+          "weight": 3,
+          "subtopics": [
+            "primes-factors",
+            "modular",
+            "ciphers",
+            "keys-rsa"
+          ]
+        },
+        "code-reviewing": {
+          "weight": 3,
+          "subtopics": [
+            "find-the-bug",
+            "fix-the-bug",
+            "bug-types"
+          ]
+        },
+        "networking": {
+          "weight": 2
+        },
+        "computing-terms": {
+          "weight": 2,
+          "subtopics": [
+            "security",
+            "networks"
+          ]
+        },
+        "boolean-logic": {
+          "weight": 1,
+          "subtopics": [
+            "gates",
+            "expressions"
+          ]
+        },
+        "number-bases": {
+          "weight": 1,
+          "subtopics": [
+            "binary",
+            "hexadecimal"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "characters"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "api-endpoint",
+        "ledger-check"
+      ]
+    },
+    {
+      "id": "systems-programmer",
+      "title": "Systems Programmer",
+      "icon": "square-terminal",
+      "description": "Close to the machine: bits, data structures, complexity and code that has to run fast.",
+      "mix": {
+        "algorithms": {
+          "weight": 3,
+          "subtopics": [
+            "complexity",
+            "data-structures",
+            "trace"
+          ]
+        },
+        "number-bases": {
+          "weight": 2
+        },
+        "boolean-logic": {
+          "weight": 2
+        },
+        "code-reviewing": {
+          "weight": 2,
+          "subtopics": [
+            "predict-output",
+            "find-the-bug",
+            "language-features"
+          ]
+        },
+        "code-writing": {
+          "weight": 2,
+          "subtopics": [
+            "expressions",
+            "loops",
+            "functions"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "characters",
+            "compression"
+          ]
+        },
+        "computing-terms": {
+          "weight": 1,
+          "subtopics": [
+            "hardware",
+            "data-units"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "hot-loop",
+        "ledger-check"
+      ]
     }
   ]
 }

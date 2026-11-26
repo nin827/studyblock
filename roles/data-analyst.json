@@ -133,6 +133,104 @@
         "ab-test",
         "query-outliers"
       ]
+    },
+    {
+      "id": "product-analyst",
+      "title": "Product Analyst",
+      "icon": "mouse-pointer-click",
+      "description": "Funnels, conversion rates and experiments: how people actually use the product.",
+      "mix": {
+        "ratios-percentages": {
+          "weight": 3,
+          "subtopics": [
+            "ratios",
+            "percentages"
+          ]
+        },
+        "probability": {
+          "weight": 2,
+          "subtopics": [
+            "basic",
+            "combined",
+            "expected-value"
+          ]
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "probability",
+            "weighted-average"
+          ]
+        },
+        "sql-queries": {
+          "weight": 2,
+          "subtopics": [
+            "order-limit",
+            "aggregates",
+            "group-join"
+          ]
+        },
+        "business-case": {
+          "weight": 1,
+          "subtopics": [
+            "unit-economics",
+            "pricing-decision"
+          ]
+        },
+        "marketing": {
+          "weight": 1,
+          "subtopics": [
+            "segmentation",
+            "life-cycle"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "ab-test",
+        "kpi-review"
+      ]
+    },
+    {
+      "id": "analytics-engineer",
+      "title": "Analytics Engineer",
+      "icon": "database",
+      "description": "Clean tables and reliable queries: the SQL, storage and data types behind every report.",
+      "mix": {
+        "sql-queries": {
+          "weight": 5
+        },
+        "data-representation": {
+          "weight": 2,
+          "subtopics": [
+            "characters",
+            "compression"
+          ]
+        },
+        "algorithms": {
+          "weight": 1,
+          "subtopics": [
+            "sorting",
+            "complexity"
+          ]
+        },
+        "computing-terms": {
+          "weight": 1,
+          "subtopics": [
+            "data-units"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "query-outliers",
+        "storage-cost"
+      ]
     }
   ]
 }

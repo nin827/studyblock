@@ -42,6 +42,33 @@
         "business-math": { "weight": 1, "subtopics": ["percentages", "margins"] }
       },
       "exclusiveSubtopics": ["plan-scale", "ramp-access", "planting-paving"]
+    },
+    {
+      "id": "interior-architect",
+      "title": "Interior Architect",
+      "icon": "sofa",
+      "description": "Room areas and volumes at a scale, finish quantities, glazing for daylight and fit-out budgets with contingency.",
+      "mix": {
+        "geometry": { "weight": 4, "subtopics": ["perimeter-area", "volume", "angles"] },
+        "ratios-percentages": { "weight": 3, "subtopics": ["ratios", "percentages"] },
+        "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+        "unit-conversion": { "weight": 2, "subtopics": ["length", "mass-volume"] }
+      },
+      "exclusiveSubtopics": ["plan-scale", "daylight-glazing", "stair-rule"]
+    },
+    {
+      "id": "architectural-technologist",
+      "title": "Architectural Technologist",
+      "icon": "pencil-ruler",
+      "description": "Stair and ramp geometry, loads and safety factors, and building dimensions that fit within stated tolerances.",
+      "mix": {
+        "tolerances": { "weight": 3, "subtopics": ["limits", "stack-up", "measurement"] },
+        "structures": { "weight": 3, "subtopics": ["moments", "beams", "factor-of-safety"] },
+        "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] },
+        "geometry": { "weight": 2, "subtopics": ["pythagoras", "volume"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["length"] }
+      },
+      "exclusiveSubtopics": ["stair-rule", "ramp-access", "daylight-glazing"]
     }
   ]
 }

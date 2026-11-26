@@ -112,6 +112,105 @@
         "power-circuit",
         "battery-energy"
       ]
+    },
+    {
+      "id": "electronics-engineer",
+      "title": "Electronics Engineer",
+      "icon": "circuit-board",
+      "description": "Resistor codes, dividers, LEDs and RC timing on a circuit board.",
+      "mix": {
+        "electronics": {
+          "weight": 5
+        },
+        "electricity": {
+          "weight": 2,
+          "subtopics": [
+            "ohms-law",
+            "series-parallel"
+          ]
+        },
+        "tolerances": {
+          "weight": 1,
+          "subtopics": [
+            "limits",
+            "stack-up"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "growth-decay"
+          ]
+        },
+        "number-bases": {
+          "weight": 1,
+          "subtopics": [
+            "binary",
+            "hexadecimal"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1
+        }
+      },
+      "exclusiveSubtopics": [
+        "power-circuit",
+        "sensor-data"
+      ]
+    },
+    {
+      "id": "control-engineer",
+      "title": "Control Engineer",
+      "icon": "gauge",
+      "description": "Logic, sensors, motors and pumps: keeping a machine doing what it should.",
+      "mix": {
+        "boolean-logic": {
+          "weight": 3
+        },
+        "mechanisms": {
+          "weight": 2,
+          "subtopics": [
+            "gears",
+            "power-transmission"
+          ]
+        },
+        "fluid-systems": {
+          "weight": 2,
+          "subtopics": [
+            "flow-rate",
+            "pump-power"
+          ]
+        },
+        "electricity": {
+          "weight": 2,
+          "subtopics": [
+            "ohms-law",
+            "power"
+          ]
+        },
+        "electronics": {
+          "weight": 1,
+          "subtopics": [
+            "dividers"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "sound"
+          ]
+        },
+        "number-bases": {
+          "weight": 1,
+          "subtopics": [
+            "binary"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "register-flags",
+        "sensor-data"
+      ]
     }
   ]
 }

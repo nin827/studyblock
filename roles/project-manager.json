@@ -38,6 +38,35 @@
         "management": { "weight": 1, "subtopics": ["leadership"] }
       },
       "exclusiveSubtopics": ["earned-value", "crash-decision", "resource-plan"]
+    },
+    {
+      "id": "construction-project-manager",
+      "title": "Construction Project Manager",
+      "icon": "hard-hat",
+      "description": "Site programmes with working-day dates, delay penalties, material areas and volumes, and earned value on a build.",
+      "mix": {
+        "project-scheduling": { "weight": 4, "subtopics": ["critical-path", "gantt-dates", "earned-value"] },
+        "geometry": { "weight": 2, "subtopics": ["perimeter-area", "volume"] },
+        "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["length", "mass-volume"] },
+        "time-dates": { "weight": 1, "subtopics": ["calendar"] }
+      },
+      "exclusiveSubtopics": ["delay-finish", "crash-decision", "earned-value"]
+    },
+    {
+      "id": "it-project-manager",
+      "title": "IT Project Manager",
+      "icon": "monitor-cog",
+      "description": "Critical paths and float for a release, team effort and motivation, data sizes and transfer times, and earned value.",
+      "mix": {
+        "project-scheduling": { "weight": 4, "subtopics": ["critical-path", "float", "earned-value"] },
+        "management": { "weight": 2, "subtopics": ["leadership", "motivation"] },
+        "computing-terms": { "weight": 1, "subtopics": ["hardware", "networks", "data-units"] },
+        "networking": { "weight": 1, "subtopics": ["data-transfer"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] },
+        "time-dates": { "weight": 1, "subtopics": ["calendar"] }
+      },
+      "exclusiveSubtopics": ["delay-finish", "resource-plan", "earned-value"]
     }
   ]
 }

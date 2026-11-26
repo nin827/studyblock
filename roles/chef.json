@@ -39,6 +39,33 @@
         "recipes-scaling": { "weight": 2, "subtopics": ["scaling"] }
       },
       "exclusiveSubtopics": ["dish-cost", "stock-waste"]
+    },
+    {
+      "id": "pastry-chef",
+      "title": "Pastry Chef",
+      "icon": "cake-slice",
+      "description": "Exact scaling by weight, baker's ratios and percentages, oven temperatures and bake times worked back from service.",
+      "mix": {
+        "ratios-percentages": { "weight": 4, "subtopics": ["ratios", "proportion", "percentages"] },
+        "recipes-scaling": { "weight": 3, "subtopics": ["scaling", "kitchen-units", "cooking-times"] },
+        "unit-conversion": { "weight": 2, "subtopics": ["mass-volume", "temperature"] },
+        "time-dates": { "weight": 1, "subtopics": ["clock"] }
+      },
+      "exclusiveSubtopics": ["recipe-scaling", "service-timing"]
+    },
+    {
+      "id": "catering-chef",
+      "title": "Catering Chef",
+      "icon": "utensils-crossed",
+      "description": "Scaling for large events, shopping to a budget, cost per head and timing a service with travel to the venue.",
+      "mix": {
+        "shopping-money": { "weight": 3, "subtopics": ["budgets", "unit-price", "discounts"] },
+        "recipes-scaling": { "weight": 3, "subtopics": ["scaling", "cooking-times"] },
+        "business-math": { "weight": 2, "subtopics": ["margins", "percentages"] },
+        "time-dates": { "weight": 2, "subtopics": ["clock"] },
+        "travel": { "weight": 1, "subtopics": ["journeys"] }
+      },
+      "exclusiveSubtopics": ["recipe-scaling", "dish-cost", "service-timing"]
     }
   ]
 }
