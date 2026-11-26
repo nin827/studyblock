@@ -4,7 +4,7 @@
   "description": "Primes and factors, GCD and LCM, divisibility rules, modular (clock) arithmetic, ciphers and toy RSA, all worked by hand.",
   "icon": "hash",
   "type": "generator",
-  "fuzzyNumber": 0,
+  "fuzzyNumber": 1,
   "fuzzy": false,
   "questionsPerQuiz": 10,
   "calculator": false,

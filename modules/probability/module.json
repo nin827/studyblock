@@ -4,7 +4,7 @@
   "description": "Chances from dice, coins, cards and bags, combined events, counting arrangements and expected value.",
   "icon": "dices",
   "type": "generator",
-  "fuzzyNumber": 0,
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "basic", "title": "Basic probability", "difficulties": ["easy", "medium", "hard", "expert"] },
