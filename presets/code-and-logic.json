@@ -5,7 +5,18 @@
   "config": {
     "domains": {
       "computing": {
-        "weight": 2
+        "weight": 2,
+        "modules": {
+          "code-writing": 1,
+          "code-reviewing": 1,
+          "algorithms": 1,
+          "number-bases": 1,
+          "data-representation": 1,
+          "sql-queries": 1,
+          "boolean-logic": 1,
+          "computing-terms": 1,
+          "networking": 1
+        }
       },
       "logic": {
         "weight": 1

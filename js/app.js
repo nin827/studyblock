@@ -9,6 +9,7 @@ import * as results from './views/results.js';
 import * as settings from './views/settings.js';
 import * as calcPage from './views/calcpage.js';
 import * as roles from './views/roles.js';
+import * as domainsView from './views/domains.js';
 import * as badges from './views/badges.js';
 import { applyTheme } from './views/settings.js';
 import { getCookie } from './lib/storage.js';
@@ -55,6 +56,7 @@ function match(hash) {
   if (parts[0] === 'g' && parts.length === 4 && ID_RE.test(parts[1])) {
     return { view: guidedView, nav: 'home', params: { moduleId: parts[1], subtopic: parts[2], difficulty: parts[3] } };
   }
+  if (parts[0] === 'domains' && parts.length === 1) return { view: domainsView, nav: 'domains', params: {} };
   // Roles: #/roles, #/roles/<role>, #/roles/<role>/<subrole>.
   if (parts[0] === 'roles' && parts.length === 1) return { view: roles, nav: 'roles', params: {} };
   if (parts[0] === 'roles' && (parts.length === 2 || parts.length === 3) && parts.slice(1).every(p => ID_RE.test(p))) {
@@ -197,7 +199,7 @@ bannerEl().addEventListener('click', e => {
 });
 
 // Re-render pages that show stored data when a folder merge brought in new attempts/presets.
-const REFRESH_ON_MERGE = new Set(['home', 'results', 'roles']);
+const REFRESH_ON_MERGE = new Set(['home', 'results', 'roles', 'domains']);
 folder.subscribe(f => {
   renderBanner(f);
   if (f.merged) {

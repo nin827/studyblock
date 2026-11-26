@@ -224,6 +224,14 @@ export async function render(root, params, ctx) {
       ${domains.length ? `<div class="domain-grid">${cards}</div>` : '<div class="card"><p class="muted">No modules installed yet.</p></div>'}
     </section>
     ${banner}
+    <a class="tool-card" href="#/domains">
+      <span class="icon-tile">${icon('library')}</span>
+      <span class="tool-card-text">
+        <span class="tool-card-title">All domains</span>
+        <span class="tool-card-sub">Every domain with its groups and subjects on one page</span>
+      </span>
+      <span class="tool-card-go" aria-hidden="true">${icon('chevron-right')}</span>
+    </a>
     ${roles.length ? `<a class="tool-card" href="#/roles">
       <span class="icon-tile">${icon('briefcase-business')}</span>
       <span class="tool-card-text">

@@ -93,7 +93,8 @@ You can't install from `index.html` opened directly (a `file:///…` address), o
 | Page | What's there |
 |---|---|
 | **Home** | Domain cards with your progress, a "Continue" shortcut, and the mixed quiz with quick-start presets |
-| **Domain** | The subdomains in that domain (for example, Math → Arithmetic, Algebra, Fractions…) |
+| **Domains** | Every domain at a glance, with its subjects sorted into sections, so you can jump straight to one. It's in the top bar on wider screens; on phones, use the **All domains** card on Home. |
+| **Domain** | The subdomains in that domain (for example, Math → Arithmetic, Algebra, Fractions…). Big domains split them into sections: Math into Number, Algebra & calculus, Geometry, Data & chance and Everyday maths; Computing into Code, Data, Architecture & networks and Game development; Science into Physics, Chemistry and Space & measurement; Business into Accounting, Finance, Economics & markets and Management. |
 | **Module** | An introduction to the topic, then a grid of subtopic × difficulty with your best score in each. Each subject offers the levels that suit it: Easy, Medium and Hard, and **Expert** (marked with a flame) for subjects with room for multi-step problems. |
 | **Mix** | The mixed-quiz builder and your presets |
 | **History** | Every quiz you've taken, with full question-by-question review |
@@ -171,14 +172,14 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 - **Economics:** every formula is stated; price elasticity is given as a positive number. Countries are fictional.
 - **Map Skills:** grid references are digits with no spaces, easting first (`343176`). Bearings can be `045` or `45`. Times are 24-hour `HH:MM` with two digits each (`07:05`); time zones use the fixed UTC offsets given, with no daylight saving.
 - **Timelines:** there is no year 0, so 44 BC to AD 79 is 122 years. Centuries are a number (`15` for the 15th century) and decades their first year (`1960`). Only *Famous dates (recall)* needs memorised years; every other topic gives them.
-- **Game Dev:** vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). Game Probability percentages are typed without `%`, to 2 decimal places.
+- **Game development** (in Computing; it used to be the Game Dev domain): vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). Game Probability percentages are typed without `%`, to 2 decimal places.
 - **Music Theory:** written notation. After you check an answer on a note, interval, chord or scale question, a **Play** button sounds it, so you can hear what you just worked out (also in the end-of-quiz review; never before you answer). The sounds are made in your browser and work offline; turn them off in Settings → Sound. Notes, intervals, keys and chord names are multiple choice, and whole chords and scales are spelled with note blocks, so you never type ♯ or ♭; counts are whole numbers. Rhythm treats a quarter note as one beat unless told otherwise (in 6/8, a dotted quarter).
 - **Biology:** Genetics, Cells & Microscopy and Ecology build fresh crosses, micrographs and field data every time. Genotypes and ratios are picked from a list, in the order the question names; probabilities are typed as a percentage or a simplest-form fraction, as asked. Sizes use µm and nm; a magnification is a plain number (`400` for ×400).
 - **Medical:** every question states its formula and conversion factors, so nothing needs memorising. These subjects are for learning only and are **not medical advice**: they stick to general facts and standard calculations, with no medication, diagnosis or treatment.
 
 ### Expert questions
 
-Expert is offered in subjects with room above Hard: most of Math, Science, Computing, Business, Game Dev and Music Theory, plus Genetics and Ecology. Fact lists and simple skills (for example Capitals, Vocabulary, Elements, Unit Conversion) stop at Hard. Expert questions aren't bigger numbers. They combine two or more ideas, work backwards from a result, test edge cases, or ask you to set up a realistic problem yourself. Most have 2–4 parts.
+Expert is offered in subjects with room above Hard: most of Math, Science, Computing (including Game development), Business, Engineering and Music Theory, plus Genetics and Ecology. Fact lists and simple skills (for example Capitals, Vocabulary, Elements, Unit Conversion) stop at Hard. Expert questions aren't bigger numbers. They combine two or more ideas, work backwards from a result, test edge cases, or ask you to set up a realistic problem yourself. Most have 2–4 parts.
 - **Rounding:** each part says how to round. Keep unrounded values in calculator rows between parts, and don't retype a rounded earlier answer.
 - **Round up / round down:** some parts ask for a whole number rounded up or down (strokes of a jack, snowshoe area, animals a reserve can support). Type that exact whole number.
 - **Other formats:** a "1 in X" risk is typed as just X. "Type 0 if …" means 0 is a valid answer. Binary fractions are written like `110.101`, with no trailing zeros. A hex IPv4 address is 8 digits with leading zeros (`0A000001`), and each UTF-8 byte is 2 hex digits (`C3`).
@@ -246,7 +247,7 @@ Your rows stay for the whole quiz, so values from one question can be reused in 
 
 Open **Mix** to build a quiz across several domains.
 
-1. **Tick the domains** you want. Each domain starts folded: tap its name to open it and tick or untick single subjects. **All** and **None** tick or untick everything, and **Expand all** opens every domain. To jump to one subject, type in **Find a subject** (for example "Chords").
+1. **Tick the domains** you want. Each domain starts folded: tap its name to open it and tick or untick single subjects. **All** and **None** tick or untick everything, and **Expand all** opens every domain. To jump to one subject, type in **Find a subject** (for example "Chords"). Inside big domains, subjects are listed under section headings such as *Code* or *Everyday maths*; the sections are only for finding things and have no weights of their own.
 2. **Set weights** with − and +. Each domain and subject has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
 3. Watch **Your mix**: the share bar and one line per domain update as you change things.
 4. Choose **Practice** or **Guided**, a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (5–50).
@@ -304,7 +305,7 @@ StudyBlock only ever touches `studyblock-data.json` in that folder; it never rea
   Official presets are never imported or exported; they come from the app.
 
 ### Retired subjects
-A few subjects have been retired or merged into others: Cryptography Basics is now part of Number Theory, and Anatomy part of Biology Basics. Your past attempts on retired subjects stay in History, grouped under **Archived**.
+A few subjects have been retired or merged into others: Cryptography Basics is now part of Number Theory, and Anatomy part of Biology Basics. Two domains were folded into bigger ones: **Game Dev** is now the *Game development* section of Computing, and **Everyday Math** the *Everyday maths* section of Math. The subjects themselves didn't change, so your scores carry over, and saved mixes are updated automatically when you open them (a domain you had switched off keeps its subjects switched off). Your past attempts on retired subjects stay in History, grouped under **Archived**.
 
 ### Clearing data
 **Settings → Clear all data** deletes your quiz history, after you confirm. Export first if you might want it back.

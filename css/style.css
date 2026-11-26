@@ -2021,12 +2021,49 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
 
 /* 640-899px: the Roles link is icon-only too, so the top nav fits. */
 @media (min-width: 640px) and (max-width: 899px) {
-  .nav-link[data-nav="roles"] { min-width: 44px; padding: 0 13px; justify-content: center; }
-  .nav-link[data-nav="roles"] span {
+  .nav-link[data-nav="roles"], .nav-link[data-nav="domains"] { min-width: 44px; padding: 0 13px; justify-content: center; }
+  .nav-link[data-nav="roles"] span, .nav-link[data-nav="domains"] span {
     position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
   }
 }
 .role-subs .chip-scroll { flex-wrap: wrap; overflow-x: visible; }
+
+/* ================= domains (#/domains, js/views/domains.js; groups on #/d/<id>) ================= */
+
+/* Domain cards on #/domains reuse the role-card layout; the icon tile takes the domain tint. */
+.domain-entry .role-subs + .role-subs { border-top: 0; padding-top: 0; }
+.domain-subs-title { font-weight: 600; color: var(--text-2); }
+.domain-subs .chip-main { white-space: normal; text-align: left; line-height: 1.25; padding: 6px 14px; }
+.domain-subs .chip { max-width: 100%; }
+.domain-subs .chip .icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--dom-fg, var(--accent-ink)); }
+
+/* Group sections on a domain page. */
+.domain-group + .domain-group { margin-top: 20px; }
+.domain-group-title {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+  font-size: 15px; font-weight: 700; color: var(--text-2); letter-spacing: 0.01em;
+}
+.domain-group-count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 7px;
+  border-radius: 999px; background: var(--sunken); color: var(--muted); font-size: 12.5px; font-weight: 600;
+}
+@media (min-width: 640px) { .domain-group-title { font-size: 17px; } .domain-group + .domain-group { margin-top: 28px; } }
+
+/* Group headings inside a mix-builder domain (display only). */
+.mix-group { list-style: none; }
+.mix-group-title {
+  margin: 0; padding: 10px 0 4px; font-size: 12.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+}
+.mix-group-list { list-style: none; margin: 0; padding: 0; }
+.mix-group:first-child .mix-group-title { padding-top: 6px; }
+.mix-group-list .mix-module:last-child { border-bottom: 0; }
+.mix-group[hidden] { display: none; }
+@media (min-width: 640px) {
+  .mix-modules.has-groups { display: block; }
+  .mix-group-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); column-gap: 24px; }
+  .mix-group-list .mix-module:last-child { border-bottom: 1px solid var(--line-soft); }
+}
 
 /* markdown callouts (> [!NOTE] ...): icon + label, tokens per kind, light and dark */
 :root {

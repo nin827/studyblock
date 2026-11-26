@@ -53,14 +53,87 @@ function parseRegistry(idx) {
     };
     // Optional solid colour for bars/segments; anything but #RRGGBB is dropped.
     if (typeof d.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(d.color)) domain.color = d.color;
+    const groups = parseGroups(d.groups, d.id, modules);
+    if (groups) domain.groups = groups;
     domains.push(domain);
   }
   return domains;
 }
 
+// The registry is parsed on every loadModule, so registry warnings are shown once per message.
+const registryWarned = new Set();
+function warnRegistry(msg) {
+  if (registryWarned.has(msg)) return;
+  registryWarned.add(msg);
+  console.warn(`StudyBlock: ${msg}`);
+}
+
+// Display-only groups of one domain: [{ id, title, modules }] or undefined when the domain has none.
+// Group ids match ID_RE and are unique, titles are non-empty strings, modules are filtered to the
+// domain's own list (a module may sit in one group only), and empty groups are dropped. Domain
+// modules left out of every group go into a trailing "Other" group.
+function parseGroups(raw, domainId, domainModules) {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) { warnRegistry(`domain ${domainId}: "groups" must be a list; ignoring it`); return undefined; }
+  const own = new Set(domainModules);
+  const used = new Set();
+  const ids = new Set();
+  const out = [];
+  let dropped = false;
+  for (const g of raw) {
+    if (!g || typeof g !== 'object' || !isValidId(g.id) || ids.has(g.id) || g.id === 'other'
+      || typeof g.title !== 'string' || !g.title.trim() || !Array.isArray(g.modules)) {
+      warnRegistry(`domain ${domainId}: ignoring invalid group ${JSON.stringify(g?.id ?? null)}`);
+      continue;
+    }
+    ids.add(g.id);
+    const modules = [];
+    for (const id of g.modules) {
+      if (!own.has(id) || used.has(id)) { dropped = true; continue; }
+      used.add(id);
+      modules.push(id);
+    }
+    if (modules.length) out.push({ id: g.id, title: g.title.trim().slice(0, 60), modules });
+  }
+  if (dropped) warnRegistry(`domain ${domainId}: group modules must be listed in the domain and in one group only; dropped the others`);
+  if (!out.length) return undefined;
+  const rest = domainModules.filter(id => !used.has(id));
+  if (rest.length) out.push({ id: 'other', title: 'Other', modules: rest });
+  return out;
+}
+
+// Top-level "domainAliases": { "<old domain id>": "<domain id>" } -> Map(old -> target).
+// Both ids must be valid, the target must be a registered domain and the old id must not be one.
+function parseAliases(idx, domains) {
+  const out = new Map();
+  const raw = idx?.domainAliases;
+  if (raw === undefined) return out;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { warnRegistry('"domainAliases" in modules/index.json must be an object; ignoring it'); return out; }
+  const ids = new Set(domains.map(d => d.id));
+  for (const [from, to] of Object.entries(raw)) {
+    if (!isValidId(from) || !isValidId(to) || !ids.has(to) || ids.has(from)) {
+      warnRegistry(`ignoring domain alias ${JSON.stringify(from)} -> ${JSON.stringify(to)}`);
+      continue;
+    }
+    out.set(from, to);
+  }
+  return out;
+}
+
+// Aliases from the last registry load; normalizeMixConfig applies them by default.
+let registryAliases = new Map();
+
 export async function loadDomains() {
   const idx = await loadJSON('modules/index.json');
-  return parseRegistry(idx);
+  const domains = parseRegistry(idx);
+  registryAliases = parseAliases(idx, domains);
+  return domains;
+}
+
+// Map(old domain id -> current domain id) from modules/index.json "domainAliases".
+export async function loadDomainAliases() {
+  await loadDomains();
+  return new Map(registryAliases);
 }
 
 /*
@@ -1301,7 +1374,50 @@ export function sanitizeCount(v, fallback = 10) {
 
 // Fills a (possibly stale or partial) mix config against the available domains:
 // `available` = [{ id, modules: [moduleId] }]. Unknown domains/modules default to weight 1.
-export function normalizeMixConfig(raw, available) {
+/*
+ * Maps merged (aliased) domains of a stored mix config onto their new domain, before
+ * normalizeMixConfig drops unknown domains. Pure: returns a new config, never edits `raw`.
+ * For each alias S -> T present in raw.domains:
+ * - S's module weights move into T's `modules` (an unticked S, weight 0, moves them at weight 0);
+ * - T present: T keeps its own weight; T absent: T gets S's weight, only S's modules ticked,
+ *   T's other modules at weight 0.
+ * Only module ids that belong to T in `available` are moved; S is then removed.
+ */
+export function applyDomainAliases(raw, aliases, available) {
+  if (!raw || typeof raw !== 'object' || !raw.domains || typeof raw.domains !== 'object' || !aliases?.size) return raw;
+  const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+  const objOr = v => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const byId = new Map((available || []).map(d => [d.id, d]));
+  let domains = null;
+  for (const [from, to] of aliases) {
+    if (!has(raw.domains, from) || !byId.has(to)) continue;
+    if (!domains) {
+      domains = {};
+      for (const [k, v] of Object.entries(raw.domains)) {
+        const o = objOr(v);
+        domains[k] = { ...o, modules: { ...objOr(o.modules) } };
+      }
+    }
+    const src = objOr(raw.domains[from]);
+    const srcOn = sanitizeWeight(src.weight, 1) > 0;
+    const srcModules = objOr(src.modules);
+    const target = byId.get(to);
+    if (!has(domains, to)) {
+      const modules = {};
+      for (const mid of target.modules) modules[mid] = 0;
+      domains[to] = { weight: sanitizeWeight(src.weight, 1), modules };
+    }
+    for (const mid of target.modules) {
+      if (has(srcModules, mid)) domains[to].modules[mid] = srcOn ? sanitizeWeight(srcModules[mid], 1) : 0;
+    }
+    delete domains[from];
+  }
+  return domains ? { ...raw, domains } : raw;
+}
+
+// `aliases` defaults to the registry's domainAliases (loaded with loadDomains()).
+export function normalizeMixConfig(raw, available, aliases = registryAliases) {
+  raw = applyDomainAliases(raw, aliases, available);
   const src = raw && typeof raw === 'object' ? raw : {};
   const srcDomains = src.domains && typeof src.domains === 'object' ? src.domains : {};
   const domains = {};

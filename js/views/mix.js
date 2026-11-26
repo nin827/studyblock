@@ -11,6 +11,7 @@ import {
 import { esc, icon, icons, cap, errorBox, domClass, domVars, domStyle } from './ui.js';
 import { runQuiz, storedQuestion, crumbsHtml } from './quiz.js';
 import { getQuizMode, setQuizMode, parseGuide, guideHtml, GUIDED, PRACTICE } from './guided.js';
+import { groupLoaded } from './domain.js';
 
 // Domains with only their loadable modules: [{ ...domain, modules: [ids], loaded: [module objects] }].
 async function loadAvailable() {
@@ -123,7 +124,7 @@ function draw(root, available, official, only, flash) {
     }
     const open = openSet.has(d.id);
     const listId = `mix-mods-${d.id}`;
-    const mods = d.loaded.map(m => {
+    const row = m => {
       const ms = s.modules[m.id];
       const title = String(m.title ?? m.id);
       return `<li class="mix-row mix-module" data-domain="${esc(d.id)}" data-module="${esc(m.id)}" data-search="${esc(title.toLowerCase())}">
@@ -132,7 +133,15 @@ function draw(root, available, official, only, flash) {
         <span class="mix-share" data-share>–</span>
         ${weightInput('mw', ms.weight, title, !ms.on)}
       </li>`;
-    }).join('');
+    };
+    // Display-only group headings (registry `groups`); weights and config are per module as before.
+    const groups = groupLoaded(d, d.loaded);
+    const mods = groups
+      ? groups.map(g => `<li class="mix-group" data-group="${esc(g.id)}">
+          <h3 class="mix-group-title" id="${esc(`mix-g-${d.id}-${g.id}`)}">${esc(g.title)}</h3>
+          <ul class="mix-group-list" aria-labelledby="${esc(`mix-g-${d.id}-${g.id}`)}">${g.modules.map(row).join('')}</ul>
+        </li>`).join('')
+      : d.loaded.map(row).join('');
     return `<li class="mix-domain ${dc}"${domStyle(d)} data-domain="${esc(d.id)}" data-search="${esc(String(d.title).toLowerCase())}">
       <div class="mix-row mix-domain-head">
         <label class="mix-tick"><input type="checkbox" data-role="domain" ${s.on ? 'checked' : ''} aria-label="${esc(`Include ${d.title}`)}"></label>
@@ -145,7 +154,7 @@ function draw(root, available, official, only, flash) {
         <span class="mix-share mix-share-domain" data-dshare>–</span>
         ${weightInput('dw', s.weight, d.title, !s.on)}
       </div>
-      <ul class="mix-modules" id="${esc(listId)}" aria-label="${esc(`${d.title} subjects`)}" ${open ? '' : 'hidden'}>${mods}</ul>
+      <ul class="mix-modules${groups ? ' has-groups' : ''}" id="${esc(listId)}" aria-label="${esc(`${d.title} subjects`)}" ${open ? '' : 'hidden'}>${mods}</ul>
     </li>`;
   }).join('');
   const totalSubjects = live.reduce((n, d) => n + d.modules.length, 0);
@@ -490,6 +499,7 @@ function draw(root, available, official, only, flash) {
         m.hidden = !show;
         if (show) n++;
       });
+      li.querySelectorAll('.mix-group').forEach(g => { g.hidden = searching && !g.querySelector('.mix-module:not([hidden])'); });
       li.hidden = searching && n === 0;
       if (searching) {
         setOpen(li, n > 0);

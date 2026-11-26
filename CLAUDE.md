@@ -60,6 +60,7 @@ js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
 js/views/roles.js       Roles pages (roles/ = registry)
+js/views/domains.js     Domains tab (#/domains): every domain with its groups and subjects
 js/views/calcpage.js    standalone #/calc page; js/views/staticgraph.js = <sb-graph> static plot for reviews
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
@@ -75,23 +76,29 @@ Knowledge used by more than one module lives once in `js/lib/` (mathutil, chem, 
 
 ## Hierarchy
 
-**Domain** (Math, Science, Geography, Business, …) → **Subdomain** = a module (Arithmetic, Algebra, …) → **subtopic** → **difficulty**.
-Domains are just groupings in `modules/index.json`; module folders stay flat under `modules/`. A module id belongs to exactly one domain.
+**Domain** (Math, Science, Geography, Business, …) → optional **group** (display only) → **Subdomain** = a module (Arithmetic, Algebra, …) → **subtopic** → **difficulty**.
+Domains are just groupings in `modules/index.json`; module folders stay flat under `modules/`. A module id belongs to exactly one domain. Groups (ticket 024) only sort a big domain's subjects into sections on the domain page, the Domains tab and the mix builder; mixes, presets, stats and export never see them.
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run · `#/badges` badges, level and streak
+`#/` home (domain cards) · `#/domains` Domains tab (every domain with its groups and subjects) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run · `#/badges` badges, level and streak
 
 ## Registry — `modules/index.json`
 
 ```json
 {
   "domains": [
-    { "id": "math", "title": "Math", "icon": "sigma", "description": "…", "modules": ["arithmetic", "algebra"] }
-  ]
+    { "id": "math", "title": "Math", "icon": "sigma", "description": "…", "modules": ["arithmetic", "algebra", "time-dates"],
+      "groups": [ { "id": "number", "title": "Number", "modules": ["arithmetic"] }, … ] }
+  ],
+  "domainAliases": { "game-dev": "computing", "everyday-math": "math" }
 }
 ```
 Domain ids follow the same `^[a-z0-9-]+$` rule. A domain with an empty `modules` list shows as "coming soon".
+
+**Groups (optional, display only):** `{ id, title, modules }`, ids matching `^[a-z0-9-]+$`. The domain's `modules` list stays the source of truth: group entries not in it are dropped with a warning, a module sits in at most one group, and any ungrouped module goes into a trailing "Other" group. Use groups only where a domain has enough subjects for each group to hold 2+.
+
+**Domain aliases:** `domainAliases` maps a retired domain id to the domain that absorbed it (Game Dev → Computing, Everyday Math → Math, ticket 024). Drafts and user presets are translated through it on load, so their old weights carry over (a domain that was off keeps its subjects off). Old mixed attempts keep their stored `domain`, so the retired tints stay in CSS.
 
 **Archived modules:** an optional top-level `"archived": [{ "id", "title" }]` lists retired subjects. Their folders stay in `modules/`, but they are never loaded, shown or sampled, and `tools/bundle.py` skips them. `loadArchived()` / `titleLookup()` in `engine.js` give old attempts their title. History groups them under "Archived", and Home "Recent" tags them. An id that is still listed in a domain stays active, with a warning. Restoring a subject means moving its id back into a domain.
 
@@ -198,7 +205,7 @@ A role is a hand-made weighted mix with a difficulty shift, plus role-only Exper
   - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.
 - **Flags and About this role:** a role and each subrole may set `"flags": [ids]` (a subrole shows the role's flags plus its own, deduped; unknown ids dropped with one warning per role; the legacy `"experience_based": true` and id `experience_based` mean `experience_heavy`). Ids and tags: `experience_heavy` (Experience-led), `safety_critical` (Safety-critical), `authority_required` (Authority required), `license_oriented` (License-oriented), `region_specific` (Varies by country), `tool_heavy` (Tool-driven), `tool_specific` (Tool-specific: questions tied to a named language, tool, standard or gear; set on Software Engineer (the chosen code language), Data Analyst (SQL), Network Engineer (IPv4) and the Arranger subrole (transposing instruments)), `creative_oriented` (Creative-oriented), `theory_heavy` (Theory-led; tag only). Tags are neutral icon + text chips on role cards and under the page title. The "About this role" card (the exclusive module's `intro.md`) opens with one callout per flag, in the fixed order safety_critical, authority_required, experience_heavy, license_oriented, region_specific, tool_specific, tool_heavy, creative_oriented (`FLAGS` in `roles.js`, which reads the role JSON itself). Practice-based roles are experience_heavy; academic ones (Mathematician, Physicist, Chemist, Biologist, Music Theorist) are theory_heavy.
 - **Start notice:** a role or subrole may set `"startNotice": { "title" (≤ 60), "text" (≤ 600, markdown) }` (strings only; invalid ignored with one warning per role; a subrole's own replaces the role's). Starting a run (`#/rq`, `#/rg`, from the role page or a direct URL) first shows a confirmation screen: the title, the text as a Warning callout, and "I understand · Start" / "Back to role". It's remembered per role in sessionStorage `studyblock:roleAck`, so it's asked once per browser session; Retry and Another set don't ask again. The role page shows the notice as the first callout in "About this role".
-- **UI:** a desktop nav link "Roles" (`briefcase-business`) and a Home card, while the phone tab bar stays at 4 tabs. Expert+ prompts keep inline code at text size (`.is-code`).
+- **UI:** a desktop nav link "Roles" (`briefcase-business`) and a Home card, while the phone tab bar stays at 4 tabs. The Domains tab (`#/domains`, `library` icon) is reached the same way: a desktop nav link before Roles and an "All domains" Home card. Expert+ prompts keep inline code at text size (`.is-code`).
 - **Bundle:** `tools/bundle.py` includes `roles/**` and the exclusive modules of listed roles.
 
 ## Module contract
@@ -589,12 +596,12 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Computing | `#DCEFFA` / `#0B5A86` | `#1A7FC1` |
   | History | `#F8E3DF` / `#8E2A1E` | `#B23A2E` |
   | Language | `#E8EFD9` / `#44591A` | `#6B8A23` |
-  | Game Dev | `#FCE4EE` / `#9D1B52` | `#D02A6E` |
+  | Game Dev (retired; old attempts only) | `#FCE4EE` / `#9D1B52` | `#D02A6E` |
   | Music | `#FBF1D2` / `#765300` | `#B07D0A` |
   | Biology | `#DFF3E4` / `#1B5E2B` | `#2E8B47` |
   | Medical | `#DDF4F8` / `#0A5866` | `#0E8FA6` |
   | Logic | `#E4E8EE` / `#334155` | `#52637A` |
-  | Everyday Math | `#F1E7DD` / `#5E4126` | `#8C6239` |
+  | Everyday Math (retired; old attempts only) | `#F1E7DD` / `#5E4126` | `#8C6239` |
   | Engineering | `#ECE8FA` / `#4C2F8F` | `#6A4BC4` |
 
   A domain can override these with `color` in `index.json`.
@@ -703,6 +710,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 
 ## Subject notes
 
+- **Domain merges (ticket 024):** Game Dev became Computing's *Game development* group and Everyday Math became Math's *Everyday maths* group. Module ids are unchanged, so old attempts still count.
 - **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
 - **Trimmed subjects (ticket 015):** Balancing & Progression, Pixels & Colour, Collision, Vital Signs and Health Statistics are archived. Cryptography Basics was merged into Number Theory (Ciphers, Keys & RSA, worked by hand), and Anatomy into Biology Basics (Skeleton, Organs and body systems).
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
@@ -713,7 +721,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Genetics:** *Write gametes & genotypes* is typed with Blocks, case-sensitive, in the order stated in the prompt (capital first, then alphabetical).
 - **Word Roots and Grammar:** every cell has at least 10 rows. Word Roots has build-the-word rows (dual Type | Blocks and pure blocks, joiner `(none)`). Grammar has sentence-ordering rows (capitalised first block, punctuated last block, wrong-form distractors such as is/are) and dual verb-form rows in Tenses. Both set `tilesMultiplier`. Vocabulary also has 10 rows per cell.
 - **Logic & Puzzles:** logic-puzzles (knights and knaves, ordering, whodunits), syllogisms (categorical and if-then) and number-patterns (numbers, letters, shapes). Every puzzle is brute-forced to a unique answer, and verify() re-solves it independently. Number-patterns' verify infers the rule from the shown terms, trying several rule families that must agree. Conventions: syllogisms assume every group has a member and use made-up nouns; "or" is inclusive; "A unless B" means "if not B then A"; letter wrap-around is stated. All are exact (`fuzzy: false`, `fuzzyNumber: 0`); number-patterns has `tilesMultiplier`.
-- **Everyday Math:** time-dates, recipes-scaling, shopping-money and travel. Conventions: fixed UTC offsets with no daylight saving; a generic `$`; made-up exchange rates, always stated; kitchen conversion factors stated in the question. `fuzzyNumber` is 1, and whole counts (days, minutes, servings, bags) set `fuzzyNumber: 0` per question.
+- **Everyday maths** (a group in Math since ticket 024; was the Everyday Math domain): time-dates, recipes-scaling, shopping-money and travel. Conventions: fixed UTC offsets with no daylight saving; a generic `$`; made-up exchange rates, always stated; kitchen conversion factors stated in the question. `fuzzyNumber` is 1, and whole counts (days, minutes, servings, bags) set `fuzzyNumber: 0` per question.
 - **Project Scheduling** (Business): critical-path, float (and crashing), gantt-dates, earned-value. Networks of 5–8 activities, whole-day durations, a unique critical path (redrawn otherwise); an activity starts when all predecessors finish, times count from day 0; free float = the smallest earliest start among its successors − its earliest finish (stated). Generation uses forward/backward passes and greedy crashing; verify enumerates paths and brute-forces crash plans (a question is redrawn unless greedy equals the minimum). Working days are Mon–Fri with the start date as day 1, plus stated holidays at Hard/Expert (`dates.js` helpers; day-precision date answers). Earned value: generic `$`, CV = EV − AC, SV = EV − PV, CPI = EV ÷ AC, SPI = EV ÷ PV, EAC = BAC ÷ CPI, VAC = BAC − EAC, ETC = EAC − AC, indices exact to 2 dp, sign rule stated. Money is formatted by hand: never `toLocaleString` in a generator (its first call loads Intl data and costs ~20 ms). Whole days are exact (`fuzzyNumber: 0`).
 - **Engineering / Structures:** moments, stress-strain, beams, factor-of-safety. General textbook practice only, no design code. A light beam has no weight; a uniform beam's weight acts at its midpoint; a UDL acts as w × length at the middle of its length; shear = sum of vertical forces to the left of the section, upward positive. 1 N/mm² = 1 MPa, 1 GPa = 1000 MPa, 1 m² = 10⁶ mm², g stated as 10 or 9.81. Realistic sizes (spanners, doors, pad foundations). Counts and round up/down answers are exact (`fuzzyNumber: 0`); verify takes moments about a different point or uses inverse relations. No segmented choices.
 - **Business theory:** Marketing (4Ps, Ansoff, Boston, life cycle, pricing, segmentation), Business Theory (ownership, stakeholders, SMART, SWOT, PESTLE), Management (Maslow/Herzberg, leadership, structure, Porter), Accounting Theory (double entry, journal entries, concepts, classification, accounting equation; journal entries use the journal table, the rest block-list choices) and Finance Theory (sources, risk/return, ratios, appraisal) use block-list choices. Accounting conventions: goods bought go to Inventory, sales record revenue only, depreciation goes to Accumulated depreciation, and "Accruals (matching)" is one concept. Every rule a judgement depends on (Porter 10%/15%, Boston thresholds, life-cycle stage rules, the "achievable" rule) is stated in the prompt. Ownership forms are the general textbook versions, with no country-specific law.

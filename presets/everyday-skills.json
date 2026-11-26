@@ -4,8 +4,14 @@
   "description": "Time, recipes, shopping and travel, plus personal finance basics.",
   "config": {
     "domains": {
-      "everyday-math": {
-        "weight": 2
+      "math": {
+        "weight": 2,
+        "modules": {
+          "time-dates": 1,
+          "recipes-scaling": 1,
+          "shopping-money": 1,
+          "travel": 1
+        }
       },
       "business": {
         "weight": 1,

@@ -23,6 +23,27 @@ export function moduleCard(m, domainId, domain) {
   </a>`;
 }
 
+// Loaded modules of a domain split by its display-only groups: [{ id, title, modules: [module objects] }].
+// Groups with no loaded module are left out; returns null when the domain has no groups.
+export function groupLoaded(domain, loaded) {
+  if (!Array.isArray(domain.groups) || !domain.groups.length) return null;
+  const byId = new Map(loaded.map(m => [m.id, m]));
+  return domain.groups
+    .map(g => ({ id: g.id, title: g.title, modules: g.modules.map(id => byId.get(id)).filter(Boolean) }))
+    .filter(g => g.modules.length);
+}
+
+// Module cards: one grid, or a titled section per group.
+function groupedCards(domain, modules) {
+  const grid = list => `<div class="domain-grid is-detailed">${list.map(m => moduleCard(m, domain.id, domain)).join('')}</div>`;
+  const groups = groupLoaded(domain, modules);
+  if (!groups) return grid(modules);
+  return groups.map(g => `<section class="domain-group" aria-labelledby="dg-${esc(g.id)}">
+      <h2 class="domain-group-title" id="dg-${esc(g.id)}">${esc(g.title)} <span class="domain-group-count">${g.modules.length}<span class="sr-only"> subject${g.modules.length === 1 ? '' : 's'}</span></span></h2>
+      ${grid(g.modules)}
+    </section>`).join('');
+}
+
 export async function render(root, { domainId }, ctx) {
   let domain, modules;
   try {
@@ -58,7 +79,7 @@ export async function render(root, { domainId }, ctx) {
           <span class="muted small">Random questions from all ${esc(domain.title)} subdomains</span></span>
         ${icon('chevron-right')}
       </a>
-      <div class="domain-grid is-detailed">${modules.map(m => moduleCard(m, domain.id, domain)).join('')}</div>`
+      ${groupedCards(domain, modules)}`
     : '<div class="card"><p class="muted">Coming soon — no subdomains are available here yet.</p></div>'}
   `;
 }

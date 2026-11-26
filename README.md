@@ -2,7 +2,7 @@
 
 **Practice that never runs out of questions.**
 
-StudyBlock is a small quiz app with 73 subjects across 14 areas: Math, Science, Computing, Geography, History, Business, Language, Game Dev, Music Theory, Biology, Medical, Logic & Puzzles, Everyday Math and Engineering — from fractions and calculus to forces, beams and stress, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, project schedules, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
+StudyBlock is a small quiz app with 73 subjects across 12 areas: Math, Science, Computing, Geography, History, Business, Language, Music Theory, Biology, Medical, Logic & Puzzles and Engineering — from fractions and calculus to forces, beams and stress, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, project schedules, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
 
 Everything happens in your browser. There's no account and no server-side database, and none of your progress leaves your device unless you export it.
 
@@ -10,7 +10,7 @@ Everything happens in your browser. There's no account and no server-side databa
 
 ## What you can do
 
-- **Pick a domain and drill down.** Start from one of 14 broad areas (Math, Science, Computing, Business, Music, Biology, Engineering and more), open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
+- **Pick a domain and drill down.** Start from one of 12 broad areas (Math, Science, Computing, Business, Music, Biology, Engineering and more), or open the **Domains** tab to see every subject at once, sorted into sections. Open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
 - **Practise for a role.** Roles such as Business Analyst, Software Engineer, Mathematician, Data Analyst, Physicist, Accountant, Chemist, Electrical Engineer, Biologist, Game Developer, Network Engineer, Music Theorist, Operations Manager, Teacher, Nutritionist, Economist, Historian, Geographer, Linguist, Civil Engineer, Architect, Project Manager, Electrician, Pilot, Data Scientist, Land Surveyor, Investigator, Chef and Retail Manager mix the right subjects one level harder, and their Expert+ level has scenarios that combine several subjects.
 - **Build answers from blocks.** Many questions let you drag or tap blocks instead of typing, from ordering events to building SQL queries.
 - **Write real book entries.** Accounting journal entries go in a proper Account | Debit | Credit table: type into the cells or drop account and amount blocks onto them.

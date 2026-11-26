@@ -4,7 +4,7 @@
       "id": "math",
       "title": "Math",
       "icon": "sigma",
-      "description": "Arithmetic, algebra, fractions, geometry, statistics, probability, trigonometry, logarithms, number theory and ciphers, and calculus.",
+      "description": "Numbers, algebra and calculus, geometry and trigonometry, statistics and probability, and everyday maths: time, recipes, shopping and travel.",
       "modules": [
         "arithmetic",
         "algebra",
@@ -18,7 +18,60 @@
         "coordinate-geometry",
         "exponents-logs",
         "number-theory",
-        "calculus"
+        "calculus",
+        "time-dates",
+        "recipes-scaling",
+        "shopping-money",
+        "travel"
+      ],
+      "groups": [
+        {
+          "id": "number",
+          "title": "Number",
+          "modules": [
+            "arithmetic",
+            "fractions",
+            "ratios-percentages",
+            "exponents-logs",
+            "number-theory"
+          ]
+        },
+        {
+          "id": "algebra",
+          "title": "Algebra & calculus",
+          "modules": [
+            "algebra",
+            "sequences",
+            "coordinate-geometry",
+            "calculus"
+          ]
+        },
+        {
+          "id": "geometry",
+          "title": "Geometry",
+          "modules": [
+            "geometry",
+            "trigonometry"
+          ]
+        },
+        {
+          "id": "data",
+          "title": "Data & chance",
+          "modules": [
+            "statistics",
+            "probability"
+          ]
+        },
+        {
+          "id": "everyday",
+          "title": "Everyday maths",
+          "modules": [
+            "time-dates",
+            "recipes-scaling",
+            "shopping-money",
+            "travel"
+          ]
+        }
       ]
     },
     {
@@ -38,13 +91,44 @@
         "gases-pressure",
         "radioactivity",
         "astronomy"
+      ],
+      "groups": [
+        {
+          "id": "physics",
+          "title": "Physics",
+          "modules": [
+            "kinematics",
+            "forces-energy",
+            "electricity",
+            "waves",
+            "thermal-physics",
+            "gases-pressure",
+            "radioactivity"
+          ]
+        },
+        {
+          "id": "chemistry",
+          "title": "Chemistry",
+          "modules": [
+            "elements",
+            "chemistry"
+          ]
+        },
+        {
+          "id": "space-measurement",
+          "title": "Space & measurement",
+          "modules": [
+            "astronomy",
+            "unit-conversion"
+          ]
+        }
       ]
     },
     {
       "id": "computing",
       "title": "Computing",
       "icon": "cpu",
-      "description": "Number bases, logic, code, algorithms, networks, data and SQL.",
+      "description": "Code, data and SQL, logic gates, hardware and networks, and the maths behind games.",
       "modules": [
         "number-bases",
         "boolean-logic",
@@ -54,7 +138,46 @@
         "algorithms",
         "networking",
         "data-representation",
-        "sql-queries"
+        "sql-queries",
+        "vectors-movement",
+        "game-probability"
+      ],
+      "groups": [
+        {
+          "id": "code",
+          "title": "Code",
+          "modules": [
+            "code-writing",
+            "code-reviewing",
+            "algorithms"
+          ]
+        },
+        {
+          "id": "data",
+          "title": "Data",
+          "modules": [
+            "number-bases",
+            "data-representation",
+            "sql-queries"
+          ]
+        },
+        {
+          "id": "architecture",
+          "title": "Architecture & networks",
+          "modules": [
+            "boolean-logic",
+            "computing-terms",
+            "networking"
+          ]
+        },
+        {
+          "id": "game",
+          "title": "Game development",
+          "modules": [
+            "vectors-movement",
+            "game-probability"
+          ]
+        }
       ]
     },
     {
@@ -97,6 +220,43 @@
         "marketing",
         "business-theory",
         "project-scheduling"
+      ],
+      "groups": [
+        {
+          "id": "accounting",
+          "title": "Accounting",
+          "modules": [
+            "accounting-terms",
+            "accounting-theory"
+          ]
+        },
+        {
+          "id": "finance",
+          "title": "Finance",
+          "modules": [
+            "business-math",
+            "finance",
+            "finance-theory"
+          ]
+        },
+        {
+          "id": "economics",
+          "title": "Economics & markets",
+          "modules": [
+            "economics",
+            "marketing",
+            "business-theory"
+          ]
+        },
+        {
+          "id": "management",
+          "title": "Management",
+          "modules": [
+            "management",
+            "project-scheduling",
+            "business-case"
+          ]
+        }
       ]
     },
     {
@@ -108,16 +268,6 @@
         "vocabulary",
         "word-roots",
         "grammar"
-      ]
-    },
-    {
-      "id": "game-dev",
-      "title": "Game Dev",
-      "icon": "gamepad-2",
-      "description": "The maths behind games: vectors and movement, and drop rates.",
-      "modules": [
-        "vectors-movement",
-        "game-probability"
       ]
     },
     {
@@ -165,18 +315,6 @@
       ]
     },
     {
-      "id": "everyday-math",
-      "title": "Everyday Math",
-      "icon": "wallet",
-      "description": "Real-life maths: clock times, calendars and time zones, scaling recipes, shopping and budgets, and planning journeys.",
-      "modules": [
-        "time-dates",
-        "recipes-scaling",
-        "shopping-money",
-        "travel"
-      ]
-    },
-    {
       "id": "engineering",
       "title": "Engineering",
       "icon": "hard-hat",
@@ -186,6 +324,10 @@
       ]
     }
   ],
+  "domainAliases": {
+    "game-dev": "computing",
+    "everyday-math": "math"
+  },
   "archived": [
     {
       "id": "balancing",
