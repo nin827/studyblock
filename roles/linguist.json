@@ -1,0 +1,38 @@
+{
+  "id": "linguist",
+  "title": "Linguist",
+  "icon": "languages",
+  "flags": ["experience_heavy", "creative_oriented"],
+  "description": "Editing text for agreement, tense and readability, and translating by word roots and stated rules.",
+  "exclusive": "role-linguist",
+  "mix": {
+    "vocabulary": { "weight": 2 },
+    "word-roots": { "weight": 3 },
+    "grammar": { "weight": 3 }
+  },
+  "subroles": [
+    {
+      "id": "editor",
+      "title": "Editor",
+      "icon": "spell-check",
+      "description": "Correcting agreement, tense and punctuation, and judging how readable a passage is.",
+      "mix": {
+        "grammar": { "weight": 4, "subtopics": ["agreement", "tenses", "punctuation", "parts-of-speech"] },
+        "vocabulary": { "weight": 2, "subtopics": ["commonly-confused", "context"] }
+      },
+      "exclusiveSubtopics": ["agreement-edit", "readability"]
+    },
+    {
+      "id": "translator",
+      "title": "Translator",
+      "icon": "book-a",
+      "description": "Working from word roots and affixes, and translating with stated word-order and marker rules.",
+      "mix": {
+        "word-roots": { "weight": 4 },
+        "vocabulary": { "weight": 2, "subtopics": ["meanings", "synonyms-antonyms"] },
+        "grammar": { "weight": 1, "subtopics": ["parts-of-speech", "tenses"] }
+      },
+      "exclusiveSubtopics": ["word-building", "made-up-language"]
+    }
+  ]
+}

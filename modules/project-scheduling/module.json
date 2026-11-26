@@ -1,0 +1,15 @@
+{
+  "id": "project-scheduling",
+  "title": "Project Scheduling",
+  "description": "Critical paths, float and crashing, working-day finish dates, and earned value (CV, SV, CPI, SPI, EAC).",
+  "icon": "chart-gantt",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "critical-path", "title": "Critical path", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "float", "title": "Float and crashing", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "gantt-dates", "title": "Working-day dates", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "earned-value", "title": "Earned value", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

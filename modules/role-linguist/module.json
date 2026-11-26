@@ -1,0 +1,16 @@
+{
+  "id": "role-linguist",
+  "title": "Applied scenarios",
+  "description": "Editing and translating: find the faulty word in a sentence, score a passage with a stated readability index, build and decode words from roots and affixes, and translate in a made-up language with stated rules.",
+  "icon": "languages",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "agreement-edit", "title": "Editing agreement, tense and punctuation", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "readability", "title": "Readability index", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "word-building", "title": "Building and decoding words", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "made-up-language", "title": "Translating a made-up language", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

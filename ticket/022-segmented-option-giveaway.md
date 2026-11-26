@@ -17,3 +17,8 @@ This affects Choose mode only. Build mode draws its decoys from the other option
 
 ## Scope
 Every generator with segmented choices: the converted subject questions (CLAUDE.md "Block-list choices") and the role modules. Changing it changes those questions per seed.
+
+## Notes from review (2026-11-26)
+- New generators already follow option 1 (mixed distances).
+- **Two columns:** option 1 needs a wrong option that differs in both columns, which breaks the spec's "differ in 1 to n−1 columns" rule. Linguist (Rule | Fix, Prefix | Suffix) does this. If option 1 is chosen, the spec should allow n columns when n = 2.
+- **Coherence giveaway:** separate from counting, an answer can be the only option whose columns make sense together (Linguist's old rule-specific fixes; Project Scheduling's float "slip", now a multi-part). Critical-path/medium still has a weaker form: the right option is often the only one whose duration matches its path's sum. Fixing that fully conflicts with the counting rule.
