@@ -1,6 +1,7 @@
 // Language-neutral code snippets for the code subjects (Code Writing, Code Reviewing).
 // Pure, no DOM. A generator builds a program ONCE from the S/E constructors below, then renders it
-// in the user's language (python, csharp, cpp, gdscript, rust) and runs it with the interpreter.
+// in the user's language (python, csharp, cpp, gdscript, rust, javascript, typescript, java, go) and
+// runs it with the interpreter.
 // The same seed gives the same logic and the same output in every language.
 //
 // ── API ───────────────────────────────────────────────────────────────────────────────────────
@@ -44,6 +45,18 @@
 //   cpp      functions then `int main() { … }`. #includes (<iostream> <string> <vector>) are not shown.
 //   gdscript `extends Node`, functions, then main statements in `func _ready() -> void:`. Typed vars.
 //   rust     functions then `fn main() { … }`. i64, &[i64] params, Vec<i64>, &str, explicit `return`.
+//   javascript  `function` declarations, then main statements at top level. `const` unless the name is
+//            reassigned (or the program has a whole blank line), `let` otherwise; === / !==; for…of.
+//            Numbers are doubles, so whole-number division is `Math.floor(a / b)` (also for `/=`).
+//   typescript  as JavaScript, with typed params and return types (number, string, boolean, number[]),
+//            and an annotation on a declaration whose value is a blank or an empty list.
+//   java     a Java 25 compact source file: `static` methods, then `void main() { … }` (java.base is
+//            imported implicitly). Typed locals; lists are List<Integer> (`new ArrayList<>(List.of(…))`,
+//            get/set/add/size); strings use charAt/length() and equals() for == (two list items compared
+//            with == / != unbox one side with `(int)`). camelCase names.
+//   go       functions, then `func main() { … }` (package and imports not shown). `:=`, []int slices,
+//            `xs = append(xs, v)`, len(), `for cond {` for while, `for _, x := range xs` (or `for range xs`
+//            when the body never reads x), fmt.Println (a byte s[i] printed as string(s[i])). camelCase.
 //   One blank line between functions and before main. Main is omitted when it is empty. 4-space indent.
 //   Line numbers: right-aligned number + " | " on every line (blank lines too).
 //
@@ -155,11 +168,13 @@ const RESERVED = new Set(`and or not xor in is if elif else for foreach while do
 const validName = n => (typeof n === 'string' && /^[a-z][a-z0-9_]{0,23}$/.test(n) && !RESERVED.has(n)
   ? n : fail(`invalid or reserved name: ${n}`));
 
-/** Name as displayed: C# functions PascalCase, C# variables camelCase; snake_case elsewhere. */
+/** Name as displayed: C# functions PascalCase; C#, JavaScript, TypeScript, Java and Go variables
+ *  (and their functions, except C#) camelCase; snake_case in Python, GDScript, C++ and Rust. */
+const CAMEL = new Set(['csharp', 'javascript', 'typescript', 'java', 'go']);
 export function ident(name, lang, kind = 'var') {
-  if (lang !== 'csharp') return name;
+  if (!CAMEL.has(lang)) return name;
   const w = name.split('_').filter(Boolean), cap = s => s[0].toUpperCase() + s.slice(1);
-  return kind === 'fn' ? w.map(cap).join('') : w[0] + w.slice(1).map(cap).join('');
+  return kind === 'fn' && lang === 'csharp' ? w.map(cap).join('') : w[0] + w.slice(1).map(cap).join('');
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────────────────────
@@ -337,12 +352,19 @@ export function check(prog) {
 // ── Rendering ─────────────────────────────────────────────────────────────────────────────────
 const PYL = l => l === 'python' || l === 'gdscript';
 const BRACE = l => !PYL(l);
+const JSL = l => l === 'javascript' || l === 'typescript';
+const SEMI = l => BRACE(l) && l !== 'go';
+// Languages whose if/while conditions sit in brackets.
+const PAREN = new Set(['csharp', 'cpp', 'java', 'javascript', 'typescript']);
 const P = { or: 1, and: 2, not: 3, cmp: 4, add: 6, mul: 7, cast: 7.5, neg: 8, atom: 10 };
 const TY = {
   csharp: { int: 'int', str: 'string', char: 'char', bool: 'bool', list: 'List<int>', void: 'void' },
   cpp: { int: 'int', str: 'std::string', char: 'char', bool: 'bool', list: 'std::vector<int>', void: 'void' },
   gdscript: { int: 'int', str: 'String', char: 'String', bool: 'bool', list: 'Array[int]', void: 'void' },
   rust: { int: 'i64', str: "&'static str", bool: 'bool', list: 'Vec<i64>' },
+  typescript: { int: 'number', str: 'string', char: 'string', bool: 'boolean', list: 'number[]', void: 'void' },
+  java: { int: 'int', str: 'String', char: 'char', bool: 'boolean', list: 'List<Integer>', void: 'void' },
+  go: { int: 'int', str: 'string', char: 'byte', bool: 'bool', list: '[]int' },
 };
 const PARAM = {
   cpp: { list: 'const std::vector<int>&', str: 'const std::string&' },
@@ -352,7 +374,7 @@ const PARAM = {
 function ctx(lang, prog) {
   if (!isLang(lang)) fail(`unknown language: ${lang}`);
   const c = { lang, fns: new Map((prog?.fns || []).map(f => [f.name, f])), lines: [], lineOf: new Map(),
-    depth: 0, frames: [new Map()], mut: new Set(), auto: 0, fallback: null };
+    depth: 0, frames: [new Map()], mut: new Set(), rebound: new Set(), blankStmt: false, auto: 0, fallback: null };
   c.look = n => { for (let i = c.frames.length - 1; i >= 0; i--) if (c.frames[i].has(n)) return c.frames[i].get(n); return c.fallback ? c.fallback(n) : null; };
   return c;
 }
@@ -372,6 +394,9 @@ function rx(c, e, bare) {
     case 'var': return atom(ident(e.name, L));
     case 'len': {
       const n = ident(e.name, L), str = c.look(e.name)?.type === 'str';
+      if (JSL(L)) return atom(`${n}.length`);
+      if (L === 'java') return atom(`${n}.${str ? 'length' : 'size'}()`);
+      if (L === 'go') return atom(`len(${n})`);
       if (L === 'python') return atom(`len(${n})`);
       if (L === 'gdscript') return atom(`${n}.${str ? 'length' : 'size'}()`);
       if (L === 'csharp') return atom(`${n}.${str ? 'Length' : 'Count'}`);
@@ -380,6 +405,7 @@ function rx(c, e, bare) {
     }
     case 'index': {
       const n = ident(e.name, L);
+      if (L === 'java') return atom(`${n}.${c.look(e.name)?.type === 'str' ? 'charAt' : 'get'}(${rx(c, e.i).t})`);
       if (L !== 'rust') return atom(`${n}[${rx(c, e.i).t}]`);
       const i = rsIdx(c, e.i);
       return c.look(e.name)?.type === 'str' ? { t: `${n}.as_bytes()[${i}] as char`, p: P.cast } : atom(`${n}[${i}]`);
@@ -392,7 +418,9 @@ function rx(c, e, bare) {
     }
     case 'list': {
       const xs = e.items.map(x => rx(c, x).t).join(', ');
-      if (py) return atom(`[${xs}]`);
+      if (py || JSL(L)) return atom(`[${xs}]`);
+      if (L === 'java') return atom(xs ? `new ArrayList<>(List.of(${xs}))` : 'new ArrayList<>()');
+      if (L === 'go') return atom(`[]int{${xs}}`);
       if (L === 'csharp') return atom(xs ? `new List<int> { ${xs} }` : 'new List<int>()');
       if (L === 'cpp') return atom(`{${xs}}`);
       return atom(xs ? `vec![${xs}]` : 'Vec::new()');
@@ -405,16 +433,28 @@ function rx(c, e, bare) {
     case 'bin': {
       const op = e.op, cmp = CMP.has(op), p = cmp ? P.cmp : '+-'.includes(op) ? P.add : P.mul;
       const eq = op === '==' || op === '!=';
-      const asChar = x => !py && eq && x.k === 'str' && x.v.length === 1 && tOf(c, x === e.a ? e.b : e.a) === 'char';
+      // Java: strings compare with equals() (== compares references).
+      if (L === 'java' && eq && tOf(c, e.a) === 'str' && tOf(c, e.b) === 'str') {
+        const t = `${wrap(rx(c, e.a))}.equals(${rx(c, e.b, 'rhs').t})`;
+        return op === '==' ? atom(t) : { t: `!${t}`, p: P.neg };
+      }
+      // Java: two List<Integer> items are boxed Integers, so one is unboxed with (int) before == / !=.
+      const listItem = x => x.k === 'index' && c.look(x.name)?.type === 'list';
+      const unbox = L === 'java' && eq && listItem(e.a) && listItem(e.b);
+      const asChar = x => !py && !JSL(L) && eq && x.k === 'str' && x.v.length === 1 && tOf(c, x === e.a ? e.b : e.a) === 'char';
       const side = (x, right) => {
         if (asChar(x)) return `'${x.v}'`;
+        if (unbox && !right) return `(int)${rx(c, x).t}`;
         const other = right ? e.a : e.b;
         const r = rx(c, x, cmp && other.k === 'int' && other.v >= 0 ? 'cmp0' : undefined);
         const w = cmp ? r.p <= P.cmp || (L === 'rust' && !right && (op === '<' || op === '<=') && / as \w+$/.test(r.t))
           : right ? r.p <= p || (x.k === 'int' && x.v < 0) : r.p < p;
         return w ? `(${r.t})` : r.t;
       };
-      return { t: `${side(e.a, false)} ${L === 'python' && op === '/' ? '//' : op} ${side(e.b, true)}`, p };
+      const t = `${side(e.a, false)} ${L === 'python' && op === '/' ? '//' : JSL(L) && eq ? op + '=' : op} ${side(e.b, true)}`;
+      // JavaScript numbers are doubles: whole-number division is Math.floor(a / b) (operands are never negative).
+      if (JSL(L) && op === '/') return atom(`Math.floor(${t})`);
+      return { t, p };
     }
     default: return fail(`unknown expression: ${e.k}`);
   }
@@ -427,7 +467,7 @@ function rsIdx(c, e) {
   return `${wrap(rx(c, e))} as usize`;
 }
 
-const cond = (c, e) => { const t = rx(c, e).t; return c.lang === 'csharp' || c.lang === 'cpp' ? `(${t})` : t; };
+const cond = (c, e) => { const t = rx(c, e).t; return PAREN.has(c.lang) ? `(${t})` : t; };
 function open(c, header, id) {
   if (c.lang === 'csharp') { emit(c, header, id); emit(c, '{'); } else emit(c, header + (BRACE(c.lang) ? ' {' : ':'), id);
 }
@@ -449,7 +489,8 @@ function rangeHeader(c, s) {
   }
   if (L !== 'rust') {
     const inc = k === 1 ? `${v}${up ? '++' : '--'}` : `${v} ${up ? '+=' : '-='} ${k}`;
-    return `for (int ${v} = ${a}; ${v} ${up ? '<' : '>'} ${b}; ${inc})`;
+    if (L === 'go') return `for ${v} := ${a}; ${v} ${up ? '<' : '>'} ${b}; ${inc}`;
+    return `for (${JSL(L) ? 'let' : 'int'} ${v} = ${a}; ${v} ${up ? '<' : '>'} ${b}; ${inc})`;
   }
   if (up) return k === 1 ? `for ${v} in ${a}..${b}` : `for ${v} in (${a}..${b}).step_by(${k})`;
   const lo = s.end.k === 'int' ? String(s.end.v + 1) : `${b} + 1`;
@@ -457,13 +498,21 @@ function rangeHeader(c, s) {
 }
 
 function stmt(c, s) {
-  const L = c.lang, id = s.id ?? `#${++c.auto}`, semi = BRACE(L) ? ';' : '';
+  const L = c.lang, id = s.id ?? `#${++c.auto}`, semi = SEMI(L) ? ';' : '';
   const X = (e, bare) => rx(c, e, bare).t, n = s.name != null ? ident(s.name, L) : '';
   switch (s.k) {
     case 'decl': {
       let t = s.type || tOf(c, s.value); if (t === 'any') t = 'int';
       c.frames[c.frames.length - 1].set(s.name, { type: t });
       const v = X(s.value, 'rhs'), emptyList = s.value.k === 'list' && !s.value.items.length;
+      if (JSL(L)) {
+        // const unless the name is reassigned later (or a whole blank line might reassign it)
+        const kw = c.rebound.has(s.name) || c.blankStmt ? 'let' : 'const';
+        const ann = L === 'typescript' && (emptyList || s.value.k === 'blank') ? `: ${TY.typescript[t]}` : '';
+        return emit(c, `${kw} ${n}${ann} = ${v};`, id);
+      }
+      if (L === 'java') return emit(c, `${TY.java[t]} ${n} = ${v};`, id);
+      if (L === 'go') return emit(c, `${n} := ${emptyList ? '[]int{}' : v}`, id);
       const text = L === 'python' ? `${n} = ${v}`
         : L === 'gdscript' ? `var ${n}: ${TY.gdscript[t]} = ${v}`
         : L === 'rust' ? `let ${c.mut.has(s.name) ? 'mut ' : ''}${n}${emptyList ? ': Vec<i64>' : ''} = ${v};`
@@ -472,14 +521,24 @@ function stmt(c, s) {
       return emit(c, text, id);
     }
     case 'assign': return emit(c, `${n} = ${X(s.value, 'rhs')}${semi}`, id);
-    case 'augAssign': return emit(c, `${n} ${L === 'python' && s.op === '/' ? '//' : s.op}= ${X(s.value, 'rhs')}${semi}`, id);
-    case 'setIndex': return emit(c, `${n}[${L === 'rust' ? rsIdx(c, s.i) : X(s.i)}] = ${X(s.value, 'rhs')}${semi}`, id);
+    case 'augAssign':
+      if (JSL(L) && s.op === '/') return emit(c, `${n} = ${X(E.bin('/', E.var(s.name), s.value))};`, id);
+      return emit(c, `${n} ${L === 'python' && s.op === '/' ? '//' : s.op}= ${X(s.value, 'rhs')}${semi}`, id);
+    case 'setIndex':
+      if (L === 'java') return emit(c, `${n}.set(${X(s.i)}, ${X(s.value, 'rhs')});`, id);
+      return emit(c, `${n}[${L === 'rust' ? rsIdx(c, s.i) : X(s.i)}] = ${X(s.value, 'rhs')}${semi}`, id);
     case 'append': {
-      const m = { python: 'append', gdscript: 'append', csharp: 'Add', cpp: 'push_back', rust: 'push' }[L];
+      if (L === 'go') return emit(c, `${n} = append(${n}, ${X(s.value, 'rhs')})`, id);
+      const m = { python: 'append', gdscript: 'append', csharp: 'Add', cpp: 'push_back', rust: 'push',
+        javascript: 'push', typescript: 'push', java: 'add' }[L];
       return emit(c, `${n}.${m}(${X(s.value, 'rhs')})${semi}`, id);
     }
     case 'print': {
       const r = rx(c, s.value, 'print');
+      if (JSL(L)) return emit(c, `console.log(${r.t});`, id);
+      if (L === 'java') return emit(c, `System.out.println(${r.t});`, id);
+      // Go: s[i] is a byte, printed as a number unless turned back into a string
+      if (L === 'go') return emit(c, `fmt.Println(${tOf(c, s.value) === 'char' ? `string(${r.t})` : r.t})`, id);
       const text = PYL(L) ? `print(${r.t})` : L === 'csharp' ? `Console.WriteLine(${r.t});`
         : L === 'cpp' ? `std::cout << ${s.value.k === 'bin' ? `(${r.t})` : r.t} << "\\n";` : `println!("{}", ${r.t});`;
       return emit(c, text, id);
@@ -500,27 +559,53 @@ function stmt(c, s) {
       }
       return close(c);
     }
-    case 'while': open(c, `while ${cond(c, s.cond)}`, id); block(c, s.body); return close(c);
+    case 'while': open(c, `${L === 'go' ? 'for' : 'while'} ${cond(c, s.cond)}`, id); block(c, s.body); return close(c);
     case 'forRange': open(c, rangeHeader(c, s), id); block(c, s.body, { [s.v]: 'int' }); return close(c);
     case 'forEach': {
       const v = ident(s.v, L), xs = ident(s.list, L);
       const head = PYL(L) ? `for ${v} in ${xs}` : L === 'csharp' ? `foreach (int ${v} in ${xs})`
-        : L === 'cpp' ? `for (int ${v} : ${xs})` : `for &${v} in ${c.look(s.list)?.param ? '' : '&'}${xs}`;
+        : L === 'cpp' || L === 'java' ? `for (int ${v} : ${xs})` : JSL(L) ? `for (const ${v} of ${xs})`
+        // Go rejects an unused loop variable, so a body that never reads it gets `for range xs`.
+        : L === 'go' ? (readsVar(s.body, s.v) ? `for _, ${v} := range ${xs}` : `for range ${xs}`)
+        : `for &${v} in ${c.look(s.list)?.param ? '' : '&'}${xs}`;
       open(c, head, id); block(c, s.body, { [s.v]: 'int' }); return close(c);
     }
     default: fail(`unknown statement: ${s.k}`);
   }
 }
 
+// Does any statement in `stmts` (nested blocks too) read variable `n`?
+const readsVar = (stmts, n) => stmts.some(s =>
+  [s.value, s.cond, s.i, s.start, s.end, ...(s.elifs || []).map(a => a.cond)].some(e => e && varsIn(e).has(n))
+  || [s.then, s.body, s.els, ...(s.elifs || []).map(a => a.body)].some(b => b && readsVar(b, n)));
+// Names reassigned by assign/augAssign (JS const vs let), and whether a whole blank line could do it.
+const rebound = (stmts, set = new Set()) => {
+  for (const s of stmts) {
+    if (s.k === 'assign' || s.k === 'augAssign') set.add(s.name);
+    for (const b of [s.then, s.body, s.els, ...(s.elifs || []).map(a => a.body)]) if (b) rebound(b, set);
+  }
+  return set;
+};
+const hasBlankStmt = stmts => stmts.some(s => s.k === 'blank' || (s.k === 'exprStmt' && s.value.k === 'blank')
+  || [s.then, s.body, s.els, ...(s.elifs || []).map(a => a.body)].some(b => b && hasBlankStmt(b)));
+const setScope = (c, stmts) => { c.mut = assigned(stmts); c.rebound = rebound(stmts); c.blankStmt = hasBlankStmt(stmts); };
+
 function fnHeader(c, f) {
   const L = c.lang, name = ident(f.name, L, 'fn'), r = f.returns;
   const ps = f.params.map(p => {
     const pn = ident(p.name, L);
+    if (L === 'javascript') return pn;
+    if (L === 'typescript') return `${pn}: ${TY.typescript[p.type]}`;
+    if (L === 'go') return `${pn} ${TY.go[p.type]}`;
     if (L === 'python') return pn;
     if (L === 'gdscript') return `${pn}: ${TY.gdscript[p.type]}`;
     if (L === 'rust') return `${c.mut.has(p.name) ? 'mut ' : ''}${pn}: ${PARAM.rust[p.type]}`;
     return `${(L === 'cpp' && PARAM.cpp[p.type]) || TY[L][p.type]} ${pn}`;
   }).join(', ');
+  if (L === 'javascript') return `function ${name}(${ps})`;
+  if (L === 'typescript') return `function ${name}(${ps}): ${TY.typescript[r]}`;
+  if (L === 'java') return `static ${TY.java[r]} ${name}(${ps})`;
+  if (L === 'go') return `func ${name}(${ps})${r === 'void' ? '' : ` ${TY.go[r]}`}`;
   if (L === 'python') return `def ${name}(${ps})`;
   if (L === 'gdscript') return `func ${name}(${ps}) -> ${TY.gdscript[r]}`;
   if (L === 'csharp') return `static ${TY.csharp[r]} ${name}(${ps})`;
@@ -533,7 +618,7 @@ export function render(prog, lang, opts = {}) {
   const c = ctx(lang, prog), L = lang;
   if (L === 'gdscript') { emit(c, 'extends Node'); emit(c, ''); }
   prog.fns.forEach((f, i) => {
-    c.mut = assigned(f.body);
+    setScope(c, f.body);
     c.frames = [new Map(f.params.map(p => [p.name, { type: p.type, param: true }]))];
     const fid = f.id ?? `#${++c.auto}`;
     open(c, fnHeader(c, f), fid);
@@ -542,8 +627,8 @@ export function render(prog, lang, opts = {}) {
     if (i < prog.fns.length - 1 || prog.main.length) emit(c, '');
   });
   if (prog.main.length) {
-    c.mut = assigned(prog.main); c.frames = [new Map()];
-    const head = { gdscript: 'func _ready() -> void', cpp: 'int main()', rust: 'fn main()' }[L];
+    setScope(c, prog.main); c.frames = [new Map()];
+    const head = { gdscript: 'func _ready() -> void', cpp: 'int main()', rust: 'fn main()', java: 'void main()', go: 'func main()' }[L];
     if (head) { if (L === 'gdscript') emit(c, head + ':', '#main'); else open(c, head, '#main'); c.depth++; }
     prog.main.forEach(s => stmt(c, s));
     if (head) { c.depth--; close(c); }
@@ -576,7 +661,7 @@ function looseCtx(lang, opts = {}) {
       if (s.k === 'forRange' || s.k === 'forEach') known.set(s.v, { type: 'int' });
       for (const x of [s.then, s.body, s.els, ...(s.elifs || []).map(a => a.body)]) if (x) walk(x);
     });
-    walk(b); c.mut = assigned(b);
+    walk(b); setScope(c, b);
   }
   for (const [k, t] of Object.entries(opts.types || {})) known.set(k, typeof t === 'string' ? { type: t } : t);
   c.fallback = n => known.get(n) || { type: 'any' };
@@ -732,13 +817,16 @@ export function run(prog, { entry, args = [], maxSteps = 10000 } = {}) {
 //   blocksFor(text, { distractors=[texts], count=0, seed=1 }) → { tiles, solution, joiner:' ', useAll:false } | null
 //        tiles shuffled with `seed`; up to `count` extra blocks (all different) taken in order from the
 //        distractor texts' blocks that the answer does not already use; solution = tree of tile indices.
-//   decoyTokens(text)             spare one-block distractors: sibling operators, numbers ± 1
+//   decoyTokens(text, lang?)      spare one-block distractors: sibling operators, numbers ± 1 (comparisons
+//        use === / !== for javascript/typescript, or when the line already does)
+//   JavaScript `===`/`!==` and Go `:=` are single operator blocks; a Java `(int)` cast sticks to the next
+//   block like C++'s. Go and other brace headers ending in `{` give null (strip the `{` first).
 //   serialiseBlocks(tiles, solution, joiner=' ')  the text a solution tree builds (null if malformed)
 //   textKey(text)                 the engine's text normalisation (for accepts lists)
 //   spacingVariants(text)         the line with every subset of `a + b` operator gaps written as `a+b`
 //        (all subsets for up to 4 operators, else spaced + fully compact + one-at-a-time), spaced first.
 
-const LX_OPS = ['..=', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '//', '->', '<', '>', '+', '-', '*', '/', '%', '='];
+const LX_OPS = ['===', '!==', '..=', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '//', '->', '<', '>', '+', '-', '*', '/', '%', '='];
 const LX_WORD = /^(?:\((?:int|double)\))?[&!]?(?:-?[A-Za-z0-9_]+(?:(?:\.\.=?|\.|::)[A-Za-z0-9_]+)*(?:\(\))?(?:\+\+|--)?(?:&(?= ))?|"[^"]*"|'[^']*')/;
 const KW_SLOT = new Set(['for', 'if', 'while', 'foreach']);
 
@@ -753,6 +841,8 @@ function lexLine(text) {
     // A leading '-' is only a negative literal when it is glued to a digit (binary minus is spaced).
     if (m && m[0].startsWith('-') && !/^-\d/.test(m[0])) m = null;
     if (m) { toks.push({ k: 'w', t: m[0], sp }); i += m[0].length; sp = false; continue; }
+    // Go's short declaration `:=` is one operator block.
+    if (rest.startsWith(':=')) { toks.push({ k: 'w', t: ':=', sp }); i += 2; sp = false; continue; }
     if ('()[],;:{}'.includes(ch)) { toks.push({ k: ch, t: ch, sp }); i++; sp = false; continue; }
     const op = LX_OPS.find(o => rest.startsWith(o));
     if (!op) return null;
@@ -889,12 +979,15 @@ export function blocksFor(text, { distractors = [], count = 0, seed = 1 } = {}) 
 // Extra single blocks for a line when its wrong versions run out: the other operators of each
 // operator's family and each whole number ± 1. In a fixed order (no rng).
 const OP_FAMILIES = [['+', '-', '*', '/', '%'], ['//', '+', '-', '*', '%'], ['<', '<=', '>', '>=', '==', '!='], ['=', '+=', '-=', '*=', '/=', '%='], ['&&', '||'], ['and', 'or']]; // first family holding the operator wins
-export function decoyTokens(text) {
+// JavaScript/TypeScript compare with === and !== (lang given, or the line already uses them).
+const JS_FAMILIES = [OP_FAMILIES[0], OP_FAMILIES[1], ['<', '<=', '>', '>=', '===', '!=='], ...OP_FAMILIES.slice(3)];
+export function decoyTokens(text, lang) {
   const items = lineTree(text) || [];
   const out = [];
+  const fams = JSL(lang) || /===|!==/.test(String(text)) ? JS_FAMILIES : OP_FAMILIES;
   const walk = xs => xs.forEach(x => {
     if (x.kids) return walk(x.kids);
-    const fam = OP_FAMILIES.find(f => f.includes(x.v));
+    const fam = fams.find(f => f.includes(x.v));
     if (fam) out.push(...fam.filter(o => o !== x.v));
     const n = /^-?\d+[,;:]?$/.test(x.v) ? parseInt(x.v, 10) : NaN;
     if (Number.isInteger(n)) out.push(String(n + 1), ...(n > 0 ? [String(n - 1)] : []));
@@ -929,7 +1022,7 @@ export function serialiseBlocks(tiles, solution, joiner = ' ') {
 // case-insensitive), for building and checking `accepts` lists.
 export const textKey = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
 
-const GAP = /(?<=\S) (==|!=|<=|>=|&&|\|\||\+=|-=|\*=|\/=|%=|\/\/|[-+*\/%<>=]) (?=\S)/g;
+const GAP = /(?<=\S) (===|!==|==|!=|<=|>=|&&|\|\||\+=|-=|\*=|\/=|%=|\/\/|[-+*\/%<>=]) (?=\S)/g;
 export function spacingVariants(text) {
   const hits = [...String(text).matchAll(GAP)];
   const k = hits.length;
@@ -957,6 +1050,14 @@ const NOTES = {
     append: 'xs.append(x)', print: 'print(x)', and: 'and', or: 'or', not: 'not', elseIf: 'elif', intDiv: '/', equals: '==' },
   rust: { range: 'a..b counts from a up to b, stopping before b (a..=b would include b)', len: 'xs.len()',
     append: 'xs.push(x)', print: 'println!("{}", x)', and: '&&', or: '||', not: '!', elseIf: 'else if', intDiv: '/', equals: '==' },
+  javascript: { range: 'for (let i = a; i < b; i++) counts from a up to b, stopping before b', len: 'xs.length (s.length for a string too)',
+    append: 'xs.push(x)', print: 'console.log(x)', and: '&&', or: '||', not: '!', elseIf: 'else if', intDiv: '/', equals: '===' },
+  typescript: { range: 'for (let i = a; i < b; i++) counts from a up to b, stopping before b', len: 'xs.length (s.length for a string too)',
+    append: 'xs.push(x)', print: 'console.log(x)', and: '&&', or: '||', not: '!', elseIf: 'else if', intDiv: '/', equals: '===' },
+  java: { range: 'for (int i = a; i < b; i++) counts from a up to b, stopping before b', len: 'xs.size() (s.length() for a String)',
+    append: 'xs.add(x)', print: 'System.out.println(x)', and: '&&', or: '||', not: '!', elseIf: 'else if', intDiv: '/', equals: '==' },
+  go: { range: 'for i := a; i < b; i++ counts from a up to b, stopping before b', len: 'len(xs)',
+    append: 'xs = append(xs, x)', print: 'fmt.Println(x)', and: '&&', or: '||', not: '!', elseIf: 'else if', intDiv: '/', equals: '==' },
 };
 export const langNotes = lang => NOTES[lang] || fail(`unknown language: ${lang}`);
 export const rangeText = lang => langNotes(lang).range;

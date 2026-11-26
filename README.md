@@ -15,7 +15,7 @@ Everything happens in your browser. There's no account and no server-side databa
 - **Build answers from blocks.** Many questions let you drag or tap blocks instead of typing, from ordering events to building SQL queries.
 - **Write real book entries.** Accounting journal entries go in a proper Account | Debit | Credit table: type into the cells or drop account and amount blocks onto them.
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
-- **Read and write code.** Code Writing and Code Reviewing show short programs in Python, C#, C++, GDScript or Rust (your pick): fill the gaps, predict the output, find the bug and choose the fix.
+- **Read and write code.** Code Writing and Code Reviewing show short programs in Python, C#, C++, GDScript, Rust, JavaScript, TypeScript, Java or Go (your pick): fill the gaps, predict the output, find the bug and choose the fix.
 - **Practise with a guide.** Switch any subject to **Guided** for hints, unlimited tries and a Show solution button. Guided sets are never scored.
 - **Mix it up.** Build a quiz that pulls from several domains at once. You decide how often each one appears by giving it a weight; everything starts at 1.
 - **Save your favourite mixes.** Keep mixes as presets, or start from the official ones that ship with the app. A mix you're still working on is kept until you save it or clear it.

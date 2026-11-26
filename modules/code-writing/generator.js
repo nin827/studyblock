@@ -25,6 +25,13 @@ const V = E.var;
 const tk = s => '`' + s + '`';
 const MAX_STEPS = 4000;
 const DIFFS = ['easy', 'medium', 'hard', 'expert'];
+// Decisions that look at every language (distinct options, Write the line) use the five original
+// languages, so their questions stay the same per seed as before JavaScript, TypeScript, Java and Go
+// were added. A newer language decides on those five plus itself: it only differs from them when its
+// own rendering forces a redraw, and adding another language later never changes it.
+const LEGACY_LANGS = ['python', 'csharp', 'cpp', 'gdscript', 'rust'];
+const langsFor = lang => (LEGACY_LANGS.includes(lang) || !LANG_IDS.includes(lang) ? LEGACY_LANGS : [...LEGACY_LANGS, lang]);
+const isJs = lang => lang === 'javascript' || lang === 'typescript';
 
 // ── running ───────────────────────────────────────────────────────────────────────────────────
 
@@ -139,17 +146,25 @@ function canon(e) {
 }
 const meaningKey = o => JSON.stringify(canon(o));
 
-function pickOptions(rng, m, correct, pool, spec, renderOpt) {
+function pickOptions(rng, m, correct, pool, spec, renderOpt, lang) {
   const passes = o => { const p = buildWith(m, o); return !!p && meets(p, spec); };
   if (!passes(correct)) throw new Error(`template ${m.t}: correct option fails`);
   const shuffled = rng.shuffle(pool);
   const chosen = [correct];
-  const keys = LANG_IDS.map(l => new Set([renderOpt(correct, l)]));
+  const LANGS = langsFor(lang);
+  const keys = LANGS.map(l => new Set([renderOpt(correct, l)]));
   const meanings = new Set([meaningKey(correct)]);
+  // JavaScript reads `undefined` past the end of an array or string instead of failing, so an option
+  // that only fails here by reading out of range may still give the right results there: skip it.
+  const readsOut = o => {
+    const p = buildWith(m, o);
+    return !!p && (spec.tests ? spec.tests.some(t => exec(p, t).index) : !!exec(p).index);
+  };
   for (const o of shuffled) {
     if (chosen.length === 4) break;
     if (passes(o)) continue;
-    const r = LANG_IDS.map(l => renderOpt(o, l));
+    if (isJs(lang) && readsOut(o)) continue;
+    const r = LANGS.map(l => renderOpt(o, l));
     if (r.some((s, i) => keys[i].has(s))) continue;
     // Two wrong options that say the same thing (`== M` and `not (!= M)`, `x > c` and `c < x`): keep the first.
     const mk = meaningKey(o);
@@ -166,7 +181,9 @@ function pickOptions(rng, m, correct, pool, spec, renderOpt) {
 // A short reason why a wrong option fails: the first example it gets wrong.
 function whyWrong(m, opt, spec, lang, show) {
   // C++ doesn't bounds-check std::string/vector [], so an index error there is a wrong result, not a crash.
-  const errText = r => (lang === 'cpp' && r.index ? 'reads past the end (C++ does not check this, so the result is wrong)' : 'causes an error');
+  // JavaScript gives `undefined` for a position outside an array or string, also without an error.
+  const errText = r => (lang === 'cpp' && r.index ? 'reads past the end (C++ does not check this, so the result is wrong)'
+    : isJs(lang) && r.index ? 'reads past the end (JavaScript gives `undefined` there instead of an error, so the result is wrong)' : 'causes an error');
   const prog = buildWith(m, opt);
   if (!prog) return 'does not work here';
   if (spec.tests) {
@@ -194,7 +211,7 @@ function numberQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, promp
 }
 
 function choiceQ({ rng, m, correct, pool, spec, renderOpt, prompt, explain, lang, hints }) {
-  const { opts, correctIndex } = pickOptions(rng, m, correct, pool, spec, renderOpt);
+  const { opts, correctIndex } = pickOptions(rng, m, correct, pool, spec, renderOpt, lang);
   const choices = opts.map(o => tk(renderOpt(o, lang)));
   return {
     prompt, answer: choices[correctIndex], answerType: 'choice', choices, explanation: explain(opts, correctIndex), lang,
@@ -237,7 +254,11 @@ function codeLineBlank(prog, lang, id) {
 const fnName = (name, lang) => ident(name, lang, 'fn');
 const vn = (name, lang) => ident(name, lang);
 const callText = (prog, fn, args, lang) => renderExpr(E.call(fn, args.map(a => (typeof a === 'string' ? E.str(a) : E.int(a)))), lang, { program: prog });
-const intDivNote = lang => `${tk(langNotes(lang).intDiv)} between whole numbers is whole-number division: it drops the remainder. ${tk('%')} gives the remainder.`;
+const intDivNote = lang => (isJs(lang)
+  ? `In JavaScript ${tk('/')} gives a decimal, so ${tk('Math.floor(a / b)')} is used for whole-number division: it drops the remainder. ${tk('%')} gives the remainder.`
+  : `${tk(langNotes(lang).intDiv)} between whole numbers is whole-number division: it drops the remainder. ${tk('%')} gives the remainder.`);
+// "a / b" as whole-number division in this language's words (JavaScript wraps it in Math.floor).
+const divText = (a, b, lang) => (isJs(lang) ? `Math.floor(${a} / ${b})` : `${a} ${langNotes(lang).intDiv} ${b}`);
 const prints = out => (out.length === 1 ? `prints ${tk(out[0])}` : `prints ${out.map(tk).join(', then ')}`);
 
 // ── word lists (all pass codelang's name rules and are safe in every language) ─────────────────
@@ -327,11 +348,11 @@ function exprDiv(rng, lang) {
   const m = { t: 'exprDivA', p };
   return numberQ({ m, solution: ans, smallest: true, floor: 0, spec: { out: [String(out)] }, lang,
     prompt: `What is the **smallest** whole number (0 or more) that can fill the blank ${tk(BLANK)} so that this program prints ${tk(out)}?\n\n${code(make(p, bl()), lang)}`,
-    explanation: `${intDivNote(lang)} ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} must be ${q}, and the smallest number that gives ${q} when divided by ${D} is ${q} × ${D} = **${ans}** (values up to ${ans + D - 1} give ${q} too).`,
+    explanation: `${intDivNote(lang)} ${tk(divText(BLANK, vn(d, lang), lang))} must be ${q}, and the smallest number that gives ${q} when divided by ${D} is ${q} × ${D} = **${ans}** (values up to ${ans + D - 1} give ${q} too).`,
     hints: [
       intDivNote(lang),
-      shape === 0 ? `The program prints ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} with ${tk(vn(d, lang))} = ${D}, so ${tk(BLANK)} divided by ${D}, rounded down, must be ${q}.`
-        : `${tk(vn(a, lang))} is ${A}, so ${tk(`${BLANK} ${langNotes(lang).intDiv} ${vn(d, lang)}`)} must be ${out} − ${A} = ${q}, with ${tk(vn(d, lang))} = ${D}.`,
+      shape === 0 ? `The program prints ${tk(divText(BLANK, vn(d, lang), lang))} with ${tk(vn(d, lang))} = ${D}, so ${tk(BLANK)} divided by ${D}, rounded down, must be ${q}.`
+        : `${tk(vn(a, lang))} is ${A}, so ${tk(divText(BLANK, vn(d, lang), lang))} must be ${out} − ${A} = ${q}, with ${tk(vn(d, lang))} = ${D}.`,
       `Several numbers give ${q} when divided by ${D} and rounded down. You want the lowest one: the first number that ${D} goes into exactly ${q} times.`,
     ] });
 }
@@ -684,7 +705,7 @@ function loopMultiples(rng, lang) {
     explanation: `${tk(vn(i, lang))} runs from 1 to ${N - 1} (${rangeText(lang)}). The multiples of **${k}** in that range are ${mult.join(', ')}, ` +
       `${add ? `which add up to ${out}` : `which is ${cnt} of them`}. No other divisor gives ${out}.`,
     hints: [
-      `${tk(vn(i, lang))} runs from 1 to ${N - 1} (${rangeText(lang)}). ${tk(`${vn(i, lang)} % ${BLANK} == 0`)} is true when ${tk(vn(i, lang))} is a multiple of the blank.`,
+      `${tk(vn(i, lang))} runs from 1 to ${N - 1} (${rangeText(lang)}). ${tk(`${vn(i, lang)} % ${BLANK} ${langNotes(lang).equals} 0`)} is true when ${tk(vn(i, lang))} is a multiple of the blank.`,
       add ? `The program adds up every multiple of the blank below ${N} and gets ${out}. Try small numbers: what do the multiples of 2 below ${N} add up to? Of 3?`
         : `The program counts the multiples of the blank below ${N} and gets ${out}. For a number d, there are ${N - 1} ÷ d of them (rounded down). Try d = 2, 3, 4, …`,
     ] });
@@ -1125,7 +1146,7 @@ function multiQ({ rng, m, lang, prompt, explanation, parts }) {
       metaParts[pt.id] = bp;
       out.push({ ...base, answerType: 'number', answer: pt.solution, tolerance: 0 });
     } else if (pt.kind === 'choice') {
-      ({ opts, correctIndex: ci } = pickOptions(rng, m, pt.correct, pt.pool, pt.spec, pt.renderOpt));
+      ({ opts, correctIndex: ci } = pickOptions(rng, m, pt.correct, pt.pool, pt.spec, pt.renderOpt, lang));
       fill = pt.correct;
       const choices = opts.map(o => tk(pt.renderOpt(o, lang)));
       metaParts[pt.id] = { kind: 'choice', spec: pt.spec, opts };
@@ -1180,13 +1201,13 @@ function exprChain(rng, lang) {
   return multiQ({ rng, m, lang,
     prompt: `The first line this program prints is ${tk(z0)}.\n\n${code(prog, lang)}`,
     explanation: `${intDivNote(lang)}\n\n` +
-      `${tk(vn(z, lang))} is ${tk(`${vn(y, lang)} ${divOp(lang)} ${D}`)} and prints ${z0}, so ${tk(vn(y, lang))} is somewhere from ${z0} × ${D} = ${lowY} to ${highY}.\n\n` +
+      `${tk(vn(z, lang))} is ${tk(divText(vn(y, lang), D, lang))} and prints ${z0}, so ${tk(vn(y, lang))} is somewhere from ${z0} × ${D} = ${lowY} to ${highY}.\n\n` +
       `${tk(vn(y, lang))} = ${yWords}. The smallest ${tk(vn(x, lang))} (0 or more) that makes it at least ${lowY} is **${ans}**, giving ${tk(vn(y, lang))} = ${y1}.\n\n` +
       `Then ${tk(wLine)} gives **${w1}**, the second line.`,
     parts: [
       { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (0 or more) that can fill the blank ${tk(BLANK)}?`,
         solution: ans, smallest: true, floor: 0, spec: { out: [String(z0)], prefix: true },
-        hint: `Work backwards. ${tk(vn(z, lang))} = ${tk(`${vn(y, lang)} ${divOp(lang)} ${D}`)} drops the remainder, so it is ${z0} for every ${tk(vn(y, lang))} from ${lowY} to ${highY}. ` +
+        hint: `Work backwards. ${tk(vn(z, lang))} = ${tk(divText(vn(y, lang), D, lang))} drops the remainder, so it is ${z0} for every ${tk(vn(y, lang))} from ${lowY} to ${highY}. ` +
           `${tk(vn(y, lang))} is ${yWords}: find the smallest ${tk(vn(x, lang))} that brings it up to ${lowY} or more.` },
       { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
         hint: `Put your blank in and go line by line: ${tk(yLine)}, then ${tk(vn(z, lang))}, then ${tk(wLine)}. ` +
@@ -1220,7 +1241,7 @@ function exprDigits(rng, lang) {
   const m = { t: 'exprDigits', p };
   const prog = MAKE.exprDigits(p, bl());
   const R = render(prog, lang);
-  const firstLine = R.lines.find(l => /print|WriteLine|cout|println/.test(l)).trim();
+  const firstLine = R.lines.find(l => /print|WriteLine|cout|println|console\.log|Println/.test(l)).trim();
   const H = tk(vn(h, lang)), T = tk(vn(t, lang)), U = tk(vn(u, lang));
   const rule = f === 0 ? `${H} + ${T} + ${U}` : f === 1 ? `${H} × ${U} + ${T}` : `${H} × 10 + ${U} − ${T}`;
   return multiQ({ rng, m, lang,
@@ -1231,7 +1252,7 @@ function exprDigits(rng, lang) {
     parts: [
       { kind: 'blank', id: 'blank', label: 'Blank', ask: `What is the smallest whole number (100 or more) that can fill the blank ${tk(BLANK)}?`,
         solution: ans, smallest: true, floor: 100, spec: { out: [String(target)], prefix: true },
-        hint: `${tk(`${vn(n, lang)} ${divOp(lang)} 100`)} is the hundreds digit, ${tk(`${vn(n, lang)} ${divOp(lang)} 10 % 10`)} the tens digit and ${tk(`${vn(n, lang)} % 10`)} the units digit. ` +
+        hint: `${tk(divText(vn(n, lang), 100, lang))} is the hundreds digit, ${tk(`${divText(vn(n, lang), 10, lang)} % 10`)} the tens digit and ${tk(`${vn(n, lang)} % 10`)} the units digit. ` +
           `The first line ${tk(firstLine)} is ${rule} = ${target}. Keep the hundreds digit as small as you can, then the tens digit.` },
       { kind: 'output', id: 'output', label: 'Output', ask: 'With that smallest value in the blank, what does the second line print?', line: 1,
         hint: `Split your number into its three digits. The second line builds ${U} × 100 + ${T} × 10 + ${H}: the digits in reverse order.` },
@@ -1546,7 +1567,7 @@ function fnHelper(rng, lang) {
   const F1 = fnName(f1, lang), call1 = callText(prog, f2, [A1, B1], lang), call2 = callText(prog, f2, [A2, B2], lang);
   return multiQ({ rng, m, lang,
     prompt: `The first line this program prints is ${tk(c1)}.\n\n${code(prog, lang)}`,
-    explanation: `${tk(F1)} adds up the digits of a number (${tk('% 10')} takes the last digit, ${tk(`${divOp(lang)} 10`)} removes it). ` +
+    explanation: `${tk(F1)} adds up the digits of a number (${tk('% 10')} takes the last digit, ${tk(isJs(lang) ? `${vn(n, lang)} = Math.floor(${vn(n, lang)} / 10)` : `${divOp(lang)} 10`)} removes it). ` +
       `${tk(call1)} counts the numbers from ${A1} to ${B1 - 1} (${rangeText(lang)}) whose digit sum equals the blank.\n\n` +
       `Exactly ${c1} numbers in that range have digit sum **${ans}**: ${hits1.join(', ')}. No other digit sum is shared by exactly ${c1} of them.\n\n` +
       `${tk(call2)} counts digit sum ${ans} from ${A2} to ${B2 - 1}: **${c2}**.`,
@@ -1737,7 +1758,7 @@ WL.divisible = {
   form: (p, L) => `Use the remainder operator ${tk('%')} and compare the result.`,
   hints: (p, L) => [
     `${tk('a % b')} is the remainder after dividing a by b; for example ${p.K * 3 + 1} % ${p.K} is 1.`,
-    `What is the remainder when a number divides exactly? Compare the remainder with that value using ${tk('==')}.`,
+    `What is the remainder when a number divides exactly? Compare the remainder with that value using ${tk(langNotes(L).equals)}.`,
   ],
 };
 
@@ -1998,9 +2019,15 @@ function wlAccepts(core, tpl, L) {
   const cand = [];
   const sv = spacingVariants(answer);
   cand.push(...sv.slice(1, 2));
+  // JavaScript: between two numbers == and != behave exactly like === and !==, and Math.trunc equals
+  // Math.floor here because the operands are never negative. The answer's loose form comes early so
+  // the 20-item cap never drops it.
+  const loose = t => t.replace(/===/g, '==').replace(/!==/g, '!=').replace(/Math\.floor\(/g, 'Math.trunc(');
+  if (isJs(L) && loose(answer) !== answer) cand.push(loose(answer), ...spacingVariants(loose(answer)).slice(1, 2));
   for (const t of others) cand.push(t, spacingVariants(t)[1] ?? t);
   if (tpl.extra) cand.push(...tpl.extra(core.m.p, L));
   if (L === 'cpp' && answer.includes('(int)')) { const s = answer.replace(/\(int\)/g, ''); cand.push(s, ...spacingVariants(s).slice(1, 2)); }
+  if (isJs(L)) for (const t of others) { const s = loose(t); if (s !== t) cand.push(s, ...spacingVariants(s).slice(1, 2)); }
   cand.push(...sv.slice(2));
   const keys = new Set([textKey(answer)]), out = [];
   for (const t of cand) {
@@ -2018,7 +2045,7 @@ function wlLang(core, tplId, extra, seed, L) {
   const wrongTexts = core.wrongs.map(x => fillText(core.m, x, L)).filter(Boolean);
   const entry = wlEntry(tplId, core.m.p);
   const names = buildWith(core.m, bl()).fns.find(f => f.name === entry).params.map(q => vn(q.name, L));
-  const blocks = blocksFor(acc.answer, { distractors: [...wrongTexts, ...decoyTokens(acc.answer), ...names], count: extra, seed });
+  const blocks = blocksFor(acc.answer, { distractors: [...wrongTexts, ...decoyTokens(acc.answer, L), ...names], count: extra, seed });
   if (!blocks || solutionSize(blocks.solution) < 2 || blocks.tiles.length - solutionSize(blocks.solution) !== extra) return null;
   if (serialiseBlocks(blocks.tiles, blocks.solution) !== acc.answer) return null;
   // No wrong version may count as correct.
@@ -2035,7 +2062,9 @@ function wlWhy(m, x, spec, L, show) {
   for (const t of spec.tests) {
     const r = exec(prog, t);
     const fmt = y => (typeof y === 'boolean' ? boolText(y, L) : String(y));
-    if (!r.ok) return `${L === 'cpp' && r.index ? 'reads past the end of the list' : 'causes an error'} for ${show(t)}`;
+    if (!r.ok) return `${L === 'cpp' && r.index ? 'reads past the end of the list'
+      : isJs(L) && r.index ? 'reads past the end of the list (JavaScript gives `undefined` there instead of an error, and relying on that is a bug)'
+        : 'causes an error'} for ${show(t)}`;
     if (r.returned !== t.expect) return `gives ${tk(fmt(r.returned))} for ${show(t)}, not ${tk(fmt(t.expect))}`;
   }
   return 'does not match';
@@ -2050,9 +2079,9 @@ function writeLine(rng, difficulty, lang) {
     const core = wlCore(tplId, p);
     if (!core || core.wrongs.length < 2) continue;
     // Decide on every language, so the rng stream never depends on `lang`.
-    const per = {};
-    for (const L of LANG_IDS) { per[L] = wlLang(core, tplId, extra, seed, L); if (!per[L]) break; }
-    if (LANG_IDS.some(L => !per[L])) continue;
+    const per = {}, LANGS = langsFor(lang);
+    for (const L of LANGS) { per[L] = wlLang(core, tplId, extra, seed, L); if (!per[L]) break; }
+    if (LANGS.some(L => !per[L])) continue;
     return presentWriteLine({ tplId, p, extra, seed }, core, per[lang], lang);
   }
   throw new Error('could not plan a write-the-line question');

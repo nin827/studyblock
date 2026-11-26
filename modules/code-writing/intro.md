@@ -4,7 +4,7 @@ Each question shows a short program with a gap marked `___`. Your job is to comp
 
 ## Your language
 
-Code is shown in the language you pick: **Python, C#, C++, GDScript or Rust**. Change it on this page or in Settings. Every question works the same way in all five, so you can switch at any time.
+Code is shown in the language you pick: **Python, C#, C++, GDScript, Rust, JavaScript, TypeScript, Java or Go**. Change it on this page or in Settings. Every question works the same way in all of them, so you can switch at any time.
 
 ## Reading a question
 
@@ -28,8 +28,8 @@ If you would rather not type, switch to **Blocks** and build the expression from
 ## Things that often trip people up
 
 - **Positions start at 0.** The first item of a list, or the first letter of a word, is at position 0. The last is at length − 1.
-- **Ranges stop before their end value.** `range(1, 5)` in Python and GDScript, `1..5` in Rust, and `for (int i = 1; i < 5; i++)` in C# and C++ all count 1, 2, 3, 4.
-- **Whole-number division drops the remainder.** `7 // 2` in Python and `7 / 2` in the other languages give 3.
+- **Ranges stop before their end value.** `range(1, 5)` in Python and GDScript, `1..5` in Rust, `for (int i = 1; i < 5; i++)` in C#, C++ and Java, `for (let i = 1; i < 5; i++)` in JavaScript and TypeScript, and `for i := 1; i < 5; i++` in Go all count 1, 2, 3, 4.
+- **Whole-number division drops the remainder.** `7 // 2` in Python, `Math.floor(7 / 2)` in JavaScript and TypeScript (where `/` alone gives 3.5), and `7 / 2` in the other languages give 3.
 - **`%` gives the remainder.** `7 % 2` is 1, so `n % 2 == 0` means "n is even".
 - **`>=` includes the number; `>` does not.** "At least 18" is `>= 18`, and "more than 18" is `> 18`.
 - **Order of operations:** brackets first, then `*`, `/` and `%`, then `+` and `-`.

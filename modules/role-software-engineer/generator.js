@@ -225,7 +225,7 @@ function verifyApi(q, a) {
 
 const ACCOUNTS = ["AC-101", "AC-102", "AC-117", "AC-205", "AC-311", "AC-420"];
 const KINDS = ["card", "card", "refund", "payout"];
-// Replacement lines for the float bug, with what each does to the amounts (JS doubles are the same IEEE doubles as Python, C#, C++, GDScript and Rust floats; the shown code lines are in floatcode.js).
+// Replacement lines for the float bug, with what each does to the amounts (JS doubles are the same IEEE doubles as the floats of every language in floatcode.js, where the shown code lines are).
 const FIXES = {
   ok: { run: (am) => am.reduce((s, a) => s + Math.round(a * 100), 0),
     why: "rounds each amount to whole cents first, then adds integers, which floats hold exactly" },

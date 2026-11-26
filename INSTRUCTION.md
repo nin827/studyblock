@@ -148,7 +148,7 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 
 ### Code subjects
 
-**Code Writing** and **Code Reviewing** (in Computing) show short programs in the language you choose: **Python, C#, C++, GDScript or Rust**. Pick it on the subject page (**Language**) or in **Settings → Code language**. Both change the same setting, which applies to your next quiz. Each question shows its language as a tag, and answered questions keep the language they were asked in.
+**Code Writing** and **Code Reviewing** (in Computing) show short programs in the language you choose: **Python, C#, C++, GDScript, Rust, JavaScript, TypeScript, Java or Go** (Code Reviewing offers the first five for now). Pick it on the subject page (**Language**) or in **Settings → Code language**. Both change the same setting, which applies to your next quiz. Each question shows its language as a tag, and answered questions keep the language they were asked in.
 - **Code Writing:** each program has a gap `___`. Type the number that fills it, or pick the expression, condition or line that makes the program do what's asked. Some hard questions also ask what the finished program prints. When a question asks for the *smallest* number, give the lowest that works (0 or more).
 - **Code Reviewing:** predict what a program prints, find the line with the bug, choose the line that fixes it, or name the kind of bug. Line numbers sit at the left, and brace-only lines count, so the same bug can be on a different line in C# than in Python. Hard questions have several parts.
 - You never type whole programs. There's no calculator in these subjects.

@@ -20,7 +20,7 @@ Example: 3 of 8 sample rows on 800,000 rows → 300,000 rows × 200 bytes × 8 =
 
 1. **SQL:** keep the rows for the account with kind 'card' and add the amounts. Add cents as whole numbers to avoid rounding drift.
 2. **Fees:** work out each payment's fee on its own (amount × rate ÷ 100, rounded to the cent, plus any fixed fee), then add them. Rounding once on the total can differ by a cent or more.
-3. **Floats:** most cent values can't be stored exactly in binary, so a float total can print a hair above or below the true value. The truncating cast (`int()`, `(int)` or `as i64`, depending on the language) cuts towards zero: a total a hair *below* loses a whole cent, a hair *above* survives.
+3. **Floats:** most cent values can't be stored exactly in binary, so a float total can print a hair above or below the true value. The truncating cast (`int()`, `(int)`, `as i64` or `Math.trunc()`, depending on the language) cuts towards zero: a total a hair *below* loses a whole cent, a hair *above* survives.
 4. **Fix:** a correct line rounds to the nearest cent (per amount, or on the total) instead of truncating, and works in cents. Check each option against the amounts: truncating `total` before multiplying by 100 loses the cents, and rounding `total` itself gives dollars, not cents.
 
 **Watch out:** rounding a float with one argument (`round(x)`, `Math.Round(x)`, `std::round(x)`, `roundi(x)`, `x.round()`) gives a whole number, so multiply by 100 first to round to cents.

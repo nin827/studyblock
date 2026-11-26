@@ -8,7 +8,7 @@
   "questionsPerQuiz": 5,
   "fuzzy": false,
   "fuzzyNumber": 0,
-  "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
+  "languages": ["python", "csharp", "cpp", "gdscript", "rust", "javascript", "typescript", "java", "go"],
   "subtopics": [
     { "id": "api-endpoint", "title": "Speed up an API endpoint", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
     { "id": "ledger-check", "title": "Reconcile a payment ledger", "difficulties": ["medium", "hard", "expert", "expert-plus"] },

@@ -16,15 +16,15 @@
 
 Example: `a + b * ___` prints 23 with `a = 3`, `b = 4`. So `4 * ___` must be 20, and the blank is 5.
 
-**Watch out:** whole-number division drops the remainder. Python writes it `7 // 2`; C#, C++, GDScript and Rust write `7 / 2`. Both give 3, and `7 % 2` gives 1.
+**Watch out:** whole-number division drops the remainder. Python writes it `7 // 2`; JavaScript and TypeScript write `Math.floor(7 / 2)`, because `/` alone gives a decimal there; C#, C++, GDScript, Rust, Java and Go write `7 / 2`. All give 3, and `7 % 2` gives 1.
 
-**Expert (working backwards):** a whole-number division like `y / 5` (`y // 5` in Python) printing 4 only tells you `y` is somewhere from 20 to 24. Turn the printed value into that range first, then find the smallest input that lands in it. For digits: `n / 100` is the hundreds digit, `n / 10 % 10` the tens and `n % 10` the units (Python uses `//`).
+**Expert (working backwards):** a whole-number division like `y / 5` (`y // 5` in Python, `Math.floor(y / 5)` in JavaScript) printing 4 only tells you `y` is somewhere from 20 to 24. Turn the printed value into that range first, then find the smallest input that lands in it. For digits: `n / 100` is the hundreds digit, `n / 10 % 10` the tens and `n % 10` the units (Python uses `//`; JavaScript wraps each division in `Math.floor`).
 
 ## Conditionals
 
 1. Say the rule in words: "at least 18", "from 10 to 20", "even".
 2. Pick the operator: "at least" is `>=`, "more than" is `>`, "at most" is `<=`, "less than" is `<`.
-3. Join checks: both must hold → and (`and` in Python and GDScript, `&&` in C#, C++ and Rust); either is enough → or (`or` / `||`).
+3. Join checks: both must hold → and (`and` in Python and GDScript, `&&` in the other languages); either is enough → or (`or` / `||`).
 4. Test the edge values: the number itself, one below and one above.
 
 **Watch out:** `>=` includes the number and `>` does not. With `>`, a threshold blank is one less than the first value that counts.
@@ -34,7 +34,7 @@ Example: `a + b * ___` prints 23 with `a = 3`, `b = 4`. So `4 * ___` must be 20,
 ## Loops
 
 1. Find the start and end, and how much the loop variable changes each pass.
-2. Remember that ranges stop before the end: in Python and GDScript `range(1, 5)`, in C# and C++ `i < 5`, in Rust `1..5` all count 1, 2, 3, 4.
+2. Remember that ranges stop before the end: in Python and GDScript `range(1, 5)`, in C#, C++, Java, JavaScript, TypeScript and Go `i < 5`, in Rust `1..5` all count 1, 2, 3, 4.
 3. Count the passes, or list the values the variable takes.
 4. For a `while` loop, check the condition before every pass, including the one that stops it.
 
@@ -52,7 +52,7 @@ Example: a loop starts `i` at 2, adds `i` to a total each pass, and the total sh
 
 Example: in `"rocket"`, `k` is at position 3 (r=0, o=1, c=2, k=3).
 
-**Watch out:** an answer that only works for one list length is wrong. Use the length (`len(xs)`, `xs.Count`, `xs.size()`, `xs.len()`) instead of a fixed number.
+**Watch out:** an answer that only works for one list length is wrong. Use the length (`len(xs)`, `xs.Count`, `xs.size()`, `xs.len()`, `xs.length`) instead of a fixed number.
 
 **Expert (streaks and mirrors):** a streak counter must restart from 0 when the streak breaks. To compare a word with itself backwards, position `i` pairs with `length - 1 - i`; `length - i` runs one past the end.
 
@@ -78,9 +78,9 @@ Example: a function returns `n * ___ + 2`, and calling it with 4 prints 14. So 4
 
 Example: "true when `age` is at least 18" is the comparison `age >= 18`. It is already true or false, so it needs no `if`.
 
-**Watch out:** write only the expression, without `if`, `while`, `return` or the brackets around a C# or C++ condition. In C# and C++ "and" is `&&`; in Python and GDScript it is `and`.
+**Watch out:** write only the expression, without `if`, `while`, `return` or the brackets around a C#, C++, Java, JavaScript or TypeScript condition. "And" is `&&` everywhere except Python and GDScript, where it is `and`. JavaScript and TypeScript compare with `===` and `!==` (`==` and `!=` also count here, because both sides are numbers).
 
-**Lengths and calls:** the length of a list is `len(xs)` in Python, `xs.Count` in C#, `xs.size()` in C++ and GDScript, and `xs.len()` in Rust (`xs.len() as i64` when it is used as a number). A call is the function name followed by its arguments in brackets, separated by commas.
+**Lengths and calls:** the length of a list is `len(xs)` in Python and Go, `xs.Count` in C#, `xs.size()` in C++, GDScript and Java, `xs.length` in JavaScript and TypeScript, and `xs.len()` in Rust (`xs.len() as i64` when it is used as a number). Java reads an item with `xs.get(i)`. A call is the function name followed by its arguments in brackets, separated by commas.
 
 **Expert (several checks):** when one check guards another, such as "the position is valid" before "the item there is positive", put the guard first: `and` stops at the first false part, so the item is never read outside the list.
 
