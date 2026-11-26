@@ -19,7 +19,7 @@ Example: 3 of 8 sample rows on 800,000 rows → 300,000 rows × 200 bytes × 8 =
 ## Reconcile a payment ledger
 
 1. **SQL:** keep the rows for the account with kind 'card' and add the amounts. Add cents as whole numbers to avoid rounding drift.
-2. **Fees:** work out each payment's fee on its own (amount × rate ÷ 100, rounded to the cent, plus the fixed fee), then add them. Rounding once on the total can differ by a cent or more.
+2. **Fees:** work out each payment's fee on its own (amount × rate ÷ 100, rounded to the cent, plus any fixed fee), then add them. Rounding once on the total can differ by a cent or more.
 3. **Floats:** most cent values can't be stored exactly in binary, so a float total can print a hair above or below the true value. `int()` cuts towards zero: a total a hair *below* loses a whole cent, a hair *above* survives.
 4. **Fix:** a correct line rounds to the nearest cent (per amount, or on the total) instead of truncating, and works in cents. Check each option against the amounts: `int(total) * 100` loses the cents, `round(total)` gives dollars, not cents.
 
@@ -38,7 +38,7 @@ Example: two 64-bit integers = 16 bytes; 1,000,000 pairs = 16 MB; at 100 Mbps th
 
 1. **Fee:** percent of the amount, rounded to the cent, then take the larger of that and the minimum fee.
 2. **Conversion:** subtract the fee from the dollars, multiply by the rate, then round **down** to the cent (drop the extra digits).
-3. **Settlement:** find the start day first: the same day only on a weekday before 16:00, otherwise the next weekday. Then count that many weekdays forward, skipping Saturday and Sunday.
+3. **Settlement:** find the start day first: the same day only on a weekday (and before 16:00, if the question has that cut-off), otherwise the next weekday. Then count that many weekdays forward, skipping Saturday and Sunday.
 4. **Batch:** groups = payouts ÷ requests at a time, rounded **up**; seconds = groups × ms per group ÷ 1000.
 
 Example: submitted Friday at 17:30, T+2 → starts Monday, arrives Wednesday.

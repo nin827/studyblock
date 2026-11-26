@@ -121,7 +121,7 @@ On phones the menu sits at the bottom of the screen.
    - **Block-list answers (Build or Choose):** some questions, like the Business theory ones, combine several facts, e.g. `Assets ↑ | Liabilities – | Equity ↑`. In **Build** (the default) you place one block per column from the bank; order doesn't matter. In **Choose** you pick a listed option, which earns up to 85% at Hard and 70% at Expert.
    - **Case-sensitive questions** (Genetics) show a warning: capital letters matter.
    - **Code Reviewing → Language features** (Medium to Expert) asks questions that only make sense in your chosen language: Python `//` and aliasing, C# structs and overflow, C++ references and undefined behaviour, GDScript references and typing, and Rust ownership and borrowing. Switching language gives you that language's questions.
-   - **Roles:** open **Roles** (top bar, or the Home card) for career-style practice: Business Analyst, Software Engineer and Mathematician, each with specialised subroles (Financial or Marketing Analyst, Backend or Fintech Engineer, Statistician or Actuary). Levels run one step harder than usual: Normal, Hard, Expert, and **Expert+**, which has multi-part scenarios mixing several subjects that exist only here. Role results show under Roles in History and also count toward each subject.
+   - **Roles:** open **Roles** (top bar, or the Home card) for career-style practice: Business Analyst, Software Engineer and Mathematician, each with specialised subroles (Financial or Marketing Analyst, Backend or Fintech Engineer, Statistician or Actuary). Levels run one step harder than usual: **Easy** asks subject questions at Medium, **Medium** at Hard and **Hard** at Expert; the last 20% of questions (rounded up) are multi-part role scenarios mixing several subjects. **Expert** is scenarios only, the hardest kind (tagged Expert+). A scenario is worth one point per part, shown as "×3", so scores can read like 13.5 / 16. Set the number of questions on the role page (5–50; default 10, or 5 at Expert). Role results show under Roles in History and also count toward each subject.
    - **Dates:** type a year (`1969`, `44 BC`), a month and year (`July 1969`, `7/1969`) or a full date (`20 July 1969`, `20/7/1969`, `July 20, 1969`). Numbers are read day first, and a "Read as" line shows how the app understood you. One month or one day out earns half credit. There is no year 0, so 1 BC to AD 1 is one year.
    - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
    - **Ratios:** type them like `3:4`.
@@ -246,7 +246,7 @@ Open **Mix** to build a quiz across several domains.
 1. **Tick the domains** you want. Within each one, tick or untick its subdomains.
 2. **Set weights.** Each domain and subdomain has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
 3. Watch the **share bar** and the percentages update as you change things.
-4. Choose a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (1–50).
+4. Choose a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (5–50).
 5. Press **Start**.
 
 How a question is picked: first a domain (by domain weight), then a subdomain inside it (by subdomain weight), then a random subtopic. If a subtopic doesn't have the difficulty you chose, the closest one is used.
@@ -412,7 +412,7 @@ Official presets live in `presets/`.
 Rules:
 - A domain you leave out isn't included.
 - A domain without `modules` includes all of its subdomains, each at weight 1.
-- `difficulty` is `any`, `easy`, `medium`, `hard` or `expert`; `count` is 1–50.
+- `difficulty` is `any`, `easy`, `medium`, `hard` or `expert`; `count` is 5–50 (older values below 5 are raised to 5).
 - Unknown domain or module ids are skipped, with a warning in the browser console.
 
 ---

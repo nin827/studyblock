@@ -591,9 +591,424 @@ function genDerivVariance(rng) {
   }
 }
 
+// ---------- scenario tiers below Expert+ ----------
+// Role levels Easy / Medium / Hard draw these as mixed questions:
+//   medium  2 parts, simple numbers, one obvious chain
+//   hard    3 parts
+//   expert  3–4 parts, lighter than Expert+
+// Each has its own params.kind ("…-t" with a tier), so Expert+ questions are unchanged per seed.
+
+const TIER_IDS = ["medium", "hard", "expert"];
+const FLAG = ["Flag for inspection", "Within normal variation"];
+
+function genQcTier(rng, tier) {
+  if (rng.next() < 0.5) {
+    const ctx = rng.pick(QC_CONTEXTS);
+    for (;;) {
+      const n = tier === "medium" || tier === "expert" ? 5 : rng.pick([5, 10]);
+      const base = rng.int(ctx.base[0], ctx.base[1]);
+      const data = Array.from({ length: n }, () => base + rng.int(-7, 7));
+      const reading = base + rng.int(5, 16) * (rng.next() < 0.5 ? -1 : 1);
+      const statedSd = rng.int(20, 80) / 10;
+      const S = sum(data);
+      const mean = S / n;
+      const sdPop = Math.sqrt(sum(data.map((x) => (x - mean) ** 2)) / n);
+      const sd = tier === "medium" ? statedSd : sdPop;
+      const z = (reading - mean) / sd;
+      if (tier !== "medium" && (sd < 1.5 || nearHalf(sd, 2))) continue;
+      if (tier !== "hard" && (nearHalf(z, 2) || roundTo((reading - mean) / roundTo(sd, 2), 2) !== roundTo(z, 2))) continue;
+      if (tier === "hard" && (Math.abs(Math.abs(z) - 2) < 0.08 || (Math.abs(reading - mean) > 2 * roundTo(sd, 2)) !== (Math.abs(z) > 2))) continue;
+      const decision = Math.abs(z) > 2 ? FLAG[0] : FLAG[1];
+      const parts = [
+        { id: "mean", label: "Mean", ask: `Mean ${ctx.qty} (${ctx.unit}), to 1 decimal place`, answerType: "number", answer: roundTo(mean, 1), tolerance: 0.05, hint: `Add all ${n} values, then divide by ${n}.` },
+      ];
+      if (tier !== "medium") parts.push({ id: "sd", label: "Std dev", ask: `Population standard deviation (${ctx.unit}), to 2 decimal places`, answerType: "number", answer: roundTo(sd, 2), tolerance: 0.005, hint: `Square each value's distance from the mean, add them up, divide by ${n}, then take the square root.` });
+      if (tier !== "hard") parts.push({ id: "z", label: "z-score", ask: "z-score of the new reading, to 2 decimal places", answerType: "number", answer: roundTo(z, 2), tolerance: 0.005, hint: "z = (reading − mean) ÷ standard deviation. A reading below the mean gives a negative z." });
+      if (tier === "hard") parts.push({ id: "decision", label: "Decision", ask: "What should the team do with the new reading?", answerType: "choice", answer: decision, choices: FLAG.slice(), hint: "Work out how far the reading is from the mean, and compare that with twice the standard deviation." });
+      const rule = tier === "hard" ? " The team treats the sample as the whole population (divide by n) and flags any reading more than 2 standard deviations from the mean." : tier === "expert" ? " The team treats the sample as the whole population (divide by n)." : ` From long-run records, the standard deviation is **${fmt(sd, 1)} ${ctx.unit}**.`;
+      const ex = [`**Mean:** the values add to ${S}, and ${S} ÷ ${n} = **${fmt(mean, 1)} ${ctx.unit}**.`];
+      if (tier !== "medium") ex.push(`**Standard deviation:** the squared deviations from ${fmt(mean, 1)} add to ${fmt(sum(data.map((x) => (x - mean) ** 2)), 4)}; divide by ${n} and take the square root: **${fmtFixed(sd, 2)} ${ctx.unit}**.`);
+      if (tier !== "hard") ex.push(`**z-score:** (${reading} − ${fmt(mean, 1)}) ÷ ${tier === "medium" ? fmt(sd, 1) : fmtFixed(sd, 2)} ≈ **${fmtFixed(z, 2)}**.`);
+      if (tier === "hard") ex.push(`**Decision:** the reading is ${fmt(Math.abs(reading - mean), 1)} ${ctx.unit} from the mean, and 2 × ${fmtFixed(sd, 2)} = ${fmtFixed(2 * sd, 2)}, so **${decision}**.`);
+      return {
+        prompt: `You are the statistician for a ${ctx.line} making ${ctx.what}. A sample of ${n} ${ctx.what} has these ${ctx.qty}s (${ctx.unit}):\n\n\`${data.join(", ")}\`\n\nA new ${ctx.qty.split(" ").pop()} reading of **${reading} ${ctx.unit}** comes in.${rule}`,
+        answerType: "multi", parts, explanation: ex.join("\n\n"),
+        params: { kind: "qc-spread-t", tier, data, reading, ...(tier === "medium" ? { sd } : {}) },
+        given: givenRows(tier === "medium" ? [["_new", reading], ["_n", n], ["_sd", sd]] : [["_new", reading], ["_n", n]]),
+      };
+    }
+  }
+  const ctx = rng.pick(QC_BATCH);
+  for (;;) {
+    const batches = tier === "medium" ? 4 : 5;
+    const size = 50;
+    const counts = Array.from({ length: batches }, () => rng.int(0, 5));
+    const m = rng.pick([10, 12, 15, 20]);
+    const order = rng.pick([500, 1000, 1500, 2000, 2500]);
+    const total = sum(counts);
+    if (total < 2 || total > 20) continue;
+    const N = batches * size;
+    const p = total / N;
+    const expected = order * p;
+    const p0 = (1 - p) ** m;
+    const pAcc = p0 + m * p * (1 - p) ** (m - 1);
+    if (tier === "hard" && nearHalf(p0, 4)) continue;
+    if (tier === "expert" && (nearHalf(pAcc, 4) || Math.abs(pAcc - 0.9) < 0.003)) continue;
+    const parts = [{ id: "rate", label: "Rate", ask: "Estimated p, as a decimal (exact)", answerType: "number", answer: roundTo(p, 3), tolerance: 0.0000001, hint: `Add the ${ctx.fault} counts and divide by the total number inspected, ${batches} × ${size}.` }];
+    if (tier === "hard") parts.push({ id: "none", label: "P(0 in box)", ask: `Probability a box of ${m} has no ${ctx.fault} items, to 4 decimal places`, answerType: "number", answer: roundTo(p0, 4), tolerance: 0.00005, hint: `Each item is fine with probability 1 − p, independently, so multiply that ${m} times.` });
+    if (tier === "expert") parts.push({ id: "accept", label: "P(accept)", ask: `Probability a box of ${m} is accepted, to 4 decimal places`, answerType: "number", answer: roundTo(pAcc, 4), tolerance: 0.00005, hint: `This is a binomial model with n = ${m}: add P(exactly 0) and P(exactly 1).` });
+    if (tier !== "expert") parts.push({ id: "expected", label: "Expected", ask: `Expected number ${ctx.fault} in an order of ${order}, to 1 decimal place`, answerType: "number", answer: roundTo(expected, 1), tolerance: 0.05, hint: "Expected count = number of items × probability for one item." });
+    if (tier === "expert") parts.push({ id: "decision", label: "Decision", ask: "Is the customer's 90% target met?", answerType: "choice", answer: pAcc >= 0.9 ? "Yes" : "No", choices: ["Yes", "No"], hint: "Compare your acceptance probability with 0.9." });
+    const ex = [`**Rate:** ${total} ${ctx.fault} out of ${N} inspected, so p = ${total} ÷ ${N} = **${fmt(p, 3)}**.`];
+    if (tier === "hard") ex.push(`**No ${ctx.fault} items in a box:** (1 − ${fmt(p, 3)})^${m} ≈ **${fmtFixed(p0, 4)}**.`);
+    if (tier === "expert") ex.push(`**Box accepted:** (1 − p)^${m} + ${m} × p × (1 − p)^${m - 1} = ${fmt(p0, 4)} + ${fmt(pAcc - p0, 4)} ≈ **${fmtFixed(pAcc, 4)}**.`, `**Decision:** ${fmtFixed(pAcc, 4)} is ${pAcc >= 0.9 ? "at least" : "below"} 0.9: **${pAcc >= 0.9 ? "Yes" : "No"}**.`);
+    else ex.push(`**Expected count:** ${order} × ${fmt(p, 3)} = **${fmt(expected, 1)}**.`);
+    const tail = tier === "expert" ? ` They are sold in boxes of ${m}, and a customer accepts a box with **at most 1** ${ctx.fault} item. The customer wants at least 90% of boxes accepted.`
+      : tier === "hard" ? ` They are sold in boxes of ${m}, and the next order is for ${order} items.` : ` The next order is for ${order} items.`;
+    return {
+      prompt: `You are the statistician checking ${ctx.what}. Quality control inspected ${batches} batches of ${size}; the numbers ${ctx.fault} were:\n\n| Batch | ${counts.map((_, i) => i + 1).join(" | ")} |\n| ${["---", ...counts.map(() => "---")].join(" | ")} |\n| ${ctx.fault[0].toUpperCase() + ctx.fault.slice(1)} | ${counts.join(" | ")} |\n\nModel each item as ${ctx.fault} independently with probability p, estimated from all the items inspected.${tail}`,
+      answerType: "multi", parts, explanation: ex.join("\n\n"),
+      params: { kind: "qc-binom-t", tier, counts, size, m, order },
+      given: givenRows([["_m", m], ["_order", order], ["_inspected", N]]),
+    };
+  }
+}
+
+function genClaimsTier(rng, tier) {
+  if (tier === "expert" && rng.next() < 0.5) {
+    for (;;) {
+      const age = rng.int(40, 70);
+      const l0 = 100000;
+      const qBase = 0.004 + (age - 40) * 0.0006;
+      const ls = [l0];
+      const ds = [];
+      for (let k = 0; k < 3; k++) { const d = Math.round(ls[k] * qBase * (1 + 0.1 * k) * (0.8 + 0.4 * rng.next())); ds.push(d); ls.push(ls[k] - d); }
+      const i = rng.pick([2, 3, 4, 5, 6]);
+      const benefit = rng.pick([50000, 100000, 150000, 200000, 250000]);
+      const pool = rng.pick([1000, 2000, 4000, 5000]);
+      const v = 1 / (1 + i / 100);
+      const surv = ls[3] / l0;
+      const exp2 = (pool * ds[1]) / l0;
+      const epv = (benefit * (ds[0] * v + ds[1] * v ** 2 + ds[2] * v ** 3)) / l0;
+      if (nearHalf(surv, 4) || nearHalf(exp2, 1) || nearHalf(epv, 0)) continue;
+      return {
+        prompt: `You are the actuary pricing a **3-year term life policy** for applicants aged ${age}. It pays **$${benefit}** at the end of the year of death, if death happens within 3 years. Use this extract from the life table (lₓ = number alive at exact age x):\n\n| Age x | ${age} | ${age + 1} | ${age + 2} | ${age + 3} |\n| --- | --- | --- | --- | --- |\n| lₓ | ${ls.join(" | ")} |\n\nInterest is ${i}% a year: discount each payment back to the start.`,
+        answerType: "multi",
+        parts: [
+          { id: "survive", label: "Survival", ask: `Probability an applicant aged ${age} survives 3 years, to 4 decimal places`, answerType: "number", answer: roundTo(surv, 4), tolerance: 0.00005, hint: `Survival probability = number alive at age ${age + 3} ÷ number alive at age ${age}.` },
+          { id: "deaths", label: "Year 2", ask: `Expected deaths in the second year among ${pool} applicants aged ${age}, to 1 decimal place`, answerType: "number", answer: roundTo(exp2, 1), tolerance: 0.05, hint: `Deaths in year 2 come from the drop between ages ${age + 1} and ${age + 2}; scale from ${l0} people to ${pool}.` },
+          { id: "epv", label: "EPV", ask: "Expected present value of the benefit per policy ($, nearest dollar)", answerType: "number", answer: roundTo(epv, 0), tolerance: 0.5, hint: "For each year: benefit × probability of dying in that year × v^(year), where v = 1 ÷ (1 + i). Add the three years." },
+        ],
+        explanation: [
+          `**Survival:** ${ls[3]} ÷ ${l0} = **${fmtFixed(surv, 4)}**.`,
+          `**Year 2:** deaths each year are ${ds.join(", ")}. Among ${pool} applicants: ${pool} × ${ds[1]} ÷ ${l0} = **${fmt(exp2, 1)}**.`,
+          `**EPV:** with v = 1 ÷ ${fmt(1 + i / 100, 2)}, ${benefit} × (${ds[0]}v + ${ds[1]}v² + ${ds[2]}v³) ÷ ${l0} ≈ **$${fmt(epv, 0)}**.`,
+        ].join("\n\n"),
+        params: { kind: "act-life-t", tier, ls, i, benefit, pool },
+        given: givenRows([["_l0", ls[0]], ["_l1", ls[1]], ["_l2", ls[2]], ["_l3", ls[3]], ["_B", benefit], ["_i", i / 100], ["_pool", pool]]),
+      };
+    }
+  }
+  const line = rng.pick(CLAIM_LINES);
+  for (;;) {
+    const p = rng.int(2, 12) / 100;
+    const two = tier === "medium";
+    const amounts = two ? [rng.int(2, 9) * 100, rng.int(10, 40) * 100] : [rng.int(2, 9) * 100, rng.int(10, 30) * 100, rng.int(5, 20) * 1000];
+    const probs = two ? rng.pick([[0.8, 0.2], [0.75, 0.25], [0.6, 0.4], [0.9, 0.1], [0.5, 0.5]]) : rng.pick([[0.6, 0.3, 0.1], [0.7, 0.2, 0.1], [0.5, 0.4, 0.1], [0.75, 0.2, 0.05], [0.8, 0.15, 0.05]]);
+    const m = rng.pick([10, 20, 25, 40, 50]);
+    const years = rng.int(2, 4);
+    const i = rng.pick([2, 3, 4, 5]);
+    const sev = roundTo(sum(amounts.map((a, k) => a * probs[k])), 2);
+    const lossX = p * sev;
+    const loss = roundTo(lossX, 2);
+    const atLeast = 1 - (1 - p) ** m;
+    let ann = 0;
+    for (let k = 1; k <= years; k++) ann += (1 + i / 100) ** -k;
+    const pv = loss * ann;
+    if (nearHalf(lossX, 2)) continue;
+    if (tier === "hard" && nearHalf(atLeast, 4)) continue;
+    if (tier === "expert" && (nearHalf(pv, 0) || roundTo(lossX * ann, 0) !== roundTo(pv, 0))) continue;
+    const parts = [
+      { id: "severity", label: "Avg claim", ask: "Expected size of a claim, given a claim happens ($, to the cent)", answerType: "number", answer: sev, tolerance: 0.005, hint: "Multiply each claim size by its probability and add." },
+      { id: "loss", label: "Exp. loss", ask: `Expected loss per ${line.unit} per year ($, to the cent)`, answerType: "number", answer: loss, tolerance: 0.005, hint: "Expected loss = probability of a claim × expected size of a claim." },
+    ];
+    if (tier === "hard") parts.push({ id: "atleast", label: "P(≥ 1 claim)", ask: `Probability of at least one claim among the ${m} items in a year, to 4 decimal places`, answerType: "number", answer: roundTo(atLeast, 4), tolerance: 0.00005, hint: "Use the complement: 1 − P(no claims at all), and P(no claims) multiplies the chance of no claim for each item." });
+    if (tier === "expert") parts.push({ id: "pv", label: "PV", ask: `Present value of one ${line.unit}'s expected losses over ${years} years ($, nearest dollar)`, answerType: "number", answer: roundTo(pv, 0), tolerance: 0.5, hint: `Discount each year's expected loss by (1 + ${i / 100})^k for year k, then add the ${years} years.` });
+    const ex = [`**Average claim:** ${amounts.map((a, k) => `${a} × ${probs[k]}`).join(" + ")} = **$${fmt(sev, 2)}**.`, `**Expected loss:** ${fmt(p, 2)} × ${fmt(sev, 2)} = **$${fmt(loss, 2)}**.`];
+    if (tier === "hard") ex.push(`**At least one claim among ${m}:** 1 − (1 − ${fmt(p, 2)})^${m} ≈ **${fmtFixed(atLeast, 4)}**.`);
+    if (tier === "expert") ex.push(`**Present value:** ${fmt(loss, 2)} × (v + … + v^${years}) with v = 1 ÷ ${fmt(1 + i / 100, 2)}; the bracket is ${fmt(ann, 4)}, so PV ≈ **$${fmt(pv, 0)}**.`);
+    const tail = tier === "hard" ? `\n\nA small business buys cover for **${m}** items, each its own ${line.unit}.` : tier === "expert" ? `\n\nLosses are paid at the end of each year, and the company discounts at **${i}%** a year.` : "";
+    const g = [["_p", p], ...amounts.map((a, k) => [`_a${k + 1}`, a])];
+    if (tier === "hard") g.push(["_m", m]);
+    if (tier === "expert") g.push(["_i", i / 100], ["_n", years]);
+    return {
+      prompt: `You are the actuary for a ${line.what} insurer. Each ${line.unit} has a **${fmt(p * 100, 0)}%** chance of one claim in a year (never more than one), and claims are independent. When a claim happens, its size follows this table:\n\n| Claim size | ${amounts.map((a) => `$${a}`).join(" | ")} |\n| ${["---", ...amounts.map(() => "---")].join(" | ")} |\n| Probability | ${probs.join(" | ")} |${tail}`,
+      answerType: "multi", parts, explanation: ex.join("\n\n"),
+      params: { kind: "act-claims-t", tier, p, amounts, probs, m, years, i },
+      given: givenRows(g),
+    };
+  }
+}
+
+function genGrowthTier(rng, tier) {
+  if (tier !== "medium" && rng.next() < 0.5) {
+    const ctx = rng.pick(DECAY_CONTEXTS);
+    for (;;) {
+      const h = rng.int(ctx.half[0], ctx.half[1]);
+      const A0 = rng.int(20, 500) * 2;
+      const T = rng.int(2, 3 * h);
+      const F = rng.pick([5, 10, 15, 20, 25, 30, 40]);
+      const k = Math.log(2) / h;
+      const kr = roundTo(k, 4);
+      const amt = A0 * Math.exp(-k * T);
+      const tF = Math.log(100 / F) / k;
+      const rate = k * amt;
+      if (nearHalf(k, 4) || nearHalf(amt, 1) || roundTo(A0 * Math.exp(-kr * T), 1) !== roundTo(amt, 1)) continue;
+      if (tier === "hard" && (nearHalf(tF, 1) || roundTo(Math.log(100 / F) / kr, 1) !== roundTo(tF, 1))) continue;
+      if (tier === "expert" && (nearHalf(rate, 2) || roundTo(kr * A0 * Math.exp(-kr * T), 2) !== roundTo(rate, 2) || rate < 0.05)) continue;
+      const tu = ctx.tunit.replace(/s$/, "");
+      const parts = [
+        { id: "k", label: "k", ask: "Decay constant k, to 4 decimal places", answerType: "number", answer: kr, tolerance: 0.00005, hint: "Set A(half-life) = ½ A₀ and solve for k with natural logs." },
+        { id: "amount", label: "Amount", ask: `${ctx.qty[0].toUpperCase() + ctx.qty.slice(1)} after ${T} ${ctx.tunit} (${ctx.unit}), to 1 decimal place`, answerType: "number", answer: roundTo(amt, 1), tolerance: 0.05, hint: `Substitute t = ${T} into A₀ e^(−kt), or use A₀ × ½^(t ÷ half-life).` },
+        tier === "hard"
+          ? { id: "time", label: "Time", ask: `${ctx.tunit[0].toUpperCase() + ctx.tunit.slice(1)} until only ${F}% is left, to 1 decimal place`, answerType: "number", answer: roundTo(tF, 1), tolerance: 0.05, hint: `Solve e^(−kt) = ${F / 100}: take ln of both sides.` }
+          : { id: "rate", label: "Rate", ask: `Rate of decrease at t = ${T} (${ctx.unit} per ${tu}), to 2 decimal places, as a positive number`, answerType: "number", answer: roundTo(rate, 2), tolerance: 0.005, hint: "Differentiate A₀ e^(−kt): the rate is −k × A(t). Give its size." },
+      ];
+      return {
+        prompt: `${ctx.what} starts with a ${ctx.qty} of **${A0} ${ctx.unit}** and has a half-life of **${h} ${ctx.tunit}**. Model it as \`A(t) = A₀ e^(−kt)\` with t in ${ctx.tunit}.`,
+        answerType: "multi", parts,
+        explanation: [
+          `**Decay constant:** e^(−k × ${h}) = ½, so k = ln 2 ÷ ${h} ≈ **${fmtFixed(k, 4)}** per ${tu}.`,
+          `**After ${T} ${ctx.tunit}:** ${A0} × e^(−${fmtFixed(k, 4)} × ${T}) ≈ **${fmtFixed(amt, 1)} ${ctx.unit}**.`,
+          tier === "hard" ? `**Down to ${F}%:** t = ln(100 ÷ ${F}) ÷ k ≈ **${fmtFixed(tF, 1)} ${ctx.tunit}**.` : `**Rate of decay:** dA/dt = −kA, so it falls at k × A(${T}) ≈ **${fmtFixed(rate, 2)} ${ctx.unit}** per ${tu}.`,
+        ].join("\n\n"),
+        params: { kind: "grow-decay-t", tier, A0, h, T, F },
+        given: givenRows([["_A0", A0], ["_h", h], ["_t", T], ["_F", F / 100]]),
+      };
+    }
+  }
+  const ctx = rng.pick(GROWTH_CONTEXTS);
+  for (;;) {
+    const pct = rng.pick([4, 5, 6, 8, 10, 12, 15, 20, 25]);
+    const r = 1 + pct / 100;
+    const P0 = rng.int(4, 90) * 100;
+    const mult = rng.pick([2, 2.5, 3, 4, 5]);
+    const at = rng.int(3, 8);
+    const twoYears = tier === "hard";
+    const Pk = twoYears ? P0 * r * r : P0 * r;
+    if (Math.abs(Pk - Math.round(Pk)) > 1e-6) continue;
+    const T = P0 * mult;
+    const t = Math.log(mult) / Math.log(r);
+    const val = P0 * r ** at;
+    const rate = val * Math.log(r);
+    if (tier === "medium" && nearHalf(val, 0)) continue;
+    if (tier !== "medium" && nearHalf(t, 1)) continue;
+    if (tier === "hard" && nearHalf(val, 0)) continue;
+    if (tier === "expert" && nearHalf(rate, 0)) continue;
+    const gap = twoYears ? "two years" : "one year";
+    const parts = [{ id: "growth", label: "Growth", ask: "Yearly growth rate (%, a whole number)", answerType: "number", answer: pct, tolerance: 0,
+      hint: twoYears ? "Divide the later reading by the first to get r², take the square root, and turn r into a percentage increase." : "Divide the later reading by the first to get r, then turn r into a percentage increase." }];
+    if (tier !== "medium") parts.push({ id: "time", label: "Time", ask: `Years until the ${ctx.noun} reaches ${T}, to 1 decimal place`, answerType: "number", answer: roundTo(t, 1), tolerance: 0.05, hint: "Divide both sides by P₀, then take logarithms: t = log(target ÷ P₀) ÷ log r." });
+    if (tier !== "expert") parts.push({ id: "value", label: "Forecast", ask: `Predicted ${ctx.noun} at t = ${at} (${ctx.unit}, nearest whole number)`, answerType: "number", answer: roundTo(val, 0), tolerance: 0.5, hint: `Substitute t = ${at} into P₀ × rᵗ.` });
+    else parts.push({ id: "rate", label: "Rate", ask: `Rate of growth at t = ${at} (${ctx.unit} per year, nearest whole number)`, answerType: "number", answer: roundTo(rate, 0), tolerance: 0.5, hint: "The derivative of rᵗ is rᵗ × ln r, so dP/dt = P₀ × rᵗ × ln r." });
+    const ex = [`**Growth rate:** ${twoYears ? `r² = ${Math.round(Pk)} ÷ ${P0} = ${fmt(r * r, 4)}, so r = ${fmt(r, 2)}` : `r = ${Math.round(Pk)} ÷ ${P0} = ${fmt(r, 2)}`}: growth of **${pct}%** a year.`];
+    if (tier !== "medium") ex.push(`**Time to ${T}:** ${fmt(r, 2)}ᵗ = ${fmt(mult, 1)}, so t = ln ${fmt(mult, 1)} ÷ ln ${fmt(r, 2)} ≈ **${fmtFixed(t, 1)} years**.`);
+    if (tier !== "expert") ex.push(`**Forecast:** ${P0} × ${fmt(r, 2)}^${at} ≈ **${fmt(val, 0)}** ${ctx.unit}.`);
+    else ex.push(`**Rate at t = ${at}:** dP/dt = ${P0} × ${fmt(r, 2)}^${at} × ln ${fmt(r, 2)} ≈ **${fmt(rate, 0)}** ${ctx.unit} per year.`);
+    const ask = tier === "medium" ? `Planners need a forecast for t = ${at}.` : tier === "hard" ? `Planners need to know when the ${ctx.noun} reaches **${T}**, and a forecast for t = ${at}.` : `Planners need to know when the ${ctx.noun} reaches **${T}** and how fast it is growing at t = ${at}.`;
+    return {
+      prompt: `${ctx.what} is modelled as growing by the same percentage each year, \`P(t) = P₀ × rᵗ\` with t in years. It was **${P0}** ${ctx.unit} at t = 0 and **${Math.round(Pk)}** ${ctx.unit} ${gap} later.\n\n${ask}`,
+      answerType: "multi", parts, explanation: ex.join("\n\n"),
+      params: { kind: "grow-disc-t", tier, P0, Pk: Math.round(Pk), gap: twoYears ? 2 : 1, T, at },
+      given: givenRows(tier === "medium" ? [["_P0", P0], [twoYears ? "_P2" : "_P1", Math.round(Pk)]] : [["_P0", P0], [twoYears ? "_P2" : "_P1", Math.round(Pk)], ["_target", T]]),
+    };
+  }
+}
+
+function genDerivTier(rng, tier) {
+  if (tier === "medium") {
+    for (;;) {
+      const a = rng.int(2, 9), x = rng.int(-6, 12), b = rng.int(1, 20), wrong = rng.int(0, 1);
+      const c = a * x + b;
+      const s0 = wrong === 0 ? c - b + a : c - b;
+      const s1 = wrong === 1 ? s0 - a : s0 / a;
+      if (!Number.isInteger(s1) || s1 === x) continue;
+      const lines = [lineFmt("Step 1", `Subtract ${b} from both sides`, `${a}x = ${s0}`), lineFmt("Step 2", `Divide both sides by ${a}`, `x = ${s1}`)];
+      return {
+        prompt: `You are reviewing a colleague's working before it goes into a report. It solves \`${a}x + ${b} = ${c}\`. Exactly one step has a mistake; the other step follows correctly from the line before it.\n\n${lines.join("\n\n")}`,
+        answerType: "multi",
+        parts: [
+          { id: "step", label: "Wrong step", ask: "Which step contains the mistake?", answerType: "choice", answer: STEP_LABELS[wrong], choices: STEP_LABELS.slice(0, 2), hint: "Redo each step from the line before it and compare." },
+          { id: "final", label: "Answer", ask: "Correct value of x (a whole number)", answerType: "number", answer: x, tolerance: 0, hint: "Solve the equation yourself, then substitute your x back in to check." },
+        ],
+        explanation: `${c} − ${b} = ${c - b}, so Step 1 should read ${a}x = ${c - b}; then ÷ ${a} gives x = ${x}. The first line that doesn't follow is **Step ${wrong + 1}**, and the answer is **x = ${x}**. Check: ${a} × ${x} + ${b} = ${c}.`,
+        params: { kind: "der-lin2-t", tier, a, b, c, shown: [s0, s1] },
+        given: givenRows([["_a", a], ["_b", b], ["_c", c]]),
+      };
+    }
+  }
+  if (tier === "hard") {
+    for (;;) {
+      const a = rng.int(2, 7), b = rng.int(1, 9), t = rng.int(-5, 8), d = rng.int(2, 20), wrong = rng.int(0, 2);
+      const e = a * t + d;
+      const x = t + b;
+      const correct = [e - d, (e - d) / a, (e - d) / a + b];
+      const shown = [];
+      shown[0] = wrong === 0 ? e - d + a : e - d;
+      shown[1] = wrong === 1 ? shown[0] - a : shown[0] / a;
+      shown[2] = wrong === 2 ? shown[1] - b : shown[1] + b;
+      if (shown.some((v) => !Number.isInteger(v)) || shown[wrong] === correct[wrong]) continue;
+      const lines = [lineFmt("Step 1", `Subtract ${d} from both sides`, `${a}(x − ${b}) = ${shown[0]}`), lineFmt("Step 2", `Divide both sides by ${a}`, `x − ${b} = ${shown[1]}`), lineFmt("Step 3", `Add ${b} to both sides`, `x = ${shown[2]}`)];
+      return {
+        prompt: `You are reviewing a colleague's derivation before it goes into a report. It solves \`${a}(x − ${b}) + ${d} = ${e}\`. Exactly one step has a mistake; every other step follows correctly from the line before it.\n\n${lines.join("\n\n")}`,
+        answerType: "multi",
+        parts: stepParts(3, wrong, correct[wrong], x, "Correct value of x (a whole number)",
+          "Check each line against the one before it, not against the original equation.",
+          "Redo only that step, starting from the line above it (which is correct). Give a whole number.",
+          "Finish the derivation correctly, then substitute your x back into the original equation."),
+        explanation: `Redo each step: ${e} − ${d} = ${correct[0]}; ÷ ${a} gives ${correct[1]}; + ${b} gives ${correct[2]}. The first line that doesn't follow is **Step ${wrong + 1}**: it should be **${correct[wrong]}**, not ${shown[wrong]}. So **x = ${x}**. Check: ${a}(${x} − ${b}) + ${d} = ${e}.`,
+        params: { kind: "der-lin3-t", tier, a, b, d, e, shown },
+        given: givenRows([["_a", a], ["_b", b], ["_d", d], ["_e", e]]),
+      };
+    }
+  }
+  for (;;) {
+    const x1 = rng.int(-5, 5), dx = rng.int(1, 6), m = rng.int(-5, 6), y1 = rng.int(-12, 12), x3 = rng.int(-8, 10), wrong = rng.int(0, 2);
+    const x2 = x1 + dx, y2 = y1 + m * dx;
+    if (m === 0 || x3 === x1 || x3 === x2 || x1 === 0) continue;
+    const q = y1 - m * x1;
+    const correct = [m, q, m * x3 + q];
+    const shown = [];
+    shown[0] = wrong === 0 ? (y2 - y1) / (x1 - x2) : m;
+    shown[1] = wrong === 1 ? y1 + shown[0] * x1 : y1 - shown[0] * x1;
+    shown[2] = wrong === 2 ? shown[0] * x3 - shown[1] : shown[0] * x3 + shown[1];
+    if (shown[wrong] === correct[wrong]) continue;
+    const neg = (n) => (n < 0 ? `(${n})` : String(n));
+    const lines = [
+      lineFmt("Step 1", `Gradient through (${x1}, ${y1}) and (${x2}, ${y2})`, `m = ${shown[0]}`),
+      lineFmt("Step 2", `Intercept from y = mx + q through (${x1}, ${y1})`, `q = ${shown[1]}`),
+      lineFmt("Step 3", `Value of y at x = ${x3}`, `y = ${shown[2]}`),
+    ];
+    return {
+      prompt: `You are checking a colleague's notes. They fit the straight line \`y = mx + q\` through the points (${x1}, ${y1}) and (${x2}, ${y2}), then use it to predict y at x = ${x3}. Exactly one step has a mistake; every other step follows correctly from the lines before it.\n\n${lines.join("\n\n")}`,
+      answerType: "multi",
+      parts: stepParts(3, wrong, correct[wrong], correct[2], `Correct value of y at x = ${x3} (a whole number)`,
+        "Redo each line yourself: the gradient, then the intercept, then the prediction.",
+        "Redo only that step, using the earlier lines (which are correct). Give a whole number.",
+        "Use the correct gradient and intercept: y = m × x + q."),
+      explanation: [
+        `Step 1: m = (${y2} − ${neg(y1)}) ÷ (${x2} − ${neg(x1)}) = ${m * dx} ÷ ${dx} = ${m}.`,
+        `Step 2: q = y − m × x = ${y1} − ${neg(m)} × ${neg(x1)} = ${q}.`,
+        `Step 3: y = ${neg(m)} × ${neg(x3)} + ${neg(q)} = ${correct[2]}.`,
+        `So the wrong line is **Step ${wrong + 1}**, which should be **${correct[wrong]}** (not ${shown[wrong]}), and the prediction is **y = ${correct[2]}**.`,
+      ].join("\n\n"),
+      params: { kind: "der-line-t", tier, x1, y1, x2, y2, x3, shown },
+      given: givenRows([["_x1", x1], ["_y1", y1], ["_x2", x2], ["_y2", y2], ["_x3", x3]]),
+    };
+  }
+}
+
+const TIER_GENS = { "quality-control": genQcTier, "claims-pricing": genClaimsTier, "growth-model": genGrowthTier, "check-derivation": genDerivTier };
+
+// Tier verification: recomputed another way (E[x²] − mean², pmf with C(m, k), running-product
+// discounting, halving form of decay, central differences, substitution into the original problem).
+// Tier checks compare with the rounded truth, as the quiz does; times are found by bisection.
+const nearR = (cand, truth, d) => Number.isFinite(cand) && Math.abs(cand - roundTo(truth, d)) <= 0.5 * 10 ** -d + 1e-9;
+function bisect(f) {
+  let lo = 0, hi = 1000;
+  for (let k = 0; k < 200; k++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+function verifyTier(question, p, answer) {
+  const has = (id) => question.parts.some((x) => x.id === id);
+  const choiceOk = (id, want) => { const pt = question.parts.find((x) => x.id === id); return !!pt && pt.choices.filter((c) => c === want).length === 1 && partStr(answer, id) === want; };
+  if (p.kind === "qc-spread-t") {
+    const n = p.data.length;
+    const mean = sum(p.data) / n;
+    const sd = p.tier === "medium" ? p.sd : Math.sqrt(sum(p.data.map((x) => x * x)) / n - mean * mean);
+    if (!nearR(partNum(answer, "mean"), mean, 1)) return false;
+    if (p.tier !== "medium" && !nearR(partNum(answer, "sd"), sd, 2)) return false;
+    if (p.tier !== "hard") return nearR(partNum(answer, "z"), (p.reading - mean) / sd, 2);
+    return choiceOk("decision", Math.abs(p.reading - mean) > 2 * sd ? FLAG[0] : FLAG[1]);
+  }
+  if (p.kind === "qc-binom-t") {
+    const N = p.counts.length * p.size;
+    const rate = sum(p.counts) / N;
+    if (!near(partNum(answer, "rate"), rate, 1e-7)) return false;
+    if (p.tier === "hard" && !nearR(partNum(answer, "none"), choose(p.m, 0) * (1 - rate) ** p.m, 4)) return false;
+    if (p.tier === "expert") {
+      let acc = 0;
+      for (let k = 0; k <= 1; k++) acc += choose(p.m, k) * rate ** k * (1 - rate) ** (p.m - k);
+      return nearR(partNum(answer, "accept"), acc, 4) && choiceOk("decision", acc >= 0.9 ? "Yes" : "No");
+    }
+    return nearR(partNum(answer, "expected"), (p.order * sum(p.counts)) / N, 1);
+  }
+  if (p.kind === "act-life-t") {
+    const [l0, l1, l2, l3] = p.ls;
+    if (!(l0 > l1 && l1 > l2 && l2 > l3 && l3 > 0)) return false;
+    let disc = 1, epv = 0;
+    for (let k = 0; k < 3; k++) { disc /= 1 + p.i / 100; epv += p.benefit * ((p.ls[k] - p.ls[k + 1]) / l0) * disc; }
+    return nearR(partNum(answer, "survive"), 1 - (l0 - l3) / l0, 4) && nearR(partNum(answer, "deaths"), (p.pool * (l1 - l2)) / l0, 1) && nearR(partNum(answer, "epv"), epv, 0);
+  }
+  if (p.kind === "act-claims-t") {
+    if (Math.abs(sum(p.probs) - 1) > 1e-9) return false;
+    let sev = 0;
+    p.probs.forEach((pr, k) => { sev += pr * p.amounts[k]; });
+    const loss = sev * p.p;
+    if (!nearR(partNum(answer, "severity"), sev, 2) || !nearR(partNum(answer, "loss"), loss, 2)) return false;
+    if (p.tier === "hard") { let none = 1; for (let k = 0; k < p.m; k++) none *= 1 - p.p; return nearR(partNum(answer, "atleast"), 1 - none, 4); }
+    if (p.tier === "expert") { const i = p.i / 100; return nearR(partNum(answer, "pv"), (roundTo(loss, 2) * (1 - (1 + i) ** -p.years)) / i, 0); }
+    return !has("atleast") && !has("pv");
+  }
+  if (p.kind === "grow-disc-t") {
+    const g = partNum(answer, "growth");
+    if (!Number.isInteger(g) || g <= 0) return false;
+    const r = 1 + g / 100;
+    if (Math.abs(p.P0 * r ** p.gap - p.Pk) > 1e-6) return false;
+    const P = (s) => p.P0 * Math.exp(s * Math.log(r));
+    if (p.tier !== "medium" && !nearR(partNum(answer, "time"), bisect((s) => P(s) - p.T), 1)) return false;
+    if (p.tier !== "expert") return nearR(partNum(answer, "value"), P(p.at), 0);
+    const h = 1e-5;
+    return nearR(partNum(answer, "rate"), (P(p.at + h) - P(p.at - h)) / (2 * h), 0);
+  }
+  if (p.kind === "grow-decay-t") {
+    if (!nearR(partNum(answer, "k"), -Math.log(0.5) / p.h, 4)) return false;
+    const A = (s) => p.A0 * 0.5 ** (s / p.h);
+    if (!nearR(partNum(answer, "amount"), A(p.T), 1)) return false;
+    if (p.tier === "hard") return nearR(partNum(answer, "time"), bisect((s) => (p.A0 * p.F) / 100 - A(s)), 1);
+    const h = 1e-6;
+    return nearR(partNum(answer, "rate"), -(A(p.T + h) - A(p.T - h)) / (2 * h), 2);
+  }
+  const s = p.shown;
+  let expect, finalOk;
+  const fin = partNum(answer, "final");
+  if (p.kind === "der-lin2-t") {
+    expect = [p.c - p.b, s[0] / p.a];
+    finalOk = Number.isInteger(fin) && p.a * fin + p.b === p.c;
+  } else if (p.kind === "der-lin3-t") {
+    expect = [p.e - p.d, s[0] / p.a, s[1] + p.b];
+    finalOk = Number.isInteger(fin) && p.a * (fin - p.b) + p.d === p.e;
+  } else if (p.kind === "der-line-t") {
+    expect = [(p.y2 - p.y1) / (p.x2 - p.x1), p.y1 - s[0] * p.x1, s[0] * p.x3 + s[1]];
+    // Two-point form: y = y1 + (y2 − y1)(x3 − x1)/(x2 − x1).
+    finalOk = Math.abs(fin - (p.y1 + ((p.y2 - p.y1) * (p.x3 - p.x1)) / (p.x2 - p.x1))) < 1e-9;
+  } else return false;
+  const bad = [];
+  for (let k = 0; k < s.length; k++) if (Math.abs(s[k] - expect[k]) > 1e-9) bad.push(k);
+  if (bad.length !== 1 || !finalOk) return false;
+  const w = bad[0];
+  if (!choiceOk("step", STEP_LABELS[w])) return false;
+  return p.kind === "der-lin2-t" ? !has("fix") : partNum(answer, "fix") === expect[w];
+}
+
 // ---------- dispatch ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (TIER_IDS.includes(difficulty)) {
+    const t = TIER_GENS[subtopic];
+    if (!t) throw new Error(`Unknown subtopic: ${subtopic}`);
+    return t(rng, difficulty);
+  }
   if (difficulty !== "expert-plus") throw new Error(`Unsupported difficulty: ${difficulty}`);
   if (subtopic === "quality-control") return rng.next() < 0.5 ? genQcSpread(rng) : genQcBinomial(rng);
   if (subtopic === "claims-pricing") return rng.next() < 0.5 ? genLifeTable(rng) : genClaims(rng);
@@ -713,6 +1128,7 @@ export function verify(question, answer) {
     const rate = -(A(p.T + h) - A(p.T - h)) / (2 * h);
     return near(partNum(answer, "amount"), A(p.T), 0.05) && timeOk && near(partNum(answer, "rate"), rate, 0.005 + 1e-6);
   }
+  if (p.kind && p.kind.endsWith("-t")) { try { return verifyTier(question, p, answer); } catch { return false; } }
   if (p.kind && p.kind.startsWith("der-")) return verifyDerivation(p, answer);
   return false;
 }

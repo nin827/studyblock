@@ -9,9 +9,9 @@
   "fuzzy": false,
   "fuzzyNumber": 0,
   "subtopics": [
-    { "id": "api-endpoint", "title": "Speed up an API endpoint", "difficulties": ["expert-plus"] },
-    { "id": "ledger-check", "title": "Reconcile a payment ledger", "difficulties": ["expert-plus"] },
-    { "id": "hot-loop", "title": "Profile a hot loop", "difficulties": ["expert-plus"] },
-    { "id": "fx-payout", "title": "Ship an international payout", "difficulties": ["expert-plus"] }
+    { "id": "api-endpoint", "title": "Speed up an API endpoint", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "ledger-check", "title": "Reconcile a payment ledger", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "hot-loop", "title": "Profile a hot loop", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fx-payout", "title": "Ship an international payout", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
   ]
 }

@@ -596,11 +596,518 @@ function verifyFx(q, a) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Scenario tiers below Expert+ (role levels Easy / Medium / Hard draw these as mixed questions):
+//   medium  2 parts, simple numbers, one obvious chain
+//   hard    3 parts
+//   expert  3–4 parts, lighter than Expert+ (plain choices, fewer rules)
+// Each is its own branch with its own params.kind, so Expert+ questions are unchanged per seed.
+
+const TIER_IDS = ["medium", "hard", "expert"];
+const BIG_O4 = ["O(log n)", "O(n)", "O(n log n)", "O(n²)"];
+
+// api-endpoint tiers ----------------------------------------------------------------------------
+
+function genApiMedium(rng) {
+  for (let tries = 0; tries < 200; tries++) {
+    const names = rng.shuffle(CUSTOMERS).slice(0, 6);
+    const base = rng.int(11, 89) * 100;
+    const totals = distinctInts(rng, 8, 480, 6);
+    const statuses = names.map(() => rng.pick(STATUSES));
+    const byStatus = rng.next() < 0.5;
+    const sVal = rng.pick(statuses);
+    const nOp = rng.pick(NUM_OPS);
+    const T = rng.next() < 0.5 ? rng.pick(totals) : rng.int(20, 460);
+    const m = rng.int(5, 200) * 100;
+    const B = rng.int(20, 90) * 10;
+    const rows = names.map((nm, i) => ({ id: base + i + 1, customer: nm, status: statuses[i], total: totals[i] }));
+    const pass = (r) => (byStatus ? r.status === sVal : cmpNum(r.total, nOp, T));
+    const c = rows.filter(pass).length;
+    if (c < 1 || c > 5) continue;
+    const N = 6 * m;
+    const kb = (c * m * B) / 1000;
+    const cond = byStatus ? `status = '${sVal}'` : `total ${nOp} ${T}`;
+    const sql = `SELECT * FROM orders\nWHERE ${cond};`;
+    const cols = ["id", "customer", "status", "total"];
+    return {
+      prompt: `You own the \`GET /orders\` endpoint of a shop's API. Here is a sample of the \`orders\` table:\n\n${mdTable("orders", cols, rows)}\n\nThe endpoint runs this query:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\nIn production the table has **${commas(N)}** rows, and the same share of them match as in the sample. Each returned row is sent as a JSON object of **${B} bytes** (1 KB = 1,000 bytes). Text matches exactly, including capitals.`,
+      answerType: "multi",
+      parts: [
+        numPart("rows", "SQL", "How many rows does the query return on this sample?", c, 0,
+          byStatus ? "Tick each row whose status is exactly the text in quotes." : `Tick each row whose total passes the test. Watch whether the test includes ${T} itself.`),
+        numPart("size", "Data size", "How many kilobytes does the endpoint send in production? (a whole number)", kb, 0,
+          `Scale up your SQL answer: the sample has 6 rows and production has ${commas(N)}, so multiply the matches by ${commas(N)} ÷ 6. Then multiply by the bytes per row and divide by 1,000.`),
+      ],
+      explanation: `**SQL.** Rows passing \`${cond}\`: ${rows.filter(pass).map((r) => `${r.id} (${byStatus ? r.status : r.total})`).join("; ")}. So **${c}** rows.\n\n**Data size.** ${c} of 6 rows match, so production returns ${c} × ${commas(N)} ÷ 6 = ${commas(c * m)} rows.\n\n` +
+        [row("_n", N), row("_row_bytes", B), step("_rows", `${c} * _n / 6`, commas(c * m)), step("_kb", "_rows * _row_bytes / 1000", `**${commas(kb)} KB**`)].join("\n"),
+      given: given([["_n", N], ["_row_bytes", B]]),
+      params: { kind: "api-t", tier: "medium", sql, rows: rows.map((r) => ({ ...r })), N, B },
+    };
+  }
+  throw new Error("api-endpoint: no draw");
+}
+
+function genApiTier(rng, tier) {
+  if (tier === "medium") return genApiMedium(rng);
+  for (let tries = 0; tries < 60; tries++) {
+    const names = rng.shuffle(CUSTOMERS).slice(0, 8);
+    const base = rng.int(11, 89) * 100;
+    const totals = distinctInts(rng, 8, 480, 8);
+    const statuses = names.map(() => rng.pick(STATUSES));
+    const rows = names.map((nm, i) => ({ id: base + i + 1, customer: nm, status: statuses[i], total: totals[i] }));
+    const sOp = rng.pick(["=", "=", "<>"]);
+    const sVal = rng.pick(statuses);
+    const nOp = rng.pick(NUM_OPS);
+    const T = rng.next() < 0.5 ? rng.pick(totals) : rng.int(20, 460);
+    const look = rng.pick(LOOKUPS);
+    const m = rng.int(50, 600) * 1000;
+    const N = 8 * m;
+    const B = rng.int(30, 120) * 4;
+    const R = rng.pick([50, 100, 200, 250, 500, 1000]);
+    const idxChoices = rng.shuffle(ORDERS.slice());
+    const match = rows.filter((r) => (sOp === "=" ? r.status === sVal : r.status !== sVal) && cmpNum(r.total, nOp, T));
+    const c = match.length;
+    if (c < 1 || c > 7) continue;
+    const l2 = Math.log2(N);
+    if (Math.abs(l2 - Math.round(l2)) < 0.02) continue;
+    const probes = bitLength(N);
+    const prodRows = c * m;
+    const secs = (prodRows * B * 8) / (R * 1e6);
+    if (nearTie2(secs) || secs < 0.05) continue;
+    const sql = `SELECT * FROM orders\nWHERE status ${sOp} '${sVal}' AND total ${nOp} ${T};`;
+    const cols = ["id", "customer", "status", "total"];
+    const hard = tier === "hard";
+    const prompt =
+      `You own the \`GET /orders\` endpoint of a shop's API, and it has become slow. Here is a sample of the \`orders\` table:\n\n` +
+      `${mdTable("orders", cols, rows)}\n\nThe endpoint runs this query:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\n` +
+      `In production the table has **${commas(N)}** rows, and the same share of them match as in the sample. Each returned row is sent to the app as a JSON object of **${B} bytes**, over a **${R} Mbps** link (${MBPS}). Text matches exactly, including capitals.` +
+      (hard ? ` The endpoint also ${look.what}.` : "");
+    const parts = [
+      numPart("rows", "SQL", "How many rows does the query return on this sample?", c, 0,
+        `Split the WHERE into its two tests (status ${sOp} '${sVal}', total ${nOp} ${T}) and tick each row that passes both. Watch whether the number test includes ${T} itself.`),
+      hard
+        ? choicePart("index", "Indexes", `With a B-tree index on \`${look.col}\`, how does the work for that second task grow with n rows?`, look.ans[1], idxChoices,
+          "A B-tree keeps keys sorted in a balanced tree: one root-to-leaf path is about log n steps, and its leaves can be read in order.")
+        : numPart("probes", "Algorithms", `An index on \`id\` finds a key like a binary search over the ${commas(N)} sorted keys. In the worst case, how many keys does it compare against (one per halving step; a whole number)?`, probes, 0,
+          "Each comparison halves the keys still in play, and the search ends when one is left. The worst case is ⌊log₂ n⌋ + 1 comparisons, and log₂ n = ln(n) ÷ ln(2)."),
+      numPart("transfer", "Networking", `How many seconds does it take to send all the matching production rows? Ignore latency and headers.${ROUND2}`, secs, 2,
+        `Scale up your SQL answer by ${commas(N)} ÷ 8. Then bytes × 8 gives bits, and bits ÷ (\`_mbps\` × 1,000,000) gives seconds.`),
+    ];
+    const pass = match.map((r) => `${r.id} (${r.status}, ${r.total})`).join("; ");
+    const explanation =
+      `**SQL.** A row must pass both tests: status ${sOp} '${sVal}' and total ${nOp} ${T}. Passing rows: ${pass}. So the query returns **${c}** rows.\n\n` +
+      (hard ? `**Indexes.** ${look.why} With the index: **${look.ans[1]}**.\n\n`
+        : `**Algorithms.** 2^${probes - 1} = ${commas(2 ** (probes - 1))} ≤ ${commas(N)} < 2^${probes} = ${commas(2 ** probes)}, so the worst case is **${probes}** comparisons.\n\n`) +
+      `**Networking.** ${c} of 8 rows match, so production returns ${c} × ${commas(N)} ÷ 8 = ${commas(prodRows)} rows.\n\n` +
+      [row("_n", N), row("_row_bytes", B), row("_mbps", R),
+        step("_rows", `${c} * _n / 8`, commas(prodRows)),
+        step("_bits", "_rows * _row_bytes * 8", commas(prodRows * B * 8)),
+        step("_secs", "_bits / (_mbps * 1e6)", `${num(secs)}, which rounds to **${f2(secs)} s**`)].join("\n");
+    return {
+      prompt, answerType: "multi", parts, explanation,
+      given: given([["_n", N], ["_row_bytes", B], ["_mbps", R]]),
+      params: { kind: "api-t", tier, sql, rows: rows.map((r) => ({ ...r })), look: look.key, N, B, R },
+    };
+  }
+  throw new Error("api-endpoint: no draw");
+}
+
+// ledger-check tiers ----------------------------------------------------------------------------
+
+function genLedgerMedium(rng) {
+  for (let tries = 0; tries < 200; tries++) {
+    const accts = rng.shuffle(ACCOUNTS).slice(0, 2);
+    const acct = accts[0];
+    const base = rng.int(20, 97) * 100;
+    const rows = [];
+    for (let i = 0; i < 6; i++) rows.push({ id: base + i + 1, account: rng.pick(accts), amountC: rng.int(150, 25000) });
+    const bp = rng.pick([100, 150, 200, 250, 300]);
+    const match = rows.filter((r) => r.account === acct);
+    if (match.length < 2 || match.length > 4) continue;
+    const trueC = match.reduce((s, r) => s + r.amountC, 0);
+    const x = trueC * bp;
+    if (x % 10000 === 5000) continue;
+    const feeC = Math.round(x / 10000);
+    const shown = rows.map((r) => ({ id: r.id, account: r.account, amount: dec(r.amountC) }));
+    const sql = `SELECT SUM(amount) FROM payments\nWHERE account = '${acct}';`;
+    const pct = num(bp / 100);
+    return {
+      prompt: `You're on the payments team. Finance wants the total paid into account **${acct}**. A sample of the \`payments\` table:\n\n${mdTable("payments", ["id", "account", "amount"], shown)}\n\nThe report runs:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\nThe bank charges a fee of **${pct}%** of that total, rounded to the nearest cent (halves round up).`,
+      answerType: "multi",
+      parts: [
+        numPart("total", "SQL", `What does the query return, in dollars?${ROUND2}`, trueC / 100, 2, `Keep only the rows where account is '${acct}', then add their amounts. Adding in cents avoids float errors.`),
+        numPart("fee", "Fees", `What is the fee, in dollars?${ROUND2}`, feeC / 100, 2, `Fee = your total × ${pct} ÷ 100, then round to the cent.`),
+      ],
+      explanation: `**SQL.** Rows for ${acct}: ${match.map((r) => usd(r.amountC)).join(" + ")} = **${usd(trueC)}**.\n\n**Fee.** ${dec(trueC)} × ${pct}% = ${num(x / 1e6)}, which rounds to **${usd(feeC)}**.`,
+      given: given([["_fee_pct", bp / 100]]),
+      params: { kind: "ledger-t", tier: "medium", sql, rows: shown.map((r) => ({ ...r })), bp },
+    };
+  }
+  throw new Error("ledger-check: no draw");
+}
+
+function genLedgerTier(rng, tier) {
+  if (tier === "medium") return genLedgerMedium(rng);
+  const expert = tier === "expert";
+  for (let tries = 0; tries < 300; tries++) {
+    const accts = rng.shuffle(ACCOUNTS).slice(0, rng.int(2, 3));
+    const acct = accts[0];
+    const base = rng.int(20, 97) * 100;
+    const rows = [];
+    for (let i = 0; i < 8; i++) rows.push({ id: base + i + 1, account: rng.pick(accts), kind: rng.pick(KINDS), amountC: rng.int(150, 25000) });
+    const bp = rng.pick([140, 175, 190, 215, 250, 290, 320]);
+    const fixedC = expert ? 0 : rng.pick([10, 15, 20, 25, 30]);
+    const okId = rng.pick(GOOD_FIXES);
+    const wrongPool = rng.shuffle(Object.keys(FIXES).filter((k) => !GOOD_FIXES.includes(k)));
+    const order = rng.shuffle([0, 1, 2]);
+    const match = rows.filter((r) => r.account === acct && r.kind === "card");
+    if (match.length < 3 || match.length > 5) continue;
+    if (match.some((r) => Math.abs(((r.amountC * bp) % 10000) - 5000) <= 1)) continue;
+    const trueC = match.reduce((s, r) => s + r.amountC, 0);
+    const amounts = match.map((r) => parseFloat(dec(r.amountC)));
+    let t = 0.0;
+    for (const a of amounts) t += a;
+    const clean = parseFloat(dec(trueC));
+    if (t === clean) continue;
+    const cents = Math.trunc(t * 100);
+    if ((t < clean) !== (cents < trueC) || Math.abs(cents - trueC) > 1) continue;
+    if (FIXES[okId].run(amounts, t) !== trueC) continue;
+    const wrongIds = wrongPool.filter((k) => FIXES[k].run(amounts, t) !== trueC).slice(0, 2);
+    if (wrongIds.length < 2) continue;
+    const choiceIds = order.map((i) => [okId, ...wrongIds][i]);
+    const feeC = match.reduce((s, r) => s + Math.round((r.amountC * bp) / 10000) + fixedC, 0);
+    const shown = rows.map((r) => ({ id: r.id, account: r.account, kind: r.kind, amount: dec(r.amountC) }));
+    const sql = `SELECT SUM(amount) FROM payments\nWHERE account = '${acct}' AND kind = 'card';`;
+    const code = `total = 0.0\nfor a in amounts:   # the matched amounts as floats, in table order\n    total += a\nprint(total)        # prints ${String(t)}\ncents = int(total * 100)`;
+    const pct = num(bp / 100);
+    const feeRule = fixedC ? `**${pct}% + ${usd(fixedC)}**` : `**${pct}%**`;
+    const parts = [
+      numPart("total", "SQL", `What does the query return, in dollars?${ROUND2}`, trueC / 100, 2,
+        `Keep only rows where account is '${acct}' and kind is 'card', then add their amounts. Add in cents if you can.`),
+      numPart("fees", "Fees", `What are the total processor fees on those payments, in dollars?${ROUND2}`, feeC / 100, 2,
+        `Work out each payment's fee on its own: amount × ${pct} ÷ 100, rounded to the cent${fixedC ? `, plus ${usd(fixedC)}` : ""}. Then add the fees up.`),
+      numPart("cents", "Floats", "What whole number does the old code store in `cents`?", cents, 0,
+        "Compare the printed `total` with your SQL answer: is it a hair above or below? Multiplying by 100 keeps that tiny error, and `int()` cuts towards zero rather than rounding."),
+    ];
+    if (expert) parts.push(choicePart("fix", "Fix", "Which replacement for the last line gives the exact total in cents for these amounts?", tick(FIXES[okId].code), choiceIds.map((k) => tick(FIXES[k].code)),
+      "Truncating is the bug. A correct line rounds to the nearest cent somewhere, and works in cents, not dollars or tenths."));
+    const lines = match.map((r) => {
+      const raw = (r.amountC * bp) / 10000;
+      return `- ${usd(r.amountC)}: ${dec(r.amountC)} × ${pct}% = ${num(raw / 100)} → ${usd(Math.round(raw))}${fixedC ? `, + ${usd(fixedC)} = ${usd(Math.round(raw) + fixedC)}` : ""}`;
+    });
+    const explanation =
+      `**SQL.** Rows for ${acct} with kind 'card': ${match.map((r) => usd(r.amountC)).join(" + ")} = **${usd(trueC)}** (${commas(trueC)} cents).\n\n` +
+      `**Fees.** Each fee is rounded on its own, then added:\n\n${lines.join("\n")}\n\nTotal fees: **${usd(feeC)}**.\n\n` +
+      `**Floats.** The running total prints as ${String(t)}, a hair ${t < clean ? "below" : "above"} ${dec(trueC)}. × 100 gives about ${num(t * 100)}, and \`int()\` cuts off the fraction: **${commas(cents)}**${cents === trueC ? " (right this time, but only by luck)" : `, one cent short of ${commas(trueC)}`}.` +
+      (expert ? `\n\n**Fix.** ${tick(FIXES[okId].code)} ${FIXES[okId].why}, so it gives ${commas(trueC)}. ${wrongIds.map((k) => `${tick(FIXES[k].code)} gives ${commas(FIXES[k].run(amounts, t))}`).join("; ")}.` : "");
+    return {
+      prompt: `You're on the payments team. Finance wants the card total for account **${acct}** checked against the bank. A sample of the \`payments\` table:\n\n${mdTable("payments", ["id", "account", "kind", "amount"], shown)}\n\nThe report runs:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\nThe card processor charges ${feeRule} per card payment, and each payment's fee is rounded to the nearest cent (halves round up).\n\nThe old report code, in Python 3 (\`int()\` drops everything after the point; \`round()\` with one argument gives the nearest whole number):\n\n\`\`\`python\n${code}\n\`\`\``,
+      answerType: "multi", parts, explanation,
+      given: given(fixedC ? [["_fee_pct", bp / 100], ["_fixed_fee", fixedC / 100]] : [["_fee_pct", bp / 100]]),
+      params: { kind: "ledger-t", tier, sql, rows: shown.map((r) => ({ ...r })), bp, fixedC, printed: String(t), choiceIds: expert ? choiceIds : [] },
+    };
+  }
+  throw new Error("ledger-check: no draw");
+}
+
+// hot-loop tiers --------------------------------------------------------------------------------
+
+// Medium loops: a constant c (2–5) varies the shape; [hot runs, time] for n.
+const MED_LOOPS = {
+  const: { code: (c) => ["for i in range(n):", `    for j in range(${c}):`, "        out.append((i, j))      # hot"], hot: (n, c) => c * n, time: "O(n)",
+    why: (c) => `The inner loop always runs ${c} times, a constant, so the work is ${c}n: constants drop out of Big-O.` },
+  every: { code: (c) => ["for i in range(n):", `    if i % ${c} == 0:`, "        out.append((i, i * i))  # hot"], hot: (n, c) => Math.ceil(n / c), time: "O(n)",
+    why: (c) => `The loop runs n times and appends on every ${c}th one: about n/${c} runs, still growing like n.` },
+  square: { code: () => ["for i in range(n):", "    for j in range(n):", "        out.append((i, j))      # hot"], hot: (n) => n * n, time: "O(n²)",
+    why: () => "The inner loop runs n times for each of the n values of i: n² runs." },
+  triangle: { code: () => ["for i in range(n):", "    for j in range(i + 1, n):", "        out.append((i, j))      # hot"], hot: (n) => (n * (n - 1)) / 2, time: "O(n²)",
+    why: () => "j runs from i + 1, so the inner loop runs n − 1, n − 2, …, 0 times: n(n − 1)/2 in all. Halving n² doesn't change its growth." },
+};
+
+function genLoopMedium(rng) {
+  const key = rng.pick(Object.keys(MED_LOOPS));
+  const L = MED_LOOPS[key];
+  const job = rng.pick(JOBS);
+  const c = rng.int(2, 5);
+  const small = key === "square" || key === "triangle" ? rng.int(4, 10) : rng.int(5, 15);
+  const timeChoices = rng.shuffle(BIG_O4.slice());
+  const hot = L.hot(small, c);
+  const code = ["out = []", ...L.code(c)].join("\n");
+  const runs = key === "const" ? `${c} × ${small} = ${hot}` : key === "every" ? `i = ${Array.from({ length: hot }, (_, k) => k * c).join(", ")}: ${hot} runs`
+    : key === "square" ? `${small} × ${small} = ${hot}` : `${Array.from({ length: small }, (_, i) => small - 1 - i).join(" + ")} = ${hot}`;
+  return {
+    prompt: `You're profiling ${job}. Its core is this Python 3 code (\`range(a, b)\` counts from a up to b − 1, and \`range(n)\` from 0 up to n − 1):\n\n\`\`\`python\n${code}\n\`\`\`\n\nA test run uses **n = ${small}**.`,
+    answerType: "multi",
+    parts: [
+      numPart("runs", "Trace", "In the test run, how many times does the line marked `# hot` run?", hot, 0,
+        "Trace it by hand: for each value of i, count how many times the hot line runs, then add the counts up."),
+      choicePart("time", "Big-O", "As n grows, how does the running time grow?", L.time, timeChoices,
+        "Picture n doubling: does the work double, or more? Drop constant factors and smaller terms."),
+    ],
+    explanation: `**Trace.** For n = ${small}: ${runs}, so the hot line runs **${hot}** times.\n\n**Big-O.** ${L.why(c)} Time grows like **${L.time}**.`,
+    given: given([["_n", small]]),
+    params: { kind: "loop-t", tier: "medium", loop: key, c, small },
+  };
+}
+
+function genLoopTier(rng, tier) {
+  if (tier === "medium") return genLoopMedium(rng);
+  for (let tries = 0; tries < 80; tries++) {
+    const L = rng.pick(LOOPS);
+    const job = rng.pick(JOBS);
+    const small = L.key === "doubling" ? rng.int(5, 20) : L.quad || L.key === "inner-sum" ? rng.int(5, 9) : rng.int(5, 12);
+    const N = L.quad ? rng.int(20, 300) * 50 : rng.int(20, 300) * 10000;
+    const rec = rng.pick(RECS);
+    const R = rng.pick([20, 50, 100, 200, 500, 1000]);
+    const timeChoices = rng.shuffle(BIG_O4.slice());
+    const recBytes = (rec.bits[0] + rec.bits[1]) / 8;
+    const mb = (L.recs(N) * recBytes) / 1e6;
+    const secs = (mb * 8) / R;
+    if (tier !== "medium" && (nearTie2(mb) || round2(mb) < 0.05)) continue;
+    if (tier === "expert" && (nearTie2(secs) || round2(secs) < 0.05 || f2((round2(mb) * 8) / R) !== f2(secs) || nearTie2((round2(mb) * 8) / R))) continue;
+    const hot = L.hot(small);
+    const code = ["out = []", ...L.code].join("\n");
+    const extra = tier === "medium" ? "" : ` In production **n = ${commas(N)}**, and the job stores each pair in \`out\` as **${rec.desc}** (no other overhead; 1 MB = 1,000,000 bytes)${tier === "expert" ? `, then uploads those bytes over a **${R} Mbps** link (${MBPS})` : ""}.`;
+    const prompt = `You're profiling ${job}. Its core is this Python 3 code (\`range(a, b)\` counts from a up to b − 1, and \`range(n)\` from 0 up to n − 1):\n\n\`\`\`python\n${code}\n\`\`\`${extra ? `\n\n${extra.trim()}` : ""}`;
+    const parts = [
+      numPart("runs", "Trace", `How many times does the line marked \`# hot\` run when n = ${small}?`, hot, 0,
+        "Trace it by hand: for each value of i, count how many times the hot line runs, then add the counts up."),
+      choicePart("time", "Big-O", "As n grows, how does the running time grow?", L.time, timeChoices,
+        "Time follows the total number of loop steps. Drop constant factors and smaller terms."),
+    ];
+    if (tier !== "medium") parts.push(numPart("size", "Data size", `How many megabytes do the pairs in \`out\` take in production?${ROUND2}`, mb, 2,
+      "Bytes per pair = total bits ÷ 8. Count the pairs for the production n with the same rule you used in your trace, multiply, then divide by 1,000,000."));
+    if (tier === "expert") parts.push(numPart("upload", "Networking", `How many seconds does the upload take? Use your size answer and ignore protocol overhead.${ROUND2}`, secs, 2,
+      "Megabytes × 8 gives megabits; divide by the link speed in Mbps to get seconds."));
+    const recExpr = L.key === "square" ? "_n * _n" : L.key === "triangle" ? "_n * (_n - 1) / 2" : L.key === "three" ? "3 * _n" : L.key === "evens" ? "ceil(_n / 2)" : "_n";
+    const smallHow = L.key === "triangle" ? `${Array.from({ length: small }, (_, i) => small - 1 - i).join(" + ")} = ${hot}`
+      : L.key === "doubling" ? `j goes 1 → 2 → … until it reaches ${small}: ${Math.ceil(Math.log2(small))} doublings, × ${small} values of i = ${hot}`
+      : L.key === "evens" ? `i = ${Array.from({ length: Math.ceil(small / 2) }, (_, k) => 2 * k).join(", ")}: ${hot} runs`
+      : L.key === "three" ? `3 × ${small} = ${hot}` : `${small} × ${small} = ${hot}`;
+    let explanation = `**Trace.** For n = ${small}: ${smallHow}, so the hot line runs **${hot}** times.\n\n**Big-O.** ${L.why} Time grows like **${L.time}**.`;
+    if (tier !== "medium") {
+      explanation += `\n\n**Data size.** One pair is ${rec.bits[0]} + ${rec.bits[1]} = ${rec.bits[0] + rec.bits[1]} bits = ${recBytes} bytes.\n\n` +
+        [row("_n", N), row("_pair_bytes", recBytes), ...(tier === "expert" ? [row("_mbps", R)] : []),
+          step("_pairs", recExpr, commas(L.recs(N))),
+          step("_mb", "_pairs * _pair_bytes / 1e6", `${num(mb)} → **${f2(mb)} MB**`),
+          ...(tier === "expert" ? [step("_secs", "_mb * 8 / _mbps", `${num(secs)}, which rounds to **${f2(secs)} s**`)] : [])].join("\n");
+    }
+    return {
+      prompt, answerType: "multi", parts, explanation,
+      given: given(tier === "medium" ? [["_n", small]] : tier === "hard" ? [["_n", N]] : [["_n", N], ["_mbps", R]]),
+      params: { kind: "loop-t", tier, loop: L.key, small, N, bits: rec.bits.slice(), R },
+    };
+  }
+  throw new Error("hot-loop: no draw");
+}
+
+// fx-payout tiers -------------------------------------------------------------------------------
+
+function genFxTier(rng, tier) {
+  for (let tries = 0; tries < 200; tries++) {
+    const medium = tier === "medium";
+    const amountC = medium ? rng.int(100, 5000) * 100 : rng.int(300, 9000) * 100 + rng.int(0, 99);
+    const bp = medium ? rng.pick([100, 150, 200, 250, 300]) : rng.pick([50, 75, 90, 120, 150]);
+    const minC = medium ? 0 : rng.pick([500, 750, 1000, 1500, 2500]);
+    const rate = medium ? rng.int(8000, 9800) : rng.int(6000, 15000);
+    const day0 = utc(2026, 1, 1) + rng.int(0, 729) * dayMs;
+    const k = rng.int(1, 3);
+    const payee = rng.pick(PAYEES);
+    const N = rng.int(150, 5000);
+    const conc = rng.pick([4, 8, 10, 16, 25, 32, 50]);
+    const ms = rng.int(8, 60) * 10;
+    const pctX = amountC * bp;
+    const pctRem = pctX % 10000;
+    if (Math.abs(pctRem - 5000) <= 1) continue;
+    const pctC = Math.floor(pctX / 10000) + (pctRem > 5000 ? 1 : 0);
+    const feeC = Math.max(minC, pctC);
+    const x = (amountC - feeC) * rate;
+    const rem = x % 10000;
+    if (rem <= 5 || rem >= 9995) continue;
+    const outC = Math.floor(x / 10000);
+    const sub = fromMs(day0);
+    const isBiz = (ms0) => { const w = fromMs(ms0).w; return w !== 0 && w !== 6; };
+    if (tier === "hard" && !isBiz(day0)) continue;
+    let cur = day0;
+    if (!isBiz(cur)) { do cur += dayMs; while (!isBiz(cur)); }
+    const start = fromMs(cur);
+    for (let i = 0; i < k; i++) { do cur += dayMs; while (!isBiz(cur)); }
+    const settle = fromMs(cur);
+    const batches = Math.ceil(N / conc);
+    const secs = (batches * ms) / 1000;
+    const pct = num(bp / 100);
+    const rateTxt = (rate / 10000).toFixed(4);
+    const lines = [
+      `- Fee: **${pct}%** of the dollar amount, rounded to the nearest cent (halves round up)${minC ? `, but never less than **${usd(minC)}**` : ""}. It is taken from the dollars before conversion.`,
+      `- Rate: **$1 = €${rateTxt}** (a made-up rate). The converted amount is **rounded down** to the whole euro cent.`,
+    ];
+    if (!medium) lines.push(`- Timing: the payment was submitted on **${WEEKDAYS[sub.w]} ${fmtDay(sub)}**. ${tier === "expert" ? "A payment submitted on a weekend starts on the next business day. " : ""}Funds arrive **${k} business day${k > 1 ? "s" : ""}** after the ${tier === "expert" ? "start" : "submission"} day (T+${k}). Business days are Monday to Friday; ignore public holidays.`);
+    if (tier === "expert") lines.push(`- Batch: tonight the service sends **${commas(N)}** payouts to the bank's API, **${conc}** requests at a time. Each group takes **${ms} ms**, and the next group starts when it ends.`);
+    const parts = [
+      numPart("fee", "Fee", `What is the fee, in dollars?${ROUND2}`, feeC / 100, 2,
+        minC ? `Work out ${pct}% of the amount and round it to the cent, then compare it with the minimum fee: the fee is the larger of the two.` : `Work out ${pct}% of the amount (amount × ${pct} ÷ 100) and round it to the cent.`),
+      numPart("received", "Conversion", `How many euros does the payee receive?${ROUND2}`, outC / 100, 2,
+        "Take your fee off the dollar amount first, then multiply by the rate. Round **down** to the cent (drop the extra digits), not to the nearest cent."),
+    ];
+    if (!medium) parts.push({ id: "arrives", label: "Settlement", ask: "On what date do the funds arrive?", answerType: "date", precision: "day", answer: fmtDay(settle),
+      hint: tier === "expert" ? "First find the start day: the same day if it is a weekday, otherwise the next Monday. Then count forward that many weekdays, skipping Saturdays and Sundays." : "Count forward that many weekdays from the submission day, skipping Saturdays and Sundays." });
+    if (tier === "expert") parts.push(numPart("batch", "Throughput", "How many seconds does tonight's batch take? Ignore everything but the request time. Round to 2 decimal places.", secs, 2,
+      `Groups needed = ${commas(N)} ÷ ${conc}, rounded **up** (a part-full last group still takes a full ${ms} ms). Multiply by the time per group and convert ms to seconds.`));
+    const g = [["_amount", amountC / 100], ["_fee_pct", bp / 100], ["_rate", rate / 10000]];
+    if (minC) g.push(["_min_fee", minC / 100]);
+    if (tier === "expert") g.push(["_payouts", N], ["_concurrency", conc], ["_group_ms", ms]);
+    let explanation =
+      `**Fee.** ${pct}% of ${usd(amountC)} = ${num(pctX / 1e6)}, which rounds to ${usd(pctC)}. ` +
+      (minC ? `${pctC >= minC ? "That is at least" : "That is below"} the ${usd(minC)} minimum, so the fee is **${usd(feeC)}**.` : `So the fee is **${usd(feeC)}**.`) + "\n\n" +
+      [row("_amount", dec(amountC)), row("_rate", rateTxt),
+        step("_net", `_amount - ${dec(feeC)}`, dec(amountC - feeC)),
+        step("_eur", "_net * _rate", `${num((amountC - feeC) * rate / 1e6)}`),
+        step("_received", "floor(_eur * 100) / 100", `**${eur(outC)}**`)].join("\n");
+    if (!medium) explanation += `\n\n**Settlement.** ${tier === "expert" && !isBiz(day0) ? `It was submitted on a weekend, so it starts on ${WEEKDAYS[start.w]} ${fmtDay(start)}. ` : ""}Counting ${k} business day${k > 1 ? "s" : ""} forward from ${WEEKDAYS[start.w]} ${fmtDay(start)} gives **${WEEKDAYS[settle.w]} ${fmtDay(settle)}**.`;
+    if (tier === "expert") explanation += `\n\n**Throughput.** ${commas(N)} ÷ ${conc} = ${num(N / conc)}, rounded up to ${commas(batches)} groups. ${commas(batches)} × ${ms} ms = ${commas(batches * ms)} ms = **${f2(secs)} s**.`;
+    return {
+      prompt: `You're building the payout service for a marketplace. A customer pays **${usd(amountC)}** to ${payee}, who is paid in euros.\n\n${lines.join("\n")}`,
+      answerType: "multi", parts, explanation, given: given(g),
+      params: { kind: "fx-t", tier, amountC, bp, minC, rate, sub: [sub.y, sub.m, sub.d], k, N, conc, ms },
+    };
+  }
+  throw new Error("fx-payout: no draw");
+}
+
+const TIER_GENS = { "api-endpoint": genApiTier, "ledger-check": genLedgerTier, "hot-loop": genLoopTier, "fx-payout": genFxTier };
+
+// verify for the tiers: same independent routes as Expert+ (SQL re-read from text, loops simulated,
+// cents by string surgery, calendar walked with Sakamoto's weekday rule).
+
+function verifyApiTier(q, a) {
+  const p = q.params;
+  if (p.tier === "medium") {
+    if (!Array.isArray(p.rows) || p.rows.length !== 6) return false;
+    const m = /WHERE\s+(?:status\s*=\s*'([^']*)'|total\s*(>=|<=|>|<)\s*(\d+))\s*;/.exec(p.sql);
+    if (!m) return false;
+    let c = 0;
+    for (const r of p.rows) {
+      if (m[1] !== undefined) { if (r.status === m[1]) c++; }
+      else { const d = r.total - Number(m[3]); if (m[2] === ">" ? d > 0 : m[2] === ">=" ? d >= 0 : m[2] === "<" ? d < 0 : d <= 0) c++; }
+    }
+    if (c < 1 || !sameInt(a.rows, c)) return false;
+    return sameInt(a.size, (c * p.B * (p.N / 6)) / 1000);
+  }
+  if (!Array.isArray(p.rows) || p.rows.length !== 8) return false;
+  const c = countFromSql(p.sql, p.rows);
+  if (c === null || c < 1 || !sameInt(a.rows, c)) return false;
+  if (p.tier === "hard") {
+    const ix = q.parts.find((x) => x.id === "index");
+    const want = LOOKUP_TRUTH[p.look] && LOOKUP_TRUTH[p.look][1];
+    if (!want || !ix || ix.choices.filter((x) => x === want).length !== 1 || a.index !== want) return false;
+  } else {
+    let size = p.N, probes = 0;
+    while (size > 0) { probes++; size = Math.floor(size / 2); }
+    if (!sameInt(a.probes, probes)) return false;
+  }
+  return same2dp(a.transfer, (c * (p.N / 8) * p.B * 8) / 1e6 / p.R);
+}
+
+function verifyLedgerTier(q, a) {
+  const p = q.params;
+  const centsOf = (s) => { const [d, c] = String(s).split("."); return Number(d) * 100 + Number(c); };
+  const halfUp = (x) => { const q0 = Math.floor(x / 10000), rem = x - q0 * 10000; return rem === 5000 ? null : q0 + (rem > 5000 ? 1 : 0); };
+  if (p.tier === "medium") {
+    const m = /WHERE\s+account\s*=\s*'([^']+)'\s*;/.exec(p.sql);
+    if (!m) return false;
+    const trueC = p.rows.filter((r) => r.account === m[1]).reduce((s, r) => s + centsOf(r.amount), 0);
+    const fee = halfUp(trueC * p.bp);
+    return fee !== null && same2dp(a.total, trueC / 100) && same2dp(a.fee, fee / 100);
+  }
+  const m = /WHERE\s+account\s*=\s*'([^']+)'\s+AND\s+kind\s*=\s*'card'\s*;/.exec(p.sql);
+  if (!m) return false;
+  const match = p.rows.filter((r) => r.account === m[1] && r.kind === "card");
+  if (match.length < 3) return false;
+  const trueC = match.reduce((s, r) => s + centsOf(r.amount), 0);
+  if (!same2dp(a.total, trueC / 100)) return false;
+  let fee = 0;
+  for (const r of match) { const f = halfUp(centsOf(r.amount) * p.bp); if (f === null) return false; fee += f + p.fixedC; }
+  if (!same2dp(a.fees, fee / 100)) return false;
+  const amounts = match.map((r) => Number(r.amount));
+  let t = 0;
+  amounts.forEach((v) => { t = t + v; });
+  if (String(t) !== p.printed) return false;
+  if (!sameInt(a.cents, t * 100 < 0 ? Math.ceil(t * 100) : Math.floor(t * 100))) return false;
+  if (p.tier === "hard") return true;
+  const fix = q.parts.find((x) => x.id === "fix");
+  if (!fix || fix.choices.length !== 3 || new Set(fix.choices).size !== 3) return false;
+  const passing = p.choiceIds.filter((k) => FIXES[k] && FIXES[k].run(amounts, t) === trueC);
+  if (passing.length !== 1) return false;
+  const want = tick(FIXES[passing[0]].code);
+  return fix.choices.includes(want) && String(a.fix) === want;
+}
+
+function verifyLoopTier(q, a) {
+  const p = q.params;
+  if (p.tier === "medium") {
+    // Run the loop for real, then time a doubling experiment (n = 200 -> 400).
+    const run = (n) => {
+      let hot = 0;
+      for (let i = 0; i < n; i++) {
+        if (p.loop === "const") for (let j = 0; j < p.c; j++) hot++;
+        else if (p.loop === "every") { if (i % p.c === 0) hot++; }
+        else if (p.loop === "square") for (let j = 0; j < n; j++) hot++;
+        else if (p.loop === "triangle") for (let j = i + 1; j < n; j++) hot++;
+        else return null;
+      }
+      return hot;
+    };
+    const h = run(p.small);
+    if (h === null || !sameInt(a.runs, h)) return false;
+    const time = growthOf(run(200) + 200, run(400) + 400);
+    const tp = q.parts.find((x) => x.id === "time");
+    return time !== "?" && !!tp && tp.choices.filter((x) => x === time).length === 1 && a.time === time;
+  }
+  const s = simLoop(p.loop, p.small);
+  if (!s || !sameInt(a.runs, s[0])) return false;
+  const lo = simLoop(p.loop, 200), hi = simLoop(p.loop, 400);
+  const time = growthOf(lo[0] + 200, hi[0] + 400);
+  const tp = q.parts.find((x) => x.id === "time");
+  if (time === "?" || !tp || tp.choices.filter((x) => x === time).length !== 1 || a.time !== time) return false;
+  if (p.tier === "medium") return true;
+  const bytes = (pairsAt(p.loop, p.N) * (p.bits[0] + p.bits[1])) / 8;
+  if (!same2dp(a.size, bytes / 1e6)) return false;
+  if (p.tier === "hard") return true;
+  return same2dp(a.upload, (bytes * 8) / (p.R * 1e6)) && same2dp(a.upload, (Number(a.size) * 8) / p.R);
+}
+
+function verifyFxTier(q, a) {
+  const p = q.params;
+  const exact = (p.amountC * p.bp) / 10000;
+  const lo = Math.floor(exact);
+  const pctC = exact - lo >= 0.5 ? lo + 1 : lo;
+  const feeC = pctC < p.minC ? p.minC : pctC;
+  if (!same2dp(a.fee, feeC / 100)) return false;
+  const prod = (p.amountC - feeC) * p.rate;
+  const outC = (prod - (prod % 10000)) / 10000;
+  if (!isNum(a.received) || Math.round(Number(a.received) * 100) !== outC || Math.abs(Number(a.received) * 100 - outC) > 1e-6) return false;
+  if (p.tier === "medium") return true;
+  let cur = p.sub.slice();
+  const biz = (c) => { const w = dow(c[0], c[1], c[2]); return w >= 1 && w <= 5; };
+  if (!biz(cur)) { if (p.tier === "hard") return false; do cur = nextDay(cur); while (!biz(cur)); }
+  for (let i = 0; i < p.k; i++) { do cur = nextDay(cur); while (!biz(cur)); }
+  if (String(a.arrives ?? "").trim() !== `${cur[2]} ${MONTHS[cur[1] - 1]} ${cur[0]}`) return false;
+  if (p.tier === "hard") return true;
+  let left = p.N, groups = 0;
+  while (left > 0) { left -= p.conc; groups++; }
+  return same2dp(a.batch, (groups * p.ms) / 1000);
+}
+
+// ---------------------------------------------------------------------------------------------
 // Entry points
 
 const GENS = { "api-endpoint": genApi, "ledger-check": genLedger, "hot-loop": genLoop, "fx-payout": genFx };
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (TIER_IDS.includes(difficulty)) {
+    const t = TIER_GENS[subtopic];
+    if (!t) throw new Error(`Unknown subtopic: ${subtopic}`);
+    return t(rng, difficulty);
+  }
   if (difficulty !== "expert-plus") throw new Error(`Unknown difficulty: ${difficulty}`);
   const g = GENS[subtopic];
   if (!g) throw new Error(`Unknown subtopic: ${subtopic}`);
@@ -615,6 +1122,10 @@ export function verify(question, answer) {
     if (p.kind === "ledger") return verifyLedger(question, answer);
     if (p.kind === "loop") return verifyLoop(question, answer);
     if (p.kind === "fx") return verifyFx(question, answer);
+    if (p.kind === "api-t") return verifyApiTier(question, answer);
+    if (p.kind === "ledger-t") return verifyLedgerTier(question, answer);
+    if (p.kind === "loop-t") return verifyLoopTier(question, answer);
+    if (p.kind === "fx-t") return verifyFxTier(question, answer);
   } catch (e) {
     return false;
   }

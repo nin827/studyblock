@@ -8,9 +8,9 @@
   "fuzzyNumber": 1,
   "questionsPerQuiz": 5,
   "subtopics": [
-    { "id": "quality-control", "title": "Quality-control report", "difficulties": ["expert-plus"] },
-    { "id": "claims-pricing", "title": "Pricing insurance risk", "difficulties": ["expert-plus"] },
-    { "id": "growth-model", "title": "Growth and decay model", "difficulties": ["expert-plus"] },
-    { "id": "check-derivation", "title": "Checking a derivation", "difficulties": ["expert-plus"] }
+    { "id": "quality-control", "title": "Quality-control report", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "claims-pricing", "title": "Pricing insurance risk", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "growth-model", "title": "Growth and decay model", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "check-derivation", "title": "Checking a derivation", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
   ]
 }

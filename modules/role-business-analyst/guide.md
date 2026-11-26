@@ -35,7 +35,7 @@ Strategy: hold stars, harvest cash cows, build question marks, divest dogs.
 
 ## Investment case
 
-1. Each year's inflow = extra units × contribution per unit.
+1. Each year's inflow is given in the table, or is extra units × contribution per unit.
 2. **Payback:** add the inflows until they cover the cost. For the last part-year, months = amount still needed ÷ that year's inflow × 12. Answer in months in all (2 years 6 months = 30).
 3. **NPV** = sum of (inflow × discount factor) − cost. The cost is paid today, so it is not discounted.
 4. **Sensitivity:** if every inflow falls by x%, their present value falls by x% too, so x = NPV ÷ present value of the inflows × 100.
@@ -46,7 +46,7 @@ Strategy: hold stars, harvest cash cows, build question marks, divest dogs.
 1. **Segment size** = population × first share × second share, for example `_pop * _share1 * _share2`.
 2. **Sales change** = (this year − last year) ÷ last year × 100. Then find the stage with the rules below.
 3. **Contribution** for each plan = segment × take-up % × (price − unit cost). The gap is Plan S minus Plan P.
-4. The team's rule: Decline → don't launch; Growth or Maturity → penetration pricing; Introduction → the plan with the higher contribution.
+4. Follow the team's rule exactly as the question states it. Usually: Decline → don't launch; Growth or Maturity → penetration pricing; Introduction → the plan with the higher contribution (some cases say skimming instead).
 
 Life-cycle rules:
 

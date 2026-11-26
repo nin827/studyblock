@@ -1,6 +1,6 @@
 # 020 — Roles and Subroles (career mixes with Expert+)
 
-**Status:** open (being built with the defaults below)
+**Status:** resolved (built as below)
 **Raised:** 2026-11-26
 
 ## Decided by the user
@@ -17,7 +17,7 @@
 - **Difficulty shift:**
   - Role Easy draws subject Medium, Medium draws Hard, and Hard draws Expert (or the closest level the subject has).
   - Role Expert is **Expert+**: only the role's own multi-subject questions.
-  - The page shows the levels as Normal, Hard, Expert and Expert+.
+  - The page shows the levels as Easy, Medium, Hard and Expert (see the addendum).
 - **Where it lives:**
   - `#/roles` lists the roles, `#/roles/<role>` is a role page listing its subroles, and `#/roles/<role>/<subrole>` is a subrole page.
   - Quizzes run at `#/rq/<id>/<level>`, with guided runs at `#/rg/…`.
@@ -34,3 +34,9 @@
   - Easy draws subject Medium, Medium draws Hard, and Hard draws Expert.
   - Expert is the special role-only level (scenario tier "Expert+").
   - The mixed-question tiers are medium, hard and expert, matching the subject level each role level draws.
+
+## Done (2026-11-26)
+- Levels Easy/Medium/Hard/Expert with aliases normal→easy, expert-plus→expert.
+- All 12 scenario subtopics have medium/hard/expert tiers; Expert+ questions unchanged per seed.
+- Weighted scores (`weight` = parts), role count 5–50 via `?n=`, Mix minimum 5.
+- Guided runs stay unweighted (they count questions solved).

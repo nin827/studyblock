@@ -44,7 +44,7 @@
 
 **Growth by a fixed percentage**
 
-1. P(t) = P₀ × rᵗ. Two years apart: r² = later ÷ earlier, so r = √(later ÷ earlier). Growth rate = (r − 1) × 100%.
+1. P(t) = P₀ × rᵗ. One year apart: r = later ÷ earlier. Two years apart: r² = later ÷ earlier, so r = √(later ÷ earlier). Growth rate = (r − 1) × 100%.
 2. Time to a target T: rᵗ = T ÷ P₀, so t = ln(T ÷ P₀) ÷ ln r (log base 10 works too).
 3. Rate of change: dP/dt = P₀ × rᵗ × ln r.
 
@@ -66,4 +66,5 @@ Things to check in each kind:
 
 - **Equation with a fraction:** the order is subtract, multiply, divide, add. Watch signs when moving a number across.
 - **Tangent to y = ax² + bx + c at x = p:** the gradient is 2ap + b (don't drop the 2), the point is ap² + bp + c (square p, don't double it), and the intercept is q = y − m × p. A quick check: q always equals c − ap².
+- **Line through two points:** m = (y₂ − y₁) ÷ (x₂ − x₁), with the points in the same order top and bottom; then q = y₁ − m × x₁, and the prediction is y = m × x + q.
 - **Variance:** recompute Σx and Σx² from the data. Variance = Σx² ÷ n − mean², with the mean squared.
