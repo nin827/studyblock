@@ -8,6 +8,7 @@ import { mountCalculator } from './calculator.js';
 import { compileGraph } from './staticgraph.js'; // also defines <sb-graph> (static plots in the review)
 import { isLang, langTitle } from '../lib/languages.js';
 import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates.js';
+import { playButtonHtml, bindPlay, addReviewPlay, stopPlayback } from './playbtn.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
 // address it was opened on, may restore it from sessionStorage. Every other run starts empty.
@@ -1978,6 +1979,7 @@ export async function runQuiz(root, ctx, opts) {
       box = `<div class="feedback info">
         <p class="feedback-title">${icon('eye')}<span>Solved with solution</span></p>
         ${answers}
+        ${playButtonHtml(q)}
         ${expected}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
@@ -1987,11 +1989,13 @@ export async function runQuiz(root, ctx, opts) {
           ? '<span class="feedback-sub">· first try</span>'
           : `<span class="feedback-sub">· after ${esc(bits.join(', '))}</span>`}</p>
         ${res?.note ? `<p class="grade-note">${icon('info')}<span>${esc(res.note)}</span></p>` : ''}
+        ${playButtonHtml(q)}
         ${expected}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
     }
     root.querySelector('#feedback').innerHTML = box;
+    bindPlay(root.querySelector('#feedback'), [q]);
     root.querySelector('#action-bar').innerHTML =
       `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to continue</span></p>
       ${calcButton(q)}<button type="button" class="btn btn-primary" id="next">${last ? `${icon('flag')} Finish` : `Next question ${icon('arrow-right')}`}</button>`;
@@ -2112,9 +2116,11 @@ export async function runQuiz(root, ctx, opts) {
         ${g.note ? `<p class="grade-note">${icon('info')}<span>${esc(g.note)}</span></p>` : ''}
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts', partColsOf(q))
           : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${answerInline(q.answer, q.choiceCols)}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
+        ${playButtonHtml(q)}
         ${q.runnable ? '<div class="expected-output" id="expected-output"></div>' : ''}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
+    bindPlay(root.querySelector('#feedback'), [q]);
     root.querySelector('#action-bar').innerHTML =
       `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to continue</span></p>
       ${calcButton(q)}<button type="button" class="btn btn-primary" id="next">${last ? `${icon('flag')} Finish` : `Next question ${icon('arrow-right')}`}</button>`;
@@ -2127,6 +2133,7 @@ export async function runQuiz(root, ctx, opts) {
 
   function advance() {
     if (phase !== 'feedback') return;
+    stopPlayback();
     idx++;
     if (idx < questions.length) showQuestion();
     else finish();
@@ -2166,6 +2173,7 @@ export async function runQuiz(root, ctx, opts) {
         <h2>Questions</h2>
         <ol class="review">${gResults.map(guidedReviewItem).join('')}</ol>
       </section></div>`;
+    addReviewPlay(root, gResults.map(r => r.q));
     icons();
     root.querySelector('#retry').addEventListener('click', start);
   }
@@ -2204,6 +2212,7 @@ export async function runQuiz(root, ctx, opts) {
         <h2>Review</h2>
         <ol class="review">${results.map(r => reviewItem(r, opts.tagsFor || opts.showTags)).join('')}</ol>
       </section></div>`;
+    addReviewPlay(root, results.map(r => r.q));
     icons();
     root.querySelector('#retry').addEventListener('click', start);
     // Runnable questions: the expected output under each review item (run while still in memory).
@@ -2238,6 +2247,8 @@ export async function runQuiz(root, ctx, opts) {
     // Keys typed in the calculator never answer or advance the quiz.
     if (e.target && e.target.closest && e.target.closest('.calc-panel')) return;
     if (e.key === 'Enter' && !e.repeat && !e.isComposing) {
+      // The Play button (feedback) keeps its native Enter.
+      if (e.target?.closest?.('.play-btn')) return;
       // Guided: the hint / solution buttons and the "How to solve" toggle keep their native Enter.
       if (guided && e.target?.closest?.('#guided-tools, .part-hint-row, #guide-card')) return;
       if (phase === 'answer' && isMulti(questions[idx])) {
@@ -2287,6 +2298,7 @@ export async function runQuiz(root, ctx, opts) {
   // Registered once per render (not per start) so Retry doesn't stack listeners.
   document.addEventListener('keydown', onKey);
   ctx.onCleanup(() => document.removeEventListener('keydown', onKey));
+  ctx.onCleanup(stopPlayback); // a preview never outlives the quiz
   ctx.onCleanup(() => cancelDrag()); // a drag ghost never outlives the quiz
 
   await start();

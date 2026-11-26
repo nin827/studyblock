@@ -46,6 +46,8 @@ js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
 js/lib/languages.js     code languages list (python, csharp, cpp, gdscript, rust)
 js/lib/codelang.js      language-neutral code AST, 5 renderers, interpreter
 js/lib/music.js         note/interval/scale/chord helpers (build + independent check) for Music Theory
+js/lib/audio.js         pitch from spelled notes (A4 = 440, equal temperament), Web Audio synth, play descriptions
+js/views/playbtn.js     Play button + Sound preference
 js/lib/chem.js          element table (symbol, name, Z, rounded school Ar), formula parser/mass
 js/lib/sql.js           SQL: query-tree render/evaluate + executor for the taught grammar (runQuery/execQuery)
 js/lib/ciphers.js       letters A=0…Z=25, Caesar, Vigenère, affine, gcd/lcm, modular inverse
@@ -340,7 +342,7 @@ A near miss earns part credit; `correct` stays false. This applies to single que
 
 Options that combine several facts show as aligned blocks under column labels (ticket 019), e.g. `Elastic | Price ↓ | Revenue ↑`.
 - **Generator shape:** `answerType: "choice"`, `choiceCols: [2–4 labels ≤ 24 chars]`, `choices: [[segment per column], …]` (segments ≤ 40 chars, no `|`), `answer` = the right array or its joined string, and optional `extraSegs: [[column label or index, value], …]` decoys.
-  - Options: exactly 3 at Easy and 5 at Medium and above (the engine warns otherwise). Wrong options differ from the answer in 1 to n−1 columns.
+  - Options: exactly 3 at Easy and 5 at Medium and above (the engine warns otherwise). **Mixed distances (ticket 022):** at least one wrong option differs from the answer in 2+ columns; the answer's value is never the strict majority in every column (a tie clears it); with 3+ columns no wrong option differs in every column, with 2 columns one may. Easy (3 options): both wrong options change one shared column and one also changes a second. Generators redraw until this holds and prefer plausible combinations (the answer must not be the only option whose columns make sense together). `segMixIssues` in `engine.js` checks every question and part and warns once per module; nothing is rejected.
   - The engine stores each option as one string joined by `" | "`, so checking, storage and History are unchanged. It keeps `choiceCols`/`choiceSegs` in memory. A bad shape regenerates.
   - Multi-part choice parts accept the same fields; they are Choose-only, at full credit.
 - **CSV:** an optional `cols` column (labels `|`-separated) splits each choice into segments by ` ; `. An optional `extra` column holds `Column=value ; …` decoys. A mismatched row is skipped with one warning per module.
@@ -387,6 +389,13 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 ### Callouts (standard notices in markdown)
 
 `markdown.js` renders GitHub-style callouts: a blockquote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (any case), with an optional custom title after the marker (`> [!WARNING] For learning only`). Output is `<aside class="callout callout-<kind>" role="note">` with an icon and label (never colour alone); the body is full escaped markdown. All notices in `intro.md`/`guide.md` use them: the Medical/Biology disclaimer is `> [!WARNING] For learning only`, answer-format tips are `> [!TIP]`. Tokens are `--callout-*` (light and dark); the quiz `.case-note` matches the Warning callout. A plain blockquote renders as before.
+
+### Audio previews (ticket 023)
+
+After an answer is checked, music questions show a **Play** button (`volume-2` + "Play", 44px, `aria-label` "Play the chord/interval/note/scale/chord progression") in the feedback (including guided solved/solution) and the end-of-quiz review; never before answering, and not in History (stored attempts don't keep it).
+- `js/lib/audio.js` synthesises with Web Audio: no files, works offline, a lazy AudioContext on the first click, a soft triangle with two quiet partials, one playback at a time (stopped on Next and when leaving). The button is hidden when there is no AudioContext.
+- Generators attach `play` (`{ mode: note|interval|chord|scale|progression, notes|chords, semis? }`, notes `{l, a}`, optional octave `o`) with `withPlay(q, spec)` in a thin wrapper around their old `generate`, derived from `params`: no rng, so prompts and answers are unchanged. The engine keeps `meta` but drops unknown fields, so `withPlay` mirrors it to `meta.play`; the quiz reads `q.play ?? q.meta.play`. Never stored.
+- Used by Intervals & Scales, Chords and Role Music Theorist (not bar-timing or the downward transpositions). Settings → Sound (cookie `sb_sound`, default on) hides every Play button when off.
 
 ## Guided mode
 
@@ -656,7 +665,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
 - **Trimmed subjects (ticket 015):** Balancing & Progression, Pixels & Colour, Collision, Vital Signs and Health Statistics are archived. Cryptography Basics was merged into Number Theory (Ciphers, Keys & RSA, worked by hand), and Anatomy into Biology Basics (Skeleton, Organs and body systems).
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
-- **Music Theory:** written notation, no audio or staff images. Single spelled notes, intervals and chord names are choice questions (text checks can't equate `#` with ♯). Spelling a whole chord or scale is built from note blocks (from the root/tonic up, wrong spellings as distractors); multi-part questions keep choice parts. Double sharps/flats (𝄪/𝄫) appear only where theory needs them (Hard/Expert diminished and augmented triads, G♯ and D♯ harmonic minor); Easy, Medium and major keys stay single-accidental. Expert diatonic sevenths include viiø7 (m7♭5). 𝄪/𝄫 rely on the OS symbol font. `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **Music Theory:** written notation, no staff images; sound only through the Play button after answering (below). Single spelled notes, intervals and chord names are choice questions (text checks can't equate `#` with ♯). Spelling a whole chord or scale is built from note blocks (from the root/tonic up, wrong spellings as distractors); multi-part questions keep choice parts. Double sharps/flats (𝄪/𝄫) appear only where theory needs them (Hard/Expert diminished and augmented triads, G♯ and D♯ harmonic minor); Easy, Medium and major keys stay single-accidental. Expert diatonic sevenths include viiø7 (m7♭5). 𝄪/𝄫 rely on the OS symbol font. `js/lib/music.js` has separate build and check toolkits so verify stays independent.
 - **SQL Queries:** *ORDER BY and LIMIT* row-order questions are built from blocks (same seeds). *Write the query* is typed or built from blocks (`SELECT …`, aggregate and `IN (…)` slot tiles), with `accepts`, Run, and the Blocks multiplier.
 - **Algorithms:** final stack or queue contents are built from blocks (same seeds). *Write the trace* is typed (`4, 9, 2`) with Blocks: binary-search comparisons, the list after a sort pass, stack/queue values.
 - **Boolean Logic:** *Write the expression* is typed with Blocks (letters, AND/OR/XOR/NOT, a bracket slot). Any expression with the same truth table counts (`grade()`); operators may not be mixed at one bracket level without brackets.

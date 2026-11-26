@@ -15,6 +15,7 @@ import {
   majorTonic, minorTonic, scaleFromSignature, classify, isInterval, scaleByPattern, identifyChord, fourChoices,
   ordinal, keyboardDistance, intervalSize, intervalName, keyIndex,
 } from "../../js/lib/music.js";
+import { withPlay, playChord, playProgression, playInterval } from "../../js/lib/audio.js";
 
 // ---------- helpers ----------
 
@@ -54,17 +55,35 @@ function finish(prompt, parts, explanation, kind, params, given, hints) {
 const yesNo = (id, label, ask, ok, hint) => ({ id, label, ask, answerType: "choice", answer: ok ? "Yes" : "No", choices: ["Yes", "No"], hint });
 const choicePart = (id, label, ask, answer, choices, hint) => ({ id, label, ask, answerType: "choice", answer, choices, hint });
 
+// Ticket 022 (mixed distances): at least one wrong option differs from the answer in 2+ columns, and in at
+// least one column the answer's value is not the strictly most common one (so counting can't find it).
+function segMixed(answer, options) {
+  const diff = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
+  if (!options.some((t) => diff(t, answer) >= 2)) return false;
+  return answer.some((v, i) => {
+    const counts = new Map();
+    for (const t of options) counts.set(t[i], (counts.get(t[i]) || 0) + 1);
+    const mine = counts.get(v) || 0;
+    return [...counts].some(([k, c]) => k !== v && c >= mine);
+  });
+}
+// A wrong option differs from the answer in 1 to n−1 columns (1 to 2 when n = 2). The set is redrawn
+// until it follows the mixed-distances rule.
 function segOptions(rng, answer, opts, n) {
-  const out = [answer];
   const key = (a) => a.join(" | ");
-  let guard = 0;
-  while (out.length < n && guard++ < 400) {
-    const c = answer.slice();
-    const idx = rng.shuffle(answer.map((_, i) => i)).slice(0, rng.int(1, answer.length - 1 || 1));
-    for (const i of idx) { const alt = opts[i].filter((v) => v !== answer[i]); if (alt.length) c[i] = rng.pick(alt); }
-    if (!out.some((o) => key(o) === key(c))) out.push(c);
+  const maxDiff = answer.length === 2 ? 2 : answer.length - 1 || 1;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const out = [answer];
+    let guard = 0;
+    while (out.length < n && guard++ < 400) {
+      const c = answer.slice();
+      const idx = rng.shuffle(answer.map((_, i) => i)).slice(0, rng.int(1, maxDiff));
+      for (const i of idx) { const alt = opts[i].filter((v) => v !== answer[i]); if (alt.length) c[i] = rng.pick(alt); }
+      if (!out.some((o) => key(o) === key(c))) out.push(c);
+    }
+    if (segMixed(answer, out)) return rng.shuffle(out);
   }
-  return rng.shuffle(out);
+  throw new Error("role-music-theorist: no mixed-distance options");
 }
 function segPart(rng, { id, label, ask, cols, answer, opts, hint, n }) {
   const choices = segOptions(rng, answer, opts, n);
@@ -592,7 +611,51 @@ function genTranspose(rng, tier) {
 
 // ---------- entry points ----------
 
-export function generate({ subtopic, difficulty, rng }) {
+export function generate(args) {
+  const q = generateCore(args);
+  // Audio preview (ticket 023): derived from the finished question, so no rng and nothing else changes.
+  try { withPlay(q, playFor(q)); } catch { /* no preview */ }
+  return q;
+}
+
+// What to play after the answer is checked: the chord or progression the scenario is about, or the
+// interval a part is transposed by. Tempo and bar questions have nothing to hear (null).
+function playFor(q) {
+  const p = q.params || {};
+  const major = (t) => scaleByPattern(t, "major");
+  const triadOn = (s, n) => [s[n - 1], s[(n + 1) % 7], s[(n + 3) % 7]];
+  // "B♭m – G♭ – D♭" -> chords. The chord names are the same text the question shows.
+  const fromNames = (names) => {
+    const chords = names.map((nm) => {
+      const m = /^([A-G][♯♭]?)(m|dim)?$/.exec(nm);
+      const root = m && parseNote(m[1]);
+      return root ? buildChord(root, TRIAD[m[2] === "m" ? "minor" : m[2] === "dim" ? "diminished" : "major"]) : null;
+    });
+    return chords.every(Boolean) ? playProgression(chords) : null;
+  };
+  switch (p.kind) {
+    case "mk-deg": case "mk-hard": return playChord(triadOn(major(p.t), p.n));
+    case "mk-exp": {
+      for (let l = 0; l < 7; l++) for (let a = -1; a <= 1; a++) {
+        const t = note(l, a), s = major(t);
+        if (s.filter((x) => x.a !== 0).length === Math.abs(p.sig) && s.some((x) => x.a * Math.sign(p.sig) > 0)) return playChord(triadOn(s, p.n));
+      }
+      return null;
+    }
+    case "mk-back": return playChord(buildChord(p.root, TRIAD[p.q]));
+    case "pg-med": { const s = major(p.t); return playProgression(p.degs.map((d) => triadOn(s, d))); }
+    case "pg-hard": case "pg-exp": return fromNames(p.names);
+    case "pg-back": {
+      const part = (q.parts || []).find((x) => x.id === "names");
+      return part && typeof part.answer === "string" ? fromNames(part.answer.split(DASH)) : null;
+    }
+    case "tr-med": return playInterval(p.x, intervalSize(p.num, p.q));
+    case "tr-hard": return playInterval(p.t, intervalSize(p.num, p.q)); // the piece moves up by this interval
+    default: return null;
+  }
+}
+
+function generateCore({ subtopic, difficulty, rng }) {
   if (!(difficulty in TIER_PARTS)) throw new Error(`Unsupported difficulty: ${difficulty}`);
   if (subtopic === "key-chords") return genKeyChords(rng, difficulty);
   if (subtopic === "progression") return genProg(rng, difficulty);

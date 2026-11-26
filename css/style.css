@@ -1031,6 +1031,13 @@ body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-s
 
 /* Run (test the output) */
 .run-btn { gap: 6px; }
+/* Play button (music previews, ticket 023): feedback and review only. */
+.play-row { margin: 10px 0 4px; }
+.play-btn { gap: 8px; min-height: 44px; }
+.play-btn .icon { width: 18px; height: 18px; }
+.check-row { display: flex; align-items: center; gap: 12px; min-height: 44px; cursor: pointer; }
+.check-row input { width: 22px; height: 22px; flex: none; accent-color: var(--accent); }
+.play-btn.is-playing { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-ink); }
 .run-output:empty { display: none; }
 .run-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--paper); min-width: 0; }
 .run-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }

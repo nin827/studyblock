@@ -18,32 +18,52 @@ import {
   TRIAD, SEVENTH, HALF_DIM7, buildChord, noteAbove, majorTonic, minorTonic, scaleFromSignature,
   classify, scaleByPattern, identifyChord, fourChoices, ordinal,
 } from '../../js/lib/music.js';
+import { withPlay, playChord } from '../../js/lib/audio.js';
 
 const DIFFS = ['easy', 'medium', 'hard'];
 
 // ---- Segmented (block-list) choices (ticket 019) ----
 // Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
 // verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
-// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns (1 to 2 when n = 2),
+// with at least one differing in 2+ columns and the answer never the most common value in every column. `extraSegs` are
 // Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
 const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
 const segKey = (c) => segsOf(c).join(" | ");
 const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Largest allowed difference from the answer: n−1 columns, or both columns when n = 2 (ticket 022).
+const segMaxDiff = (n) => (n === 2 ? 2 : n - 1);
+// Ticket 022 (mixed distances): at least one wrong option differs from the answer in 2+ columns, and
+// in at least one column the answer's value is not the strictly most common one, so the answer can't
+// be found by counting. `options` are segment arrays including the answer.
+function segMixed(correct, options) {
+  if (!options.some((t) => segDiff(t, correct) >= 2)) return false;
+  return correct.some((v, i) => {
+    const counts = new Map();
+    for (const t of options) counts.set(t[i], (counts.get(t[i]) || 0) + 1);
+    const mine = counts.get(v) || 0;
+    return [...counts].some(([k, c]) => k !== v && c >= mine);
+  });
+}
 // The right tuple plus wrong ones from `cands` (rng.shuffle order) -> `want` options, shuffled; or null.
+// A pick that breaks the mixed-distances rule is redrawn (a fresh shuffle) a few times.
 function segPick(rng, correct, cands, want) {
   const n = correct.length;
-  const seen = new Set([segKey(correct)]);
-  const out = [correct];
-  for (const c of rng.shuffle(cands.slice())) {
-    if (out.length >= want) break;
-    if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
-    const d = segDiff(c, correct);
-    if (d < 1 || d >= n || seen.has(segKey(c))) continue;
-    seen.add(segKey(c));
-    out.push(c);
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const seen = new Set([segKey(correct)]);
+    const out = [correct];
+    for (const c of rng.shuffle(cands.slice())) {
+      if (out.length >= want) break;
+      if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
+      const d = segDiff(c, correct);
+      if (d < 1 || d > segMaxDiff(n) || seen.has(segKey(c))) continue;
+      seen.add(segKey(c));
+      out.push(c);
+    }
+    if (out.length === want && segMixed(correct, out)) return rng.shuffle(out);
   }
-  return out.length === want ? rng.shuffle(out) : null;
+  return null;
 }
 // Build-mode decoys: the [column index, value] pairs no option already shows (max 14). Indexes, not
 // labels, because labels such as TT and Tt differ only in case.
@@ -70,7 +90,8 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > segMaxDiff(n)))) return false;
+  if (!segMixed(right[0], opts)) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -1016,7 +1037,54 @@ function genExpert(subtopic, rng) {
 
 // ---------------------------------------------------------------- generate / verify
 
-export function generate({ subtopic, difficulty, rng }) {
+export function generate(args) {
+  const q = generateCore(args);
+  // Audio preview (ticket 023): derived from the finished question, so no rng and nothing else changes.
+  try { withPlay(q, playFor(q)); } catch { /* no preview */ }
+  return q;
+}
+
+// What to play after the answer is checked: the chord the question is about (null = nothing fits).
+// Inverted chords are played as asked (lowest note first); sound ignores spelling.
+function playFor(q) {
+  const checks = q.params?.check ? [q.params.check] : Object.values(q.params?.parts || {});
+  for (const c of checks) {
+    const notes = chordOfCheck(c, q);
+    if (notes && notes.every(Boolean) && notes.length >= 3) return playChord(notes);
+  }
+  return null;
+}
+
+const invert = (chord, inv) => [...chord.slice(inv), ...chord.slice(0, inv)];
+
+function chordOfCheck(c, q) {
+  const ans = typeof q.answer === 'string' ? q.answer : null;
+  const key = (t) => keyScale(t);
+  const triadAt = (tonic, deg, scale = key(tonic)) => stackOn(scale, deg);
+  const fromTriadName = (s) => { const t = parseTriadName(s); return t ? chordTones(t.root, t.quality) : null; };
+  const fromSevName = (s) => { const t = parseSevName(s); return t ? chordTones(t.root, t.type) : null; };
+  switch (c.kind) {
+    case 'triad-notes': case 'triad-member': return chordTones(parseNote(c.root), c.quality);
+    case 'triad-with': return fromTriadName(ans);
+    case 'identify': case 'identify-part': case 'sev-identify': case 'sev-name': case 'numeral-notes': return parseList(c.notes);
+    case 'bass': return invert(chordTones(parseNote(c.root), c.quality), c.inv);
+    case 'bass-back': { const t = fromTriadName(ans); return t ? invert(t, c.inv) : null; }
+    case 'sev-back': { const t = fromSevName(ans); return t ? invert(t, c.inv) : null; }
+    case 'chord-on': case 'chord-notes': return triadAt(c.tonic, c.deg);
+    case 'degree-quality': return triadAt('C', c.deg);
+    case 'numeral': return fromTriadName(c.chord);
+    case 'key-of-chord': return fromTriadName(c.chord);
+    case 'minor-chord': case 'minor-quality': return triadAt(c.tonic, c.deg, scaleByPattern(parseNote(c.tonic), 'harmonic'));
+    case 'sev-notes': case 'sev-member': return chordTones(parseNote(c.root), c.type);
+    case 'v7': case 'v7-member': return chordTones(key(c.tonic)[4], 'dom7');
+    case 'seventh-of': return fromSevName(ans);
+    case 'v7-key': case 'v7-lead': return fromSevName(c.sym);
+    case 'diatonic7-notes': case 'diatonic7-name': return stackOn(key(c.tonic), c.deg, 4);
+    default: return null;
+  }
+}
+
+function generateCore({ subtopic, difficulty, rng }) {
   if (difficulty === 'expert') return genExpert(subtopic, rng);
   if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {

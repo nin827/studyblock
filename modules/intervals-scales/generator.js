@@ -17,6 +17,7 @@ import {
   keyboardDistance, walkSemis, classify, isInterval, scaleByPattern, matchesPattern,
   fourChoices, ordinal,
 } from '../../js/lib/music.js';
+import { withPlay, playNote, playInterval, playScale } from '../../js/lib/audio.js';
 
 const NATURALS = [0, 1, 2, 3, 4, 5, 6].map((l) => note(l, 0));
 // Everyday spellings: naturals plus the five black keys spelled both ways.
@@ -1005,7 +1006,64 @@ function genExpert(subtopic, rng) {
 
 // ---------------------------------------------------------------- generate / verify
 
-export function generate({ subtopic, difficulty, rng }) {
+export function generate(args) {
+  const q = generateCore(args);
+  // Audio preview (ticket 023): derived from the finished question, so no rng and nothing else changes.
+  try { withPlay(q, playFor(q)); } catch { /* no preview */ }
+  return q;
+}
+
+// What to play after the answer is checked, from the question's own check data (null = nothing fits).
+// Spelling doesn't matter for sound, so a note answer is used as the lower/upper note where needed.
+function playFor(q) {
+  const checks = q.params?.check ? [q.params.check] : Object.values(q.params?.parts || {});
+  for (const c of checks) {
+    const p = playOfCheck(c, q);
+    if (p) return p;
+  }
+  return null;
+}
+
+function playOfCheck(c, q) {
+  const parse = (x) => parseNote(String(x ?? '').trim());
+  const sc = (tonic, mode) => playScale(scaleByPattern(parse(tonic), mode));
+  const ans = typeof q.answer === 'string' ? q.answer : null;
+  switch (c.kind) {
+    case 'enharmonic': return playNote(parse(c.of));
+    case 'semis-from': {
+      const lower = c.up ? parse(c.from) : parse(ans);
+      return lower ? playInterval(lower, c.n) : null;
+    }
+    case 'semis-between': return playInterval(parse(c.from), keyboardDistance(parse(c.from), parse(c.to)) || 12);
+    case 'letter-spell': return playInterval(parse(c.from), c.n);
+    case 'interval-above': return playInterval(parse(c.root), intervalSize(c.num, c.quality));
+    case 'interval-size': return playInterval(note(0), intervalSize(c.num, c.quality));
+    case 'interval-name': {
+      const lo = parse(c.lower), up = parse(c.upper);
+      let steps = (up.l - lo.l + 7) % 7;
+      if (steps === 0 && sameNote(lo, up)) steps = 7;
+      const n = walkSemis(lo, steps, up);
+      return n >= 0 ? playInterval(lo, n) : null;
+    }
+    case 'interval-below': {
+      const lower = parse(ans);
+      return lower ? playInterval(lower, intervalSize(c.num, c.quality)) : null;
+    }
+    case 'compound-above': return playInterval(parse(c.root), intervalSize(c.num - 7, c.quality) + 12);
+    case 'compound-size': return playInterval(note(0), intervalSize(c.num - 7, c.quality) + 12);
+    case 'not-in': case 'scale-list': case 'degree': case 'scale-accidentals': case 'scale-interval':
+    case 'sig-count': case 'sig-order': case 'sig-words':
+      return sc(c.tonic, c.mode || 'major');
+    case 'key-with': return sc(fmt(c.minor ? minorTonic(c.k) : majorTonic(c.k)), c.minor ? 'natural' : 'major');
+    case 'key-of-degree': {
+      const m = /^(\S+) (major|natural minor|harmonic minor)$/.exec(ans || '');
+      return m ? sc(m[1], m[2] === 'major' ? 'major' : m[2].startsWith('harmonic') ? 'harmonic' : 'natural') : null;
+    }
+    default: return null;
+  }
+}
+
+function generateCore({ subtopic, difficulty, rng }) {
   if (difficulty === 'expert') return genExpert(subtopic, rng);
   if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {

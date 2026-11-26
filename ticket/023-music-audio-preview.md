@@ -1,6 +1,6 @@
 # 023 — Audio previews for notes and chords
 
-**Status:** resolved (2026-11-26): Play after answering (to build)
+**Status:** resolved (2026-11-26): Play after answering, built
 **Raised:** 2026-11-26
 
 ## Today

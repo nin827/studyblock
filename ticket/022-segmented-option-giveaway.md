@@ -1,6 +1,6 @@
 # 022 — Segmented choices can give the answer away
 
-**Status:** resolved (2026-11-26): option 1, mixed distances (to build)
+**Status:** resolved (2026-11-26): option 1, mixed distances, built
 **Raised:** 2026-11-26
 
 ## The problem
@@ -29,3 +29,6 @@ Option 1, **mixed distances**:
 - With 2 columns, a wrong option may differ in both columns; the spec's "1 to n−1 columns" rule is relaxed for n = 2.
 - The engine checks this in `segChoiceSpec` (warning once per module) and generators redraw until it holds; questions change per seed where they didn't comply.
 - Also avoid the coherence giveaway: the answer must not be the only option whose columns make sense together.
+
+## Built (2026-11-26)
+Engine check `segMixIssues` (warn once per module). All 42 modules with segmented options pass at 300 seeds per cell (156 cells, 0 failing). Where only 3–4 sensible combinations exist (networking gateway, vectors, Data Analyst binary pairs), one or two wrong options read as unlikely combinations, but the answer is never the only sensible one. A cruder "sum of value counts" heuristic still finds the answer 1–24% of the time in some 3-column Marketing/Management cells.

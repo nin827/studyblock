@@ -4,6 +4,8 @@ import { codeLangPickerHtml, bindCodeLangPicker } from './module.js';
 import { loadModule } from '../lib/source.js';
 import * as folder from '../lib/folder.js';
 import * as pwa from '../lib/pwa.js';
+import { soundOn, setSoundOn } from './playbtn.js';
+import { canPlay, stopPlayback } from '../lib/audio.js';
 import { icon, icons, esc, fmtDate } from './ui.js';
 
 export function applyTheme(theme) {
@@ -97,6 +99,14 @@ export async function render(root, params = {}, ctx = {}) {
       })}
     </section>
 
+    <section class="card" id="sound-card"${canPlay() ? '' : ' hidden'}>
+      <h2>${icon('volume-2')} Sound</h2>
+      <label class="check-row"><input type="checkbox" id="sound-toggle" ${soundOn() ? 'checked' : ''}>
+        <span>Play button on music questions</span></label>
+      <p class="muted">After you check an answer, Music Theory questions show a Play button that sounds the note, interval, chord or scale.
+        Sounds are made in your browser, so they work offline. Turn this off to hide the buttons.</p>
+    </section>
+
     <section class="card" id="install-card" hidden></section>
 
     <section class="card">
@@ -134,6 +144,11 @@ export async function render(root, params = {}, ctx = {}) {
   }));
 
   bindCodeLangPicker(root);
+
+  root.querySelector('#sound-toggle')?.addEventListener('change', (e) => {
+    setSoundOn(e.target.checked);
+    if (!e.target.checked) stopPlayback();
+  });
 
   const updateCount = () => {
     const n = getAttempts().length;
