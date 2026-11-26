@@ -12,7 +12,8 @@
 - **Structure:** a role is a hand-made weighted mix of subjects and topics. A subrole is a narrower mix under its role, and it shares the role's Expert+ generator with its own emphasis.
   - **Business Analyst:** Financial Analyst, Marketing Analyst.
   - **Software Engineer:** Backend Engineer, Fintech Engineer.
-  - **Mathematician:** Statistician, Math Teacher.
+  - **Mathematician:** Statistician, Actuary.
+- **No "X Teacher" subroles** (user): teaching is a general role. A separate Teacher role, with education-specific questions such as marking or spotting errors across subjects, may come later. Specific roles come first: Mathematician, Chemist, Physicist and so on.
 - **Difficulty shift:**
   - Role Easy draws subject Medium, Medium draws Hard, and Hard draws Expert (or the closest level the subject has).
   - Role Expert is **Expert+**: only the role's own multi-subject questions.
