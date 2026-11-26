@@ -78,3 +78,45 @@ Example: the spec is "1 + 2 + … + n" and the loop line is `for i in range(1, n
 
 **Blocks:** the blocks include pieces of the buggy line, so don't just rebuild what is already there.
 
+## Language features
+
+1. Read the question first: is it asking what is printed, which line fails to compile, or for a corrected line?
+2. For "what is printed", decide for every variable whether it holds its **own value** or **shares** an object with another name. Then trace line by line.
+3. For "which line fails", check each suspicious line against the language rule it might break. Most snippets contain look-alike lines that are fine; compare them.
+4. For "type the line", change only what the rule needs and keep the rest of the line as it is.
+
+**Python**
+
+- `/` always gives a float; `//` rounds **down** (so `-7 // 2` is -4); `%` takes the sign of the divisor (`-7 % 2` is 1); `int(x)` cuts towards zero.
+- `b = a` shares one list. `a[:]`, `list(a)` and `a.copy()` make a new one. `append`, `xs[i] = …` and `+=` change a list in place; `xs = xs + [v]` builds a new list.
+- `[[0] * 3] * 2` repeats **one** inner list; use a comprehension for separate rows.
+- A default like `bag=[]` is created once, when `def` runs, and shared by every call that leaves it out.
+- `==` compares contents, `is` compares identity. Don't use `is` on numbers or strings.
+
+**C#**
+
+- `int / int` cuts towards zero, even when stored in a `double`. Cast one side first: `(double)a / b`.
+- `string` methods return a new string; the old one never changes.
+- A `struct` is copied by assignment and by a normal parameter; a `class` is shared. `ref` passes the caller's variable itself. A `List` indexer returns a copy of a struct; an array element doesn't.
+- Arithmetic on `int` variables wraps around by default; `checked` throws `OverflowException`; a constant expression that overflows doesn't compile.
+
+**C++**
+
+- `int x` is a copy, `int& x` is the caller's variable, `int* x` points at it (`*x` reaches it, `&v` passes it).
+- A reference is bound once: `r = b;` copies b's value into what `r` refers to.
+- `/` and `%` truncate towards zero, so `-7 / 2` is -3 and `-7 % 2` is -1.
+- Undefined behaviour compiles but has no defined result: an index past the end, reading an uninitialised variable, signed `int` overflow, division by zero, and using a pointer to a variable whose block has ended. Unsigned overflow is defined: it wraps.
+
+**GDScript**
+
+- `int / int` is whole-number division (towards zero); use `float(a) / b` or `a / 2.0`. `posmod` is always 0 or more.
+- Arrays and Dictionaries are shared by reference, including when passed to a function; `int`s are copied. `duplicate()` copies the outer container only; `duplicate(true)` copies nested ones too.
+- `var x: int = …` and `var x := …` fix the type; plain `var x = …` doesn't. An `int` may go into a `float` variable.
+- `range(a, b, s)` stops before b; `for i in 5` counts 0 to 4.
+
+**Rust**
+
+- `let b = a;` or passing `a` by value **moves** a `String` or `Vec`; using `a` afterwards is error E0382. Integers are `Copy`. `.clone()` makes a real copy; `&a` borrows.
+- Many `&` borrows, or one `&mut`, at a time. A borrow lasts until its **last use**, not until the end of the block.
+- Changing a variable needs `let mut`. `let x = x + 1;` makes a new, shadowing variable instead.
+- In a debug build, `u8` overflow panics ("attempt to add with overflow"); `wrapping_`, `saturating_` and `checked_` methods say what to do instead.

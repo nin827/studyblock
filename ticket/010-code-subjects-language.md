@@ -1,6 +1,6 @@
 # 010 — Code subjects: languages and answer style
 
-**Status:** resolved (2026-11-26): to build
+**Status:** resolved (2026-11-26): built (Language features subtopic in Code Reviewing)
 **Raised:** 2026-11-24
 
 Code Writing and Code Reviewing show short code snippets in the language you pick: **Python, C#, C++, GDScript or Rust**. Each question is built once in a language-neutral form and shown in your language, so the same question works in all five. You choose on the subject page or in Settings; Python is the default.

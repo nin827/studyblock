@@ -9,9 +9,14 @@
 // verify() rebuilds the programs from `meta`, re-renders them in `question.lang`, runs them with the
 // codelang interpreter and compares against plain-JS reference functions (tpl.ref / predictRef),
 // so every answer is recomputed independently of how generate() produced it.
+//
+// Exception: the "Language features" subtopic (langfeatures.js) has hand-written templates per
+// language, so its questions exist only in the current language.
 
 import { S, E, program, render, run, lineAt, fence, ident, rangeText, renderExpr,
   blocksFor, serialiseBlocks, spacingVariants, textKey, decoyTokens } from '../../js/lib/codelang.js';
+// "Language features" (questions that exist only in one language) live in their own file.
+import { generateLangFeature, verifyLangFeature } from './langfeatures.js';
 
 const V = E.var, B = E.bin, IX = E.index, LEN = E.len;
 const MAX_STEPS = 3000;
@@ -1668,6 +1673,7 @@ function verifyRewrite(q, m, answer) {
 const SUBS = ['predict-output', 'find-the-bug', 'fix-the-bug', 'bug-types', 'rewrite-line'];
 
 export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
+  if (subtopic === 'language-features') return generateLangFeature({ difficulty, rng, lang });
   if (!SUBS.includes(subtopic)) throw new Error(`Unknown subtopic: ${subtopic}`);
   if (subtopic === 'rewrite-line') {
     if (!['easy', 'medium', 'hard', 'expert'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
@@ -1761,6 +1767,7 @@ export function verify(question, answer) {
     if (m.mode === 'bug') return verifyBug(question, m, answer);
     if (m.mode === 'bug2' || m.mode === 'fix2') return verifyBugX(question, m, answer);
     if (m.mode === 'rewrite') return verifyRewrite(question, m, answer);
+    if (m.mode === 'lang') return verifyLangFeature(question, answer);
     return false;
   } catch {
     return false;

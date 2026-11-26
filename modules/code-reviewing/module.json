@@ -14,6 +14,7 @@
     { "id": "find-the-bug", "title": "Find the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "fix-the-bug", "title": "Fix the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "bug-types", "title": "Bug types", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "rewrite-line", "title": "Rewrite the buggy line", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "rewrite-line", "title": "Rewrite the buggy line", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "language-features", "title": "Language features", "difficulties": ["medium", "hard", "expert"] }
   ]
 }

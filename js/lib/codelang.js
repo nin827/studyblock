@@ -723,7 +723,8 @@ export function run(prog, { entry, args = [], maxSteps = 10000 } = {}) {
 // value "(", open "" and close ")". `,` `;` and a `:` with no space before it stick to the block
 // before them ("1," in `range(1, n + 1)`); only a call with a slot block before a comma
 // (`f(xs[0], y)`) uses sep ", " instead, which needs every argument to be one block. A C++ `(int)`
-// cast, a C# `!` and a Rust `&` stick to the following block. Lines that do not fit this shape
+// or `(double)` cast, a C# `!` and a Rust `&` stick to the following block; a C++ reference
+// `int& x` keeps the `&` on the type block (`int&`). Lines that do not fit this shape
 // (a comma after a slot inside mixed arguments, nesting deeper than 3) give null, so a generator
 // can redraw.
 //   lineTree(text)                → [item…] | null   item: { v } or { v, open, close, sep, kids:[item…] }
@@ -738,7 +739,7 @@ export function run(prog, { entry, args = [], maxSteps = 10000 } = {}) {
 //        (all subsets for up to 4 operators, else spaced + fully compact + one-at-a-time), spaced first.
 
 const LX_OPS = ['..=', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '//', '->', '<', '>', '+', '-', '*', '/', '%', '='];
-const LX_WORD = /^(?:\(int\))?[&!]?(?:-?[A-Za-z0-9_]+(?:(?:\.\.=?|\.|::)[A-Za-z0-9_]+)*(?:\(\))?(?:\+\+|--)?|"[^"]*"|'[^']*')/;
+const LX_WORD = /^(?:\((?:int|double)\))?[&!]?(?:-?[A-Za-z0-9_]+(?:(?:\.\.=?|\.|::)[A-Za-z0-9_]+)*(?:\(\))?(?:\+\+|--)?(?:&(?= ))?|"[^"]*"|'[^']*')/;
 const KW_SLOT = new Set(['for', 'if', 'while', 'foreach']);
 
 function lexLine(text) {
