@@ -4,6 +4,7 @@
   "description": "Element symbols, atomic numbers and the families of the periodic table.",
   "icon": "atom",
   "type": "csv",
+  "fuzzy": false,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "symbols", "title": "Symbols", "difficulties": ["easy", "medium", "hard"] },

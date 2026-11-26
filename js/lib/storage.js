@@ -154,9 +154,28 @@ export function cleanParts(list) {
     if (!isObj(p) || !isStr(p.id) || !PART_ID_RE.test(p.id) || p.id.length > 40 || ids.has(p.id)) continue;
     if (typeof p.correct !== 'boolean') continue;
     ids.add(p.id);
-    out.push({ id: p.id, label: isStr(p.label) ? p.label.slice(0, PART_LABEL_MAX) : p.id, correct: p.correct });
+    const close = p.correct ? null : cleanClose(p.close);
+    out.push({ id: p.id, label: isStr(p.label) ? p.label.slice(0, PART_LABEL_MAX) : p.id, correct: p.correct, ...(close ? { close } : {}) });
   }
   return out.length ? out : null;
+}
+
+// Close-answer credit on a stored question (`fuzzy`) or part (`close`):
+// { kind: "text", typos, factor } | { kind: "number", relErr, factor }, factor 0-1. Else null.
+export function cleanClose(v) {
+  if (!isObj(v) || (v.kind !== 'text' && v.kind !== 'number')) return null;
+  if (!isNum(v.factor) || v.factor < 0 || v.factor > 1) return null;
+  const out = { kind: v.kind, factor: v.factor };
+  if (v.kind === 'text' && Number.isInteger(v.typos) && v.typos >= 0 && v.typos <= 50) out.typos = v.typos;
+  if (v.kind === 'number' && isNum(v.relErr) && v.relErr >= 0) out.relErr = v.relErr;
+  return out;
+}
+
+// Answer mode of a stored question: "blocks" (dual Type | Blocks question answered with blocks)
+// with its multiplier 0-1. Returns the fields to keep ({} when absent or invalid).
+export function cleanMode(q) {
+  if (!isObj(q) || q.mode !== 'blocks') return {};
+  return { mode: 'blocks', ...(isNum(q.multiplier) && q.multiplier >= 0 && q.multiplier <= 1 ? { multiplier: q.multiplier } : {}) };
 }
 
 // A stored answer: number, string, or a multi-part object; anything else becomes a string.
@@ -642,6 +661,9 @@ function importObject(incoming, mode) {
       ...(isNum(q.credit) ? { credit: Math.min(1, Math.max(0, q.credit)) } : {}),
       // Optional per-part results of a multi-part question.
       ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
+      // Optional answer mode (Blocks + multiplier) and close-answer credit; validated, 0-1.
+      ...cleanMode(q),
+      ...(!q.correct && cleanClose(q.fuzzy) ? { fuzzy: cleanClose(q.fuzzy) } : {}),
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),
       // Optional per-question attribution (mixed quizzes); older data has none.
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),

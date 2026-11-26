@@ -881,14 +881,22 @@ ${opsText(kind, ops)}
     const other = runOps(kind === "stack" ? "queue" : "stack", ops).final;
     const before = states[states.length - 2];
     const cands = [other, final.slice().reverse(), before, kind === "stack" ? other.slice().reverse() : null];
+    // listChoices still runs (it draws from the rng), so every seed keeps its operations and
+    // answer; the contents are now built from blocks: one block per value added, in the order
+    // added, and the removed values are the distractors. Values are distinct, so the answer has
+    // exactly one arrangement.
     const ch = listChoices(final, cands, rng);
     if (ch) {
+      const added = ops.filter((o) => o.op === "add").map((o) => String(o.v));
+      const answer = final.join(", ");
       return {
-        prompt: `${intro}What does the ${kind} hold at the end, listed from ${ORDER[kind]}?`,
-        answer: ch.answer,
-        answerType: "choice",
-        choices: ch.choices,
-        explanation: `${DS_RULE[kind]} ${legend}\n\n${lines.join("\n")}\n\nAt the end it holds **${ch.answer}**.`,
+        prompt: `${intro}What does the ${kind} hold at the end? Build it from the blocks, listed from ${ORDER[kind]}${kind === "stack" ? " (the top last)" : " (the front first)"}. Each block is a value that was ${kind === "stack" ? "pushed" : "enqueued"}, in that order; not every block is used.`,
+        answer,
+        answerType: "tiles",
+        tiles: added,
+        joiner: ", ",
+        useAll: added.length === final.length,
+        explanation: `${DS_RULE[kind]} ${legend}\n\n${lines.join("\n")}\n\nAt the end it holds **${fmt(final)}**, so the blocks are **${answer}**.`,
         params: { kind: "ds-final", ds: kind, ops },
         hints: [DS_RULE[kind], midHint, "Carry on with the remaining operations, writing the contents down after each one."],
       };
@@ -1210,8 +1218,12 @@ export function verify(question, answer) {
       return !!r && r.final.length > 0 && numEq(answer, p.ds === "stack" ? r.final[r.final.length - 1] : r.final[0]);
     }
     case "ds-final": {
+      // Blocks: one per value added (distinct, in the order added); the answer lists what is left.
       const r = vRun(p.ds, p.ops);
-      return !!r && choiceOk(question, answer, fmt(r.final));
+      if (!r || !r.final.length || !Array.isArray(question.tiles)) return false;
+      const added = p.ops.filter((o) => o.op === "add").map((o) => String(o.v));
+      if (!isDistinct(added) || question.tiles.map(String).join("|") !== added.join("|")) return false;
+      return String(answer).split(",").map((x) => x.trim()).join(", ") === r.final.join(", ") && String(answer).trim() !== "";
     }
     case "ds-sum": {
       const r = vRun(p.ds, p.ops);

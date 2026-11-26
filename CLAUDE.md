@@ -203,17 +203,47 @@ The engine samples rows with the seeded rng and shuffles choices.
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
 - text: `−` read as `-`, trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
 - choice: exact match of the chosen string.
-- tiles: the placed tiles' values joined by `joiner`, then the text rules.
+- tiles: the serialised blocks, then the text rules.
+- `accepts`, close-answer credit and the Blocks multiplier are described below.
 
 ### Block answers (`answerType: "tiles"`)
 
-The learner builds the answer from blocks (ticket 016). Generator-only, top-level only (not a multi-part part type).
+The learner builds the answer from blocks (tickets 016, 017). Generator-only; not a multi-part part type.
 ```js
 { answerType: "tiles", tiles: [{ value: "A", label: "Moon landing (1969)" }, "B"], joiner: ", ", useAll: true, answer: "B, A" }
 ```
-- **Contract:** 2–24 tiles; a string is shorthand for `{ value: s, label: s }`. `joiner` is a string of at most 5 characters (default `" "`). `useAll: true` means every tile must be placed (no distractors); otherwise distractors are allowed and Check needs at least one placed tile. The engine rejects (and regenerates) a question whose `answer` can't be built from distinct tiles joined by `joiner`.
-- **UI:** a "Your answer" row above a "Blocks" bank. Tap places or returns a block; Pointer Events drag places, reorders and returns (6px threshold, `touch-action: none` on tiles only). Keys: Enter/Space toggle, arrows move focus, Alt/Shift+←/→ move a placed block; placements are announced politely. Reset returns all. A "Filter blocks" box appears when the bank holds more than 10. Number keys don't answer, and the calculator's Use is disabled. A wrong answer shows the correct blocks. Guided: a wrong try stays editable; Show solution lays out the answer.
-- **Storage:** `userAnswer` is the joined string, so review and History need nothing special.
+- **Contract:** 2–24 tiles; a string is shorthand for `{ value: s, label: s }`; duplicate values are allowed. `joiner` is a string of at most 5 characters (default `" "`). `useAll: true` means every tile must be placed (no distractors); otherwise Check needs at least one placed tile. Without a `solution`, the engine rejects (and regenerates) a question whose `answer` can't be built from distinct tiles joined by `joiner`.
+- **Nested blocks:** a tile may have `slot: { open, close, sep }` (defaults `(`, `)`, `", "`; open/close ≤ 3 chars, may be empty or a space). A slot tile serialises to `value + open + kids joined by sep + close`. Any slot tile requires `solution`, a tree of tile indices (`[0, { t: 1, kids: [2] }, 3]`). Each index is used once, kids only under slot tiles, at most 3 slots deep, and the tree must serialise to `answer` (`cleanSolution`/`serialiseTree` in `engine.js`). Show solution and the "correct blocks" row use it.
+- **Distractors** scale with difficulty: easy 0–1, medium 2–3, hard 4–6, expert 6–10.
+- **UI:** a "Your answer" row above a "Blocks" bank.
+  - Tapping places a bank block into the *active target*: the answer row, or the slot of the placed slot tile last tapped (accent outline). Tapping an active slot tile again returns it with its kids.
+  - Pointer Events drag places, reorders and returns blocks, including into nested slots (6px threshold, `touch-action: none` on tiles only).
+  - Keys: Enter/Space toggle; arrows move focus; Alt/Shift+←/→ move a placed block; Delete returns it; Esc makes the answer row active. Placements are announced politely.
+  - Reset returns all blocks. A "Filter blocks" box appears when the bank holds more than 10. Number keys don't answer, and the calculator's Use is disabled. A wrong answer shows the correct blocks. In Guided mode a wrong try stays editable, and Show solution lays out the tree.
+- **Storage:** `userAnswer` is the serialised string.
+
+### Typed or Blocks (dual questions)
+
+A typed **text** question may also give `blocks: { tiles, joiner, useAll, solution }`, whose solution must serialise to `answer`.
+- **Switch:** the quiz shows a **Type | Blocks** switch (`aria-pressed`), defaulting to Type. The choice is remembered per module in sessionStorage `studyblock:answerMode`, and switching keeps the work done in the other mode.
+- **Multiplier:** `module.json` `"tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 }` (0–1; missing level = 1). It's set on SQL Queries, Code Writing and Code Reviewing. A Blocks answer earns credit × multiplier and stores `mode: "blocks"` and `multiplier`. A note reads "Blocks: up to 85% credit at Hard", and feedback reads "Correct · Blocks ×0.85". Pure tiles questions never get a multiplier.
+- **`accepts`** (any text question, ≤ 20): extra strings that also count as correct, by the text rules. Prompts pin the form (clause order, column order) so the list stays small.
+
+### Close answers (partial credit)
+
+A near miss earns part credit; `correct` stays false. Applies to single questions and to each multi-part part (whose credit is then averaged).
+- **Text** (Damerau-Levenshtein after the text rules; an adjacent swap is 1 typo): 1–3 characters exact only; 4–7 chars, 1 typo → 0.75; 8–14 → 0.85; 15+ → 0.90; 2 or more typos → 0. Answers containing a digit get no typo credit.
+- **Numbers:** only for a non-integer, non-zero answer with the sign right, in a module with the calculator on. Relative error beyond tolerance: ≤ 0.1% → 0.90, ≤ 1% → 0.75, ≤ 2% → 0.50.
+- **Never applies to:** choice, tiles, Blocks mode, a question with `fuzzy: false`, or a module with `"fuzzy": false`. Modules with `"fuzzy": false`: number-bases, data-representation, networking, number-theory, elements, chemistry, boolean-logic, rhythm, grammar, vocabulary, word-roots, sql-queries, algorithms, code-writing, code-reviewing, chords, intervals-scales.
+- **Lookalikes:** an exact match for another real answer gets 0. That means another answer in the same CSV subtopic, or anything in the question's `nearMisses`.
+- **Display and storage:** "Close · 85% credit" (`circle-dot`, warn colours). Stored as `fuzzy: { kind, typos | relErr, factor }`, or `parts[i].close` per part. In Guided mode it reads "Almost", and a retry is allowed.
+
+### Run (test the output)
+
+- **Module export:** `run(question, answerString) → { columns, rows } | { error }`. It must be pure and synchronous, use no eval, never throw, and return ≤ 200 rows. A question opts in with `runnable: true`, and keeps the data `run` needs in `meta`, which is in memory only and not stored.
+- **Engine:** `runAnswer(q, answer)` calls it.
+- **Quiz:** a **Run** button (Ctrl/Cmd+Enter) works in Type and Blocks modes. It shows an escaped Output table (20 rows, then "n more") or the error. It's unlimited, never scored, and allowed in Guided mode. Feedback and review also show the expected output.
+- **Used by:** SQL Queries *Write the query*. Its hand-written SQL engine covers only the grammar the subtopic teaches.
 
 ### Multi-part questions (`answerType: "multi"`)
 
@@ -503,7 +533,9 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
 - **Trimmed subjects (ticket 015):** Balancing & Progression, Pixels & Colour, Collision, Vital Signs and Health Statistics are archived. Cryptography Basics was merged into Number Theory (Ciphers, Keys & RSA, worked by hand), and Anatomy into Biology Basics (Skeleton, Organs and body systems).
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
-- **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **Music Theory:** written notation, no audio or staff images. Single spelled notes, intervals and chord names are choice questions (text checks can't equate `#` with ♯). Spelling a whole chord or scale is built from note blocks (from the root/tonic up, wrong spellings as distractors); multi-part questions keep choice parts. `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **SQL Queries:** *ORDER BY and LIMIT* row-order questions are built from blocks (same seeds). *Write the query* is typed or built from blocks (`SELECT …`, aggregate and `IN (…)` slot tiles), with `accepts`, Run, and the Blocks multiplier.
+- **Algorithms:** final stack or queue contents are built from blocks (same seeds).
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.

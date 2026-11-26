@@ -1,6 +1,6 @@
 # SQL Queries
 
-SQL is how programs ask databases questions. Each question here shows one or two small tables and a query; your job is to work out what the database would answer, by hand.
+SQL is how programs ask databases questions. Most questions here show one or two small tables and a query; your job is to work out what the database would answer, by hand. In **Write the query** it's the other way round: you get a task and write the query yourself.
 
 ## Answer formats
 
@@ -9,7 +9,8 @@ SQL is how programs ask databases questions. Each question here shows one or two
 | How many rows | a whole number |
 | A single value | the number (each question says if it needs rounding) or the text, like `Luna` |
 | Which rows | pick the option; names are listed alphabetically unless the query has ORDER BY |
-| Rows in order | pick the option that lists them in result order |
+| Rows in order | build the list from the blocks (one per table row), first result row first |
+| A query (Write the query) | type it on one line, or switch to **Blocks** and build it; Blocks earn up to 85% credit at Hard and 70% at Expert. Press **Run** to test it on the table first |
 
 ## Key facts
 
@@ -27,3 +28,14 @@ SQL is how programs ask databases questions. Each question here shows one or two
 | Medium | AND, OR and BETWEEN, top-n lists, `SUM`, `AVG`, `COUNT(DISTINCT …)`, values per group |
 | Hard | Brackets and NOT, OFFSET and two sort keys, subqueries, HAVING, joins, questions with several parts |
 | Expert | Working backwards (a missing number in the query or the table, the ORDER BY that gives an order), AND before OR without brackets, pages with LIMIT and OFFSET, and queries that combine JOIN, WHERE, subqueries, GROUP BY and HAVING |
+
+## Write the query
+
+Each task says which columns to show, in which order, and what to filter, sort or count. The prompt pins the exact form, so the answer is checked as text: keywords in capitals, columns in the order given, text in single quotes (`'Dog'`), one space each side of `=`, `>` and friends, and no spaces inside brackets (`COUNT(*)`). A semicolon at the end is optional, and genuinely equivalent forms (such as `5 < age` for `age > 5`, or leaving out `ASC`) count too.
+
+| Level | You write |
+| --- | --- |
+| Easy | `SELECT` columns (or `*`) `FROM` a table |
+| Medium | plus `WHERE` with one or two conditions |
+| Hard | `ORDER BY` with `ASC`/`DESC` and `LIMIT`, or one aggregate: `COUNT(*)`, `SUM`, `AVG`, `MAX`, `MIN` |
+| Expert | `GROUP BY` with `HAVING`, `IN (…)`, or an `INNER JOIN … ON` with table names on every column |

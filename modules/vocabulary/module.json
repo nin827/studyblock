@@ -4,6 +4,7 @@
   "description": "Word meanings, synonyms and antonyms, commonly confused words and words in context.",
   "icon": "book-a",
   "type": "csv",
+  "fuzzy": false,
   "questionsPerQuiz": 4,
   "calculator": false,
   "subtopics": [

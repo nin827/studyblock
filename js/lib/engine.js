@@ -135,7 +135,49 @@ export async function loadModule(id) {
     calculator: m.calculator !== false,
     // Code languages the module can show its snippets in ([] = not language-aware).
     languages: parseLanguages(m, id),
+    // Blocks-mode credit factor per difficulty for dual Type | Blocks questions (missing = 1).
+    tilesMultiplier: parseTilesMultiplier(m, id),
+    // Close-answer partial credit; a module opts out with "fuzzy": false.
+    fuzzy: m.fuzzy !== false,
   };
+}
+
+// module.json "tilesMultiplier": { easy, medium, hard, expert } numbers 0-1; a missing or invalid
+// level counts as 1 (invalid ones warn once per module).
+const multWarned = new Set();
+function parseTilesMultiplier(m, id) {
+  const out = { easy: 1, medium: 1, hard: 1, expert: 1 };
+  const src = m.tilesMultiplier;
+  if (src === undefined || src === null) return out;
+  let bad = typeof src !== 'object' || Array.isArray(src);
+  if (!bad) {
+    for (const [k, v] of Object.entries(src)) {
+      if (!Object.prototype.hasOwnProperty.call(out, k) || typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) { bad = true; continue; }
+      out[k] = v;
+    }
+  }
+  if (bad && !multWarned.has(id)) {
+    multWarned.add(id);
+    console.warn(`StudyBlock: module ${id}: "tilesMultiplier" must map easy/medium/hard/expert to numbers 0-1; ignoring bad entries`);
+  }
+  return out;
+}
+
+// Blocks-mode multiplier of a loaded module at one difficulty (1 when unset).
+export function tilesMultiplierOf(mod, difficulty) {
+  const v = mod?.tilesMultiplier?.[difficulty];
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : 1;
+}
+
+// Per-question module facts the quiz and the grader need (never stored in attempts):
+// `srcModule` (the generator's run() and the per-module answer mode), `calculator` (number close
+// answers need it), `fuzzy: false` when the module opts out, and the Blocks multiplier.
+function decorate(q, mod, difficulty) {
+  if (!q) return q;
+  const out = { ...q, srcModule: mod.id, calculator: mod.calculator !== false };
+  if (mod.fuzzy === false) out.fuzzy = false;
+  if (out.blocks) out.blocks = { ...out.blocks, multiplier: tilesMultiplierOf(mod, difficulty) };
+  return out;
 }
 
 // ---- difficulties ----
@@ -263,19 +305,28 @@ function csvPool(rows, subtopic, difficulty) {
     (!(r.difficulty || '').trim() || r.difficulty.trim() === difficulty));
 }
 
-function csvQuestion(pool, seed) {
+// Every answer in one subtopic of a CSV module (any difficulty): the lookalike list for close answers.
+function csvAnswers(rows, subtopic) {
+  return [...new Set(rows.filter(r => (r.subtopic || '').trim() === subtopic).map(r => (r.answer ?? '').trim()).filter(Boolean))];
+}
+
+// `near` (optional): the subtopic's answers; the other ones become the question's `nearMisses`.
+function csvQuestion(pool, seed, near = null) {
   const rng = createRng(seed);
   const row = rng.pick(pool);
   const choicesRaw = (row.choices || '').trim();
   const choices = choicesRaw ? rng.shuffle(choicesRaw.split('|').map(s => s.trim()).filter(Boolean)) : undefined;
+  const answer = (row.answer ?? '').trim();
+  const nearMisses = !choices && near ? near.filter(a => normText(a) !== normText(answer)) : [];
   return {
     seed,
     prompt: row.prompt ?? '',
-    answer: (row.answer ?? '').trim(),
+    answer,
     answerType: choices ? 'choice' : 'text',
     choices,
     tolerance: undefined,
     explanation: row.explanation || '',
+    ...(nearMisses.length ? { nearMisses } : {}),
   };
 }
 
@@ -297,7 +348,28 @@ function normalizePart(p, warnKey) {
     choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
     tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
     ...(hint ? { hint } : {}),
+    ...closeExtras(p, answerType),
   };
+}
+
+// ---- accepted alternatives, lookalikes and the close-answer opt-out ----
+export const ACCEPTS_MAX = 20;
+const NEAR_MISSES_MAX = 50;
+function cleanStrList(raw, max) {
+  if (!Array.isArray(raw)) return undefined;
+  const out = [];
+  for (const v of raw) {
+    if (out.length >= max) break;
+    const t = typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v)) ? String(v).trim() : '';
+    if (t && t.length <= 300) out.push(t);
+  }
+  return out.length ? out : undefined;
+}
+// `accepts` (text / tiles answers), `nearMisses` (text / number) and `fuzzy: false`, when given.
+function closeExtras(q, answerType) {
+  const accepts = answerType === 'text' || answerType === 'tiles' ? cleanStrList(q?.accepts, ACCEPTS_MAX) : undefined;
+  const nearMisses = answerType === 'text' || answerType === 'number' ? cleanStrList(q?.nearMisses, NEAR_MISSES_MAX) : undefined;
+  return { ...(accepts ? { accepts } : {}), ...(nearMisses ? { nearMisses } : {}), ...(q?.fuzzy === false ? { fuzzy: false } : {}) };
 }
 
 // Shape check for a raw multi-part question: 2-4 parts, unique ids matching ID_RE, a label,
@@ -402,12 +474,98 @@ export function sanitizeTiles(q) {
     const lab = raw.label === undefined || raw.label === null ? value : raw.label;
     const label = typeof lab === 'string' || (typeof lab === 'number' && Number.isFinite(lab)) ? String(lab).trim() : '';
     if (!value || !label || value.length > TILE_VALUE_MAX || label.length > TILE_LABEL_MAX) continue;
-    tiles.push({ value, label });
+    const slot = cleanSlot(raw.slot);
+    if (slot === null) return null; // a malformed slot makes the whole question invalid
+    tiles.push(slot ? { value, label, slot } : { value, label });
   }
   if (tiles.length < TILES_MIN || tiles.length > TILES_MAX) return null;
   if (q.joiner !== undefined && (typeof q.joiner !== 'string' || q.joiner.length > TILE_JOINER_MAX)) return null;
   if (q.useAll !== undefined && typeof q.useAll !== 'boolean') return null;
   return { tiles, joiner: q.joiner === undefined ? ' ' : q.joiner, useAll: q.useAll === true };
+}
+
+// ---- nested blocks: a tile with `slot: { open, close, sep }` holds other tiles ----
+export const SLOT_DEPTH_MAX = 3;  // slots inside slots, at most 3 deep
+const SLOT_EDGE_MAX = 3;
+const SLOT_SEP_MAX = 5;
+
+// { open, close, sep } (defaults "(", ")", ", "), undefined for no slot, null when malformed.
+function cleanSlot(s) {
+  if (s === undefined || s === null || s === false) return undefined;
+  if (typeof s !== 'object' || Array.isArray(s)) return null;
+  const open = s.open === undefined ? '(' : s.open;
+  const close = s.close === undefined ? ')' : s.close;
+  const sep = s.sep === undefined ? ', ' : s.sep;
+  if (typeof open !== 'string' || typeof close !== 'string' || typeof sep !== 'string') return null;
+  if (open.length > SLOT_EDGE_MAX || close.length > SLOT_EDGE_MAX || sep.length > SLOT_SEP_MAX) return null;
+  return { open, close, sep };
+}
+
+/*
+ * A solution tree of tile indices: [0, { t: 1, kids: [2] }, 3]. Returns [{ t, kids? }] (kids is set,
+ * possibly empty, exactly for slot tiles) or null when an index is invalid or reused, kids sit under
+ * a tile without a slot, or slots nest more than SLOT_DEPTH_MAX deep.
+ */
+export function cleanSolution(raw, tiles) {
+  if (!Array.isArray(raw) || !Array.isArray(tiles)) return null;
+  const used = new Set();
+  const walk = (list, depth) => {
+    if (!Array.isArray(list)) return null;
+    const out = [];
+    for (const item of list) {
+      const obj = item && typeof item === 'object' && !Array.isArray(item);
+      const t = obj ? item.t : item;
+      if (!Number.isInteger(t) || t < 0 || t >= tiles.length || used.has(t)) return null;
+      used.add(t);
+      const slot = tiles[t].slot;
+      if (obj && item.kids !== undefined && !slot) return null;
+      if (!slot) { out.push({ t }); continue; }
+      if (depth + 1 > SLOT_DEPTH_MAX && obj && Array.isArray(item.kids) && item.kids.length) return null;
+      const kids = obj && item.kids !== undefined ? walk(item.kids, depth + 1) : [];
+      if (!kids) return null;
+      out.push({ t, kids });
+    }
+    return out;
+  };
+  const tree = walk(raw, 0);
+  return tree && tree.length ? tree : null;
+}
+
+// Number of tiles in a tree.
+export const treeSize = nodes => (nodes || []).reduce((n, x) => n + 1 + treeSize(x.kids), 0);
+
+// A plain tile -> its value; a slot tile -> value + open + kids joined by sep + close.
+// The top level is joined by `joiner`.
+export function serialiseTree(nodes, tiles, joiner = ' ') {
+  const one = n => {
+    const tile = tiles[n.t];
+    if (!tile) return '';
+    if (!tile.slot) return tile.value;
+    return tile.value + tile.slot.open + (n.kids || []).map(one).join(tile.slot.sep) + tile.slot.close;
+  };
+  return (nodes || []).map(one).join(joiner);
+}
+
+// Shape check for a sanitised blocks spec against the answer it must spell. A spec with a slot tile
+// (or with a given solution) must have a valid solution that serialises to the answer; plain specs
+// may instead be reachable by some arrangement (tilesReachable).
+function blocksSpecOk(spec, answer, solutionGiven) {
+  if (!spec || spec.tiles.length < TILES_MIN) return false;
+  const target = String(answer ?? '');
+  if (spec.tiles.some(t => t.slot) || solutionGiven) {
+    if (!spec.solution) return false;
+    if (spec.useAll && treeSize(spec.solution) !== spec.tiles.length) return false;
+    return target.trim() !== '' && serialiseTree(spec.solution, spec.tiles, spec.joiner) === target;
+  }
+  return tilesReachable(spec.tiles, spec.joiner, target, spec.useAll);
+}
+
+// sanitizeTiles plus the cleaned solution: { tiles, joiner, useAll, solution? } or null.
+function blocksSpec(raw) {
+  const t = sanitizeTiles(raw);
+  if (!t) return null;
+  const solution = raw.solution !== undefined ? cleanSolution(raw.solution, t.tiles) : null;
+  return { ...t, ...(solution ? { solution } : {}) };
 }
 
 // True if some arrangement of distinct tiles (all of them when useAll) joined by `joiner` gives
@@ -439,7 +597,13 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
   const hints = sanitizeHints(q?.hints, warnKey);
   // `lang` only on questions from language-aware modules.
-  const extra = { ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}) };
+  const extra = {
+    ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
+    // `runnable`: the module's run(question, answer) can show the answer's output (Run button).
+    ...(q?.runnable === true ? { runnable: true } : {}),
+    // Generator-private data (e.g. what run() needs); kept in memory only, never stored.
+    ...(q?.meta && typeof q.meta === 'object' ? { meta: q.meta } : {}),
+  };
   if (q.answerType === 'multi') {
     const parts = (Array.isArray(q.parts) ? q.parts : []).map(p => normalizePart(p, warnKey));
     return {
@@ -456,7 +620,7 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
   }
   if (q.answerType === 'tiles') {
     // An invalid shape keeps answerType "tiles" with no tiles; generateVerified rejects it.
-    const t = sanitizeTiles(q);
+    const t = blocksSpec(q);
     return {
       seed,
       prompt: String(q.prompt ?? ''),
@@ -465,6 +629,8 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
       tiles: t ? t.tiles : [],
       joiner: t ? t.joiner : ' ',
       useAll: t ? t.useAll : false,
+      ...(t?.solution ? { solution: t.solution } : {}),
+      ...closeExtras(q, 'tiles'),
       choices: undefined,
       tolerance: undefined,
       explanation: q.explanation ? String(q.explanation) : '',
@@ -472,6 +638,9 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
     };
   }
   const answerType = PART_TYPES.includes(q.answerType) ? q.answerType : 'text';
+  // Dual Type | Blocks: a text question's block alternative (null = malformed; rejected later).
+  const blocks = answerType === 'text' && q.blocks !== undefined && q.blocks !== null
+    ? (q.blocks && typeof q.blocks === 'object' ? blocksSpec(q.blocks) : null) : undefined;
   return {
     seed,
     prompt: String(q.prompt ?? ''),
@@ -480,6 +649,8 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
     choices: answerType === 'choice' && Array.isArray(q.choices) ? q.choices.map(String) : undefined,
     tolerance: typeof q.tolerance === 'number' ? q.tolerance : undefined,
     explanation: q.explanation ? String(q.explanation) : '',
+    ...closeExtras(q, answerType),
+    ...(blocks !== undefined ? { blocks } : {}),
     ...extra,
   };
 }
@@ -502,10 +673,13 @@ function generateVerified(gen, subtopic, difficulty, seed, lang = null, maxTries
         shapeOk = multiShapeOk(raw);
         own = shapeOk ? multiAnswer(raw.parts) : null;
       } else if (raw.answerType === 'tiles') {
-        shapeOk = q.tiles.length >= TILES_MIN && tilesReachable(q.tiles, q.joiner, q.answer, q.useAll);
+        shapeOk = blocksSpecOk(q.tiles.length ? q : null, q.answer, raw.solution !== undefined);
         own = raw.answer;
       } else {
         shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
+        // A block alternative must spell exactly the typed answer.
+        if (shapeOk && q.blocks !== undefined) shapeOk = blocksSpecOk(q.blocks, String(q.answer ?? ''), raw.blocks?.solution !== undefined);
+        if (shapeOk && raw.blocks !== undefined && raw.blocks !== null && q.answerType !== 'text') shapeOk = false;
         own = raw.answer;
       }
       const ok = shapeOk && (typeof gen.verify !== 'function' || gen.verify(raw, own) === true);
@@ -579,7 +753,7 @@ async function buildAllQuiz(mod, subtopic, difficulty) {
       tries++;
       const c = rng.pick(live);
       const x = rng.pick(c.diffs);
-      const q = csvQuestion(x.pool, nextSeed());
+      const q = decorate(csvQuestion(x.pool, nextSeed(), csvAnswers(rows, c.st.id)), mod, x.d);
       if (!seen.has(q.prompt)) {
         seen.add(q.prompt);
         questions.push(annotate(q, mod, c.st, x.d));
@@ -598,7 +772,7 @@ async function buildAllQuiz(mod, subtopic, difficulty) {
     while (questions.length < n && failures < n) {
       const c = rng.pick(cells);
       const d = rng.pick(c.diffs);
-      const q = generateVerified(gen, c.st.id, d, nextSeed(), lang);
+      const q = decorate(generateVerified(gen, c.st.id, d, nextSeed(), lang), mod, d);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -620,14 +794,16 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
   const seen = new Set();
 
   if (mod.type === 'csv') {
-    const pool = csvPool(await loadCsvRows(moduleId), subtopic, difficulty);
+    const rows = await loadCsvRows(moduleId);
+    const pool = csvPool(rows, subtopic, difficulty);
+    const near = csvAnswers(rows, subtopic);
     if (!pool.length) throw new Error('No questions available for this subtopic and difficulty.');
     const unique = new Set(pool.map(r => r.prompt)).size;
     const target = Math.min(n, unique);
     let tries = 0;
     while (questions.length < target && tries < target * 50) {
       tries++;
-      const q = csvQuestion(pool, randomSeed());
+      const q = decorate(csvQuestion(pool, randomSeed(), near), mod, difficulty);
       if (seen.has(q.prompt)) continue;
       seen.add(q.prompt);
       questions.push(q);
@@ -638,7 +814,7 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
     let failures = 0;
     let dupTries = 0;
     while (questions.length < n && failures < n) {
-      const q = generateVerified(gen, subtopic, difficulty, randomSeed(), lang);
+      const q = decorate(generateVerified(gen, subtopic, difficulty, randomSeed(), lang), mod, difficulty);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -654,13 +830,14 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
 export async function regenerate(moduleId, subtopic, difficulty, seed, lang) {
   const mod = await loadModule(moduleId);
   if (mod.type === 'csv') {
-    const pool = csvPool(await loadCsvRows(moduleId), subtopic, difficulty);
-    return pool.length ? csvQuestion(pool, seed) : null;
+    const rows = await loadCsvRows(moduleId);
+    const pool = csvPool(rows, subtopic, difficulty);
+    return pool.length ? decorate(csvQuestion(pool, seed, csvAnswers(rows, subtopic)), mod, difficulty) : null;
   }
   const gen = await loadGenerator(moduleId);
   const l = isLangModule(mod) ? (isLang(lang) && mod.languages.includes(lang) ? lang : effectiveLang(mod)) : null;
   const raw = gen.generate(genArgs(subtopic, difficulty, seed, l));
-  return normalizeGenerated(raw, seed, gen, l);
+  return decorate(normalizeGenerated(raw, seed, gen, l), mod, difficulty);
 }
 
 // ---- multi-domain mix ----
@@ -872,10 +1049,11 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
     let q = null;
     if (rows) {
       const p = csvPool(rows, st.id, difficulty);
-      if (p.length) q = csvQuestion(p, qSeed);
+      if (p.length) q = csvQuestion(p, qSeed, csvAnswers(rows, st.id));
     } else {
       q = generateVerified(gen, st.id, difficulty, qSeed, lang);
     }
+    q = decorate(q, mod, difficulty);
     if (!q) {
       const f = (failures.get(mod.id) || 0) + 1;
       failures.set(mod.id, f);
@@ -910,34 +1088,150 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 // Spaces around ":" don't matter, so "2 : 7" matches the ratio "2:7".
 const normText = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
 
+// ---- close answers (partial credit for near misses) ----
+
+// Damerau-Levenshtein distance (optimal string alignment: an adjacent swap counts as 1 edit),
+// over code points. `max` (optional): stop early and return max + 1 once the distance must exceed it.
+export function dlDistance(a, b, max = Infinity) {
+  const s = Array.from(String(a ?? ''));
+  const t = Array.from(String(b ?? ''));
+  if (Math.abs(s.length - t.length) > max) return max + 1;
+  let prev2 = null;
+  let prev = Array.from({ length: t.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= s.length; i++) {
+    const cur = [i];
+    let rowMin = i;
+    for (let j = 1; j <= t.length; j++) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (prev2 && i > 1 && j > 1 && s[i - 1] === t[j - 2] && s[i - 2] === t[j - 1]) v = Math.min(v, prev2[j - 2] + 1);
+      cur.push(v);
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[t.length];
+}
+
+// Credit for one typo by answer length (characters after the text rules): 1-3 exact only (0).
+export function textTier(len) {
+  if (len <= 3) return 0;
+  if (len <= 7) return 0.75;
+  if (len <= 14) return 0.85;
+  return 0.9;
+}
+
+// Credit for a relative error r beyond tolerance: ≤ 0.1% 0.9, ≤ 1% 0.75, ≤ 2% 0.5, else 0.
+export function numberTier(r) {
+  const e = 1e-9;
+  if (!(r >= 0)) return 0;
+  if (r <= 0.001 + e) return 0.9;
+  if (r <= 0.01 + e) return 0.75;
+  if (r <= 0.02 + e) return 0.5;
+  return 0;
+}
+
+const parseNumber = v => {
+  let str = String(v ?? '').trim().replace(/−/g, '-');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(str)) str = str.replace(/,/g, ''); // thousands separators
+  return str ? Number(str) : NaN;
+};
+
+// Lookalike rule: typed text that exactly matches another real answer earns nothing.
+const isLookalike = (q, u) => Array.isArray(q.nearMisses) && q.nearMisses.some(n => normText(n) === u);
+
+function closeText(q, userAnswer) {
+  const u = normText(userAnswer);
+  if (!u || isLookalike(q, u)) return null;
+  let best = 0;
+  for (const target of [q.answer, ...(Array.isArray(q.accepts) ? q.accepts : [])].map(normText)) {
+    // Answers with digits (years, fractions, times, codes) are never "close": a changed digit is a
+    // different answer, not a typo.
+    if (/\d/.test(target)) continue;
+    const tier = textTier(Array.from(target).length);
+    if (tier > best && dlDistance(u, target, 1) === 1) best = tier;
+  }
+  return best > 0 ? { kind: 'text', typos: 1, factor: best } : null;
+}
+
+function closeNumber(q, userAnswer) {
+  const u = parseNumber(userAnswer);
+  const a = Number(q.answer);
+  if (!Number.isFinite(u) || !Number.isFinite(a) || a === 0 || Number.isInteger(a)) return null;
+  if (Math.sign(u) !== Math.sign(a)) return null;
+  if (Array.isArray(q.nearMisses) && q.nearMisses.some(n => Number(n) === u)) return null;
+  const tol = typeof q.tolerance === 'number' ? Math.max(q.tolerance, 1e-9) : 1e-9;
+  if (Math.abs(u - a) <= tol) return null; // already correct
+  const r = Math.abs(u - a) / Math.abs(a);
+  const factor = numberTier(r);
+  return factor > 0 ? { kind: 'number', relErr: Math.round(r * 1e6) / 1e6, factor } : null;
+}
+
 /*
- * Single questions: returns a boolean (unchanged). Tiles questions ("tiles") are checked by the
- * text rules: `userAnswer` is the placed tiles' values joined by the question's joiner.
+ * Close-answer credit for a wrong typed answer: { kind: 'text', typos, factor } |
+ * { kind: 'number', relErr, factor } | null. `q` is a single question or one multi-part part;
+ * `owner` is the question it belongs to (module/question-level `fuzzy: false` and `calculator`).
+ * Never for choice or tiles answers; numbers only when the calculator is on.
+ */
+export function closeOf(q, userAnswer, owner = q) {
+  if (!q || q.fuzzy === false || owner?.fuzzy === false) return null;
+  if (q.answerType === 'text') return closeText(q, userAnswer);
+  if (q.answerType === 'number' && owner?.calculator !== false && q.calculator !== false) return closeNumber(q, userAnswer);
+  return null;
+}
+
+/*
+ * Single questions: returns a boolean (unchanged). Text and tiles answers also match any of the
+ * question's `accepts`. Tiles questions are checked by the text rules: `userAnswer` is the
+ * serialised placed blocks.
  * Multi-part questions (answerType "multi"): `userAnswer` is { [partId]: value } and the result is
- * { correct, credit, parts: [{ id, label, correct }] }; `correct` only if every part is correct,
- * `credit` = parts right / parts total (partial credit, 0–1).
+ * { correct, credit, parts: [{ id, label, correct, close? }] }; `correct` only if every part is
+ * correct, `credit` = the average of part credits (1, a close part's factor, or 0).
  */
 export function checkAnswer(question, userAnswer) {
   if (question.answerType === 'multi') {
     const given = userAnswer && typeof userAnswer === 'object' ? userAnswer : {};
-    const parts = (question.parts || []).map(p => ({
-      id: p.id,
-      label: p.label,
-      correct: Object.prototype.hasOwnProperty.call(given, p.id) && checkSingle(p, given[p.id]),
-    }));
+    const parts = (question.parts || []).map(p => {
+      const has = Object.prototype.hasOwnProperty.call(given, p.id);
+      const correct = has && checkSingle(p, given[p.id]);
+      const close = has && !correct ? closeOf(p, given[p.id], question) : null;
+      return { id: p.id, label: p.label, correct, ...(close ? { close } : {}) };
+    });
     const right = parts.filter(p => p.correct).length;
-    return { correct: parts.length > 0 && right === parts.length, credit: parts.length ? right / parts.length : 0, parts };
+    const sum = parts.reduce((s, p) => s + (p.correct ? 1 : p.close ? p.close.factor : 0), 0);
+    return { correct: parts.length > 0 && right === parts.length, credit: parts.length ? sum / parts.length : 0, parts };
   }
   return checkSingle(question, userAnswer);
+}
+
+/*
+ * Full grading result: { correct, credit, parts?, fuzzy?, mode?, multiplier? }.
+ * `mode` "blocks" (dual Type | Blocks questions answered with blocks): credit = correct × the
+ * question's blocks multiplier, never a close answer. Typed text/number answers that miss may earn
+ * close-answer credit (`fuzzy`); `correct` stays false for those.
+ */
+export function gradeAnswer(q, userAnswer, mode = 'type') {
+  if (q.answerType === 'multi') {
+    const r = checkAnswer(q, userAnswer);
+    return { correct: r.correct, credit: r.credit, parts: r.parts };
+  }
+  if (mode === 'blocks' && q.blocks) {
+    const correct = checkSingle({ answerType: 'text', answer: q.answer, accepts: q.accepts }, userAnswer);
+    const m = typeof q.blocks.multiplier === 'number' ? Math.min(1, Math.max(0, q.blocks.multiplier)) : 1;
+    return { correct, credit: correct ? m : 0, mode: 'blocks', multiplier: m };
+  }
+  const correct = checkSingle(q, userAnswer);
+  if (correct) return { correct: true, credit: 1 };
+  const close = closeOf(q, userAnswer);
+  return close ? { correct: false, credit: close.factor, fuzzy: close } : { correct: false, credit: 0 };
 }
 
 function checkSingle(question, userAnswer) {
   switch (question.answerType) {
     case 'number': {
-      let str = String(userAnswer ?? '').trim().replace(/−/g, '-');
-      if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(str)) str = str.replace(/,/g, ''); // thousands separators
-      if (!str) return false;
-      const u = Number(str);
+      const u = parseNumber(userAnswer);
       const a = Number(question.answer);
       if (!Number.isFinite(u) || !Number.isFinite(a)) return false;
       const tol = typeof question.tolerance === 'number' ? Math.max(question.tolerance, 1e-9) : 1e-9;
@@ -945,7 +1239,37 @@ function checkSingle(question, userAnswer) {
     }
     case 'choice':
       return String(userAnswer) === String(question.answer);
-    default:
-      return normText(userAnswer) === normText(question.answer);
+    default: {
+      const u = normText(userAnswer);
+      return u === normText(question.answer) || (Array.isArray(question.accepts) && question.accepts.some(a => normText(a) === u));
+    }
+  }
+}
+
+// ---- Run (test the output): a module's run(question, answer) for `runnable` questions ----
+const RUN_MAX_ROWS = 200;
+const RUN_MAX_COLS = 30;
+const runCell = v => (v === null || v === undefined ? null : typeof v === 'number' ? (Number.isFinite(v) ? v : String(v)) : String(v).slice(0, 500));
+
+/*
+ * Runs `answer` (string) for a runnable question with its own module's run(). Resolves to
+ * { columns: [string], rows: [[string|number|null]] } (sanitised, at most 200 rows) or { error }.
+ * Never rejects.
+ */
+export async function runAnswer(question, answer) {
+  try {
+    const id = question?.srcModule ?? question?.module;
+    if (!question?.runnable || !isValidId(id)) return { error: 'This question has no output to run.' };
+    const gen = await loadGenerator(id);
+    if (typeof gen.run !== 'function') return { error: 'This question has no output to run.' };
+    const res = gen.run(question, String(answer ?? ''));
+    if (res && typeof res === 'object' && typeof res.error === 'string') return { error: res.error.slice(0, 300) || 'Error' };
+    if (!res || !Array.isArray(res.columns) || !Array.isArray(res.rows)) return { error: 'The query gave no output.' };
+    const columns = res.columns.slice(0, RUN_MAX_COLS).map(c => String(c ?? '').slice(0, 100));
+    const rows = res.rows.slice(0, RUN_MAX_ROWS).map(r => (Array.isArray(r) ? r : [r]).slice(0, columns.length).map(runCell));
+    return { columns, rows, total: res.rows.length };
+  } catch (e) {
+    console.warn('StudyBlock: run() failed', e);
+    return { error: String(e?.message || e || 'Error').slice(0, 300) };
   }
 }

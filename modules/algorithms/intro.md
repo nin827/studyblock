@@ -12,7 +12,7 @@ An algorithm is a precise recipe a computer follows. Here you trace classic algo
 ## How to answer
 
 - Lists are written like `[4, 9, 2, 7]`. **Indexes start at 0**, so 4 is at index 0 and 7 at index 3.
-- Whenever the answer is a whole list, you pick it from the options.
+- When the answer is a whole list, you usually pick it from the options. For what a stack or queue holds at the end, you build the list from blocks instead: one block per value added, and the removed ones are left over.
 - Counts, values and indexes are typed as whole numbers.
 - Each question spells out the exact version of the algorithm it uses, and the **How to solve** card in Guided mode has the same rules.
 

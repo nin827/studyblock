@@ -124,6 +124,7 @@ function renderCond(c, top = true) {
   let s;
   if (c.t === "cmp") s = `${c.col} ${c.op} ${lit(c.v)}`;
   else if (c.t === "between") s = `${c.col} BETWEEN ${c.lo} AND ${c.hi}`;
+  else if (c.t === "in") s = `${c.col} IN (${c.vals.map(lit).join(", ")})`;
   else if (c.t === "not") return `NOT (${renderCond(c.a, true)})`;
   else if (c.t === "sub") s = `${c.col} ${c.op} (SELECT ${c.agg}(${c.aggCol}) FROM ${c.from})`;
   else s = `${renderCond(c.a, false)} ${c.t.toUpperCase()} ${renderCond(c.b, false)}`;
@@ -157,6 +158,7 @@ function aggOf(it, rows) {
 
 function genCond(row, c, T) {
   if (c.t === "cmp") return CMP[c.op](row[c.col], c.v);
+  if (c.t === "in") return c.vals.includes(row[c.col]);
   if (c.t === "between") return row[c.col] >= c.lo && row[c.col] <= c.hi;
   if (c.t === "and") return genCond(row, c.a, T) && genCond(row, c.b, T);
   if (c.t === "or") return genCond(row, c.a, T) || genCond(row, c.b, T);
@@ -287,7 +289,7 @@ function wrongSets(rng, t, where, correctKeys) {
 // ---------------------------------------------------------------------------------------------
 // Question builders
 
-function finish({ tables, q, ask, notes = [], answerType, answer, choices, tolerance, explanation, hints, check, parts }) {
+function finish({ tables, q, ask, notes = [], answerType, answer, choices, tolerance, explanation, hints, check, parts, tiles, joiner, useAll }) {
   const sql = renderSql(q);
   const base = {
     prompt: buildPrompt(tables, sql, ask ?? "Answer each part below.", notes),
@@ -295,6 +297,7 @@ function finish({ tables, q, ask, notes = [], answerType, answer, choices, toler
     params: { sql, tables: Object.fromEntries(tables.map((t) => [t.name, rawTable(t)])), check },
   };
   if (parts) return { ...base, answerType: "multi", parts };
+  if (answerType === "tiles") return { ...base, answerType, answer, tiles, joiner, useAll, hints };
   return { ...base, answerType, answer, ...(choices ? { choices } : {}), ...(answerType === "number" ? { tolerance: tolerance ?? 0 } : {}), hints };
 }
 
@@ -428,6 +431,17 @@ function withParts({ tables, q, notes, expl, res, keys, ch, K }) {
 
 // ---- ORDER BY and LIMIT
 
+// "Which rows, in order?" is answered with blocks: one block per table row (its key value, in
+// table order); the rows the query doesn't return are the distractors. Keys are distinct, so the
+// answer has exactly one arrangement.
+function orderAsk(K, k, n) {
+  return `Which rows does this query return, in order? Build the answer from the ${K} blocks, first result row first.${k < n ? " Not every block is used." : ""}`;
+}
+function orderTiles(t, correct) {
+  const keys = t.rows.map((r) => String(r[t.cols[0]]));
+  return { answerType: "tiles", answer: correct, tiles: keys.slice(), joiner: ", ", useAll: correct.split(", ").length === keys.length };
+}
+
 function genOrderLimit(difficulty, rng) {
   for (;;) {
     const theme = randomTheme(rng);
@@ -489,13 +503,15 @@ function genOrderLimit(difficulty, rng) {
         t.rows.slice(0, k).map((r) => String(r[K])).join(", "),
         order.slice(1, k + 1).join(", "),
       ];
+      // choicesFrom still runs (it draws from the rng), so every seed keeps its table and answer;
+      // the rows are now built from blocks.
       const ch = choicesFrom(correct, rng.shuffle(cands), rng);
       if (!ch) continue;
       const q = { select: [{ col: K }], from: t.name, orderBy: [{ col, dir }], limit: k };
       return finish({
-        tables: [t], q, notes: [NOTE_LIMIT, "Options show the rows in result order."], check: { type: "list", col: 0 },
-        ask: "Which rows does this query return, in order?",
-        answerType: "choice", ...ch,
+        tables: [t], q, notes: [NOTE_LIMIT], check: { type: "list", col: 0 },
+        ask: orderAsk(K, k, n),
+        ...orderTiles(t, correct),
         explanation: `Sort by ${col} ${dir === "ASC" ? "smallest" : "largest"} first, then keep the first ${k}.\n\n- Sorted: ${order.join(", ")}\n- First ${k}: **${correct}**`,
         hints: [`Put the rows in order of ${col}, ${dir === "ASC" ? "smallest" : "largest"} first.`, `LIMIT ${k} keeps only the first ${k} of them, in that order.`],
       });
@@ -516,13 +532,14 @@ function genOrderLimit(difficulty, rng) {
         order.slice(off, off + k).reverse().join(", "),
         order.slice(off, off + k + 1).join(", "),
       ];
+      // choicesFrom still runs for its rng draws (see the medium list above).
       const ch = choicesFrom(correct, rng.shuffle(cands), rng);
       if (!ch) continue;
       const q = { select: [{ col: K }], from: t.name, orderBy: [{ col, dir }], limit: k, offset: off };
       return finish({
-        tables: [t], q, notes: [NOTE_OFFSET, "Options show the rows in result order."], check: { type: "list", col: 0 },
-        ask: "Which rows does this query return, in order?",
-        answerType: "choice", ...ch,
+        tables: [t], q, notes: [NOTE_OFFSET], check: { type: "list", col: 0 },
+        ask: orderAsk(K, k, n),
+        ...orderTiles(t, correct),
         explanation: `Sort, skip ${off}, then take ${k}.\n\n- Sorted by ${col} ${dir}: ${order.join(", ")}\n- Skip the first ${off}, keep the next ${k}: **${correct}**`,
         hints: [`Sort all rows by ${col}, ${dir === "ASC" ? "smallest" : "largest"} first.`, `OFFSET ${off} skips the first ${off} sorted row${off === 1 ? "" : "s"}; LIMIT ${k} then keeps the next ${k}.`],
       });
@@ -1186,6 +1203,10 @@ function stateWhole(q) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (subtopic === "write-query") {
+    if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
+    return genWriteQuery(difficulty, rng);
+  }
   if (difficulty === "expert") return stateWhole(genExpert(subtopic, rng));
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "select-where") return stateWhole(genSelectWhere(difficulty, rng));
@@ -1198,6 +1219,13 @@ export function generate({ subtopic, difficulty, rng }) {
 // Independent check: parse the shown SQL text, run it with the loop-based executor, compare.
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && p.kind === "wq") {
+    try {
+      return verifyWriteQuery(question, answer);
+    } catch {
+      return false;
+    }
+  }
   if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) {
     if (answer === "" || answer === null || answer === undefined) return false;
     try {
@@ -1223,6 +1251,12 @@ export function verify(question, answer) {
     }
     if (!p.check) return false;
     if (question.answerType === "choice") return fourDistinct(question) && checkChoice(res, p.check, question.choices, answer);
+    if (question.answerType === "tiles") {
+      // One block per table row (key values, distinct, in table order); the answer is a list of them.
+      const keys = p.tables[Object.keys(p.tables)[0]].rows.map((r) => String(r[0]));
+      if (!Array.isArray(question.tiles) || question.tiles.map(String).join("|") !== keys.join("|") || new Set(keys).size !== keys.length) return false;
+      return checkOne(res, p.check, String(answer).split(",").map((x) => x.trim()).join(", "));
+    }
     return checkOne(res, p.check, answer);
   } catch {
     return false;
@@ -1701,4 +1735,971 @@ function verifyExpert(p, question, answer) {
     return Number(xget(answer, "sum")) === execSql(p.sumSql, filled)[0][0] && String(xget(answer, "sum") ?? "").trim() !== "";
   }
   return false;
+}
+
+// =============================================================================================
+// Write the query (write-query). The learner writes SQL for a task over a shown table: typed text,
+// or built from blocks (SELECT …, COUNT(…), IN (…) are blocks with a slot for other blocks).
+// The task is built as a query tree; the generator works out the intended result with genRun on
+// that tree. verify() runs the expected answer and every accepted form with the separate run
+// engine below (its own tokenizer, parser and evaluator) and compares, checks that each plausible
+// wrong query gives a different result, and checks that the blocks solution serialises to the
+// answer. The same run engine powers run(): learners can test their query's output.
+
+const DIFFS = ["easy", "medium", "hard", "expert"];
+const WQ_DISTRACTORS = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const OP_WORDS = { ">": "more than", "<": "less than", ">=": "at least", "<=": "at most", "=": "is", "<>": "is not" };
+const SIDE = { ">": "<", "<": ">", ">=": "<=", "<=": ">=", "=": "=", "<>": "<>" };
+const AGG_WORDS = { SUM: "total", AVG: "average", MAX: "highest", MIN: "lowest" };
+
+// One-line SQL for a write-query tree (no semicolon).
+function wqSql(q) {
+  const out = [`SELECT ${q.star ? "*" : q.select.map(renderItem).join(", ")}`, `FROM ${q.from}`];
+  if (q.join) out.push(`INNER JOIN ${q.join.table} ON ${q.join.on[0]} = ${q.join.on[1]}`);
+  if (q.where) out.push(`WHERE ${renderCond(q.where)}`);
+  if (q.groupBy) out.push(`GROUP BY ${q.groupBy}`);
+  if (q.having) out.push(`HAVING ${renderItem(q.having)} ${q.having.op} ${q.having.v}`);
+  if (q.orderBy) out.push(`ORDER BY ${q.orderBy.map((o) => `${o.col} ${o.dir}`).join(", ")}`);
+  if (q.limit !== undefined) out.push(`LIMIT ${q.limit}`);
+  return out.join(" ");
+}
+
+// Intended result rows (arrays), via the generator-side evaluator.
+function wqWant(q, T) {
+  if (!q.star) return genRun(q, T);
+  const t = T[q.from];
+  return genRun({ ...q, star: false, select: t.cols.map((col) => ({ col })) }, T);
+}
+
+// Comparing result sets: in order when the query has ORDER BY, else as a multiset.
+const cellEq = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : a === b);
+const rowEq = (a, b) => a.length === b.length && a.every((v, i) => cellEq(v, b[i]));
+function sameRows(a, b, ordered) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  if (ordered) return a.every((r, i) => rowEq(r, b[i]));
+  const left = b.slice();
+  for (const r of a) {
+    const i = left.findIndex((x) => rowEq(r, x));
+    if (i < 0) return false;
+    left.splice(i, 1);
+  }
+  return true;
+}
+
+// The quiz's text rules (minus sign, trim, spaces, case, spaces around : and ,).
+const textNorm = (s) => String(s ?? "").replace(/−/g, "-").trim().replace(/\s+/g, " ").toLowerCase().replace(/\s*([:,])\s*/g, "$1");
+// No spaces around comparison signs (a common, equally correct way to type them).
+const compactOps = (s) => s.replace(/ (<>|!=|<=|>=|=|<|>) /g, "$1");
+
+// ---- blocks ----
+
+const slotTile = (value, open, close, sep = ", ") => ({ value, label: `${value}${open.trim() ? open.trim() : " "}…${close}`, slot: { open, close, sep } });
+const SELECT_TILE = () => ({ value: "SELECT", label: "SELECT …", slot: { open: " ", close: "", sep: ", " } });
+const fnTile = (fn) => slotTile(fn, "(", ")");
+const IN_TILE = () => ({ value: "IN", label: "IN (…)", slot: { open: " (", close: ")", sep: ", " } });
+const plain = (v) => ({ value: String(v), label: String(v) });
+
+// Solution as a tree of tile objects: a tile, or { tile, kids: [...] } for a slot tile.
+function itemNode(it) {
+  if (!it.agg) return plain(it.col);
+  return { tile: fnTile(it.agg), kids: [plain(it.star ? "*" : it.col)] };
+}
+function condNodes(c) {
+  if (c.t === "cmp") return [plain(c.col), plain(c.op), plain(lit(c.v))];
+  if (c.t === "and") return [...condNodes(c.a), plain("AND"), ...condNodes(c.b)];
+  if (c.t === "in") return [plain(c.col), { tile: IN_TILE(), kids: c.vals.map((v) => plain(lit(v))) }];
+  throw new Error("unsupported condition");
+}
+function solutionNodes(q) {
+  const out = [{ tile: SELECT_TILE(), kids: q.star ? [plain("*")] : q.select.map(itemNode) }, plain("FROM"), plain(q.from)];
+  if (q.join) out.push(plain("INNER JOIN"), plain(q.join.table), plain("ON"), plain(q.join.on[0]), plain("="), plain(q.join.on[1]));
+  if (q.where) out.push(plain("WHERE"), ...condNodes(q.where));
+  if (q.groupBy) out.push(plain("GROUP BY"), plain(q.groupBy));
+  if (q.having) out.push(plain("HAVING"), itemNode(q.having), plain(q.having.op), plain(q.having.v));
+  if (q.orderBy) for (const o of q.orderBy) out.push(plain("ORDER BY"), plain(o.col), plain(o.dir));
+  if (q.limit !== undefined) out.push(plain("LIMIT"), plain(q.limit));
+  return out;
+}
+
+// Flatten the solution tree and distractors into tiles (shuffled) + a solution of tile indices.
+function buildBlocks(nodes, distractors, rng) {
+  const tiles = [];
+  const add = (tile) => { tiles.push(tile); return tiles.length - 1; };
+  const walk = (n) => (n.tile ? { t: add(n.tile), kids: n.kids.map(walk) } : add(n));
+  const sol = nodes.map(walk);
+  distractors.forEach(add);
+  const perm = rng.shuffle(tiles.map((_, i) => i)); // perm[newPos] = old index
+  const where = [];
+  perm.forEach((old, pos) => { where[old] = pos; });
+  const remap = (n) => (typeof n === "number" ? where[n] : { t: where[n.t], kids: n.kids.map(remap) });
+  return { tiles: perm.map((i) => tiles[i]), joiner: " ", useAll: false, solution: sol.map(remap) };
+}
+
+// Serialise a blocks solution (contract: plain → value; slot → value + open + kids + close).
+function serialiseBlocks(b) {
+  const used = new Set();
+  const node = (n, depth) => {
+    if (depth > 3) throw new Error("too deep");
+    const i = typeof n === "number" ? n : n && n.t;
+    if (!Number.isInteger(i) || i < 0 || i >= b.tiles.length || used.has(i)) throw new Error("bad index");
+    used.add(i);
+    const tile = b.tiles[i];
+    if (typeof n === "number") return String(tile.value);
+    if (!tile.slot || !Array.isArray(n.kids)) throw new Error("kids under a plain tile");
+    return tile.value + tile.slot.open + n.kids.map((k) => node(k, depth + 1)).join(tile.slot.sep ?? ", ") + tile.slot.close;
+  };
+  const s = b.solution.map((n) => node(n, 1)).join(b.joiner);
+  return { s, used };
+}
+
+// Pick `count` distinct distractor tiles from a pool (skipping values the solution already uses).
+function pickDistractors(pool, solValues, difficulty, maxTiles, rng) {
+  const [lo, hi] = WQ_DISTRACTORS[difficulty];
+  const seen = new Set(solValues);
+  const uniq = [];
+  for (const t of pool) {
+    const key = t.value + (t.slot ? "(" : "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    uniq.push(t);
+  }
+  const want = Math.min(rng.int(lo, hi), maxTiles);
+  if (uniq.length < lo || want < lo) return null;
+  return rng.shuffle(uniq).slice(0, Math.min(want, uniq.length));
+}
+const solKeys = (nodes) => {
+  const out = [];
+  const walk = (n) => { if (n.tile) { out.push(n.tile.value + "("); n.kids.forEach(walk); } else out.push(n.value); };
+  nodes.forEach(walk);
+  return out;
+};
+
+// ---- accepted equivalents ----
+
+function acceptsFor(answer, alts) {
+  const base = textNorm(answer);
+  const seen = new Set([base]);
+  const out = [];
+  const push = (s) => { const k = textNorm(s); if (out.length < 20 && !seen.has(k)) { seen.add(k); out.push(s); } };
+  push(`${answer};`);
+  push(compactOps(answer));
+  push(`${compactOps(answer)};`);
+  for (const a of alts) { push(a); push(`${a};`); }
+  for (const a of alts) { push(compactOps(a)); push(`${compactOps(a)};`); }
+  return out;
+}
+
+// ---- task wording ----
+
+const C = (c) => `\`${c}\``;
+function condWords(c) {
+  if (c.t === "cmp") return `${C(c.col)} ${c.op === "=" || c.op === "<>" ? OP_WORDS[c.op] : `is ${OP_WORDS[c.op]}`} ${lit(c.v)}`;
+  if (c.t === "and") return `${condWords(c.a)} and ${condWords(c.b)}`;
+  if (c.t === "in") return `${C(c.col)} is ${c.vals.slice(0, -1).map(lit).join(", ")} or ${lit(c.vals[c.vals.length - 1])}`;
+  return "";
+}
+const itemWords = (it) => (it.agg === "COUNT" ? "the number of rows" : it.agg ? `the ${AGG_WORDS[it.agg]} ${C(it.col)}` : C(it.col));
+const listWords = (arr) => (arr.length === 1 ? arr[0] : `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`);
+
+function formRules(q, extra) {
+  const rules = [
+    "Write it on one line, with keywords in capitals and the columns in the order given.",
+    "Put text in single quotes, like 'Dog', with one space on each side of comparison signs such as = and >.",
+  ];
+  if (q.select.some((it) => it.agg) || q.having) rules.push("No spaces inside brackets: COUNT(*), SUM(price).");
+  rules.push(...extra);
+  rules.push("A semicolon at the end is optional.");
+  return rules.join(" ");
+}
+
+// ---- the generator ----
+
+function numCmp(rng, t, col) {
+  const vals = t.rows.map((r) => r[col]);
+  return { t: "cmp", col, op: rng.pick([">", "<", ">=", "<="]), v: rng.pick(vals) };
+}
+function catCmp(rng, t, ops = ["=", "=", "<>"]) {
+  return { t: "cmp", col: t.cols[1], op: rng.pick(ops), v: rng.pick(t.cats) };
+}
+const mutateCmp = (c, op) => ({ ...c, op });
+
+function genWriteQuery(difficulty, rng) {
+  for (let tries = 0; tries < 200; tries++) {
+    const q0 = wqBuild(difficulty, rng);
+    if (!q0) continue;
+    const { q, T, tables, task, extraRules, pool, wrongTrees, alts, hints, notes } = q0;
+    const want = wqWant(q, T);
+    const ordered = !!q.orderBy;
+    if (!want.length) continue;
+    // Every plausible wrong query must give a different result, so the task pins one answer.
+    if (wrongTrees.some((w) => sameRows(wqWant(w, T), want, ordered && !!w.orderBy))) continue;
+    const answer = wqSql(q);
+    const nodes = solutionNodes(q);
+    const nSol = solKeys(nodes).length;
+    const dis = pickDistractors(pool, solKeys(nodes), difficulty, 24 - nSol, rng);
+    if (!dis) continue;
+    const blocks = buildBlocks(nodes, dis, rng);
+    const accepts = acceptsFor(answer, alts.filter((a) => textNorm(a) !== textNorm(answer)));
+    const raw = Object.fromEntries(tables.map((t) => [t.name, rawTable(t)]));
+    const shown = want.slice(0, 8).map((r) => r.map((v) => (typeof v === "number" ? num(v) : v)).join(" · "));
+    return {
+      prompt: `${tables.map(mdTable).join("\n\n")}\n\n${task}\n\n${formRules(q, extraRules)}${notes ? ` ${notes}` : ""}`,
+      answerType: "text",
+      answer,
+      accepts,
+      blocks,
+      runnable: true,
+      meta: { tables: raw },
+      explanation: `${wqExplain(q)}\n\nAnswer: \`${answer}\`\n\nIt returns ${want.length} row${want.length === 1 ? "" : "s"}${ordered ? ", in this order" : ""}:\n\n${shown.map((x) => `- ${x}`).join("\n")}${want.length > 8 ? "\n- …" : ""}`,
+      hints,
+      params: { kind: "wq", tables: raw, want, ordered, wrong: wrongTrees.map(wqSql), diff: difficulty },
+    };
+  }
+  throw new Error("write-query: could not build a question");
+}
+
+function wqExplain(q) {
+  const lines = [`- \`SELECT ${q.star ? "*" : q.select.map(renderItem).join(", ")}\` picks ${q.star ? "every column" : "the columns asked for, in order"}.`, `- \`FROM ${q.from}\` names the table.`];
+  if (q.join) lines.push(`- \`INNER JOIN ${q.join.table} ON ${q.join.on[0]} = ${q.join.on[1]}\` pairs rows whose keys match and drops rows with no match.`);
+  if (q.where) lines.push(`- \`WHERE ${renderCond(q.where)}\` keeps only the rows asked for.`);
+  if (q.groupBy) lines.push(`- \`GROUP BY ${q.groupBy}\` makes one row per ${q.groupBy}.`);
+  if (q.having) lines.push(`- \`HAVING ${renderItem(q.having)} ${q.having.op} ${q.having.v}\` keeps only the groups that pass (WHERE can't test an aggregate).`);
+  if (q.orderBy) lines.push(`- \`ORDER BY ${q.orderBy[0].col} ${q.orderBy[0].dir}\` sorts ${q.orderBy[0].dir === "ASC" ? "smallest" : "largest"} first.`);
+  if (q.limit !== undefined) lines.push(`- \`LIMIT ${q.limit}\` keeps the first ${q.limit} rows.`);
+  return `Build it clause by clause, in SQL's order:\n\n${lines.join("\n")}`;
+}
+
+const HINT_ORDER = "Clauses go in this order: SELECT, FROM, JOIN … ON, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT.";
+
+// Returns the tree and everything around it, or null to redraw.
+function wqBuild(difficulty, rng) {
+  const theme = randomTheme(rng);
+  const nRange = { easy: [4, 5], medium: [5, 7], hard: [6, 8], expert: [6, 9] }[difficulty];
+
+  if (difficulty === "expert" && rng.next() < 0.3) return wqJoin(rng);
+
+  const t = makeTable(rng, theme, rng.int(nRange[0], nRange[1]), rng.int(2, 3));
+  const [K, Ccol, N1, N2] = t.cols;
+  const T = { [t.name]: t };
+  const tn = `**${t.name}**`;
+  const otherCat = (v) => t.theme.cats.find((c) => c !== v);
+
+  if (difficulty === "easy") {
+    const form = rng.pick(["one", "two", "two", "three", "star"]);
+    if (form === "star") {
+      const q = { star: true, select: [], from: t.name };
+      return {
+        q, T, tables: [t],
+        task: `Write a query that shows **every column** of every row in ${tn}.`,
+        extraRules: [], pool: [plain(K), plain(N1), plain("WHERE")], wrongTrees: [],
+        alts: [`SELECT ${t.cols.join(", ")} FROM ${t.name}`],
+        hints: ["Every query starts with SELECT (what to show) and FROM (which table).", "There is a one-character shorthand for \"every column\"."],
+      };
+    }
+    const nCols = form === "one" ? 1 : form === "two" ? 2 : 3;
+    const cols = rng.shuffle(t.cols).slice(0, nCols);
+    const q = { select: cols.map((col) => ({ col })), from: t.name };
+    const unused = t.cols.filter((c) => !cols.includes(c));
+    const wrong = nCols > 1 ? [{ ...q, select: cols.slice().reverse().map((col) => ({ col })) }] : [{ ...q, select: [{ col: unused[0] }] }];
+    return {
+      q, T, tables: [t],
+      task: `Write a query that shows ${listWords(cols.map(C))} of every row in ${tn}${nCols > 1 ? ", in that column order" : ""}.`,
+      extraRules: [], pool: unused.map(plain), wrongTrees: wrong, alts: [],
+      hints: ["Every query starts with SELECT (what to show) and FROM (which table).", nCols > 1 ? "Separate the column names with commas, in the order the task lists them." : "Only one column is asked for."],
+    };
+  }
+
+  if (difficulty === "medium") {
+    const nCols = rng.int(1, 2);
+    const cols = nCols === 1 ? [K] : [K, rng.pick([N1, N2, Ccol])];
+    const both = rng.next() < 0.4;
+    const numCol = rng.pick([N1, N2]);
+    const a = rng.next() < 0.6 ? numCmp(rng, t, numCol) : catCmp(rng, t);
+    let where = a;
+    if (both) {
+      const b = a.col === Ccol ? numCmp(rng, t, numCol) : catCmp(rng, t, ["=", "<>"]);
+      where = { t: "and", a, b };
+    }
+    const q = { select: cols.map((col) => ({ col })), from: t.name, where };
+    const cmps = both ? [where.a, where.b] : [where];
+    const wrongTrees = [];
+    const pool = [];
+    const alts = [];
+    const flipAt = (i) => (both
+      ? { ...q, where: { ...where, a: i === 0 ? mutateCmp(where.a, FLIP[where.a.op]) : where.a, b: i === 1 ? mutateCmp(where.b, FLIP[where.b.op]) : where.b } }
+      : { ...q, where: mutateCmp(where, FLIP[where.op]) });
+    cmps.forEach((c, i) => {
+      const wrongOp = FLIP[c.op];
+      wrongTrees.push(flipAt(i));
+      pool.push(plain(wrongOp));
+      if (c.v !== undefined && typeof c.v === "number") {
+        pool.push(plain({ ">": "<", "<": ">", ">=": "<=", "<=": ">=" }[c.op]));
+        pool.push(plain(c.col === N1 ? N2 : N1));
+      } else {
+        pool.push(plain(lit(otherCat(c.v))), plain(String(c.v)));
+      }
+    });
+    if (both) pool.push(plain("OR"));
+    pool.push(plain(t.cols.find((c) => !cols.includes(c) && !cmps.some((x) => x.col === c)) || "ORDER BY"));
+    // Equivalents: the number on the left, != for <>, the AND parts swapped.
+    const s = wqSql(q);
+    for (const c of cmps) {
+      const frag = renderCond(c);
+      if (typeof c.v === "number") alts.push(s.replace(frag, `${c.v} ${SIDE[c.op]} ${c.col}`));
+      if (c.op === "<>") alts.push(s.replace(frag, `${c.col} != ${lit(c.v)}`));
+    }
+    if (both) alts.push(s.replace(renderCond(where), `${renderCond(where.b)} AND ${renderCond(where.a)}`));
+    const res = genRun(q, T);
+    if (res.length < 1 || res.length >= t.rows.length) return null;
+    return {
+      q, T, tables: [t],
+      task: `Write a query that shows ${listWords(cols.map(C))} of every row in ${tn} where ${condWords(where)}.`,
+      extraRules: [`Use <> for "is not".${both ? " Join the two conditions with AND, in the order given." : ""}`],
+      pool, wrongTrees, alts,
+      hints: [
+        "SELECT and FROM come first; the condition goes after WHERE.",
+        "\"more than\" is >, \"less than\" is <, \"at least\" includes the value itself (>=), and \"at most\" too (<=).",
+        both ? "Both conditions must hold, so join them with AND." : "Text values need single quotes; numbers don't.",
+      ],
+    };
+  }
+
+  if (difficulty === "hard") {
+    const kind = rng.pick(["order", "top", "agg", "agg"]);
+    const col = rng.pick([N1, N2]);
+    if (kind === "order" || kind === "top") {
+      const dir = rng.pick(["ASC", "DESC"]);
+      const other = dir === "ASC" ? "DESC" : "ASC";
+      const hiLo = dir === "DESC" ? "highest to lowest" : "lowest to highest";
+      if (kind === "order") {
+        const filt = rng.next() < 0.5 ? catCmp(rng, t, ["="]) : null;
+        const q = { select: [{ col: K }, { col }], from: t.name, ...(filt ? { where: filt } : {}), orderBy: [{ col, dir }] };
+        const wrongTrees = [{ ...q, orderBy: [{ col, dir: other }] }];
+        if (filt) wrongTrees.push({ ...q, where: mutateCmp(filt, "<>") });
+        const s = wqSql(q);
+        const alts = dir === "ASC" ? [s.replace(" ASC", "")] : [];
+        if (filt && genRun(q, T).length < 2) return null;
+        return {
+          q, T, tables: [t],
+          task: `Write a query that shows ${C(K)} and ${C(col)} of every row in ${tn}${filt ? ` where ${condWords(filt)}` : ""}, sorted by ${C(col)} from ${hiLo}.`,
+          extraRules: ["Write ASC or DESC after the ORDER BY column."],
+          pool: [plain(other), plain(col === N1 ? N2 : N1), plain("GROUP BY"), plain("LIMIT"), plain(K === "name" ? "title" : "name"), plain("HAVING"), ...(filt ? [plain("<>"), plain(lit(otherCat(filt.v)))] : [plain("WHERE")])],
+          wrongTrees, alts,
+          hints: [HINT_ORDER, "ORDER BY sorts: ASC is smallest first, DESC is largest first."],
+        };
+      }
+      const k = rng.int(2, Math.min(4, t.rows.length - 2));
+      const q = { select: [{ col: K }], from: t.name, orderBy: [{ col, dir }], limit: k };
+      const s = wqSql(q);
+      return {
+        q, T, tables: [t],
+        task: `Write a query that shows ${C(K)} for the ${k} rows of ${tn} with the ${dir === "DESC" ? "highest" : "lowest"} ${C(col)}, ${dir === "DESC" ? "highest" : "lowest"} first.`,
+        extraRules: ["Write ASC or DESC after the ORDER BY column."],
+        pool: [plain(other), plain(col === N1 ? N2 : N1), plain(k + 1), plain(k - 1 >= 1 ? k - 1 : k + 2), plain("WHERE"), plain("GROUP BY"), fnTile("MAX")],
+        wrongTrees: [{ ...q, orderBy: [{ col, dir: other }] }, { ...q, limit: k + 1 }],
+        alts: dir === "ASC" ? [s.replace(" ASC", "")] : [],
+        hints: [HINT_ORDER, "Sort first with ORDER BY, then LIMIT keeps only the top rows."],
+      };
+    }
+    // aggregate
+    const agg = rng.pick(["COUNT", "SUM", "AVG", "MAX", "MIN"]);
+    const where = agg === "COUNT" || rng.next() < 0.6 ? (rng.next() < 0.5 ? numCmp(rng, t, rng.pick([N1, N2])) : catCmp(rng, t)) : null;
+    if (where && where.col === col && agg !== "COUNT") return null;
+    const it = agg === "COUNT" ? { agg, star: true } : { agg, col };
+    const q = { select: [it], from: t.name, ...(where ? { where } : {}) };
+    const rows = where ? t.rows.filter((r) => genCond(r, where, T)) : t.rows;
+    if (!rows.length || (where && rows.length === t.rows.length)) return null;
+    if (agg !== "COUNT" && rows.length < 2) return null;
+    const others = ["SUM", "AVG", "MAX", "MIN", "COUNT"].filter((a) => a !== agg);
+    const wrongTrees = [];
+    if (agg !== "COUNT") for (const a of ["SUM", "AVG", "MAX", "MIN"].filter((x) => x !== agg)) wrongTrees.push({ ...q, select: [{ agg: a, col }] });
+    if (where) wrongTrees.push({ ...q, where: mutateCmp(where, FLIP[where.op]) });
+    if (agg !== "COUNT") wrongTrees.push({ ...q, select: [{ agg, col: col === N1 ? N2 : N1 }] });
+    const s = wqSql(q);
+    const alts = [];
+    if (where && typeof where.v === "number") alts.push(s.replace(renderCond(where), `${where.v} ${SIDE[where.op]} ${where.col}`));
+    if (where && where.op === "<>") alts.push(s.replace(renderCond(where), `${where.col} != ${lit(where.v)}`));
+    const what = agg === "COUNT" ? "the number of rows" : `the ${AGG_WORDS[agg]} ${C(col)}`;
+    return {
+      q, T, tables: [t],
+      task: `Write a query that returns ${what} in ${tn}${where ? ` where ${condWords(where)}` : ""}, as a single number.${agg === "COUNT" ? " Count rows with `*`." : ""}`,
+      extraRules: where ? ['Use <> for "is not".'] : [],
+      pool: [...others.slice(0, 3).map(fnTile), plain("*"), plain(col === N1 ? N2 : N1), plain(col), plain("GROUP BY"), plain("HAVING"), ...(where ? [plain(FLIP[where.op])] : [plain("WHERE")])],
+      wrongTrees, alts,
+      hints: [
+        "An aggregate function goes in the SELECT list and turns many rows into one value.",
+        "COUNT counts rows, SUM adds, AVG takes the mean, MAX and MIN pick the largest and smallest.",
+        where ? "The WHERE filter runs before the aggregate." : "There is no filter: every row is used.",
+      ],
+      notes: agg === "AVG" ? NOTE_AVG : "",
+    };
+  }
+
+  // expert (single table): GROUP BY [HAVING], or IN.
+  const kind = rng.pick(["group", "having", "having", "in"]);
+  if (kind === "in") {
+    const vals = rng.shuffle(t.cats).slice(0, 2);
+    if (t.cats.length < 3) return null;
+    const col = rng.pick([N1, N2]);
+    const dir = rng.pick(["ASC", "DESC"]);
+    const where = { t: "in", col: Ccol, vals };
+    const q = { select: [{ col: K }, { col }], from: t.name, where, orderBy: [{ col, dir }] };
+    const rest = t.cats.find((c) => !vals.includes(c));
+    const s = wqSql(q);
+    const frag = renderCond(where);
+    const alts = [
+      s.replace(frag, `${Ccol} IN (${lit(vals[1])}, ${lit(vals[0])})`),
+      s.replace(frag, `(${Ccol} = ${lit(vals[0])} OR ${Ccol} = ${lit(vals[1])})`),
+      s.replace(frag, `${Ccol} = ${lit(vals[0])} OR ${Ccol} = ${lit(vals[1])}`),
+      ...(dir === "ASC" ? [s.replace(" ASC", "")] : []),
+    ];
+    return {
+      q, T, tables: [t],
+      task: `Write a query that shows ${C(K)} and ${C(col)} of every row in ${tn} whose ${condWords(where)}, sorted by ${C(col)} from ${dir === "DESC" ? "highest to lowest" : "lowest to highest"}.`,
+      extraRules: ["Use IN with the values in the order given, and write ASC or DESC after the ORDER BY column."],
+      pool: [plain("="), plain("OR"), plain(lit(rest)), plain(dir === "ASC" ? "DESC" : "ASC"), plain(col === N1 ? N2 : N1), plain("GROUP BY"), plain("HAVING"), plain("LIMIT"), plain("AND"), fnTile("COUNT"), plain(String(vals[0]))],
+      wrongTrees: [{ ...q, where: { t: "in", col: Ccol, vals: [vals[0], rest] } }, { ...q, orderBy: [{ col, dir: dir === "ASC" ? "DESC" : "ASC" }] }],
+      alts,
+      hints: [HINT_ORDER, "`col IN (a, b)` is true when col equals any value in the list.", "The filter goes in WHERE, before ORDER BY."],
+    };
+  }
+  const agg = rng.pick(["COUNT", "SUM", "MAX", "MIN"]);
+  const col = rng.pick([N1, N2]);
+  const it = agg === "COUNT" ? { agg, star: true } : { agg, col };
+  const q = { select: [{ col: Ccol }, it], from: t.name, groupBy: Ccol };
+  const groups = new Map();
+  t.rows.forEach((r) => groups.set(r[Ccol], [...(groups.get(r[Ccol]) || []), r]));
+  if (groups.size < 2) return null;
+  const wrongTrees = [];
+  if (agg !== "COUNT") wrongTrees.push(...["SUM", "MAX", "MIN"].filter((a) => a !== agg).map((a) => ({ ...q, select: [{ col: Ccol }, { agg: a, col }] })));
+  else wrongTrees.push({ ...q, select: [{ col: Ccol }, { agg: "SUM", col }] });
+  let hv = null;
+  if (kind === "having") {
+    const vals = [...groups.values()].map((g) => aggOf(it, g));
+    const op = rng.pick([">", ">=", "<", "<="]);
+    const v = rng.pick(vals);
+    const pass = vals.filter((x) => CMP[op](x, v)).length;
+    if (pass < 1 || pass >= vals.length) return null;
+    hv = { ...it, op, v };
+    q.having = hv;
+    wrongTrees.push({ ...q, having: { ...hv, op: FLIP[op] } });
+  }
+  const s = wqSql(q);
+  const alts = hv ? [s.replace(`${renderItem(hv)} ${hv.op} ${hv.v}`, `${hv.v} ${SIDE[hv.op]} ${renderItem(hv)}`)] : [];
+  const testWords = hv ? ` Only include groups where ${itemWords(it)} is ${OP_WORDS[hv.op]} ${hv.v}.` : "";
+  return {
+    q, T, tables: [t],
+    task: `For each ${C(Ccol)} in ${tn}, write a query that shows ${C(Ccol)} and ${itemWords(it)} for that ${C(Ccol)}.${testWords}${agg === "COUNT" ? " Count rows with `*`." : ""}`,
+    extraRules: [],
+    pool: [plain("WHERE"), plain(hv ? "ORDER BY" : "HAVING"), ...["COUNT", "SUM", "AVG", "MAX", "MIN"].filter((a) => a !== agg).map(fnTile), plain(K), plain(col === N1 ? N2 : N1), plain("*"), plain(col), plain("DISTINCT"), ...(hv ? [plain(FLIP[hv.op]), plain(hv.v + 1)] : [plain("LIMIT")])],
+    wrongTrees, alts,
+    hints: [
+      HINT_ORDER,
+      `GROUP BY ${"`"}col${"`"} makes one result row per different value; the aggregate is worked out per group.`,
+      hv ? "A test on an aggregate can't go in WHERE (that runs before grouping): it goes in HAVING, after GROUP BY." : "The grouped column also goes in the SELECT list, before the aggregate.",
+    ],
+  };
+}
+
+// Expert JOIN: two tables, qualified column names.
+function wqJoin(rng) {
+  const { J, L, R } = makeJoinTables(rng);
+  const T = { [L.name]: L, [R.name]: R };
+  const [lab, fk, val] = J.lcols.map((c) => `${L.name}.${c}`);
+  const [rk, rn] = J.rcols.map((c) => `${R.name}.${c}`);
+  const join = { table: R.name, on: [fk, rk] };
+  const vals = L.rows.map((r) => r[J.lcols[2]]);
+  const withWhere = rng.next() < 0.5;
+  const where = withWhere ? { t: "cmp", col: val, op: rng.pick([">", "<", ">=", "<="]), v: rng.pick(vals) } : null;
+  const q = { select: [{ col: lab }, { col: rn }], from: L.name, join, ...(where ? { where } : {}) };
+  const res = genRun(q, T);
+  const all = genRun({ ...q, where: undefined }, T);
+  if (res.length < 1 || (where && res.length === all.length)) return null;
+  if (!where && all.length === L.rows.length) return null; // let the JOIN drop a row
+  const s = wqSql(q);
+  const swapped = s.replace(`ON ${fk} = ${rk}`, `ON ${rk} = ${fk}`);
+  const alts = [swapped, s.replace("INNER JOIN", "JOIN"), swapped.replace("INNER JOIN", "JOIN")];
+  if (where) alts.push(s.replace(renderCond(where), `${where.v} ${SIDE[where.op]} ${where.col}`));
+  const wrongTrees = [{ ...q, select: [{ col: lab }, { col: fk }] }];
+  if (where) wrongTrees.push({ ...q, where: mutateCmp(where, FLIP[where.op]) });
+  return {
+    q, T, tables: [L, R],
+    task: `Write a query that shows ${C(lab)} and ${C(rn)} for every **${L.name}** row that has a matching **${R.name}** row (matching ${C(fk)} with ${C(rk)})${where ? `, where ${condWords(where)}` : ""}.`,
+    extraRules: [`Write INNER JOIN, put the table name in front of every column (like ${val}), and in ON put the ${L.name} column first.`],
+    pool: [plain("LEFT JOIN"), plain("WHERE"), plain(fk), plain(rk), plain(val), plain(`${L.name}.${J.rcols[1]}`), plain(R.name === "customers" ? "orders.name" : `${R.name}.${J.lcols[0]}`), plain("GROUP BY"), plain("USING"), plain("AND"), ...(where ? [plain(FLIP[where.op])] : [plain("ORDER BY")])],
+    wrongTrees, alts,
+    hints: [
+      HINT_ORDER,
+      `The JOIN goes straight after FROM ${L.name}: name the other table, then ON and the two key columns that must be equal.`,
+      "With two tables, write every column as table.column so the database knows which table you mean.",
+    ],
+  };
+}
+
+// ---- verify for write-query ----
+
+function verifyWriteQuery(question, answer) {
+  const p = question.params;
+  if (typeof question.answer !== "string" || typeof answer !== "string" || !answer.trim()) return false;
+  if (!question.runnable || !question.meta || !question.meta.tables) return false;
+  // Blocks: valid tree, serialises to the answer, distractor count fits the level.
+  const b = question.blocks;
+  if (!b || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  const { s, used } = serialiseBlocks(b);
+  if (s !== question.answer) return false;
+  const [lo, hi] = WQ_DISTRACTORS[p.diff];
+  const extra = b.tiles.length - used.size;
+  if (extra < lo || extra > hi) return false;
+  // The answer and every accepted form run to the intended result.
+  const acc = Array.isArray(question.accepts) ? question.accepts : [];
+  if (acc.length > 20) return false;
+  const forms = [question.answer, ...acc];
+  if (new Set(forms.map(textNorm)).size !== forms.length) return false;
+  for (const f of forms) {
+    const r = rExec(f, p.tables);
+    if (!sameRows(r.rows, p.want, p.ordered)) return false;
+  }
+  // Each plausible wrong query runs to something else (or fails).
+  for (const w of p.wrong) {
+    let r = null;
+    try { r = rExec(w, p.tables); } catch { r = null; }
+    if (r && sameRows(r.rows, p.want, p.ordered)) return false;
+  }
+  return forms.map(textNorm).includes(textNorm(answer));
+}
+
+// =============================================================================================
+// Run engine: a small SQL tokenizer, parser and evaluator for exactly what write-query teaches.
+// SELECT [DISTINCT] cols | * | COUNT/SUM/AVG/MIN/MAX(…) [AS alias], FROM t [INNER JOIN u ON a = b],
+// WHERE with AND/OR/NOT, comparisons, IN (…), BETWEEN, LIKE, GROUP BY, HAVING, ORDER BY ASC/DESC,
+// LIMIT [OFFSET]. Keywords and names are case-insensitive; text comparisons are exact. No eval.
+
+class SqlError extends Error {}
+const sqlFail = (m) => { throw new SqlError(m); };
+const R_KW = new Set(["SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "BETWEEN", "LIKE", "ORDER", "BY", "ASC", "DESC", "LIMIT",
+  "OFFSET", "GROUP", "HAVING", "INNER", "JOIN", "ON", "AS", "DISTINCT", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS", "NULL", "IS", "USING"]);
+const R_FN = new Set(["COUNT", "SUM", "AVG", "MIN", "MAX"]);
+const CLAUSE_WORDS = new Set(["SELECT", "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "LIMIT", "JOIN", "INNER", "ON"]);
+const ORDER_MSG = "clauses go in the order SELECT, FROM, JOIN … ON, WHERE, GROUP BY, HAVING, ORDER BY, LIMIT";
+
+function rTokenize(src) {
+  const out = [];
+  let i = 0;
+  while (i < src.length) {
+    const ch = src[i];
+    if (/\s/.test(ch)) { i++; continue; }
+    if (ch === "'" || ch === "‘" || ch === "’") {
+      let j = i + 1, v = "";
+      for (;;) {
+        if (j >= src.length) sqlFail("a text value is missing its closing quote '");
+        const c = src[j];
+        if (c === "'" || c === "‘" || c === "’") {
+          if (src[j + 1] === "'") { v += "'"; j += 2; continue; }
+          break;
+        }
+        v += c;
+        j++;
+      }
+      out.push({ k: "str", v, text: src.slice(i, j + 1) });
+      i = j + 1;
+      continue;
+    }
+    if (ch === '"' || ch === "“" || ch === "”") sqlFail("put text in single quotes, like 'Dog' (double quotes mean a column name)");
+    const prev = out[out.length - 1];
+    const negOk = ch === "-" && /[0-9.]/.test(src[i + 1] || "") && (!prev || prev.k === "op" || prev.k === "kw" || (prev.k === "sym" && prev.v !== ")"));
+    if (/[0-9]/.test(ch) || (ch === "." && /[0-9]/.test(src[i + 1] || "")) || negOk || ch === "−") {
+      let j = i + (ch === "-" || ch === "−" ? 1 : 0);
+      while (j < src.length && /[0-9.]/.test(src[j])) j++;
+      const text = src.slice(i, j);
+      const v = Number(text.replace("−", "-"));
+      if (!Number.isFinite(v) || /\..*\./.test(text)) sqlFail(`"${text}" isn't a number`);
+      if (/[A-Za-z_]/.test(src[j] || "")) sqlFail(`"${text}${src[j]}…" isn't a number or a name`);
+      out.push({ k: "num", v, text });
+      i = j;
+      continue;
+    }
+    if (/[A-Za-z_]/.test(ch)) {
+      let j = i;
+      while (j < src.length && /[A-Za-z0-9_]/.test(src[j])) j++;
+      if (src[j] === "." && /[A-Za-z_*]/.test(src[j + 1] || "")) {
+        j++;
+        if (src[j] === "*") j++;
+        else while (j < src.length && /[A-Za-z0-9_]/.test(src[j])) j++;
+      }
+      const w = src.slice(i, j);
+      const up = w.toUpperCase();
+      if (R_KW.has(up)) out.push({ k: "kw", v: up, text: w });
+      else if (R_FN.has(up)) out.push({ k: "fn", v: up, text: w });
+      else out.push({ k: "id", v: w, text: w });
+      i = j;
+      continue;
+    }
+    const two = src.substr(i, 2);
+    if (two === "<>" || two === "!=" || two === "<=" || two === ">=") { out.push({ k: "op", v: two === "!=" ? "<>" : two, text: two }); i += 2; continue; }
+    if (two === "==") sqlFail("SQL uses a single = to compare");
+    if (ch === "=" || ch === "<" || ch === ">") { out.push({ k: "op", v: ch, text: ch }); i++; continue; }
+    if (ch === "≠") { out.push({ k: "op", v: "<>", text: ch }); i++; continue; }
+    if (ch === "≤" || ch === "≥") { out.push({ k: "op", v: ch === "≤" ? "<=" : ">=", text: ch }); i++; continue; }
+    if ("(),;*".includes(ch)) { out.push({ k: "sym", v: ch, text: ch }); i++; continue; }
+    sqlFail(`unexpected character "${ch}"`);
+  }
+  return out;
+}
+
+function rParse(src) {
+  const tk = rTokenize(src);
+  let p = 0;
+  const t = () => tk[p];
+  const near = () => (t() ? ` near "${t().text}"` : " at the end");
+  const isKw = (v) => t() && t().k === "kw" && t().v === v;
+  const isSym = (v) => t() && t().k === "sym" && t().v === v;
+  const needKw = (v, what) => { if (!isKw(v)) sqlFail(`expected ${what || v}${near()}`); p++; };
+  const needSym = (v, what) => { if (!isSym(v)) sqlFail(`expected ${what || `"${v}"`}${near()}`); p++; };
+  const colName = (what = "a column name") => {
+    const x = t();
+    if (x && x.k === "id") { p++; return { col: x.v }; }
+    if (x && x.k === "kw") sqlFail(`expected ${what}${near()}${CLAUSE_WORDS.has(x.v) ? ` (${x.v} is a keyword)` : ""}`);
+    if (x && x.k === "str") sqlFail(`expected ${what} but found the text ${x.text}; column names don't take quotes`);
+    sqlFail(`expected ${what}${near()}`);
+  };
+  const fnCall = () => {
+    const fn = t().v;
+    p++;
+    needSym("(", `"(" after ${fn}`);
+    let star = false, distinct = false, col = null;
+    if (isSym("*")) {
+      if (fn !== "COUNT") sqlFail(`${fn}(*) isn't allowed: only COUNT(*) counts rows; give ${fn} a column`);
+      p++;
+      star = true;
+    } else {
+      if (isKw("DISTINCT")) { p++; distinct = true; }
+      col = colName("a column inside the brackets").col;
+    }
+    needSym(")", `")" to close ${fn}(`);
+    return { fn, star, distinct, col };
+  };
+  const operand = () => {
+    const x = t();
+    if (!x) sqlFail("the condition stops too early");
+    if (x.k === "num" || x.k === "str") { p++; return { lit: x.v }; }
+    if (x.k === "fn") return { agg: fnCall() };
+    if (x.k === "kw" && x.v === "NULL") sqlFail("these tables have no NULL values");
+    return colName("a column name, a number or 'text'");
+  };
+  const literal = () => {
+    const x = t();
+    if (x && (x.k === "num" || x.k === "str")) { p++; return x.v; }
+    sqlFail(`expected a number or 'text'${near()}`);
+  };
+  function primary() {
+    if (isKw("NOT")) { p++; return { not: primary() }; }
+    if (isSym("(")) { p++; const c = orExpr(); needSym(")", '")" to close the bracket'); return c; }
+    const left = operand();
+    let neg = false;
+    if (isKw("NOT")) { p++; neg = true; if (!isKw("IN") && !isKw("LIKE") && !isKw("BETWEEN")) sqlFail(`expected IN, LIKE or BETWEEN after NOT${near()}`); }
+    let c;
+    if (isKw("IN")) {
+      p++;
+      needSym("(", '"(" after IN');
+      const vals = [literal()];
+      while (isSym(",")) { p++; vals.push(literal()); }
+      needSym(")", '")" to close the IN list');
+      c = { left, inVals: vals };
+    } else if (isKw("BETWEEN")) {
+      p++;
+      const lo = operand();
+      needKw("AND", "AND in BETWEEN … AND …");
+      c = { left, between: [lo, operand()] };
+    } else if (isKw("LIKE")) {
+      p++;
+      const x = t();
+      if (!x || x.k !== "str") sqlFail(`LIKE needs a 'text pattern'${near()}`);
+      p++;
+      c = { left, like: x.v };
+    } else if (isKw("IS")) {
+      sqlFail("these tables have no NULL values, so IS NULL isn't needed");
+    } else if (t() && t().k === "op") {
+      const op = t().v;
+      p++;
+      c = { left, op, right: operand() };
+    } else {
+      sqlFail(`expected a comparison such as =, >, IN or BETWEEN${near()}`);
+    }
+    return neg ? { not: c } : c;
+  }
+  function andExpr() { let c = primary(); while (isKw("AND")) { p++; c = { and: [c, primary()] }; } return c; }
+  function orExpr() { let c = andExpr(); while (isKw("OR")) { p++; c = { or: [c, andExpr()] }; } return c; }
+
+  if (!tk.length) sqlFail("type a query first");
+  needKw("SELECT", "SELECT at the start");
+  const q = { items: [], distinct: false };
+  if (isKw("DISTINCT")) { p++; q.distinct = true; }
+  if (isSym("*")) { p++; q.star = true; }
+  else {
+    do {
+      if (isSym(",")) p++;
+      const x = t();
+      let it;
+      if (x && x.k === "fn") it = { agg: fnCall() };
+      else if (x && x.k === "id" && /\.\*$/.test(x.v)) sqlFail("write SELECT * or name the columns");
+      else it = colName();
+      if (isKw("AS")) { p++; it.alias = colName("a name after AS").col; }
+      q.items.push(it);
+    } while (isSym(","));
+  }
+  if (t() && t().k === "id") sqlFail(`missing comma before "${t().text}"`);
+  needKw("FROM", "FROM after the column list");
+  const ft = t();
+  if (!ft || ft.k !== "id") sqlFail(`expected a table name after FROM${near()}`);
+  q.from = ft.v;
+  p++;
+  if (isKw("LEFT") || isKw("RIGHT") || isKw("FULL") || isKw("OUTER") || isKw("CROSS")) sqlFail(`${t().text.toUpperCase()} JOIN isn't covered here: use INNER JOIN`);
+  if (isKw("INNER") || isKw("JOIN")) {
+    if (isKw("INNER")) { p++; needKw("JOIN", "JOIN after INNER"); } else p++;
+    const jt = t();
+    if (!jt || jt.k !== "id") sqlFail(`expected a table name after JOIN${near()}`);
+    q.join = jt.v;
+    p++;
+    if (isKw("USING")) sqlFail("write the join as ON a.col = b.col");
+    needKw("ON", "ON after the joined table");
+    const a = colName("a column after ON").col;
+    if (!t() || t().k !== "op" || t().v !== "=") sqlFail(`expected = between the two ON columns${near()}`);
+    p++;
+    q.on = [a, colName("a column after =").col];
+  }
+  if (isKw("WHERE")) { p++; q.where = orExpr(); }
+  if (isKw("GROUP")) {
+    p++;
+    needKw("BY", "BY after GROUP");
+    q.group = [colName().col];
+    while (isSym(",")) { p++; q.group.push(colName().col); }
+  }
+  if (isKw("HAVING")) { p++; q.having = orExpr(); }
+  if (isKw("ORDER")) {
+    p++;
+    needKw("BY", "BY after ORDER");
+    q.order = [];
+    do {
+      if (isSym(",")) p++;
+      const x = t();
+      let e;
+      if (x && x.k === "num") { p++; e = { pos: x.v }; }
+      else if (x && x.k === "fn") e = { agg: fnCall() };
+      else e = colName("a column after ORDER BY");
+      let desc = false;
+      if (isKw("ASC")) p++;
+      else if (isKw("DESC")) { p++; desc = true; }
+      q.order.push({ e, desc });
+    } while (isSym(","));
+  }
+  if (isKw("LIMIT")) {
+    p++;
+    const x = t();
+    if (!x || x.k !== "num" || !Number.isInteger(x.v) || x.v < 0) sqlFail(`LIMIT needs a whole number${near()}`);
+    p++;
+    q.limit = x.v;
+    if (isKw("OFFSET")) {
+      p++;
+      const y = t();
+      if (!y || y.k !== "num" || !Number.isInteger(y.v) || y.v < 0) sqlFail(`OFFSET needs a whole number${near()}`);
+      p++;
+      q.offset = y.v;
+    }
+  }
+  if (isSym(";")) p++;
+  if (p < tk.length) {
+    const x = t();
+    if (x.k === "kw" && CLAUSE_WORDS.has(x.v)) sqlFail(`"${x.text}" is in the wrong place: ${ORDER_MSG}`);
+    if (x.k === "sym" && x.v === ";") sqlFail("only one query, please: there's text after the semicolon");
+    sqlFail(`unexpected "${x.text}"`);
+  }
+  return q;
+}
+
+// Run SQL text against tables { name: { cols, rows: [[…]] } }. Throws SqlError with a message.
+function rExec(src, tables) {
+  const q = rParse(src);
+  const findTable = (name) => {
+    const key = Object.keys(tables).find((k) => k.toLowerCase() === name.toLowerCase());
+    if (!key) sqlFail(`unknown table: ${name} (this question has ${Object.keys(tables).join(" and ")})`);
+    return key;
+  };
+  const used = [findTable(q.from)];
+  if (q.join) {
+    used.push(findTable(q.join));
+    if (used[0] === used[1]) sqlFail("joining a table to itself isn't covered here");
+  }
+  // Schema: lowercase name → slot; bare names only when they belong to one table.
+  const schema = new Map();
+  const cols = [];
+  used.forEach((tn) => tables[tn].cols.forEach((c, ci) => {
+    const slot = { tn, ci, name: q.join ? `${tn}.${c}` : c };
+    cols.push(slot);
+    schema.set(`${tn}.${c}`.toLowerCase(), slot);
+    const bare = c.toLowerCase();
+    schema.set(bare, schema.has(bare) ? "ambiguous" : slot);
+  }));
+  const resolve = (name) => {
+    const s = schema.get(name.toLowerCase());
+    if (s === "ambiguous") sqlFail(`ambiguous column: ${name} is in both tables, so write it as table.${name}`);
+    if (!s) {
+      const dot = name.indexOf(".");
+      if (dot > 0 && !used.some((tn) => tn.toLowerCase() === name.slice(0, dot).toLowerCase())) sqlFail(`unknown table in ${name}: ${name.slice(0, dot)} isn't in FROM or JOIN`);
+      sqlFail(`unknown column: ${name}`);
+    }
+    return s;
+  };
+  // Source rows: arrays per table (one table, or joined pairs).
+  let rows = tables[used[0]].rows.map((r) => [r]);
+  if (q.join) {
+    const a = resolve(q.on[0]), b = resolve(q.on[1]);
+    if (a.tn === b.tn) sqlFail("ON must compare a column from each table");
+    const right = tables[used[1]].rows;
+    const out = [];
+    for (const l of rows) for (const r of right) {
+      const pair = [l[0], r];
+      if (cellOf(pair, a) === cellOf(pair, b)) out.push(pair);
+    }
+    rows = out;
+  }
+  function cellOf(row, slot) { return row[used.indexOf(slot.tn)][slot.ci]; }
+  const val = (row, name) => cellOf(row, resolve(name));
+
+  // Validate every column name now, so errors show even when no rows match.
+  const checkCond = (c, aggOk) => {
+    if (!c) return;
+    if (c.not) return checkCond(c.not, aggOk);
+    if (c.and || c.or) return (c.and || c.or).forEach((x) => checkCond(x, aggOk));
+    [c.left, c.right, ...(c.between || [])].forEach((o) => {
+      if (!o) return;
+      if (o.agg) { if (!aggOk) sqlFail("COUNT, SUM, AVG, MIN and MAX can't go in WHERE: test them in HAVING, after GROUP BY"); if (o.agg.col) resolve(o.agg.col); }
+      else if (o.col) resolve(o.col);
+    });
+  };
+  checkCond(q.where, false);
+  checkCond(q.having, true);
+  q.items.forEach((it) => { if (it.agg) { if (it.agg.col) resolve(it.agg.col); } else resolve(it.col); });
+  (q.group || []).forEach(resolve);
+
+  const numCheck = (fn, name) => {
+    const s = resolve(name);
+    if (fn === "SUM" || fn === "AVG") if (tables[s.tn].rows.some((r) => typeof r[s.ci] !== "number")) sqlFail(`${fn} needs a number column, but ${name} holds text`);
+  };
+  const agg = (a, grp) => {
+    if (a.fn === "COUNT") {
+      if (a.star) return grp.length;
+      const vs = grp.map((r) => val(r, a.col));
+      return a.distinct ? new Set(vs).size : vs.length;
+    }
+    numCheck(a.fn, a.col);
+    let vs = grp.map((r) => val(r, a.col));
+    if (a.distinct) vs = [...new Set(vs)];
+    if (!vs.length) return null;
+    if (a.fn === "SUM") return vs.reduce((x, y) => x + y, 0);
+    if (a.fn === "AVG") return vs.reduce((x, y) => x + y, 0) / vs.length;
+    return vs.reduce((x, y) => ((a.fn === "MIN" ? y < x : y > x) ? y : x));
+  };
+  const cmp = (x, op, y) => {
+    if (x === null || y === null) return false;
+    if (typeof x !== typeof y) sqlFail(`can't compare ${typeof x === "number" ? x : `'${x}'`} with ${typeof y === "number" ? y : `'${y}'`}: one is text and one is a number (text needs quotes, numbers don't)`);
+    return CMP[op](x, y);
+  };
+  const likeRe = (pat) => new RegExp(`^${[...pat].map((c) => (c === "%" ? ".*" : c === "_" ? "." : c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).join("")}$`, "is");
+  // ctx: { row } for plain rows, { grp } for groups (aggregates allowed).
+  const opVal = (o, ctx) => {
+    if ("lit" in o) return o.lit;
+    if (o.agg) return agg(o.agg, ctx.grp);
+    if (ctx.grp) {
+      if (!groupKeys.includes(resolve(o.col))) sqlFail(`${o.col} must be in GROUP BY or inside COUNT, SUM, AVG, MIN or MAX`);
+      return ctx.grp.length ? val(ctx.grp[0], o.col) : null;
+    }
+    return val(ctx.row, o.col);
+  };
+  const test = (c, ctx) => {
+    if (c.not) return !test(c.not, ctx);
+    if (c.and) return test(c.and[0], ctx) && test(c.and[1], ctx);
+    if (c.or) return test(c.or[0], ctx) || test(c.or[1], ctx);
+    const x = opVal(c.left, ctx);
+    if (c.inVals) return c.inVals.some((v) => cmp(x, "=", v));
+    if (c.between) return cmp(x, ">=", opVal(c.between[0], ctx)) && cmp(x, "<=", opVal(c.between[1], ctx));
+    if (c.like !== undefined) {
+      if (typeof x !== "string") sqlFail("LIKE works on text columns");
+      return likeRe(c.like).test(x);
+    }
+    return cmp(x, c.op, opVal(c.right, ctx));
+  };
+
+  if (q.where) rows = rows.filter((row) => test(q.where, { row }));
+  const grouped = !!q.group || !!q.having || q.items.some((it) => it.agg);
+  const groupKeys = (q.group || []).map(resolve);
+  const label = (it) => it.alias || (it.agg ? `${it.agg.fn}(${it.agg.star ? "*" : `${it.agg.distinct ? "DISTINCT " : ""}${it.agg.col}`})` : it.col);
+  const columns = q.star ? cols.map((s) => s.name) : q.items.map(label);
+  let out = []; // { cells, ctx }
+  if (grouped) {
+    if (q.star) sqlFail("SELECT * can't be used with GROUP BY or COUNT, SUM, AVG, MIN, MAX: name the columns");
+    const groups = [];
+    if (q.group) {
+      const index = new Map();
+      for (const row of rows) {
+        const key = JSON.stringify(groupKeys.map((s) => cellOf(row, s)));
+        if (!index.has(key)) { index.set(key, groups.length); groups.push([]); }
+        groups[index.get(key)].push(row);
+      }
+    } else groups.push(rows);
+    for (const grp of groups) {
+      const ctx = { grp };
+      if (q.having && !test(q.having, ctx)) continue;
+      out.push({ cells: q.items.map((it) => opVal(it.agg ? it : { col: it.col }, ctx)), ctx });
+    }
+  } else {
+    out = rows.map((row) => ({ cells: q.star ? cols.map((s) => cellOf(row, s)) : q.items.map((it) => val(row, it.col)), ctx: { row } }));
+  }
+  if (q.order) {
+    const keyOf = (o, r) => {
+      if (o.e.pos !== undefined) {
+        if (o.e.pos < 1 || o.e.pos > columns.length) sqlFail(`ORDER BY ${o.e.pos} is past the last column`);
+        return r.cells[o.e.pos - 1];
+      }
+      if (o.e.col && !q.star) {
+        const ai = q.items.findIndex((it) => it.alias && it.alias.toLowerCase() === o.e.col.toLowerCase());
+        if (ai >= 0) return r.cells[ai];
+      }
+      return opVal(o.e, r.ctx);
+    };
+    const keyed = out.map((r, i) => ({ r, i, k: q.order.map((o) => keyOf(o, r)) }));
+    keyed.sort((a, b) => {
+      for (let j = 0; j < q.order.length; j++) {
+        const x = a.k[j], y = b.k[j];
+        if (x === y) continue;
+        if (typeof x !== typeof y) return 0;
+        return (x < y ? -1 : 1) * (q.order[j].desc ? -1 : 1);
+      }
+      return a.i - b.i;
+    });
+    out = keyed.map((x) => x.r);
+  }
+  let res = out.map((r) => r.cells);
+  if (q.distinct) {
+    const seen = new Set();
+    res = res.filter((r) => { const k = JSON.stringify(r); if (seen.has(k)) return false; seen.add(k); return true; });
+  }
+  if (q.limit !== undefined || q.offset !== undefined) res = res.slice(q.offset || 0, (q.offset || 0) + (q.limit ?? res.length));
+  return { columns, rows: res };
+}
+
+// Learners test their query: { columns, rows } (at most 200 rows) or { error }. Never throws.
+export function run(question, answerString) {
+  try {
+    if (!question || question.runnable !== true) return { error: "This question can't be run." };
+    const tables = (question.meta && question.meta.tables) || (question.params && question.params.tables);
+    if (!tables || typeof tables !== "object") return { error: "This question has no table data to run against." };
+    const src = typeof answerString === "string" ? answerString : "";
+    if (!src.trim()) return { error: "Type a query first." };
+    if (src.length > 2000) return { error: "That query is too long (2000 characters at most)." };
+    const r = rExec(src, tables);
+    const fix = (v) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 10000) / 10000 : v);
+    return { columns: r.columns.map(String), rows: r.rows.slice(0, 200).map((row) => row.map((v) => (v === undefined ? null : fix(v)))) };
+  } catch (e) {
+    return { error: e instanceof SqlError ? e.message.charAt(0).toUpperCase() + e.message.slice(1) : "Couldn't run that query." };
+  }
 }

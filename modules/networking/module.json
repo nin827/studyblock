@@ -4,6 +4,7 @@
   "description": "IPv4 addresses in binary, subnet masks and CIDR, network and broadcast addresses, and data transfer times.",
   "icon": "network",
   "type": "generator",
+  "fuzzy": false,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "ip-binary", "title": "IP addresses and binary", "difficulties": ["easy", "medium", "hard", "expert"] },
