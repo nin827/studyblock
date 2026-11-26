@@ -1080,7 +1080,7 @@ function xBudget(rng) {
     const N = rng.int(20, 90);
     const j = rng.int(0, N - 2);
     const cost = rng.pick([150, 160, 180, 200, 300]);
-    const k = rng.int(2, 40);
+    const k = rng.int(3, 18);
     const G = cost * k + rng.int(0, cost - 1);
     const q = 1 - p / 100;
     const left = N - j; // the guaranteed pull is this many pulls away

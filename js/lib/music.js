@@ -1,7 +1,9 @@
 // Music theory helpers for the Music Theory generators (Intervals & Scales, Chords, Rhythm).
 // Pure: no DOM, no randomness. Notes are spelled as { l, a }: l = letter index 0-6 (C D E F G A B),
-// a = accidental in semitones (-1 flat, +1 sharp; ±2 would be a double flat/sharp, which the
-// generators avoid). Two independent toolkits live here:
+// a = accidental in semitones (-1 flat, +1 sharp, ±2 double flat/sharp, shown as 𝄫 and 𝄪).
+// Double accidentals appear only where theory needs them (the raised 7th of G♯ and D♯ harmonic
+// minor, diminished and augmented triads such as D♭ F♭ A𝄫); `plain` notes have at most one.
+// Two independent toolkits live here:
 //   - BUILD (used by generate): pitch-class arithmetic and key-signature tables.
 //   - CHECK (used by verify): walking letter names on a keyboard (E-F and B-C are half steps),
 //     step patterns (W W H W W W H) and interval classification. They share no lookup tables
@@ -10,22 +12,27 @@
 export const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
 export const SHARP = '♯';
 export const FLAT = '♭';
+export const DOUBLE_SHARP = '\u{1D12A}'; // 𝄪
+export const DOUBLE_FLAT = '\u{1D12B}'; // 𝄫
 
 export const note = (l, a = 0) => ({ l: ((l % 7) + 7) % 7, a });
 export const sameNote = (x, y) => !!x && !!y && x.l === y.l && x.a === y.a;
 export const plain = (n) => Math.abs(n.a) <= 1; // no double sharps/flats
+export const spellable = (n) => !!n && Math.abs(n.a) <= 2; // at most a double sharp/flat
 
 export function fmt(n) {
+  if (n.a === 2) return LETTERS[n.l] + DOUBLE_SHARP;
+  if (n.a === -2) return LETTERS[n.l] + DOUBLE_FLAT;
   return LETTERS[n.l] + (n.a > 0 ? SHARP.repeat(n.a) : FLAT.repeat(-n.a));
 }
 export const fmtList = (ns) => ns.map(fmt).join(', ');
 
-// "F♯", "F#", "Bb", "B♭", "C" -> note, or null.
+// "F♯", "F#", "Bb", "B♭", "C", "F𝄪", "F##", "B𝄫", "Bbb" -> note, or null (at most a double accidental).
 export function parseNote(s) {
-  const m = /^([A-G])([♯#]*|[♭b]*)$/.exec(String(s ?? '').trim());
+  const m = /^([A-G])(\u{1D12A}|\u{1D12B}|[♯#]{0,2}|[♭b]{0,2})$/u.exec(String(s ?? '').trim());
   if (!m) return null;
   const acc = m[2];
-  const a = /[♯#]/.test(acc) ? acc.length : -acc.length;
+  const a = acc === DOUBLE_SHARP ? 2 : acc === DOUBLE_FLAT ? -2 : /[♯#]/.test(acc) ? acc.length : -acc.length;
   return note(LETTERS.indexOf(m[1]), a);
 }
 // "D, F♯, A" -> [notes] or null.
@@ -138,6 +145,9 @@ export const SEVENTH = {
   maj7: [[3, 'major'], [5, 'perfect'], [7, 'major']],
   min7: [[3, 'minor'], [5, 'perfect'], [7, 'minor']],
 };
+// Half-diminished 7th (m7♭5, the diatonic seventh chord on degree vii of a major key). Kept out of
+// SEVENTH so the generators that loop over SEVENTH's keys draw exactly as before.
+export const HALF_DIM7 = [[3, 'minor'], [5, 'diminished'], [7, 'minor']];
 export const buildChord = (root, recipe) => [root, ...recipe.map(([n, q]) => noteAbove(root, n, q))];
 
 // ---------------------------------------------------------------- CHECK (verification side)
@@ -242,6 +252,7 @@ export function identifyChord(notes) {
       if (q3 === 'major' && q5 === 'perfect' && q7 === 'minor') quality = 'dom7';
       else if (q3 === 'major' && q5 === 'perfect' && q7 === 'major') quality = 'maj7';
       else if (q3 === 'minor' && q5 === 'perfect' && q7 === 'minor') quality = 'min7';
+      else if (q3 === 'minor' && q5 === 'diminished' && q7 === 'minor') quality = 'hdim7';
     }
     if (!quality) return null;
     const bassStep = (notes[0].l - r.l + 7) % 7;

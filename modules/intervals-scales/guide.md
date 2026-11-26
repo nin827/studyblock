@@ -37,7 +37,7 @@ Example: D up to F♯ spans D, E, F (a 3rd) and 4 semitones, so it is a **major 
 
 1. Write the letter names from the tonic, each one once.
 2. Add the key signature's sharps or flats.
-3. For harmonic minor, raise the 7th note by a semitone.
+3. For harmonic minor, raise the 7th note by a semitone. If it is already sharp, it becomes a double sharp: G♯ harmonic minor ends on F𝄪, D♯ harmonic minor on C𝄪.
 4. Check against the step pattern.
 
 Example: G major is G, A, B, C, D, E, F♯. Its 7th note is **F♯**.

@@ -755,6 +755,16 @@ const okDp = (...xs) => xs.every((x) => Number.isFinite(x) && x > 0 && !isTie(x)
 const BEARINGS = " Bearings are measured clockwise from north, from 0 up to (not including) 360.";
 let XB = null; // bearing values written as 065° in the prompt (inPrompt can't see them)
 
+// Expert bearings are answered to the nearest whole degree (ticket 015). The exact bearing stays at
+// least 0.02° from a half degree and never rounds to 0 or 360, so the rounding is never in doubt.
+const BEAR_ROUND = " Round the distance to 2 decimal places and the bearing to the nearest whole degree.";
+const LATE_DEG = " Round the bearing to the nearest whole degree only at the end.";
+const okBearing = (b) => Number.isFinite(b) && b >= 0.5 && b < 359.5 && Math.abs((b % 1) - 0.5) >= 0.02;
+function partBearing(id, label, ask, exact, hint) {
+  return { id, label, ask: `${ask} (degrees, to the nearest whole degree)`, answerType: "number", answer: Math.round(exact), tolerance: 0, hint };
+}
+const finalDeg = (exact) => `${mid(exact)}°, which rounds to **${Math.round(exact)}°**`;
+
 function part2(id, label, ask, exact, unit, hint) {
   const u = unit === "°" ? " (degrees)" : unit ? ` (${unit})` : "";
   return { id, label, ask: `${ask}${u}`, answerType: "number", answer: round2(exact), tolerance: 0.005, hint };
@@ -916,25 +926,25 @@ function xBearingBack(rng) {
   const alpha = atanD(b / a);
   const out = mod360(b1 + (right ? alpha : -alpha));
   const back = mod360(out + 180);
-  if (!okDp(dist, back) || back < 0.01 || back > 359.99 || Math.abs(a - b) < 0.3) return null;
+  if (!okDp(dist) || !okBearing(back) || Math.abs(a - b) < 0.3) return null;
   XB.push(b1);
   return {
-    prompt: `${who} travels ${show(a)} km from a start point S on a bearing of ${pad3(b1)}°, then turns 90° to the ${right ? "right" : "left"} and travels ${show(b)} km in a straight line to a point E.${BEARINGS}${UNROUNDED}${ROUND}`,
+    prompt: `${who} travels ${show(a)} km from a start point S on a bearing of ${pad3(b1)}°, then turns 90° to the ${right ? "right" : "left"} and travels ${show(b)} km in a straight line to a point E.${BEARINGS}${UNROUNDED}${BEAR_ROUND}`,
     answerType: "multi",
     parts: [
       part2("dist", "Distance", "Straight-line distance from E back to S", dist, "km", `The two legs meet at a right angle, so the distance back is the hypotenuse.`),
-      part2("bearing", "Bearing", "Bearing of S from E", back, "°", `First find the bearing of E from S, then add or subtract 180° so the result lies from 0 to 360.`),
+      partBearing("bearing", "Bearing", "Bearing of S from E", back, `First find the bearing of E from S, then add or subtract 180° so the result lies from 0 to 360.`),
     ],
     explanation: [
       `S, the turning point T and E form a right-angled triangle with the right angle at T. The angle at S between the first leg and SE is \`atan(b / a)\`.`,
       `Turning ${right ? "right" : "left"} puts E ${right ? "clockwise" : "anticlockwise"} of the first bearing, so the bearing of E from S is ${pad3(b1)} ${right ? "+" : "-"} that angle. The bearing back is that plus or minus 180°.`,
-      [given("_a", a), given("_b", b), given("_bear1", b1), row("_dist", "sqrt(_a^2 + _b^2)", final(dist, "2dp", "km")), row("_alpha", "atan(_b / _a)", mid(alpha)), row("_out", `_bear1 ${right ? "+" : "-"} _alpha`, mid(out) + (out !== b1 + (right ? alpha : -alpha) ? " (after wrapping into 0 to 360)" : "")), row("_back", "_out ± 180", final(back, "2dp", "°"))].join("\n"),
+      [given("_a", a), given("_b", b), given("_bear1", b1), row("_dist", "sqrt(_a^2 + _b^2)", final(dist, "2dp", "km")), row("_alpha", "atan(_b / _a)", mid(alpha)), row("_out", `_bear1 ${right ? "+" : "-"} _alpha`, mid(out) + (Math.abs(out - (b1 + (right ? alpha : -alpha))) > 1e-9 ? " (after wrapping into 0 to 360)" : "")), row("_back", "_out ± 180", finalDeg(back))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-bearing", b1, right, a, b },
     hints: [
       `Sketch it with a north line at S. The two legs meet at a right angle at the turning point, so S, the turning point and E make a right-angled triangle with legs ${show(a)} km and ${show(b)} km.`,
       `The distance SE is the hypotenuse. The angle at S between the first leg and SE is \`atan(_b / _a)\`: the second leg is opposite it.`,
-      `Turning ${right ? "right" : "left"} means E is ${right ? "clockwise" : "anticlockwise"} from the ${pad3(b1)}° line, so ${right ? "add" : "subtract"} that angle to get the bearing of E from S. The bearing back is that ± 180°, kept between 0 and 360.${LATE}`,
+      `Turning ${right ? "right" : "left"} means E is ${right ? "clockwise" : "anticlockwise"} from the ${pad3(b1)}° line, so ${right ? "add" : "subtract"} that angle to get the bearing of E from S. The bearing back is that ± 180°, kept between 0 and 360.${LATE_DEG}`,
     ],
   };
 }
@@ -1050,25 +1060,28 @@ function xBearingCos(rng) {
   const AC = Math.sqrt(d1 * d1 + d2 * d2 - 2 * d1 * d2 * cosD(Bang));
   const angA = acosD((d1 * d1 + AC * AC - d2 * d2) / (2 * d1 * AC));
   const bear = mod360(b1 + (right ? angA : -angA));
-  if (b2 === 0 || !okDp(AC, bear) || bear < 0.01 || bear > 359.99) return null;
+  // Working from PR rounded to 2 decimal places must give the same whole-degree bearing.
+  const angA2 = acosD((d1 * d1 + round2(AC) ** 2 - d2 * d2) / (2 * d1 * round2(AC)));
+  const bear2 = mod360(b1 + (right ? angA2 : -angA2));
+  if (b2 === 0 || !okDp(AC) || !okBearing(bear) || Math.round(bear2) !== Math.round(bear)) return null;
   XB.push(b1, b2);
   return {
-    prompt: `${who} leaves port P and travels ${show(d1)} km on a bearing of ${pad3(b1)}° to a point Q. It then changes course and travels ${show(d2)} km on a bearing of ${pad3(b2)}° to a point R.${BEARINGS}${UNROUNDED}${ROUND}`,
+    prompt: `${who} leaves port P and travels ${show(d1)} km on a bearing of ${pad3(b1)}° to a point Q. It then changes course and travels ${show(d2)} km on a bearing of ${pad3(b2)}° to a point R.${BEARINGS}${UNROUNDED}${BEAR_ROUND}`,
     answerType: "multi",
     parts: [
       part2("dist", "Distance", "Distance PR", AC, "km", `Find the angle inside the triangle at Q from the change of course, then use the cosine rule.`),
-      part2("bearing", "Bearing", "Bearing of R from P", bear, "°", `Find the angle QPR with the cosine rule rearranged, then add it to or subtract it from ${pad3(b1)}°.`),
+      partBearing("bearing", "Bearing", "Bearing of R from P", bear, `Find the angle QPR with the cosine rule rearranged, then add it to or subtract it from ${pad3(b1)}°.`),
     ],
     explanation: [
       `The course changes by ${t}° (${right ? "clockwise" : "anticlockwise"}), so the angle inside triangle PQR at Q is 180° - ${t}° = ${Bang}°.`,
       `Cosine rule for PR, then the rearranged cosine rule for the angle at P. R is ${right ? "clockwise" : "anticlockwise"} of the first course, so ${right ? "add" : "subtract"} that angle${right ? " to" : " from"} ${pad3(b1)}°.`,
-      [given("_d1", d1), given("_d2", d2), given("_bear1", b1), given("_bear2", b2), fact("_angQ", Bang), row("_PR", "sqrt(_d1^2 + _d2^2 - 2 * _d1 * _d2 * cos(_angQ))", final(AC, "2dp", "km")), row("_angP", "acos((_d1^2 + _PR^2 - _d2^2) / (2 * _d1 * _PR))", mid(angA)), row("_bear", `_bear1 ${right ? "+" : "-"} _angP`, final(bear, "2dp", "°") + (Math.abs(bear - (b1 + (right ? angA : -angA))) > 1e-9 ? " (after wrapping into 0 to 360)" : ""))].join("\n"),
+      [given("_d1", d1), given("_d2", d2), given("_bear1", b1), given("_bear2", b2), fact("_angQ", Bang), row("_PR", "sqrt(_d1^2 + _d2^2 - 2 * _d1 * _d2 * cos(_angQ))", final(AC, "2dp", "km")), row("_angP", "acos((_d1^2 + _PR^2 - _d2^2) / (2 * _d1 * _PR))", mid(angA)), row("_bear", `_bear1 ${right ? "+" : "-"} _angP`, finalDeg(bear) + (Math.abs(bear - (b1 + (right ? angA : -angA))) > 1e-9 ? " (after wrapping into 0 to 360)" : ""))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-bearcos", b1, b2, d1, d2 },
     hints: [
       `Sketch it with a north line at P and at Q. The course turns from ${pad3(b1)}° to ${pad3(b2)}°, a change of ${t}°, so the angle inside the triangle at Q is 180° - ${t}°.`,
       `Cosine rule for PR: \`PR² = d1² + d2² - 2 × d1 × d2 × cos(Q)\`. Keep PR unrounded (\`_PR\`).`,
-      `Angle at P: \`cos(P) = (d1² + PR² - d2²) / (2 × d1 × PR)\`. R lies ${right ? "clockwise" : "anticlockwise"} of the first course, so ${right ? "add P to" : "subtract P from"} ${pad3(b1)}° (wrap into 0 to 360 if needed).${LATE}`,
+      `Angle at P: \`cos(P) = (d1² + PR² - d2²) / (2 × d1 × PR)\`. R lies ${right ? "clockwise" : "anticlockwise"} of the first course, so ${right ? "add P to" : "subtract P from"} ${pad3(b1)}° (wrap into 0 to 360 if needed).${LATE_DEG}`,
     ],
   };
 }
@@ -1349,7 +1362,11 @@ function verifyExpert(p, answer) {
     const raw = answer[id];
     if (raw === "" || raw === null || raw === undefined || typeof raw === "boolean") return false;
     const x = Number(raw);
-    if (!Number.isFinite(x) || !Number.isFinite(v) || Math.abs(x - v) > 0.005 + 1e-9) return false;
+    if (!Number.isFinite(x) || !Number.isFinite(v)) return false;
+    // Bearings are whole degrees: the integer within half a degree of the exact bearing.
+    if (id === "bearing" && (p.kind === "x-bearing" || p.kind === "x-bearcos")) {
+      if (!Number.isInteger(x) || Math.abs(x - v) > 0.5) return false;
+    } else if (Math.abs(x - v) > 0.005 + 1e-9) return false;
   }
   return true;
 }

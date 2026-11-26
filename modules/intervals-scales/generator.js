@@ -3,15 +3,15 @@
 // Notes are spelled (letter + accidental), never just semitone numbers, so a major 3rd above D
 // is F♯ and not G♭. Spelled-note answers are always multiple choice (the app's text check can't
 // tell "F#" from "F♯"); spelling a whole scale is built from note blocks instead (one block per
-// note, plus wrong spellings as distractors); counts are typed numbers. No double sharps or flats
-// appear anywhere.
+// note, plus wrong spellings as distractors); counts are typed numbers. Double sharps (𝄪) appear only
+// where theory needs them: the raised 7th of G♯ and D♯ harmonic minor (F𝄪, C𝄪) on Hard and Expert.
 //
 // generate() builds answers with pitch-class arithmetic and key-signature tables (BUILD side of
 // js/lib/music.js). verify() re-derives them from each question's params.check with the CHECK
 // side: walking letter names on the keyboard, step patterns and interval classification.
 
 import {
-  LETTERS, note, fmt, fmtList, parseNote, parseList, plain, sameNote, pc,
+  LETTERS, note, fmt, fmtList, parseNote, parseList, plain, spellable, sameNote, pc,
   noteAbove, intervalSize, intervalName, parseInterval, qualitiesFor, isPerfectNum,
   majorTonic, minorTonic, scaleFromSignature, signatureNotes,
   keyboardDistance, walkSemis, classify, isInterval, scaleByPattern, matchesPattern,
@@ -314,10 +314,15 @@ function keyPool(difficulty) {
   const modes = { easy: ['major'], medium: ['major', 'major', 'natural'], hard: ['major', 'natural', 'harmonic'] }[difficulty];
   for (let k = -max; k <= max; k++) for (const mode of modes) {
     const sc = scaleFromSignature(k, mode);
-    if (sc.every(plain)) out.push({ k, mode, tonic: sc[0], scale: sc });
+    // Harmonic minors of G♯ and D♯ raise a sharp 7th to a double sharp; they are included.
+    if (sc.every(spellable)) out.push({ k, mode, tonic: sc[0], scale: sc });
   }
   return out;
 }
+// "Raising F♯ gives F𝄪, a double sharp." for a harmonic minor whose 7th needs one, else ''.
+const raisedNote = (scale, mode) => (mode === 'harmonic' && scale[6].a === 2
+  ? ` Its 7th note is already sharp in the key signature, so raising it gives a double sharp: ${fmt(note(scale[6].l, 1))} becomes ${fmt(scale[6])}.`
+  : '');
 
 function genScales(difficulty, rng) {
   const kind = rng.pick(difficulty === 'hard' ? ['degree', 'list', 'multi', 'degree'] : ['degree', 'notin', 'list']);
@@ -329,7 +334,7 @@ function genScales(difficulty, rng) {
   const kname = keyName(tonic, mode);
   const sigLine = mode === 'major'
     ? `${fmt(tonic)} major has ${k === 0 ? 'no sharps or flats' : `${Math.abs(k)} ${k > 0 ? 'sharp' : 'flat'}${Math.abs(k) > 1 ? 's' : ''}: ${signatureNotes(k).map(fmt).join(', ')}`}.`
-    : `${fmt(tonic)} minor has the same key signature as its relative major, ${fmt(majorTonic(k))} major: ${k === 0 ? 'no sharps or flats' : signatureNotes(k).map(fmt).join(', ')}.${mode === 'harmonic' ? ` The harmonic minor also raises the 7th note by a semitone.` : ''}`;
+    : `${fmt(tonic)} minor has the same key signature as its relative major, ${fmt(majorTonic(k))} major: ${k === 0 ? 'no sharps or flats' : signatureNotes(k).map(fmt).join(', ')}.${mode === 'harmonic' ? ` The harmonic minor also raises the 7th note by a semitone.${raisedNote(scale, mode)}` : ''}`;
   const orderWords = k > 0 ? 'Sharps are added in the order F C G D A E B.' : k < 0 ? 'Flats are added in the order B E A D G C F.' : '';
   const sigHint = (mode === 'major'
     ? `${fmt(tonic)} major has ${accWord(k)} in its key signature. ${orderWords}`
@@ -339,7 +344,8 @@ function genScales(difficulty, rng) {
   if (kind === 'degree' || kind === 'multi') {
     const deg = mode === 'harmonic' ? rng.pick([7, 7, 3, 6]) : rng.int(2, 7);
     const ans = scale[deg - 1];
-    const cands = [note(ans.l, ans.a + 1), note(ans.l, ans.a - 1), ...enharmonics(ans), scale[(deg) % 7], scale[deg - 2]]
+    // A double-sharp answer (F𝄪) also offers its natural (F); single-accidental answers are unchanged.
+    const cands = [note(ans.l, ans.a + 1), note(ans.l, ans.a - 1), ...enharmonics(ans), scale[(deg) % 7], scale[deg - 2], ...(plain(ans) ? [] : [note(ans.l, 0)])]
       .filter((m) => plain(m) && !sameNote(m, ans) && m.l !== tonic.l).map(fmt);
     const choices = fourChoices(rng, fmt(ans), cands);
     if (!choices) return genScales(difficulty, rng);
@@ -412,7 +418,8 @@ function genScales(difficulty, rng) {
   // 4) harmonic/natural swap or a different wrong note
   const s4 = scale.slice(); const i4 = (i1 % 6) + 1; s4[i4] = note(scale[i4].l, scale[i4].a + (scale[i4].a > 0 ? -1 : 1)); cands.push(s4);
   if (mode === 'harmonic') { const s5 = scale.slice(); s5[6] = note(scale[6].l, scale[6].a - 1); cands.push(s5); }
-  const candLists = cands.filter((s) => s.every(plain)).map(fmtList);
+  // A double sharp is allowed only where the scale itself has it (single-accidental scales filter as before).
+  const candLists = cands.filter((s) => s.every((m) => plain(m) || scale.some((x) => sameNote(x, m)))).map(fmtList);
   const choices = fourChoices(rng, ans, candLists);
   if (!choices) return genScales(difficulty, rng);
   // Built from note blocks: the scale's notes plus distractor notes from the wrong options
@@ -794,11 +801,11 @@ function genIntervalsExpert(rng) {
   };
 }
 
-// Keys whose scales need no double sharps/flats, for every mode (BUILD side).
+// Every key for every mode (BUILD side); G♯, D♯ and A♯ harmonic minor have a double-sharp 7th.
 const EXPERT_KEYS = [];
 for (let k = -7; k <= 7; k++) for (const mode of ['major', 'natural', 'harmonic']) {
   const sc = scaleFromSignature(k, mode);
-  if (sc.every(plain)) EXPERT_KEYS.push({ k, mode, tonic: sc[0], scale: sc });
+  if (sc.every(spellable)) EXPERT_KEYS.push({ k, mode, tonic: sc[0], scale: sc });
 }
 const HARMONIC_KEYS = EXPERT_KEYS.filter((x) => x.mode === 'harmonic' && Math.abs(x.k) <= 6);
 const MODE_WORD = { major: 'major', natural: 'natural minor', harmonic: 'harmonic minor' };
@@ -883,7 +890,7 @@ function genScalesExpert(rng) {
   if (!iv) return genScalesExpert(rng);
   const sev = key.scale[6];
   const kname = keyName(key.tonic, 'harmonic');
-  const sevC = fourChoices(rng, fmt(sev), [note(sev.l, sev.a - 1), note(sev.l, sev.a + 1), ...enharmonics(sev), note(sev.l - 1, 0)]
+  const sevC = fourChoices(rng, fmt(sev), [note(sev.l, sev.a - 1), note(sev.l, sev.a + 1), ...enharmonics(sev), note(sev.l - 1, 0), ...(plain(sev) ? [] : [note(sev.l, 0)])]
     .filter((m) => plain(m) && !sameNote(m, sev) && m.l !== key.tonic.l).map(fmt));
   const intC = fourChoices(rng, iv.name, intervalDistractors(num, iv.quality, true));
   if (!sevC || !intC) return genScalesExpert(rng);
@@ -896,7 +903,7 @@ function genScalesExpert(rng) {
       { id: 'int', label: 'Interval', ask: `Name the interval from its ${ordinal(i)} note up to its ${degLabel(j)}.`, answerType: 'choice', answer: iv.name, choices: intC,
         hint: `Count the letter names from the ${ordinal(i)} note up to the ${degLabel(j)} for the number, then count semitones for the quality. The raised 7th makes some of these intervals augmented or diminished.` },
     ],
-    explanation: `${fmt(key.tonic)} minor has ${accWord(key.k)}. Raising the 7th gives the harmonic minor: ${fmtList(key.scale)}. Its 7th note is **${fmt(sev)}**.\n\nFrom ${fmt(lo)} up to ${fmt(hi)}: ${num} letter names and ${semis(iv.size)}. A ${isPerfectNum(num) ? 'perfect' : 'major'} ${ordinal(num)} has ${semis(intervalSize(num, isPerfectNum(num) ? 'perfect' : 'major'))}, so it is ${art(`**${iv.name}**`)}.`,
+    explanation: `${fmt(key.tonic)} minor has ${accWord(key.k)}. Raising the 7th gives the harmonic minor: ${fmtList(key.scale)}. Its 7th note is **${fmt(sev)}**${plain(sev) ? '' : ` (a double sharp: the key signature already sharpens ${LETTERS[sev.l]})`}.\n\nFrom ${fmt(lo)} up to ${fmt(hi)}: ${num} letter names and ${semis(iv.size)}. A ${isPerfectNum(num) ? 'perfect' : 'major'} ${ordinal(num)} has ${semis(intervalSize(num, isPerfectNum(num) ? 'perfect' : 'major'))}, so it is ${art(iv.name).split(' ')[0]} **${iv.name}**.`,
     hints: ['Write out the scale first: the natural minor with its 7th note raised by a semitone.'],
     params: { multi: true, parts: { seventh: { kind: 'degree', tonic: fmt(key.tonic), mode: 'harmonic', deg: 7 }, int: { kind: 'scale-interval', tonic: fmt(key.tonic), mode: 'harmonic', i, j } } },
   };

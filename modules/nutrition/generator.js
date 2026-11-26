@@ -302,9 +302,28 @@ function genEnergyFood(d, rng) {
   if (kind === "grams-from-kcal") {
     const nut = rng.pick(["carbohydrate", "protein", "fat"]);
     const f = FACT[nut];
+    if (d === "hard") {
+      // Hard adds a step: the nutrient's share of the total energy comes first (ticket 015).
+      const total = rng.int(30, 90) * 10;
+      const pct = rng.int(10, 60);
+      const kcal = (total * pct) / 100;
+      const exact = kcal / f;
+      return make(rng, {
+        kind: "grams-from-pct", values: { total, pct, f }, exact, o: R1, unit: "g",
+        prompt: `${meal} provides ${total} kcal in total, and ${pct}% of that energy comes from ${nut}. How many grams of ${nut} does it contain? Use: ${FACTS}.`,
+        intro: `First find the kcal from ${nut} (${pct}% of ${total} kcal), then divide by ${f} kcal per gram.`,
+        lines: [row("_total", total), row("_pct", pct), step("_kcal", "_total * _pct / 100", `**${num(kcal)} kcal**`), step("_grams", `_kcal / ${f}`, res(exact, R1, "g"))],
+        candidates: [kcal, total / f, kcal / (f === 9 ? 4 : 9), kcal * f],
+        given: [["_total", total], ["_pct", pct]],
+        hints: [
+          `Only ${pct}% of the ${total} kcal comes from ${nut}: work out that share first (\`_total * _pct / 100\`).`,
+          `Each gram of ${nut} gives ${f} kcal, so divide that share by ${f}.${thenRound(R1)}`,
+        ],
+      });
+    }
     const kcal = rng.int(30, 400);
     const exact = kcal / f;
-    const o = d === "hard" ? R1 : R1;
+    const o = R1;
     return make(rng, {
       kind, values: { kcal, f }, exact, o, unit: "g",
       prompt: `${meal} gets ${kcal} kcal from ${nut}. How many grams of ${nut} does it contain? Use: ${FACTS}.`,
@@ -673,6 +692,7 @@ const GEN = { "energy-from-food": genEnergyFood, "energy-units": genUnitsE, "foo
 const REV = {
   macro: (k, x) => x / k.f - k.g,
   "grams-from-kcal": (k, x) => x * k.f - k.kcal,
+  "grams-from-pct": (k, x) => (x * k.f * 100) / k.total - k.pct,
   total: (k, x) => (x - 9 * k.F) / 4 - (k.C + k.P),
   "fat-kcal": (k, x) => x / 9 - k.F,
   kcal2kj: (k, x) => x / KJ - k.kcal,
