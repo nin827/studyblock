@@ -1,6 +1,6 @@
-import { exportData, importData, clearData, getAttempts, getCookie, setCookie, getCodeLang } from '../lib/storage.js';
+import { exportData, importData, clearData, getAttempts, getCookie, setCookie } from '../lib/storage.js';
 import { LANG_IDS } from '../lib/languages.js';
-import { codeLangPickerHtml, bindCodeLangPicker } from './module.js';
+import { codeLangsHtml, bindCodeLangs } from './codelangs.js';
 import { loadModule } from '../lib/source.js';
 import * as folder from '../lib/folder.js';
 import * as pwa from '../lib/pwa.js';
@@ -93,10 +93,10 @@ export async function render(root, params = {}, ctx = {}) {
     </section>
 
     <section class="card">
-      <h2>${icon('code')} Code language</h2>
-      ${codeLangPickerHtml(LANG_IDS, getCodeLang(), {
-        id: 'settings-code-lang', label: 'Show code in', labelIcon: false,
-        hint: 'Applies to Code Writing and Code Reviewing. You can also change it on those subject pages.',
+      <h2>${icon('code')} Code languages</h2>
+      ${codeLangsHtml({
+        ids: LANG_IDS, ctx: 'settings', id: 'settings-code-langs', label: 'Show code in', labelIcon: false,
+        hint: 'Turn on one or more. Each code question uses one of them, picked per question, in Code Writing, Code Reviewing and coding roles (roles skip GDScript). You can also change this on those pages. At least one stays on.',
       })}
     </section>
 
@@ -151,7 +151,7 @@ export async function render(root, params = {}, ctx = {}) {
     applyTheme(r.value);
   }));
 
-  bindCodeLangPicker(root);
+  bindCodeLangs(root);
 
   root.querySelector('#sound-toggle')?.addEventListener('change', (e) => {
     setSoundOn(e.target.checked);

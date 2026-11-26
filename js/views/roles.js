@@ -5,7 +5,7 @@
 import {
   loadRoles, loadRoleIndustries, findRole, roleLevels, roleShares, roleSubjectLevel, roleQuestionCount, buildRoleQuiz,
   loadDomains, loadModule, loadGuide, isValidId, roleKey, normalizeRoleLevel, roleScenarioCount, sanitizeRoleCount,
-  ROLE_TOP, ROLE_MIN_COUNT, ROLE_MAX_COUNT, ROLE_MODULE,
+  ROLE_TOP, ROLE_MIN_COUNT, ROLE_MAX_COUNT, ROLE_MODULE, isLangModule,
 } from '../lib/engine.js';
 import { loadText, loadJSON } from '../lib/source.js';
 import { renderMarkdown } from '../lib/markdown.js';
@@ -13,6 +13,7 @@ import { getStats, getAttempts, isGuided, percent, getRoleCount, setRoleCount } 
 import { esc, icon, icons, fmtPct, scoreClass, errorBox, hashPart, domClass, domVars, domStyle, difficultyHtml, difficultyLabel } from './ui.js';
 import { runQuiz, storedQuestion, crumbsHtml } from './quiz.js';
 import { getQuizMode, setQuizMode, parseGuide, guideHtml, GUIDED, PRACTICE } from './guided.js';
+import { codeLangsHtml, bindCodeLangs } from './codelangs.js';
 
 const fmtShare = s => {
   const p = s * 100;
@@ -350,6 +351,9 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
   const about = await aboutHtml(role, flags, await roleNotice(role.id, subrole?.id ?? null));
   if (!ctx.alive()) return;
   const label = `Subjects: ${shares.map(p => `${p.title} ${fmtShare(p.share)}`).join(', ')}`;
+  // Code languages: every language the role's code subjects list (its mix and its role-only module).
+  const codeMods = [...mods.values(), role.exclusiveModule].filter(isLangModule);
+  const codeIds = [...new Set(codeMods.flatMap(m => m.languages))];
 
   const levelCard = level => {
     const s = levelStats(key, level);
@@ -421,6 +425,8 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
         </div>
         <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored (saved in History).</p>
       </div>
+      ${codeIds.length ? codeLangsHtml({ ids: codeIds, ctx: 'role', id: 'role-code-langs', label: 'Code languages',
+        hint: 'Role runs use the industry-standard languages that are on, one per code question. Shared with Settings and the code subjects.' }) : ''}
       <div class="role-counts">
         ${countControl('std', 'Questions', levels.includes(ROLE_TOP) ? 'Easy to Hard' : '')}
         ${levels.includes(ROLE_TOP) ? countControl('expert', 'Questions', 'Expert') : ''}
@@ -473,6 +479,7 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
     if (v !== counts[kind]) { counts[kind] = v; setRoleCount(key, kind, v); }
     refreshLevels();
   };
+  bindCodeLangs(root);
   root.querySelectorAll('.role-count .count-input').forEach(input => {
     input.addEventListener('input', () => applyCount(input, false));
     input.addEventListener('blur', () => applyCount(input, true));

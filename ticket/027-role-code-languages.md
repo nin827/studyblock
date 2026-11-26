@@ -1,6 +1,6 @@
 # 027 — Several code languages per run, and four new languages
 
-**Status:** open (being built with the defaults below)
+**Status:** phase 1 and the shared picker built (2026-11-27); phase 2 in progress; phase 3 open
 **Raised:** 2026-11-27
 
 ## Request
@@ -22,3 +22,9 @@
 - Phase 2: Code Reviewing, including hand-written language-feature templates (JavaScript `==`/`===`, hoisting, `this`; TypeScript types vs runtime; Java overflow, `==` on strings, autoboxing; Go slices sharing arrays, zero values, `:=` shadowing).
 - Phase 3: a **Frontend Engineer** subrole (Software Engineer) once JavaScript/TypeScript exist (ticket 025 left it out).
 - Existing languages generate identical snippets per seed (fingerprinted per language).
+
+## Built: shared picker (rules chosen)
+- The last language on can't be turned off, overall or among the chips a page shows (e.g. Code Reviewing with Java + Python on: Python stays). If none of a page's chips are on, the status line says which language is used.
+- Role pages show GDScript only when it is on, greyed ("· not used in role runs"); turning off the last industry language there is allowed and role runs then use Python.
+- **Behaviour change:** with only GDScript chosen, Software Engineer and Game Developer runs now use Python (previously GDScript), as specified above.
+- *Open:* whether to show GDScript on role pages at all when it's on (current: greyed), and whether Game Developer should be the one role that allows GDScript.

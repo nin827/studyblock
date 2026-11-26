@@ -126,6 +126,17 @@ export function langTag(q) {
   return l ? `<span class="tag tag-lang" title="Code language">${icon('code')}<span class="sr-only">Code language: </span>${esc(langTitle(l))}</span>` : '';
 }
 
+// "Code: Python, Rust": the distinct code languages of a run's questions, in first-seen order
+// (derived from each question's `lang`, nothing stored). '' when no question has code.
+// `tag` is 'p' (end screens) or 'span' (inside a History <summary>).
+export function codeLangsUsedHtml(qs, tag = 'p') {
+  const ids = [];
+  for (const q of qs || []) if (q && isLang(q.lang) && !ids.includes(q.lang)) ids.push(q.lang);
+  if (!ids.length) return '';
+  const t = tag === 'span' ? 'span' : 'p';
+  return `<${t} class="code-used small">${icon('code')}<span>Code: ${esc(ids.map(langTitle).join(', '))}</span></${t}>`;
+}
+
 // A tag row holding only the language pill (where no other origin tags are shown).
 function langRow(q) {
   const t = langTag(q);
@@ -2285,6 +2296,7 @@ export async function runQuiz(root, ctx, opts) {
         <p class="eyebrow">${icon('compass')} Guided set complete</p>
         <h1 class="quiz-title">${opts.title}</h1>
         <p class="muted guided-note">Saved in History as guided practice. Not scored: stats and best scores don't change.</p>
+        ${codeLangsUsedHtml(gResults.map(r => r.q))}
         <ul class="guided-counts">${counts}</ul>
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Another guided set</button>
@@ -2327,6 +2339,7 @@ export async function runQuiz(root, ctx, opts) {
         <h1 class="quiz-title">${opts.title}</h1>
         <p class="big-score score ${scoreClass(pct)}">${fmtScore(score)} / ${total} <span>(${pct}%)</span></p>
         <div class="result-meter" aria-hidden="true">${results.map(r => `<span class="${SEG_CLASS[resultState(r)]}"></span>`).join('')}</div>
+        ${codeLangsUsedHtml(results.map(r => r.q))}
         ${game ? '<div class="game-result" id="game-result" aria-live="polite"></div>' : ''}
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Retry</button>

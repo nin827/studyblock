@@ -1,35 +1,12 @@
-import { loadModule, loadIntro, domainOf, ALL, isLangModule, effectiveLang, DIFFICULTY_ORDER } from '../lib/engine.js';
+import { loadModule, loadIntro, domainOf, ALL, isLangModule, DIFFICULTY_ORDER } from '../lib/engine.js';
 import { crumbsHtml } from './quiz.js';
-import { getModuleCellStats, getCookie, setCookie, setCodeLang } from '../lib/storage.js';
+import { getModuleCellStats, getCookie, setCookie } from '../lib/storage.js';
 import { renderMarkdown } from '../lib/markdown.js';
-import { isLang, langTitle } from '../lib/languages.js';
+import { codeLangsHtml, bindCodeLangs } from './codelangs.js';
 import { esc, icon, cap, fmtPct, scoreClass, errorBox, hashPart, domClass, domStyle, difficultyLabel, difficultyHtml } from './ui.js';
 import { getQuizMode, setQuizMode, GUIDED, PRACTICE } from './guided.js';
 
 const ORDER = DIFFICULTY_ORDER;
-
-/*
- * Code language picker (module page of a language-aware module, and Settings): a segmented radio
- * group over `ids` (language ids from js/lib/languages.js) with `current` checked. Titles are escaped.
- * `hint` is optional plain text shown under the label.
- */
-export function codeLangPickerHtml(ids, current, { id = 'code-lang', label = 'Language', hint = '', labelIcon = true } = {}) {
-  const list = ids.filter(isLang);
-  return `<div class="lang-picker">
-    <p class="field-label" id="${esc(id)}-label">${labelIcon ? `${icon('code')} ` : ''}${esc(label)}</p>
-    ${hint ? `<p class="muted small lang-picker-hint" id="${esc(id)}-hint">${esc(hint)}</p>` : ''}
-    <div class="segmented seg-lang" role="radiogroup" aria-labelledby="${esc(id)}-label"${hint ? ` aria-describedby="${esc(id)}-hint"` : ''}>
-      ${list.map(l => `<label class="seg"><input type="radio" name="${esc(id)}" value="${esc(l)}" ${l === current ? 'checked' : ''}><span>${esc(langTitle(l))}</span></label>`).join('')}
-    </div>
-  </div>`;
-}
-
-// Saves the picked language (cookie sb_codeLang) whenever a radio inside `scope` changes.
-export function bindCodeLangPicker(scope, onChange) {
-  scope?.querySelectorAll('.seg-lang input[type="radio"]').forEach(r => r.addEventListener('change', () => {
-    if (r.checked && setCodeLang(r.value)) onChange?.(r.value);
-  }));
-}
 
 function difficultyColumns(subtopics) {
   const all = [];
@@ -123,7 +100,8 @@ export async function render(root, { moduleId }, ctx) {
         </div>
         <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored (saved in History).</p>
       </div>
-      ${isLangModule(mod) ? codeLangPickerHtml(mod.languages, effectiveLang(mod), { id: 'code-lang', label: 'Language' }) : ''}
+      ${isLangModule(mod) ? codeLangsHtml({ ids: mod.languages, ctx: 'module', id: 'code-langs', label: 'Code languages',
+        hint: 'Each question shows its code in one of the languages that are on. Shared with Settings and role pages.' }) : ''}
       ${mod.subtopics.length ? `<div class="table-wrap"><table class="matrix">
         <thead><tr><th scope="col">Subtopic</th>${cols.map(d => `<th scope="col" data-col="${esc(d)}" ${d === ALL ? 'class="all-col" title="All difficulties"' : ''}>${difficultyHtml(d, colLabel(d))}</th>`).join('')}</tr></thead>
         <tbody>${rows}</tbody>
@@ -146,8 +124,8 @@ export async function render(root, { moduleId }, ctx) {
   });
   root.querySelectorAll('.matrix a[data-diff]').forEach(a =>
     a.addEventListener('click', () => setCookie('lastDifficulty', a.dataset.diff)));
-  // The next quiz started from this page uses the picked language.
-  bindCodeLangPicker(root);
+  // The next quiz started from this page uses the languages that are on (one shared preference).
+  bindCodeLangs(root);
 
   // Practice | Guided: swap the cell links in place (no re-render, so the select/highlight stay).
   const card = root.querySelector('#practice-card');

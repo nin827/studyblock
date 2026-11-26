@@ -3,8 +3,8 @@
 import { createRng, randomSeed } from './rng.js';
 import { parseCSV } from './csv.js';
 import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
-import { LANG_IDS, isLang } from './languages.js';
-import { getCodeLang, ROLE_MODULE, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitSegs } from './storage.js';
+import { LANG_IDS, isLang, isIndustryLang, DEFAULT_LANG } from './languages.js';
+import { getCodeLang, getCodeLangs, ROLE_MODULE, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitSegs } from './storage.js';
 import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
 import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
 import { validView, clampView } from './graph.js';
@@ -407,6 +407,33 @@ export const isLangModule = mod => Array.isArray(mod?.languages) && mod.language
 export function effectiveLang(mod, pref = getCodeLang()) {
   if (!isLangModule(mod)) return null;
   return mod.languages.includes(pref) ? pref : mod.languages[0];
+}
+
+/*
+ * The languages a run may use for `mod` (ticket 027): the chosen set (sb_codeLangs) ∩ the module's
+ * `languages`, in the module's own order; role runs keep only industry-standard languages. Empty →
+ * [the module's first listed language] (roles: Python, else the module's first industry language).
+ * null for modules that aren't language-aware.
+ */
+export function runLangs(mod, { role = false, chosen = getCodeLangs() } = {}) {
+  if (!isLangModule(mod)) return null;
+  const set = mod.languages.filter(l => chosen.includes(l) && (!role || isIndustryLang(l)));
+  if (set.length) return set;
+  if (!role) return [mod.languages[0]];
+  if (mod.languages.includes(DEFAULT_LANG)) return [DEFAULT_LANG];
+  return [mod.languages.find(isIndustryLang) ?? mod.languages[0]];
+}
+
+// One question's language: picked from `langs` (runLangs) by a hash of the question's seed, never
+// the generator's rng, so a seed's logic is unchanged and one chosen language behaves as before.
+export function langForSeed(langs, seed) {
+  if (!langs || !langs.length) return null;
+  if (langs.length === 1) return langs[0];
+  let h = (seed >>> 0) ^ 0x9e3779b9;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h = (h ^ (h >>> 16)) >>> 0;
+  return langs[h % langs.length];
 }
 
 export async function loadAllModules() {
@@ -1281,14 +1308,15 @@ async function buildAllQuiz(mod, subtopic, difficulty) {
     }
   } else {
     const gen = await loadGenerator(mod.id);
-    const lang = effectiveLang(mod);
+    const langs = runLangs(mod);
     const n = mod.questionsPerQuiz;
     let failures = 0;
     let dupTries = 0;
     while (questions.length < n && failures < n) {
       const c = rng.pick(cells);
       const d = rng.pick(c.diffs);
-      const q = decorate(generateVerified(gen, c.st.id, d, nextSeed(), lang), mod, d);
+      const s = nextSeed();
+      const q = decorate(generateVerified(gen, c.st.id, d, s, langForSeed(langs, s)), mod, d);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -1326,11 +1354,12 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
     }
   } else {
     const gen = await loadGenerator(moduleId);
-    const lang = effectiveLang(mod);
+    const langs = runLangs(mod);
     let failures = 0;
     let dupTries = 0;
     while (questions.length < n && failures < n) {
-      const q = decorate(generateVerified(gen, subtopic, difficulty, randomSeed(), lang), mod, difficulty);
+      const s = randomSeed();
+      const q = decorate(generateVerified(gen, subtopic, difficulty, s, langForSeed(langs, s)), mod, difficulty);
       if (!q) { failures++; continue; }
       if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
       seen.add(q.prompt);
@@ -1577,7 +1606,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
       const mod = await loadModule(mid);
       if (!mod.subtopics.length) return;
       if (mod.type === 'csv') sources.set(mid, { mod, rows: await loadCsvRows(mid) });
-      else sources.set(mid, { mod, gen: await loadGenerator(mid), lang: effectiveLang(mod) });
+      else sources.set(mid, { mod, gen: await loadGenerator(mid), langs: runLangs(mod) });
     } catch (e) {
       console.warn(`StudyBlock: skipping module ${mid} in mix`, e);
     }
@@ -1603,7 +1632,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
     const dId = weightedPick(rng, domainIds, id => pool.reduce((s, r) => s + (r.domain === id ? r.share : 0), 0));
     const pick = dId && weightedPick(rng, pool.filter(r => r.domain === dId), r => r.share);
     if (!pick) break;
-    const { mod, gen, rows, lang } = sources.get(pick.module);
+    const { mod, gen, rows, langs } = sources.get(pick.module);
     const st = rng.pick(mod.subtopics);
     const difficulty = resolveDifficulty(rng, st, cfg.difficulty);
     const qSeed = Math.floor(rng.next() * 0x100000000) >>> 0;
@@ -1612,7 +1641,7 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
       const p = csvPool(rows, st.id, difficulty);
       if (p.length) q = csvQuestion(p, qSeed, csvAnswers(rows, st.id));
     } else {
-      q = generateVerified(gen, st.id, difficulty, qSeed, lang);
+      q = generateVerified(gen, st.id, difficulty, qSeed, langForSeed(langs, qSeed));
     }
     q = decorate(q, mod, difficulty);
     if (!q) {
@@ -1901,12 +1930,13 @@ export function roleScenarioCount(role, subrole, level, n) {
 async function roleScenarios(role, subs, tier, n, rng, nextSeed, seen) {
   const mod = role.exclusiveModule;
   const gen = await loadGenerator(mod.id);
-  const lang = effectiveLang(mod);
+  const langs = runLangs(mod, { role: true });
   const out = [];
   let failures = 0, dupTries = 0;
   while (out.length < n && failures < n * 2) {
     const st = rng.pick(subs);
-    const q = decorate(generateVerified(gen, st.id, tier, nextSeed(), lang), mod, tier);
+    const s = nextSeed();
+    const q = decorate(generateVerified(gen, st.id, tier, s, langForSeed(langs, s)), mod, tier);
     if (!q) { failures++; continue; }
     if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
     seen.add(q.prompt);
@@ -1968,7 +1998,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
       const withLevel = subs.filter(s => !Array.isArray(s.difficulties) || s.difficulties.includes(target));
       const src = { mod, subs: withLevel.length ? withLevel : subs };
       if (mod.type === 'csv') src.rows = await loadCsvRows(mod.id);
-      else { src.gen = await loadGenerator(mod.id); src.lang = effectiveLang(mod); }
+      else { src.gen = await loadGenerator(mod.id); src.langs = runLangs(mod, { role: true }); }
       sources.set(e.module, src);
     } catch (err) {
       console.warn(`StudyBlock: skipping module ${e.module} in role ${role.id}`, err);
@@ -1983,7 +2013,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
     tries++;
     const e = weightedPick(rng, pool, x => x.weight);
     if (!e) break;
-    const { mod, subs, gen, rows, lang } = sources.get(e.module);
+    const { mod, subs, gen, rows, langs } = sources.get(e.module);
     const st = rng.pick(subs);
     const difficulty = resolveDifficulty(rng, st, target);
     const qSeed = nextSeed();
@@ -1992,7 +2022,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
       const p = csvPool(rows, st.id, difficulty);
       if (p.length) q = csvQuestion(p, qSeed, csvAnswers(rows, st.id));
     } else {
-      q = generateVerified(gen, st.id, difficulty, qSeed, lang);
+      q = generateVerified(gen, st.id, difficulty, qSeed, langForSeed(langs, qSeed));
     }
     q = decorate(q, mod, difficulty);
     if (!q) {

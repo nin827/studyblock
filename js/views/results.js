@@ -1,7 +1,7 @@
 import { loadAllModules, loadDomains, loadArchived, titleLookup, loadRoles, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
 import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
-import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml } from './quiz.js';
+import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml, codeLangsUsedHtml } from './quiz.js';
 import { gameOn } from './game.js';
 
 export async function render(root, params, ctx) {
@@ -139,6 +139,7 @@ export async function render(root, params, ctx) {
           ${guided
             ? `<span class="guided-score">${fmtScore(a.score)}/${a.total} first try</span>`
             : `<span class="score ${scoreClass(p)}">${fmtScore(a.score)}/${a.total} (${p}%)</span>`}${icon('chevron-down', 'chev')}</span>
+          ${codeLangsUsedHtml(a.questions, 'span')}
         </summary>
         ${guided ? '<p class="muted small attempt-note">Guided practice: not scored, never counted in stats or best scores.</p>' : ''}
         ${isMix && !guided ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}

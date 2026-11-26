@@ -62,6 +62,7 @@ js/lib/visual.js        question visuals: sanitizeVisual (validation), visualAxe
 js/views/visual.js      question visuals renderer (visualHtml: HTML table or inline SVG)
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
 js/views/roles.js       Roles pages (roles/ = registry)
+js/views/codelangs.js   code languages picker (toggle chips over sb_codeLangs): Settings, code module pages, coding role pages
 js/views/domains.js     Domains tab (#/domains): every domain with its groups and subjects
 js/views/calcpage.js    standalone #/calc page; js/views/staticgraph.js = <sb-graph> static plot for reviews
 modules/index.json      registry: list of module ids
@@ -287,7 +288,9 @@ A generator question may carry one `visual` (data only, never markup): `{ kind: 
 ### Code languages (Code Writing, Code Reviewing)
 
 - `module.json` may list `"languages"` (a subset of `js/lib/languages.js` ids, in display order; unknown ids dropped with a warning; generator modules only). Empty or absent = not language-aware.
-- The effective language is the `sb_codeLang` preference if the module lists it, else its first listed language. It's picked on the module page or in Settings → Code language.
+- **Chosen languages (ticket 027):** one or more, in the `sb_codeLangs` cookie (comma-separated ids in `LANG_IDS` order, at least one; seeded from the old `sb_codeLang`, which is still written as the first chosen language so an older cached shell keeps working). The same picker (`js/views/codelangs.js`: toggle chips with `aria-pressed`, a status line, a polite live message) shows in Settings → Code languages, on a language-aware module's page (only its `languages`), and on role/subrole pages whose mix or role-only module is language-aware (derived: Software Engineer and its subroles, Game Developer, Bioinformatician). Each page re-reads the preference on render. The last language on (overall, or among the chips shown) can't be turned off.
+- **Per question** (`runLangs` + `langForSeed` in `engine.js`): the chosen set ∩ the module's `languages`, in the module's order (empty → the module's first listed language), one picked by a pure integer hash of the question's first seed (never the generator's rng; one language skips the hash), so one chosen language gives exactly the old questions. Role runs keep only industry languages (`isIndustryLang`: not GDScript), else Python; a non-industry language that is on shows greyed on role pages ("not used in role runs") and is never switched off. After a verify redraw the stored seed can differ from the hashed one, so `regenerate` relies on the stored `lang`.
+- **Shown after a run:** practice and guided end screens and History rows show "Code: Python, Rust" (the attempt's distinct question `lang`s in first-seen order; derived, nothing stored).
 - Language-aware generators are called as `generate({ subtopic, difficulty, rng, lang })`; other modules never get `lang`, so their questions are unchanged. The engine keeps `lang` across verify retries and puts it on the question. `verify` doesn't receive `lang`: generators put it (and a `meta` with template + params) on the returned question.
 - Generators draw **all** rng values before rendering, so one seed is the same logic in every language. Snippets are built once with `js/lib/codelang.js` (its header documents the AST, `check` rules, `render`/`lineOf`, `run`) and shown in a fence tagged `LANGUAGES[].fence`. Code choices are wrapped in backticks (choices go through `renderInline`), and the stored answer is the same string.
 - `verify` rebuilds the program from `meta`, substitutes the candidate answer and `run()`s it against plain-JS references. Number blanks are unique in a scanned range or worded "smallest (0 or more)"; exactly one choice passes all tests.
@@ -506,7 +509,7 @@ Light gamification: icon + text only, no animations beyond existing transitions,
 ```
 Scores per module/subtopic/difficulty are derived from attempts. On import, `credit` is optional and clamped to 0–1; `score` may be a decimal ≥ 0 and ≤ total.
 
-**Cookies** are a small cache only (≤ ~1KB): last module, last difficulty, theme, code language (`sb_codeLang`, default `python`). `SameSite=Lax; path=/`. Never store history in cookies.
+**Cookies** are a small cache only (≤ ~1KB): last module, last difficulty, theme, code languages (`sb_codeLangs`, comma-separated, default `python`; `sb_codeLang` mirrors the first). `SameSite=Lax; path=/`. Never store history in cookies.
 
 **Export** downloads the full JSON via Blob. **Import** reads a file, validates `version` + shape, and asks merge (dedupe by attempt id) or replace.
 

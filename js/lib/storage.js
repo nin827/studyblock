@@ -1,7 +1,7 @@
 // localStorage store (source of truth), cookie cache, import/export.
 
 import { requestPersistentStorage } from './pwa.js';
-import { isLang, DEFAULT_LANG } from './languages.js';
+import { isLang, DEFAULT_LANG, LANG_IDS } from './languages.js';
 import { parseJournal } from './journal.js';
 import { sanitizeVisual } from './visual.js';
 
@@ -707,19 +707,44 @@ export function deleteCookie(name) {
   try { document.cookie = `sb_${name}=; max-age=0; path=${appDir()}; SameSite=Lax`; } catch { /* ignore */ }
 }
 
-// Code language for language-aware modules (Code Writing, Code Reviewing): cookie sb_codeLang.
+// Code languages for language-aware modules (Code Writing, Code Reviewing, coding roles):
+// cookie sb_codeLangs = comma-separated language ids (at least one), kept in LANG_IDS order so the
+// order never depends on click history. When it is missing, the old single-pick cookie sb_codeLang
+// seeds it (default python). sb_codeLang is still written, mirroring the first chosen language, so
+// code that only knows the single pick (an older cached app shell during an update) keeps working.
+const CODE_LANGS_COOKIE = 'codeLangs';
 const CODE_LANG_COOKIE = 'codeLang';
 
-export function getCodeLang() {
-  const v = getCookie(CODE_LANG_COOKIE);
-  return isLang(v) ? v : DEFAULT_LANG;
+// Valid, deduped ids in canonical (LANG_IDS) order; [] when none are valid.
+export function cleanCodeLangs(list) {
+  const set = new Set((Array.isArray(list) ? list : []).filter(isLang));
+  return LANG_IDS.filter(l => set.has(l));
 }
 
-// Returns true when `id` is a known language and was stored.
-export function setCodeLang(id) {
-  if (!isLang(id)) return false;
-  setCookie(CODE_LANG_COOKIE, id);
+export function getCodeLangs() {
+  const raw = getCookie(CODE_LANGS_COOKIE);
+  const list = cleanCodeLangs(typeof raw === 'string' ? raw.split(',').map(s => s.trim()) : []);
+  if (list.length) return list;
+  const old = getCookie(CODE_LANG_COOKIE);
+  return [isLang(old) ? old : DEFAULT_LANG];
+}
+
+// Stores the chosen set. Returns false (and stores nothing) when no valid id is given.
+export function setCodeLangs(list) {
+  const clean = cleanCodeLangs(list);
+  if (!clean.length) return false;
+  setCookie(CODE_LANGS_COOKIE, clean.join(','));
+  setCookie(CODE_LANG_COOKIE, clean[0]);
   return true;
+}
+
+// Single-language shims (first chosen language), kept for older callers.
+export function getCodeLang() {
+  return getCodeLangs()[0];
+}
+
+export function setCodeLang(id) {
+  return setCodeLangs([id]);
 }
 
 // ---- export / import / clear ----
