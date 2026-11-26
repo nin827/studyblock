@@ -154,3 +154,45 @@ export function yearDistance(a, b) {
   const d = Math.abs(a - b);
   return a * b < 0 ? d - 1 : d;
 }
+
+/*
+ * ---- Calendar helpers (added for generators; the parsing exports above are unchanged) ----
+ *
+ * Proleptic Gregorian calendar, years >= 1 (AD), months 1-12. A "day number" is the count of days
+ * since 1 January 1970 (day 0, a Thursday). Weekdays are 0 = Sunday ... 6 = Saturday.
+ * Month lengths and leap years: `daysInMonth(year, month)` and `isLeapYear(year)` above.
+ *
+ * Pure integer arithmetic (Hinnant's civil-day algorithm). Checks (verify) stay in each module.
+ */
+export const WEEKDAYS = Object.freeze(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']);
+
+const floorMod = (a, n) => ((a % n) + n) % n;
+
+export function civilToDays(y, m, d) {
+  y -= m <= 2 ? 1 : 0;
+  const era = Math.floor(y / 400);
+  const yoe = y - era * 400;
+  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
+  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+  return era * 146097 + doe - 719468;
+}
+// Day number -> { y, m, d }.
+export function daysToCivil(z) {
+  z += 719468;
+  const era = Math.floor(z / 146097);
+  const doe = z - era * 146097;
+  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+  const mp = Math.floor((5 * doy + 2) / 153);
+  const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
+  const m = mp + (mp < 10 ? 3 : -9);
+  return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d };
+}
+export const weekdayOfDays = z => floorMod(z + 4, 7);
+// The date k days after (or before, k < 0) y-m-d -> { y, m, d, w }.
+export function addCalendarDays(y, m, d, k) {
+  const z = civilToDays(y, m, d) + k;
+  return { ...daysToCivil(z), w: weekdayOfDays(z) };
+}
+// { y, m, d } -> "20 July 1969".
+export const formatDMY = ({ y, m, d }) => `${d} ${MONTHS[m - 1]} ${y}`;

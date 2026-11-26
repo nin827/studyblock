@@ -12,6 +12,8 @@
 // verify() rechecks every part from params with its own arithmetic: SQL answers (and every
 // accepted form) are tokenized, parsed and run by a separate mini SQL engine over the raw rows.
 
+import { execQuery } from "../../js/lib/sql.js";
+
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
@@ -98,6 +100,9 @@ function distinctInts(rng, lo, hi, n) {
 
 // The SQL tasks. Each pins one product (the first row the query returns).
 // pick(rows, X) -> the query's rows in order (objects); the generator's own array logic.
+// Generate side: the shared SQL executor (js/lib/sql.js). verify() below keeps its own mini engine.
+const genSql = (sql, tables) => ({ ordered: /\border\s+by\b/i.test(sql), rows: execQuery(sql, tables).rows });
+
 const SQL_TASKS = {
   topInCat: {
     sql: (X) => `SELECT product, rev_2026 FROM sales WHERE category = '${X}' ORDER BY rev_2026 DESC`,
@@ -219,8 +224,8 @@ function drawSales(rng) {
     // Every market must hold its products plus the focus product's rival.
     if (markets.some((mk) => table.filter((r) => r.category === mk.category).reduce((s, r) => s + r.rev_2026, 0) + (mk.category === fc ? focus.rival_2026 : 0) > 0.8 * Math.min(mk.size_2025, mk.size_2026))) continue;
     // Each plausible wrong query must not pin the same product list.
-    const sqlRows = runSql(T.sql(X), { sales: tableRaw(table) });
-    if (T.wrong(X).some((w) => sameResult(runSql(w, { sales: tableRaw(table) }), sqlRows))) continue;
+    const sqlRows = genSql(T.sql(X), { sales: tableRaw(table) });
+    if (T.wrong(X).some((w) => sameResult(genSql(w, { sales: tableRaw(table) }), sqlRows))) continue;
     return { theme, table, markets, kind, X, focus, g, rs, highG, highS };
   }
   throw new Error("sales-review: could not draw a table");
@@ -254,7 +259,7 @@ function genSalesReview(rng) {
     hint: "Relative market share = the product's 2026 sales ÷ its largest rival's 2026 sales (`rival_2026`). Then combine it with the market growth from the previous part.",
   });
   const recChoices = rng.shuffle(STRATEGIES.slice());
-  const outputRows = runSql(sql, { sales: tableRaw(table) }).rows;
+  const outputRows = genSql(sql, { sales: tableRaw(table) }).rows;
   const shownOut = outputRows.map((r) => `- ${r.join(" · ")}`).join("\n");
   const given = markets.flatMap((mk) => [
     { label: `_${mk.category.toLowerCase()}_25`, value: mk.size_2025 },
@@ -653,7 +658,7 @@ function genSalesHardExpert(rng, tier) {
   const g1 = round1(g);
   const rs2 = round2(rs);
   const cat = bcgOf(highG, highS);
-  const outputRows = runSql(sql, { sales: tableRaw(table) }).rows;
+  const outputRows = genSql(sql, { sales: tableRaw(table) }).rows;
   const shownOut = outputRows.map((r) => `- ${r.join(" · ")}`).join("\n");
   const given = markets.flatMap((mk) => [
     { label: `_${mk.category.toLowerCase()}_25`, value: mk.size_2025 },

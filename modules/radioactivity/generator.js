@@ -1,3 +1,5 @@
+import { ELEMENTS, symbolOf } from "../../js/lib/chem.js";
+
 // Radioactivity generator. Uses only the seeded rng passed in by the engine.
 // Physics only: nuclide notation, alpha/beta/gamma decay equations and half-life (no health effects or dose).
 // Nuclides are written with Unicode super/subscripts, mass number on top: ²³⁸₉₂U. Every nuclide used is real,
@@ -32,19 +34,9 @@ const isTie = (x) => {
 // ---------------------------------------------------------------------------------------------
 // Elements and notation
 
-// Index = atomic number (0 = neutron).
-const SYM = ("n H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr " +
-  "Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl " +
-  "Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm").split(" ");
-const NAME = {
-  1: "hydrogen", 2: "helium", 3: "lithium", 4: "beryllium", 5: "boron", 6: "carbon", 7: "nitrogen", 8: "oxygen", 9: "fluorine",
-  10: "neon", 11: "sodium", 12: "magnesium", 13: "aluminium", 14: "silicon", 15: "phosphorus", 16: "sulfur", 17: "chlorine",
-  18: "argon", 19: "potassium", 20: "calcium", 21: "scandium", 26: "iron", 27: "cobalt", 28: "nickel", 29: "copper", 30: "zinc",
-  36: "krypton", 37: "rubidium", 38: "strontium", 39: "yttrium", 40: "zirconium", 43: "technetium", 44: "ruthenium",
-  47: "silver", 53: "iodine", 54: "xenon", 55: "caesium", 56: "barium", 79: "gold", 80: "mercury", 81: "thallium", 82: "lead",
-  83: "bismuth", 84: "polonium", 86: "radon", 88: "radium", 89: "actinium", 90: "thorium", 91: "protactinium", 92: "uranium",
-  93: "neptunium", 94: "plutonium", 95: "americium",
-};
+// Index = atomic number (0 = neutron). Symbols and names come from the shared chemistry library.
+const SYM = ["n", ...ELEMENTS.map((e) => e.symbol)];
+const NAME = Object.fromEntries(ELEMENTS.map((e) => [e.Z, e.name]));
 const SUP = "⁰¹²³⁴⁵⁶⁷⁸⁹";
 const SUB = "₀₁₂₃₄₅₆₇₈₉";
 const sup = (n) => String(n).replace(/\d/g, (d) => SUP[d]);
@@ -847,14 +839,13 @@ export function generate({ subtopic, difficulty, rng }) {
 
 const SUP_V = Object.fromEntries([..."⁰¹²³⁴⁵⁶⁷⁸⁹"].map((c, i) => [c, i]));
 const SUB_V = Object.fromEntries([..."₀₁₂₃₄₅₆₇₈₉"].map((c, i) => [c, i]));
-const ELEMENTS = "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm".split(" ");
 
 function parseNuc(s) {
   const m = /^([⁰¹²³⁴⁵⁶⁷⁸⁹]+)([₀₁₂₃₄₅₆₇₈₉]+)([A-Z][a-z]?)$/.exec(String(s));
   if (!m) return null;
   const A = Number([...m[1]].map((c) => SUP_V[c]).join(""));
   const Z = Number([...m[2]].map((c) => SUB_V[c]).join(""));
-  if (ELEMENTS[Z - 1] !== m[3]) return null; // symbol must match the atomic number
+  if (symbolOf(Z) !== m[3]) return null; // symbol must match the atomic number
   return { A, Z };
 }
 

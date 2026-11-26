@@ -1,3 +1,9 @@
+import { formulaMass, massList, ar } from "../../js/lib/chem.js";
+
+// Settings this module states in its prompts.
+const R_GAS = 8.31; // J/(mol K)
+const MOLAR_VOLUME_RTP = 24; // dm3/mol at RTP
+
 // Chemist role-only generator (all four tiers). Uses only the seeded rng passed in by the engine.
 // Every question is a multi-part scenario mixing subject skills. Hints and explanations use only
 // values already drawn (no rng calls), and verify() recomputes every part by another route.
@@ -27,8 +33,6 @@ const givenRows = (pairs) => pairs.map(([label, value]) => ({ label, value }));
 const tolOf = (dp) => Number((0.5 * 10 ** -dp).toFixed(dp + 1));
 const dpWord = (dp) => (dp === 0 ? "to the nearest whole number" : dp === 1 ? "to 1 decimal place" : `to ${dp} decimal places`);
 const TIER_PARTS = { medium: 2, hard: 3, expert: 4, "expert-plus": 4 };
-const R_GAS = 8.31; // J/(mol K)
-const MOLAR_VOL = 24; // dm3/mol at RTP
 
 function numPart(id, label, ask, val, dp, hint) {
   return { id: id.toLowerCase(), label, ask: `${ask}, ${dpWord(dp)}`, answerType: "number", answer: roundTo(val, dp), tolerance: tolOf(dp), hint, _dp: dp };
@@ -51,14 +55,17 @@ const TRY = 20000;
 const tooMany = () => { throw new Error("role-chemist: no suitable draw"); };
 
 // Reactions for yield and batch work: reactant -> one named product, k mol product per mol reactant.
+// Molar masses and the stated atomic masses come from the shared chemistry library.
+const mm = (f) => formulaMass(f);
+const reaction = (react, prod, k, eq, notes) => ({ react, Mr: mm(react), prod, Mp: mm(prod), k, eq, ar: massList(notes) });
 const REACTIONS = [
-  { react: "CaCO₃", Mr: 100, prod: "CaO", Mp: 56, k: 1, eq: "CaCO₃ → CaO + CO₂", ar: "Ca = 40, C = 12, O = 16" },
-  { react: "Mg", Mr: 24, prod: "MgO", Mp: 40, k: 1, eq: "2 Mg + O₂ → 2 MgO", ar: "Mg = 24, O = 16" },
-  { react: "Fe₂O₃", Mr: 160, prod: "Fe", Mp: 56, k: 2, eq: "Fe₂O₃ + 3 CO → 2 Fe + 3 CO₂", ar: "Fe = 56, O = 16, C = 12" },
-  { react: "N₂", Mr: 28, prod: "NH₃", Mp: 17, k: 2, eq: "N₂ + 3 H₂ → 2 NH₃", ar: "N = 14, H = 1" },
-  { react: "Zn", Mr: 65, prod: "ZnCl₂", Mp: 136, k: 1, eq: "Zn + 2 HCl → ZnCl₂ + H₂", ar: "Zn = 65, Cl = 35.5, H = 1" },
-  { react: "Na", Mr: 23, prod: "NaCl", Mp: 58.5, k: 1, eq: "2 Na + Cl₂ → 2 NaCl", ar: "Na = 23, Cl = 35.5" },
-  { react: "H₂", Mr: 2, prod: "H₂O", Mp: 18, k: 1, eq: "2 H₂ + O₂ → 2 H₂O", ar: "H = 1, O = 16" },
+  reaction("CaCO₃", "CaO", 1, "CaCO₃ → CaO + CO₂", ["CaCO3", "CaO"]),
+  reaction("Mg", "MgO", 1, "2 Mg + O₂ → 2 MgO", ["Mg", "MgO"]),
+  reaction("Fe₂O₃", "Fe", 2, "Fe₂O₃ + 3 CO → 2 Fe + 3 CO₂", ["Fe2O3", "Fe", "CO"]),
+  reaction("N₂", "NH₃", 2, "N₂ + 3 H₂ → 2 NH₃", ["N2", "NH3"]),
+  reaction("Zn", "ZnCl₂", 1, "Zn + 2 HCl → ZnCl₂ + H₂", ["Zn", "ZnCl2", "HCl"]),
+  reaction("Na", "NaCl", 1, "2 Na + Cl₂ → 2 NaCl", ["Na", "NaCl"]),
+  reaction("H₂", "H₂O", 1, "2 H₂ + O₂ → 2 H₂O", ["H2", "H2O"]),
 ];
 const RIDX = REACTIONS.map((_, i) => i);
 const molWord = (k) => (k === 1 ? "1 mol" : `${k} mol`);
@@ -112,12 +119,13 @@ function genYield(rng, tier) {
 }
 
 // Y2: empirical formula of a metal oxide from percent composition.
+// Cu is 64 here (stated in each prompt), unlike the library's 63.5.
 const COMPS = [
-  { f: "MgO", M: "Mg", A: 24, a: 1, b: 1 }, { f: "CaO", M: "Ca", A: 40, a: 1, b: 1 },
+  { f: "MgO", M: "Mg", A: ar("Mg"), a: 1, b: 1 }, { f: "CaO", M: "Ca", A: ar("Ca"), a: 1, b: 1 },
   { f: "CuO", M: "Cu", A: 64, a: 1, b: 1 }, { f: "Cu₂O", M: "Cu", A: 64, a: 2, b: 1 },
-  { f: "ZnO", M: "Zn", A: 65, a: 1, b: 1 }, { f: "Al₂O₃", M: "Al", A: 27, a: 2, b: 3 },
-  { f: "FeO", M: "Fe", A: 56, a: 1, b: 1 }, { f: "Fe₂O₃", M: "Fe", A: 56, a: 2, b: 3 },
-  { f: "Fe₃O₄", M: "Fe", A: 56, a: 3, b: 4 }, { f: "Na₂O", M: "Na", A: 23, a: 2, b: 1 },
+  { f: "ZnO", M: "Zn", A: ar("Zn"), a: 1, b: 1 }, { f: "Al₂O₃", M: "Al", A: ar("Al"), a: 2, b: 3 },
+  { f: "FeO", M: "Fe", A: ar("Fe"), a: 1, b: 1 }, { f: "Fe₂O₃", M: "Fe", A: ar("Fe"), a: 2, b: 3 },
+  { f: "Fe₃O₄", M: "Fe", A: ar("Fe"), a: 3, b: 4 }, { f: "Na₂O", M: "Na", A: ar("Na"), a: 2, b: 1 },
 ];
 // Distractor formulas use the same metal with another metal : oxygen ratio.
 const SUBS = { 2: "₂", 3: "₃", 4: "₄" };
@@ -316,15 +324,16 @@ function genTitrBack(rng) {
 
 // ---------- gas-vessel ----------
 
+const gasReaction = (react, gas, k, eq, notes) => ({ react, Mr: mm(react), gas, k, eq, ar: massList(notes) });
 const GASR = [
-  { react: "CaCO₃", Mr: 100, gas: "CO₂", k: 1, eq: "CaCO₃ → CaO + CO₂", ar: "Ca = 40, C = 12, O = 16" },
-  { react: "Zn", Mr: 65, gas: "H₂", k: 1, eq: "Zn + 2 HCl → ZnCl₂ + H₂", ar: "Zn = 65" },
-  { react: "Mg", Mr: 24, gas: "H₂", k: 1, eq: "Mg + 2 HCl → MgCl₂ + H₂", ar: "Mg = 24" },
-  { react: "H₂O₂", Mr: 34, gas: "O₂", k: 0.5, eq: "2 H₂O₂ → 2 H₂O + O₂", ar: "H = 1, O = 16" },
-  { react: "KClO₃", Mr: 122.5, gas: "O₂", k: 1.5, eq: "2 KClO₃ → 2 KCl + 3 O₂", ar: "K = 39, Cl = 35.5, O = 16" },
+  gasReaction("CaCO₃", "CO₂", 1, "CaCO₃ → CaO + CO₂", ["CaCO3"]),
+  gasReaction("Zn", "H₂", 1, "Zn + 2 HCl → ZnCl₂ + H₂", ["Zn"]),
+  gasReaction("Mg", "H₂", 1, "Mg + 2 HCl → MgCl₂ + H₂", ["Mg"]),
+  gasReaction("H₂O₂", "O₂", 0.5, "2 H₂O₂ → 2 H₂O + O₂", ["H2O2"]),
+  gasReaction("KClO₃", "O₂", 1.5, "2 KClO₃ → 2 KCl + 3 O₂", ["KClO3"]),
 ];
 const GRIDX = GASR.map((_, i) => i);
-const CONST_TXT = "Take 1 mol of gas = 24 dm³ at room temperature and pressure (RTP), R = 8.31 J/(mol·K), and use P V = n R T with P in kPa and V in dm³.";
+const CONST_TXT = `Take 1 mol of gas = ${MOLAR_VOLUME_RTP} dm³ at room temperature and pressure (RTP), R = ${R_GAS} J/(mol·K), and use P V = n R T with P in kPa and V in dm³.`;
 
 // G1: reactant -> moles of gas -> volume at RTP -> pressure in a rigid vessel -> heated, still safe?
 function genGas(rng, tier) {
@@ -339,7 +348,7 @@ function genGas(rng, tier) {
     const Pmax = rng.pick([300, 500, 800, 1000, 1500, 2000]);
     const st = (rd) => {
       const n = rd("n", (m / R.Mr) * R.k);
-      const V = rd("V", n * MOLAR_VOL);
+      const V = rd("V", n * MOLAR_VOLUME_RTP);
       const P1 = rd("P1", (n * R_GAS * T1) / Vv);
       const P2 = rd("P2", (n * R_GAS * T2) / Vv);
       return { n, V, P1, P2 };
@@ -555,11 +564,19 @@ const partStr = (answer, id) => {
 const near = (cand, truth, tol) => Number.isFinite(cand) && Math.abs(cand - truth) <= tol + 1e-9;
 const YN = (b) => (b ? "Yes" : "No");
 
+// Independent molar mass for verify: sum "Symbol count" tokens straight from the formula text.
+function checkMass(text) {
+  const f = text.replace(/[₀-₉]/g, (c) => String(c.charCodeAt(0) - 0x2080));
+  let t = 0;
+  for (const m of f.matchAll(/([A-Z][a-z]?)(\d*)/g)) t += ar(m[1]) * (m[2] === "" ? 1 : Number(m[2]));
+  return t;
+}
+
 const ALT = {
   "ch-yield": (p) => {
     const R = REACTIONS[p.ri];
-    const th = (p.m * R.k * R.Mp) / R.Mr; // direct mass ratio
-    return { n: p.m / R.Mr, th, yp: (p.actual / th) * 100, ok: YN(p.actual / th >= p.thr / 100) };
+    const th = (p.m * R.k * checkMass(R.prod)) / checkMass(R.react); // direct mass ratio
+    return { n: p.m / checkMass(R.react), th, yp: (p.actual / th) * 100, ok: YN(p.actual / th >= p.thr / 100) };
   },
   "ch-empirical": (p) => {
     const c = COMPS[p.ci];
@@ -569,8 +586,8 @@ const ALT = {
   },
   "ch-purity": (p) => {
     const R = REACTIONS[p.ri];
-    const mass = (p.mp * R.Mr) / (R.k * R.Mp);
-    return { np: p.mp / R.Mp, mass, pp: (mass / p.ms) * 100, ok: YN(mass / p.ms >= p.thr / 100) };
+    const mass = (p.mp * checkMass(R.react)) / (R.k * checkMass(R.prod));
+    return { np: p.mp / checkMass(R.prod), mass, pp: (mass / p.ms) * 100, ok: YN(mass / p.ms >= p.thr / 100) };
   },
   "ch-titr": (p) => {
     const A = ACIDS[p.acid];
@@ -585,28 +602,28 @@ const ALT = {
   },
   "ch-gas": (p) => {
     const R = GASR[p.gi];
-    const n = p.m / R.Mr * R.k;
-    return { n, V: (n * 24), P1: (n * R_GAS * p.T1) / p.Vv, P2: ((n * R_GAS * p.T1) / p.Vv) * (p.T2 / p.T1), ok: YN((n * R_GAS * p.T2) / p.Vv <= p.Pmax) };
+    const n = p.m / checkMass(R.react) * R.k;
+    return { n, V: (n * MOLAR_VOLUME_RTP), P1: (n * R_GAS * p.T1) / p.Vv, P2: ((n * R_GAS * p.T1) / p.Vv) * (p.T2 / p.T1), ok: YN((n * R_GAS * p.T2) / p.Vv <= p.Pmax) };
   },
   "ch-gasback": (p) => {
     const R = GASR[p.gi];
     const nm = (p.Pmax * p.Vv) / (R_GAS * p.Tm);
-    const mm = (nm * R.Mr) / R.k;
+    const mm = (nm * checkMass(R.react)) / R.k;
     const pl = (p.mp / mm) * 100;
     return { nm, mm, pl, verdict: `${pl > 100 ? "Over the limit" : "Within the limit"} | ${pl <= 90 ? "10% or more spare" : "Under 10% spare"}` };
   },
   "ch-batch": (p) => {
     const R = REACTIONS[p.ri];
-    const re = (p.T * R.Mr) / (R.k * R.Mp * (p.y / 100)); // single-step route
+    const re = (p.T * checkMass(R.react)) / (R.k * checkMass(R.prod) * (p.y / 100)); // single-step route
     const bc = re * p.p + p.F;
     return { th: p.T / (p.y / 100), re, bc, ck: bc / p.T, ok: YN(p.s > bc / p.T) };
   },
   "ch-batchback": (p) => {
     const R = REACTIONS[p.ri];
     const re = p.B / p.pA;
-    const pr = (re * R.k * R.Mp * (p.yA / 100)) / R.Mr;
+    const pr = (re * R.k * checkMass(R.prod) * (p.yA / 100)) / checkMass(R.react);
     const cA = p.B / pr;
-    const cB = p.pB / ((R.k * R.Mp * (p.yB / 100)) / R.Mr);
+    const cB = p.pB / ((R.k * checkMass(R.prod) * (p.yB / 100)) / checkMass(R.react));
     return { re, pr, ck: cA, plan: `${cA < cB ? "Plan A" : "Plan B"} | ${p.s > Math.min(cA, cB) ? "Yes" : "No"}` };
   },
 };

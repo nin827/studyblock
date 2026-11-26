@@ -10,6 +10,8 @@
 //   staffing-plan  capacity per worker -> crew -> labour cost -> budget; hire vs overtime               (Planner)
 //   stock-reorder  reorder point -> days until order -> order date -> lead-time risk; policy checks    (Planner)
 
+import { MONTHS, addCalendarDays, formatDMY } from "../../js/lib/dates.js";
+
 // ---------- helpers ----------
 
 function roundTo(n, d) {
@@ -57,11 +59,9 @@ function finish(prompt, parts, explanation, kind, params, given, hints) {
   return { prompt, answerType: "multi", parts, explanation, params: { kind, ...params }, given: givenRows(given), hints };
 }
 
-// Calendar days (UTC arithmetic keeps it exact; no daylight saving anywhere).
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const addDays = (y, m, d, k) => { const t = new Date(Date.UTC(y, m - 1, d + k)); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), w: t.getUTCDay() }; };
-const fmtDay = (x) => `${x.d} ${MONTHS[x.m - 1]} ${x.y}`;
+// Calendar days (integer day numbers to build, Date in UTC to check; js/lib/dates.js; no daylight saving anywhere).
+const addDays = addCalendarDays;
+const fmtDay = formatDMY;
 
 // ---------- route-timing ----------
 
@@ -389,7 +389,9 @@ const timeMins = (s) => {
   return +m[1] * 60 + +m[2];
 };
 const dayKey = (s) => String(s).toLowerCase().replace(/,/g, " ").replace(/(\d)(st|nd|rd|th)\b/g, "$1").replace(/\s+/g, " ").trim();
-const dayOf = (t, k) => dayKey(fmtDay(addDays(t.y, t.mo, t.da, k)));
+// Check side: the platform Date in UTC, not the library arithmetic.
+const utcDate = (y, m, d, k) => { const t = new Date(Date.UTC(y, m - 1, d + k)); return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate() }; };
+const dayOf = (t, k) => dayKey(fmtDay(utcDate(t.y, t.mo, t.da, k)));
 
 const ALT = {
   "op-route": (p) => {

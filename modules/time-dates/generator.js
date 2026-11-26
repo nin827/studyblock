@@ -8,9 +8,9 @@
 // generate() works in minutes / day numbers; verify() re-derives answers another way (Date.UTC
 // for calendars, stepping back from the candidate answer for clocks).
 
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August",
-  "September", "October", "November", "December"];
-const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+import {
+  MONTHS, WEEKDAYS, isLeapYear, daysInMonth, civilToDays, daysToCivil, weekdayOfDays, formatDMY,
+} from "../../js/lib/dates.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 const mod = (a, n) => ((a % n) + n) % n;
@@ -71,36 +71,15 @@ function readClock(s) {
 const is24 = (s) => /^\d{2}:\d{2}$/.test(String(s));
 const is12 = (s) => /^\d{1,2}:\d{2} (am|pm)$/.test(String(s));
 
-// ---- calendar (generation side: Hinnant's civil day numbers, day 0 = 1 January 1970) ----
-const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
-const dim = (y, m) => (m === 2 ? (isLeap(y) ? 29 : 28) : [4, 6, 9, 11].includes(m) ? 30 : 31);
-function toDays(y, m, d) {
-  y -= m <= 2 ? 1 : 0;
-  const era = Math.floor(y / 400);
-  const yoe = y - era * 400;
-  const doy = Math.floor((153 * (m + (m > 2 ? -3 : 9)) + 2) / 5) + d - 1;
-  const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
-  return era * 146097 + doe - 719468;
-}
-function fromDays(z) {
-  z += 719468;
-  const era = Math.floor(z / 146097);
-  const doe = z - era * 146097;
-  const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
-  const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
-  const mp = Math.floor((5 * doy + 2) / 153);
-  const d = doy - Math.floor((153 * mp + 2) / 5) + 1;
-  const m = mp + (mp < 10 ? 3 : -9);
-  return { y: yoe + era * 400 + (m <= 2 ? 1 : 0), m, d };
-}
-const dayName = (z) => DAYS[mod(z + 4, 7)];
-const fmtD = ({ y, m, d }) => `${d} ${MONTHS[m - 1]} ${y}`;
-const fmtZ = (z) => fmtD(fromDays(z));
+// ---- calendar (generation side: integer day numbers, day 0 = 1 January 1970; js/lib/dates.js) ----
+const dayName = (z) => WEEKDAYS[weekdayOfDays(z)];
+const fmtD = formatDMY;
+const fmtZ = (z) => fmtD(daysToCivil(z));
 const fmtZW = (z) => `${dayName(z)} ${fmtZ(z)}`;
 function randDate(rng, y0, y1) {
   const y = rng.int(y0, y1);
   const m = rng.int(1, 12);
-  return toDays(y, m, rng.int(1, dim(y, m)));
+  return civilToDays(y, m, rng.int(1, daysInMonth(y, m)));
 }
 
 // ---- calendar (verify side: the platform's Date in UTC, a different method) ----
@@ -116,12 +95,12 @@ function readDate(s) {
   return ms;
 }
 const utcOf = (z) => {
-  const { y, m, d } = fromDays(z);
+  const { y, m, d } = daysToCivil(z);
   return Date.UTC(y, m - 1, d);
 };
 const utcAdd = (ms, n) => ms + n * DAY_MS;
 const utcDiff = (a, b) => Math.round((b - a) / DAY_MS);
-const utcDay = (ms) => DAYS[new Date(ms).getUTCDay()];
+const utcDay = (ms) => WEEKDAYS[new Date(ms).getUTCDay()];
 
 // ---- shared question helpers ----
 function shuffleChoices(answer, others, rng) {
@@ -425,14 +404,14 @@ function genCalendar(difficulty, rng) {
     if (kind === "later") {
       const z = randDate(rng, 2023, 2028);
       const n = rng.int(3, 25);
-      const { y, m, d } = fromDays(z);
-      const left = dim(y, m) - d;
+      const { y, m, d } = daysToCivil(z);
+      const left = daysInMonth(y, m) - d;
       return {
         prompt: `What date is **${n} days after ${fmtZ(z)}**? (Give the day, month and year.)`,
         answerType: "date", precision: "day", answer: fmtZ(z + n),
         explanation: n <= left ? `${d} + ${n} = ${d + n}, still in ${MONTHS[m - 1]}: **${fmtZ(z + n)}**.`
-          : `${MONTHS[m - 1]} has ${dim(y, m)} days, so ${left} days take you to ${dim(y, m)} ${MONTHS[m - 1]}. The other ${n - left} days go into the next month: **${fmtZ(z + n)}**.`,
-        hints: [`${MONTHS[m - 1]} ${y} has ${dim(y, m)} days.`, n <= left ? `Add ${n} to the day number.` : `Count to the end of ${MONTHS[m - 1]} first (${left} days), then carry on into the next month.`],
+          : `${MONTHS[m - 1]} has ${daysInMonth(y, m)} days, so ${left} days take you to ${daysInMonth(y, m)} ${MONTHS[m - 1]}. The other ${n - left} days go into the next month: **${fmtZ(z + n)}**.`,
+        hints: [`${MONTHS[m - 1]} ${y} has ${daysInMonth(y, m)} days.`, n <= left ? `Add ${n} to the day number.` : `Count to the end of ${MONTHS[m - 1]} first (${left} days), then carry on into the next month.`],
         params: { kind, z, n },
       };
     }
@@ -441,8 +420,8 @@ function genCalendar(difficulty, rng) {
       const m = rng.pick([1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       return {
         prompt: `How many days are there in **${MONTHS[m - 1]} ${y}**?`,
-        answerType: "number", answer: dim(y, m), tolerance: 0, ...EXACT,
-        explanation: `"Thirty days has September, April, June and November"; all the rest except February have 31. ${MONTHS[m - 1]} has **${dim(y, m)}** days.`,
+        answerType: "number", answer: daysInMonth(y, m), tolerance: 0, ...EXACT,
+        explanation: `"Thirty days has September, April, June and November"; all the rest except February have 31. ${MONTHS[m - 1]} has **${daysInMonth(y, m)}** days.`,
         hints: ["Remember the rhyme: thirty days has September, April, June and November.", "Is the month in the rhyme? The months not in it (apart from February) have one day more."],
         params: { kind, y, m },
       };
@@ -462,14 +441,14 @@ function genCalendar(difficulty, rng) {
     // between: same month
     const y = rng.int(2023, 2028);
     const m = rng.int(1, 12);
-    const d1 = rng.int(1, dim(y, m) - 5);
-    const d2 = rng.int(d1 + 4, dim(y, m));
+    const d1 = rng.int(1, daysInMonth(y, m) - 5);
+    const d2 = rng.int(d1 + 4, daysInMonth(y, m));
     return {
       prompt: `How many days is it **from ${d1} ${MONTHS[m - 1]} ${y} to ${d2} ${MONTHS[m - 1]} ${y}**? (Count the days you move forward, so from the 1st to the 3rd is 2 days.)`,
       answerType: "number", answer: d2 - d1, tolerance: 0, ...EXACT,
       explanation: `Both dates are in the same month, so subtract the day numbers: ${d2} − ${d1} = **${d2 - d1}** days.`,
       hints: ["Both dates are in the same month.", "Subtract the smaller day number from the bigger one."],
-      params: { kind, z1: toDays(y, m, d1), z2: toDays(y, m, d2) },
+      params: { kind, z1: civilToDays(y, m, d1), z2: civilToDays(y, m, d2) },
     };
   }
 
@@ -478,12 +457,12 @@ function genCalendar(difficulty, rng) {
     if (kind === "later") {
       const z = randDate(rng, 2023, 2028);
       const n = rng.int(20, 100);
-      const { y, m } = fromDays(z);
+      const { y, m } = daysToCivil(z);
       return {
         prompt: `What date is **${n} days after ${fmtZ(z)}**? (Give the day, month and year.)`,
         answerType: "date", precision: "day", answer: fmtZ(z + n),
         explanation: monthWalk(z, n) + ` So the date is **${fmtZ(z + n)}**.`,
-        hints: [`Count the days left in ${MONTHS[m - 1]} first (${MONTHS[m - 1]} ${y} has ${dim(y, m)} days).`, "Then take away whole months one at a time (check how many days each has, and whether February is in a leap year)."],
+        hints: [`Count the days left in ${MONTHS[m - 1]} first (${MONTHS[m - 1]} ${y} has ${daysInMonth(y, m)} days).`, "Then take away whole months one at a time (check how many days each has, and whether February is in a leap year)."],
         params: { kind, z, n },
       };
     }
@@ -493,24 +472,24 @@ function genCalendar(difficulty, rng) {
       do {
         z1 = randDate(rng, y, y);
         z2 = randDate(rng, y, y);
-      } while (!(z2 - z1 >= 20 && fromDays(z1).m !== fromDays(z2).m));
+      } while (!(z2 - z1 >= 20 && daysToCivil(z1).m !== daysToCivil(z2).m));
       return {
         prompt: `How many days is it **from ${fmtZ(z1)} to ${fmtZ(z2)}**? (Count the days you move forward, so from the 1st to the 3rd is 2 days.)`,
         answerType: "number", answer: z2 - z1, tolerance: 0, ...EXACT,
         explanation: betweenWalk(z1, z2) + ` Total: **${z2 - z1}** days.`,
-        hints: [`Count the days left in ${MONTHS[fromDays(z1).m - 1]} after the ${fromDays(z1).d}th.`, "Add the full months in between, then the day number of the last date."],
+        hints: [`Count the days left in ${MONTHS[daysToCivil(z1).m - 1]} after the ${daysToCivil(z1).d}th.`, "Add the full months in between, then the day number of the last date."],
         params: { kind, z1, z2 },
       };
     }
     if (kind === "weekday-after") {
       const w = rng.int(0, 6);
       const n = rng.int(10, 200);
-      const ans = DAYS[(w + n) % 7];
+      const ans = WEEKDAYS[(w + n) % 7];
       return {
-        prompt: `Today is a **${DAYS[w]}**. What day of the week will it be in **${n} days**?`,
-        answerType: "choice", answer: ans, choices: rng.shuffle(DAYS.slice()),
-        explanation: `Every 7 days is the same weekday. ${n} = 7 × ${Math.floor(n / 7)} + ${n % 7}, so move ${plural(n % 7, "day")} on from ${DAYS[w]}: **${ans}**.`,
-        hints: ["Whole weeks bring you back to the same weekday.", `Find the remainder of ${n} ÷ 7 and count that many days on from ${DAYS[w]}.`],
+        prompt: `Today is a **${WEEKDAYS[w]}**. What day of the week will it be in **${n} days**?`,
+        answerType: "choice", answer: ans, choices: rng.shuffle(WEEKDAYS.slice()),
+        explanation: `Every 7 days is the same weekday. ${n} = 7 × ${Math.floor(n / 7)} + ${n % 7}, so move ${plural(n % 7, "day")} on from ${WEEKDAYS[w]}: **${ans}**.`,
+        hints: ["Whole weeks bring you back to the same weekday.", `Find the remainder of ${n} ÷ 7 and count that many days on from ${WEEKDAYS[w]}.`],
         params: { kind, w, n },
       };
     }
@@ -518,8 +497,8 @@ function genCalendar(difficulty, rng) {
     const y = rng.pick([1900, 2000, 2100, ...Array.from({ length: 28 }, (_, i) => 2010 + i)]);
     return {
       prompt: `How many days are there in **February ${y}**?`,
-      answerType: "number", answer: dim(y, 2), tolerance: 0, ...EXACT,
-      explanation: `${y} ${y % 4 !== 0 ? "is not divisible by 4" : y % 100 !== 0 ? "is divisible by 4 (and is not a century year)" : y % 400 === 0 ? "is a century year divisible by 400" : "is a century year not divisible by 400"}, so it ${isLeap(y) ? "is" : "is not"} a leap year: February has **${dim(y, 2)}** days.`,
+      answerType: "number", answer: daysInMonth(y, 2), tolerance: 0, ...EXACT,
+      explanation: `${y} ${y % 4 !== 0 ? "is not divisible by 4" : y % 100 !== 0 ? "is divisible by 4 (and is not a century year)" : y % 400 === 0 ? "is a century year divisible by 400" : "is a century year not divisible by 400"}, so it ${isLeapYear(y) ? "is" : "is not"} a leap year: February has **${daysInMonth(y, 2)}** days.`,
       hints: ["February has 29 days in a leap year and 28 otherwise.", "Leap years are divisible by 4, except century years (like 1900), which must be divisible by 400."],
       params: { kind, y },
     };
@@ -544,7 +523,7 @@ function genCalendar(difficulty, rng) {
       do {
         z1 = randDate(rng, 2023, 2028);
         z2 = z1 + rng.int(40, 500);
-      } while (fromDays(z1).y === fromDays(z2).y);
+      } while (daysToCivil(z1).y === daysToCivil(z2).y);
       const incl = rng.next() < 0.5;
       const ans = z2 - z1 + (incl ? 1 : 0);
       const ctx = rng.pick(["A festival exhibition runs", "A library book loan runs", "A building project runs", "A travel pass is valid"]);
@@ -553,7 +532,7 @@ function genCalendar(difficulty, rng) {
           : `How many days is it **from ${fmtZ(z1)} to ${fmtZ(z2)}**? (Count the days you move forward, so from the 1st to the 3rd is 2 days.)`,
         answerType: "number", answer: ans, tolerance: 0, ...EXACT,
         explanation: `${betweenWalk(z1, z2)} That gives ${z2 - z1} days from one date to the other.${incl ? ` Counting both the first and the last day adds 1: **${ans}** days.` : ` **${ans}** days.`}`,
-        hints: [`Count to the end of ${fromDays(z1).y} first, then on into ${fromDays(z1).y + 1}${fromDays(z2).y > fromDays(z1).y + 1 ? " and beyond" : ""}.`,
+        hints: [`Count to the end of ${daysToCivil(z1).y} first, then on into ${daysToCivil(z1).y + 1}${daysToCivil(z2).y > daysToCivil(z1).y + 1 ? " and beyond" : ""}.`,
           incl ? "Counting forward misses the first day; add 1 when both days are included." : "Check each February: is that year a leap year?"],
         params: { kind, z1, z2, incl },
       };
@@ -568,7 +547,7 @@ function genCalendar(difficulty, rng) {
     const ans = dayName(z2);
     return {
       prompt: `**${fmtZ(z1)}** is a **${dayName(z1)}**. What day of the week is **${fmtZ(z2)}**?`,
-      answerType: "choice", answer: ans, choices: rng.shuffle(DAYS.slice()),
+      answerType: "choice", answer: ans, choices: rng.shuffle(WEEKDAYS.slice()),
       explanation: `${fmtZ(diff > 0 ? z1 : z2)} to ${fmtZ(diff > 0 ? z2 : z1)} is ${Math.abs(diff)} days = ${plural(Math.floor(Math.abs(diff) / 7), "week")}` +
         (Math.abs(diff) % 7 ? ` and ${plural(Math.abs(diff) % 7, "day")}. So move ${plural(Math.abs(diff) % 7, "day")} ${diff > 0 ? "forward" : "back"} from ${dayName(z1)}: **${ans}**.`
           : ` exactly, so it is the same weekday: **${ans}**.`),
@@ -584,12 +563,12 @@ function genCalendar(difficulty, rng) {
     do {
       b = randDate(rng, 1950, 2015);
       on = randDate(rng, 2024, 2030);
-    } while (fromDays(b).m === 2 && fromDays(b).d === 29);
-    const B = fromDays(b), O = fromDays(on);
+    } while (daysToCivil(b).m === 2 && daysToCivil(b).d === 29);
+    const B = daysToCivil(b), O = daysToCivil(on);
     const hadBday = O.m > B.m || (O.m === B.m && O.d >= B.d);
     const age = O.y - B.y - (hadBday ? 0 : 1);
     const nextY = O.m === B.m && O.d === B.d ? O.y + 1 : hadBday ? O.y + 1 : O.y;
-    const next = toDays(nextY, B.m, B.d);
+    const next = civilToDays(nextY, B.m, B.d);
     const until = next - on;
     return {
       prompt: `Robin was born on **${fmtD(B)}**. Today is **${fmtD(O)}**.`,
@@ -614,7 +593,7 @@ function genCalendar(difficulty, rng) {
       answerType: "multi",
       parts: [
         { id: "date", label: "Date", ask: `On what date is the ${ordinal(n)} time? (Give the day, month and year.)`, answerType: "date", precision: "day", answer: fmtZ(zn), hint: `The ${ordinal(n)} time is ${n - 1} gaps after the first, not ${n}: that is ${n - 1} × ${k} days later.` },
-        { id: "day", label: "Day", ask: "What day of the week is that?", answerType: "choice", answer: ans, choices: rng.shuffle(DAYS.slice()), hint: `Only the remainder of the total days ÷ 7 matters; count that many weekdays on from ${dayName(z)}.` },
+        { id: "day", label: "Day", ask: "What day of the week is that?", answerType: "choice", answer: ans, choices: rng.shuffle(WEEKDAYS.slice()), hint: `Only the remainder of the total days ÷ 7 matters; count that many weekdays on from ${dayName(z)}.` },
       ],
       given: [{ label: "_every", value: k }, { label: "_times", value: n }],
       explanation: `The ${ordinal(n)} time comes after ${n - 1} gaps: \`(_times - 1) * _every\` = ${n - 1} × ${k} = ${(n - 1) * k} days after ${fmtZ(z)}, which is **${fmtZ(zn)}**.\n\n${(n - 1) * k} = 7 × ${Math.floor(((n - 1) * k) / 7)} + ${((n - 1) * k) % 7}, so it falls ${plural(((n - 1) * k) % 7, "weekday")} after ${dayName(z)}: **${ans}**.`,
@@ -642,17 +621,17 @@ const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st
 
 // "From 3 May: 28 days to the end of May, then June (30), …, then 12 more."
 function betweenWalk(z1, z2) {
-  const A = fromDays(z1);
-  const B = fromDays(z2);
+  const A = daysToCivil(z1);
+  const B = daysToCivil(z2);
   if (A.y === B.y && A.m === B.m) return `Within ${MONTHS[A.m - 1]}: ${B.d} − ${A.d} = ${B.d - A.d} days.`;
-  const bits = [`${dim(A.y, A.m) - A.d} to the end of ${MONTHS[A.m - 1]} ${A.y}`];
+  const bits = [`${daysInMonth(A.y, A.m) - A.d} to the end of ${MONTHS[A.m - 1]} ${A.y}`];
   let y = A.y, m = A.m;
   const mids = [];
   for (;;) {
     m++;
     if (m > 12) { m = 1; y++; }
     if (y === B.y && m === B.m) break;
-    mids.push(`${MONTHS[m - 1].slice(0, 3)} ${dim(y, m)}`);
+    mids.push(`${MONTHS[m - 1].slice(0, 3)} ${daysInMonth(y, m)}`);
   }
   if (mids.length > 6) {
     bits.push(`${mids.length} full months in between (${mids.reduce((s, x) => s + Number(x.split(" ")[1]), 0)} days)`);
@@ -683,7 +662,7 @@ function verifyCalendar(q, answer) {
     case "span":
       return Number(answer) === utcDiff(utcOf(p.z1), utcOf(p.z2)) + (p.incl ? 1 : 0);
     case "weekday-after":
-      return DAYS.includes(answer) && DAYS[(DAYS.indexOf(answer) - p.n % 7 + 7) % 7] === DAYS[p.w];
+      return WEEKDAYS.includes(answer) && WEEKDAYS[(WEEKDAYS.indexOf(answer) - p.n % 7 + 7) % 7] === WEEKDAYS[p.w];
     case "weekday-of":
       return answer === utcDay(utcOf(p.z2)) && utcDay(utcOf(p.z1)) === dayName(p.z1);
     case "age": {
@@ -695,10 +674,10 @@ function verifyCalendar(q, answer) {
       if (age !== n) return false;
       // Days: the candidate lands on a birthday, and no earlier day after today does.
       if (!Number.isInteger(days) || days < 1 || days > 366) return false;
-      const land = new Date(o.getTime() + days * DAY_MS);
+      const land = new Date(utcAdd(o.getTime(), days));
       if (land.getUTCMonth() !== b.getUTCMonth() || land.getUTCDate() !== b.getUTCDate()) return false;
       for (let k = 1; k < days; k++) {
-        const t = new Date(o.getTime() + k * DAY_MS);
+        const t = new Date(utcAdd(o.getTime(), k));
         if (t.getUTCMonth() === b.getUTCMonth() && t.getUTCDate() === b.getUTCDate()) return false;
       }
       return true;
@@ -711,7 +690,7 @@ function verifyCalendar(q, answer) {
     }
     case "workdays": {
       let c = 0;
-      for (let ms = utcOf(p.z1); ms <= utcOf(p.z2); ms += DAY_MS) {
+      for (let ms = utcOf(p.z1); ms <= utcOf(p.z2); ms = utcAdd(ms, 1)) {
         const wd = new Date(ms).getUTCDay();
         if (wd !== 0 && wd !== 6) c++;
       }
@@ -753,7 +732,7 @@ const diffText = (A, B) => {
 };
 function dayChoices(w, lo, hi) {
   const out = [];
-  for (let k = lo; k <= hi; k++) out.push(DAYS[mod(w + k, 7)]);
+  for (let k = lo; k <= hi; k++) out.push(WEEKDAYS[mod(w + k, 7)]);
   return out;
 }
 
@@ -794,9 +773,9 @@ function genZones(difficulty, rng) {
       t = 5 * rng.int(0, 287);
     } while (t + d >= 0 && t + d < 1440);
     const shift = Math.floor((t + d) / 1440);
-    const ans = DAYS[mod(w + shift, 7)];
+    const ans = WEEKDAYS[mod(w + shift, 7)];
     return {
-      prompt: `${offsetsLine(A, B)}\n\nIt is **${t24(t)} on ${DAYS[w]}** in ${A[0]}. What is the time and day in ${B[0]}?`,
+      prompt: `${offsetsLine(A, B)}\n\nIt is **${t24(t)} on ${WEEKDAYS[w]}** in ${A[0]}. What is the time and day in ${B[0]}?`,
       answerType: "multi",
       parts: [
         { id: "time", label: "Time", ask: `Local time in ${B[0]} (24-hour, hh:mm)`, answerType: "text", ...textTime(t + d, false), hint: `${diffText(A, B)}; ${d > 0 ? "add" : "subtract"} ${dur(Math.abs(d))}.` },
@@ -813,9 +792,9 @@ function genZones(difficulty, rng) {
     const f = 5 * rng.int(18, 168); // 1.5-14 h
     const arr = t + f + (B[1] - A[1]);
     const shift = Math.floor(arr / 1440);
-    const ans = DAYS[mod(w + shift, 7)];
+    const ans = WEEKDAYS[mod(w + shift, 7)];
     return {
-      prompt: `${offsetsLine(A, B)}\n\nA flight leaves ${A[0]} at **${t24(t)} on ${DAYS[w]}** (local time) and the flight takes **${dur(f)}**. What is the local time and day in ${B[0]} when it lands?`,
+      prompt: `${offsetsLine(A, B)}\n\nA flight leaves ${A[0]} at **${t24(t)} on ${WEEKDAYS[w]}** (local time) and the flight takes **${dur(f)}**. What is the local time and day in ${B[0]} when it lands?`,
       answerType: "multi",
       parts: [
         { id: "time", label: "Time", ask: `Landing time in ${B[0]} (24-hour, hh:mm)`, answerType: "text", ...textTime(arr, false), hint: `Add the flight time in ${A[0]}'s time first, then ${B[1] > A[1] ? "add" : "subtract"} the ${dur(Math.abs(B[1] - A[1]))} time difference.` },
@@ -835,13 +814,13 @@ function genZones(difficulty, rng) {
     const arr = t + f + (B[1] - A[1]);
     const shift = Math.floor(arr / 1440);
     return {
-      prompt: `${offsetsLine(A, B)}\n\nA flight leaves ${A[0]} at **${t24(t)} on ${DAYS[w]}** and lands in ${B[0]} at **${t24(arr)} on ${DAYS[mod(w + shift, 7)]}** (both local times). How long is the flight?`,
+      prompt: `${offsetsLine(A, B)}\n\nA flight leaves ${A[0]} at **${t24(t)} on ${WEEKDAYS[w]}** and lands in ${B[0]} at **${t24(arr)} on ${WEEKDAYS[mod(w + shift, 7)]}** (both local times). How long is the flight?`,
       answerType: "multi",
       parts: [
         { id: "h", label: "h", ask: "Whole hours", answerType: "number", answer: Math.floor(f / 60), tolerance: 0, ...EXACT, hint: `Put both times in one zone first: ${diffText(A, B)}.` },
         { id: "min", label: "min", ask: "Remaining minutes (0–59)", answerType: "number", answer: f % 60, tolerance: 0, ...EXACT, hint: "Then count from take-off to landing in that one zone, including any midnight." },
       ],
-      explanation: `In ${A[0]} time, the landing is ${t24(arr)} ${B[1] > A[1] ? "−" : "+"} ${dur(Math.abs(B[1] - A[1]))} = ${t24(t + f)}${Math.floor((t + f) / 1440) ? ` on ${DAYS[mod(w + Math.floor((t + f) / 1440), 7)]}` : ""}. From ${t24(t)} to that is **${dur(f)}**.`,
+      explanation: `In ${A[0]} time, the landing is ${t24(arr)} ${B[1] > A[1] ? "−" : "+"} ${dur(Math.abs(B[1] - A[1]))} = ${t24(t + f)}${Math.floor((t + f) / 1440) ? ` on ${WEEKDAYS[mod(w + Math.floor((t + f) / 1440), 7)]}` : ""}. From ${t24(t)} to that is **${dur(f)}**.`,
       params: { kind, t, w, f, oA: A[1], oB: B[1], arrT: mod(arr, 1440), arrK: shift },
     };
   }
@@ -875,9 +854,9 @@ function genZones(difficulty, rng) {
   const check = 5 * rng.pick([6, 9, 12]); // 30/45/60 min to get through the airport
   const dep = arr - check - f - (B[1] - A[1]);
   const shift = Math.floor(dep / 1440);
-  const ans = DAYS[mod(w + shift, 7)];
+  const ans = WEEKDAYS[mod(w + shift, 7)];
   return {
-    prompt: `${offsetsLine(A, B)}\n\nYou must be out of the airport in ${B[0]} by **${t24(arr)} on ${DAYS[w]}** (local time). The flight from ${A[0]} takes **${dur(f)}**, and leaving the airport after landing takes **${check} min**. What is the latest departure time from ${A[0]}, in ${A[0]} local time?`,
+    prompt: `${offsetsLine(A, B)}\n\nYou must be out of the airport in ${B[0]} by **${t24(arr)} on ${WEEKDAYS[w]}** (local time). The flight from ${A[0]} takes **${dur(f)}**, and leaving the airport after landing takes **${check} min**. What is the latest departure time from ${A[0]}, in ${A[0]} local time?`,
     answerType: "multi",
     parts: [
       { id: "time", label: "Time", ask: `Departure time in ${A[0]} (24-hour, hh:mm)`, answerType: "text", ...textTime(dep, false), hint: `Work backwards: take off the ${check} min and the ${dur(f)} flight first (still in ${B[0]} time).` },
@@ -901,8 +880,8 @@ function verifyZones(q, answer) {
       return Number(answer) * 60 + p.oW === p.oE;
     case "convert-day":
     case "flight": {
-      if (!is24(answer.time) || !DAYS.includes(answer.day)) return false;
-      const k = mod(DAYS.indexOf(answer.day) - p.w + 3, 7) - 3; // -3..3 days from the start day
+      if (!is24(answer.time) || !WEEKDAYS.includes(answer.day)) return false;
+      const k = mod(WEEKDAYS.indexOf(answer.day) - p.w + 3, 7) - 3; // -3..3 days from the start day
       const landUtc = toUtc(k * 1440 + readClock(answer.time), p.oB);
       return landUtc === toUtc(p.t, p.oA) + (p.f || 0);
     }
@@ -930,8 +909,8 @@ function verifyZones(q, answer) {
         && mod(readClock(answer.end) - p.oB, 1440) === mod(last + 1, 1440);
     }
     case "depart": {
-      if (!is24(answer.time) || !DAYS.includes(answer.day)) return false;
-      const k = mod(DAYS.indexOf(answer.day) - p.w + 3, 7) - 3;
+      if (!is24(answer.time) || !WEEKDAYS.includes(answer.day)) return false;
+      const k = mod(WEEKDAYS.indexOf(answer.day) - p.w + 3, 7) - 3;
       const depUtc = toUtc(k * 1440 + readClock(answer.time), p.oA);
       return depUtc + p.f + p.check === toUtc(p.arr, p.oB);
     }
