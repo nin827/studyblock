@@ -19,4 +19,5 @@ Practise how energy changes the temperature and state of things: heating water i
 | Hard | Decimals, two-stage heating curves, mixing different materials, efficiency; answers rounded to 2 decimal places, some in several parts |
 | Expert | Multi-step problems you set up yourself: correcting an experiment for heat lost, full heating curves with timings, made-up and uncalibrated temperature scales, ice that may not all melt, three-body mixing worked backwards. Each part says how to round |
 
-**Tip:** work in kg, J and s. On hard questions keep full precision and round to 2 decimal places at the end (answers within 0.005 are accepted). Percentages are typed without the `%` sign. The calculator starts with the question's numbers; a label like `_m_g` or `_E_kJ` shows the unit of that value.
+> [!TIP]
+> Work in kg, J and s. On hard questions keep full precision and round to 2 decimal places at the end (answers within 0.005 are accepted). Percentages are typed without the `%` sign. The calculator starts with the question's numbers; a label like `_m_g` or `_E_kJ` shows the unit of that value.

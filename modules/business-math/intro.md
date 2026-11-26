@@ -20,4 +20,5 @@ Rates r are written as decimals in the formulas, so 5% becomes 0.05.
 | Medium | Any numbers, reverse percentages and compound interest |
 | Hard | Amounts with cents, decimal rates and target margins |
 
-**Tip:** type percent answers as plain numbers without the % sign, for example `12.5`. Round to 2 decimal places when asked (answers within 0.005 are accepted). The same profit gives a smaller margin than markup, because the price is bigger than the cost.
+> [!TIP]
+> Type percent answers as plain numbers without the % sign, for example `12.5`. Round to 2 decimal places when asked (answers within 0.005 are accepted). The same profit gives a smaller margin than markup, because the price is bigger than the cost.

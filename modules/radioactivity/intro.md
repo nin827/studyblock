@@ -19,4 +19,5 @@ Nuclides are written with the mass number on top and the atomic number below the
 | Medium | Isotopes, two-step decays, fractions like `1/8`, background count correction |
 | Hard | Longer decay chains, a time that isn't a whole number of half-lives; decimals rounded to 2 decimal places, some in several parts |
 
-**Tip:** fractions are typed in simplest form, like `7/8`. Subtract the background count rate before you halve anything: background radiation doesn't decay with the sample. For a time that isn't a whole number of half-lives use `N = N0 × 0.5 ^ (t / T)`; the calculator has `log` for finding n.
+> [!TIP]
+> Fractions are typed in simplest form, like `7/8`. Subtract the background count rate before you halve anything: background radiation doesn't decay with the sample. For a time that isn't a whole number of half-lives use `N = N0 × 0.5 ^ (t / T)`; the calculator has `log` for finding n.

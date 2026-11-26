@@ -962,11 +962,11 @@ body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-s
 .answer-mode-btn:disabled { cursor: default; }
 .answer-mode-note { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--warn-fg); }
 .answer-mode-note[hidden] { display: none; }
-/* case-sensitive answers: a warning near the answer (icon + text, warn tokens) */
+/* case-sensitive answers: a warning near the answer (matches the Warning callout) */
 .case-note {
   display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; align-self: flex-start;
-  font-size: 14px; font-weight: 600; color: var(--warn-fg); background: var(--warn-bg);
-  border: 1px solid var(--warn); border-radius: var(--r-control);
+  font-size: 14px; font-weight: 600; color: var(--callout-warning-fg); background: var(--callout-warning-bg);
+  border: 1px solid var(--callout-warning-line); border-radius: var(--r-control);
 }
 .case-note .icon { width: 16px; height: 16px; flex-shrink: 0; }
 .answer-mode-note .icon { width: 16px; height: 16px; flex-shrink: 0; }
@@ -1866,3 +1866,30 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
   }
 }
 .role-subs .chip-scroll { flex-wrap: wrap; overflow-x: visible; }
+
+/* markdown callouts (> [!NOTE] ...): icon + label, tokens per kind, light and dark */
+:root {
+  --callout-note-bg: var(--accent-soft); --callout-note-fg: var(--accent-ink); --callout-note-line: var(--accent);
+  --callout-tip-bg: var(--correct-bg); --callout-tip-fg: var(--correct-fg); --callout-tip-line: var(--correct);
+  --callout-important-bg: var(--accent-soft); --callout-important-fg: var(--accent-ink); --callout-important-line: var(--accent);
+  --callout-warning-bg: var(--warn-bg); --callout-warning-fg: var(--warn-fg); --callout-warning-line: var(--warn);
+  --callout-caution-bg: #FBE3E0; --callout-caution-fg: #8E2A1E; --callout-caution-line: #C0392B;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --callout-caution-bg: #3A1814; --callout-caution-fg: #F4A99F; --callout-caution-line: #E4685A; }
+}
+:root[data-theme="dark"] { --callout-caution-bg: #3A1814; --callout-caution-fg: #F4A99F; --callout-caution-line: #E4685A; }
+.callout {
+  margin: 0 0 0.9em; padding: 12px 14px; border: 1px solid var(--c-line); border-left-width: 4px;
+  border-radius: 12px; background: var(--c-bg); color: var(--text); overflow-wrap: anywhere;
+}
+.callout-note { --c-bg: var(--callout-note-bg); --c-fg: var(--callout-note-fg); --c-line: var(--callout-note-line); }
+.callout-tip { --c-bg: var(--callout-tip-bg); --c-fg: var(--callout-tip-fg); --c-line: var(--callout-tip-line); }
+.callout-important { --c-bg: var(--callout-important-bg); --c-fg: var(--callout-important-fg); --c-line: var(--callout-important-line); }
+.callout-warning { --c-bg: var(--callout-warning-bg); --c-fg: var(--callout-warning-fg); --c-line: var(--callout-warning-line); }
+.callout-caution { --c-bg: var(--callout-caution-bg); --c-fg: var(--callout-caution-fg); --c-line: var(--callout-caution-line); }
+.callout-head { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-weight: 700; color: var(--c-fg); }
+.callout-head .icon { width: 18px; height: 18px; flex-shrink: 0; }
+.callout-body > :last-child { margin-bottom: 0; }
+.callout-body > :first-child { margin-top: 0; }
+.callout-body p { margin: 0 0 0.6em; }

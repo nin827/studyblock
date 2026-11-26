@@ -18,4 +18,5 @@ The **atomic number** is the number of protons in an atom's nucleus. Each elemen
 | Medium | Symbols that come from Latin names, and heavier elements |
 | Hard | Less familiar elements and trickier families |
 
-**Tip:** typed answers ignore capital letters, so `fe` and `Fe` are both accepted for iron. Spelling still counts.
+> [!TIP]
+> Typed answers ignore capital letters, so `fe` and `Fe` are both accepted for iron. Spelling still counts.

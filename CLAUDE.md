@@ -156,6 +156,7 @@ A role is a hand-made weighted mix with a difficulty shift, plus role-only Exper
 - **Storage:** a role attempt is stored as `module: "role"`, `subtopic: "<role>"` or `"<role>~<subrole>"`, and `difficulty: <role level>`.
   - Questions carry their own origin, and their stored difficulty is the subject level drawn (`expert-plus` for scenarios). They count toward subject stats like mixes do; role-only modules count only under the role.
   - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.
+- **About this role:** role and subrole pages show the exclusive module's `intro.md` in a card. A role JSON may set `"experience_based": true` (strict boolean; subroles inherit it): the card then opens with an Important callout, "Experience matters most" (theory and knowledge are only a small part of the real work). `roles.js` reads the flag from the role JSON itself.
 - **UI:** a desktop nav link "Roles" (`briefcase-business`) and a Home card, while the phone tab bar stays at 4 tabs. Expert+ prompts keep inline code at text size (`.is-code`).
 - **Bundle:** `tools/bundle.py` includes `roles/**` and the exclusive modules of listed roles.
 
@@ -352,6 +353,10 @@ One scenario, several labelled answer fields. Used by Business Case for things l
   - Feedback shows ✓/✗ per part, with the correct value for each wrong one.
 - **Storage:** on the stored question, `answer` and `userAnswer` become objects keyed by part id, and `parts: [{id, label, correct}]` is added. These fields are optional on import.
 - **CSV modules:** not supported; multi-part is generator-only.
+
+### Callouts (standard notices in markdown)
+
+`markdown.js` renders GitHub-style callouts: a blockquote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (any case), with an optional custom title after the marker (`> [!WARNING] For learning only`). Output is `<aside class="callout callout-<kind>" role="note">` with an icon and label (never colour alone); the body is full escaped markdown. All notices in `intro.md`/`guide.md` use them: the Medical/Biology disclaimer is `> [!WARNING] For learning only`, answer-format tips are `> [!TIP]`. Tokens are `--callout-*` (light and dark); the quiz `.case-note` matches the Warning callout. A plain blockquote renders as before.
 
 ## Guided mode
 

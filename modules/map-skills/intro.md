@@ -16,4 +16,5 @@ Read maps like a navigator: turn map centimetres into real kilometres, find plac
 - **Bearings:** type the degrees, with or without the leading zero (`045` or `45`).
 - **Times:** 24-hour clock as `HH:MM` with two digits each, like `07:05`. Days are picked from a list.
 
-**Tip:** for time zones, always go through UTC: take away the first place's offset, then add the second place's.
+> [!TIP]
+> For time zones, always go through UTC: take away the first place's offset, then add the second place's.

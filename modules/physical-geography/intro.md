@@ -8,4 +8,5 @@ The shape of the planet: great rivers, high peaks, deserts, lakes and the climat
 | Medium | Record holders on each continent and the cities rivers flow through |
 | Hard | Less familiar ranges, river mouths and climate details |
 
-**Tip:** typed answers ignore capital letters and extra spaces, but spelling still counts. When a prompt says "name only", leave out words like "River" or "Mount".
+> [!TIP]
+> Typed answers ignore capital letters and extra spaces, but spelling still counts. When a prompt says "name only", leave out words like "River" or "Mount".

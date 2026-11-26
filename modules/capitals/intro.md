@@ -8,4 +8,5 @@ How well do you know the map? Each round asks for the capital city of a country,
 | Medium | The capital is not always the biggest or most famous city |
 | Hard | Smaller countries and planned or less familiar capitals |
 
-**Tip:** typed answers ignore capital letters and extra spaces, but spelling still counts.
+> [!TIP]
+> Typed answers ignore capital letters and extra spaces, but spelling still counts.

@@ -28,4 +28,5 @@ Coordinate geometry puts shapes on a grid, so you can measure them with numbers.
 - Points, exact surds like `3√5`, and line equations are picked from a list.
 - Lines in options are written `y = mx + c` when m and c are whole, otherwise as `ax + by = c` with whole numbers. A fractional gradient in a question looks like `y = (3/4)x - 2`.
 
-**Tip:** the calculator starts with the question's coordinates as `_x1`, `_y1`, `_x2`, `_y2`, ...
+> [!TIP]
+> The calculator starts with the question's coordinates as `_x1`, `_y1`, `_x2`, `_y2`, ...

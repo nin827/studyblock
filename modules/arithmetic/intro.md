@@ -9,4 +9,5 @@ Sharpen your mental math with freshly generated problems every time. Each questi
 | Multiplication | 1–10 × 1–10 | 11–99 × 2–12 | 100–999 × 11–99 |
 | Division | divisor 1–10, whole answer | divisor 2–25, whole answer | 100–9,999 ÷ 3–99, 2 decimals |
 
-**Tip:** on hard division, round to 2 decimal places (answers within 0.005 are accepted).
+> [!TIP]
+> On hard division, round to 2 decimal places (answers within 0.005 are accepted).

@@ -20,4 +20,5 @@ Work out how far, how fast and how big things are in space. Every question state
 
 **Expert** questions are multi-step problems in several parts: parallax and parsecs, the shortest and longest radio delay to another planet, weighing a star from a planet's orbit, comet ellipses (forwards and backwards), scale models fixed by the farthest planet or by the size of the model Earth, total versus annular eclipses, and surface gravity from G × M ÷ R² (and back).
 
-**Tip:** convert to the same units (km and seconds) before you divide. The calculator understands `3e5`, `10^6` and `pi`.
+> [!TIP]
+> Convert to the same units (km and seconds) before you divide. The calculator understands `3e5`, `10^6` and `pi`.

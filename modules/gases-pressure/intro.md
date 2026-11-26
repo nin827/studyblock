@@ -20,4 +20,5 @@ Practise pressure in all its forms: a heel pressing on the floor, water pushing 
 | Hard | Decimals, combined gas law, circular pistons, forces on windows; answers rounded to 2 decimal places, some in several parts |
 | Expert | Multi-step problems you set up yourself: walking vs standing and sizing snowshoes, the faces of a block, layered liquids and U-tubes, two-stage gas changes, leaks, hydraulic jack strokes and submarine hatches. Each part says how to round (some say round up) |
 
-**Tip:** 1 m² = 10 000 cm² = 1 000 000 mm², 1 kPa = 1000 Pa, and K = °C + 273. In the gas laws the pressure and volume units just carry through, but temperatures must be in kelvin. The calculator starts with the question's numbers; a label like `_A_cm2` or `_T1_C` shows the unit of that value.
+> [!TIP]
+> 1 m² = 10 000 cm² = 1 000 000 mm², 1 kPa = 1000 Pa, and K = °C + 273. In the gas laws the pressure and volume units just carry through, but temperatures must be in kelvin. The calculator starts with the question's numbers; a label like `_A_cm2` or `_T1_C` shows the unit of that value.

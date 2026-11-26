@@ -10,4 +10,5 @@ Which continent is that country in, and which ocean washes its shore? Each round
 
 **Conventions:** this module uses the seven-continent model. Australia, New Zealand and the Pacific island nations are grouped as **Oceania**, and Central America and the Caribbean count as part of **North America**.
 
-**Tip:** typed answers ignore capital letters and extra spaces, but spelling still counts. For ocean names, type the name only, without the word "Ocean".
+> [!TIP]
+> Typed answers ignore capital letters and extra spaces, but spelling still counts. For ocean names, type the name only, without the word "Ocean".

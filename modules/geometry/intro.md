@@ -25,4 +25,5 @@ Measure shapes and solids: perimeter and area, angles in triangles and polygons,
 
 **Expert** combines ideas and often works backwards: composite shapes (a rectangle with a semicircle), a rectangle from its perimeter and area, paths around a lawn, polygons from a relation between interior and exterior angles, angles written in terms of x or in a ratio, 3D diagonals of a box, a slipping ladder, triangles on a grid (is it right-angled?), tanks in litres, solids built from a cylinder and a cone or hemisphere (the formula is given), pouring water between containers, and similar solids. Each part says how to round.
 
-**Tip:** when a question involves π, type `pi` in the calculator rather than 3.14, and round to 2 decimal places (answers within 0.005 are accepted). Watch for a diameter where you need a radius: halve it first. Type angles as plain numbers without the ° sign.
+> [!TIP]
+> When a question involves π, type `pi` in the calculator rather than 3.14, and round to 2 decimal places (answers within 0.005 are accepted). Watch for a diameter where you need a radius: halve it first. Type angles as plain numbers without the ° sign.

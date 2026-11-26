@@ -7,6 +7,8 @@ import {
   loadDomains, loadModule, loadGuide, isValidId, roleKey, normalizeRoleLevel, roleScenarioCount, sanitizeRoleCount,
   ROLE_TOP, ROLE_MIN_COUNT, ROLE_MAX_COUNT, ROLE_MODULE,
 } from '../lib/engine.js';
+import { loadText, loadJSON } from '../lib/source.js';
+import { renderMarkdown } from '../lib/markdown.js';
 import { getStats, getAttempts, isGuided, percent, getRoleCount, setRoleCount } from '../lib/storage.js';
 import { esc, icon, icons, fmtPct, scoreClass, errorBox, hashPart, domClass, domVars, domStyle, difficultyHtml, difficultyLabel } from './ui.js';
 import { runQuiz, storedQuestion, crumbsHtml } from './quiz.js';
@@ -41,6 +43,25 @@ function levelStats(key, level) {
   const list = getAttempts().filter(a => a.module === ROLE_MODULE && a.subtopic === key && !isGuided(a)
     && normalizeRoleLevel(a.difficulty) === level);
   return { attempts: list.length, best: list.length ? Math.max(...list.map(percent)) : null };
+}
+
+const EXPERIENCE_NOTE = `> [!IMPORTANT] Experience matters most
+> This role is mostly learned on the job. Theory and knowledge, which is what these questions practise, are only a small part of the real work: experience, judgement and working with people count for more.`;
+
+// "About this role": the exclusive module's intro.md, with the experience_based callout first.
+// The flag is read from the role's own JSON as a strict boolean (a subrole inherits it).
+async function aboutHtml(role) {
+  let flag = false;
+  if (isValidId(role.id)) {
+    try { flag = (await loadJSON(`roles/${role.id}.json`))?.experience_based === true; } catch { /* no flag */ }
+  }
+  let intro = null;
+  if (role.exclusive && isValidId(role.exclusive)) {
+    try { intro = await loadText(`modules/${role.exclusive}/intro.md`); } catch { /* no intro */ }
+  }
+  if (!flag && !intro) return '';
+  const md = (flag ? EXPERIENCE_NOTE + '\n\n' : '') + (intro || '');
+  return `<section class="card prose" aria-label="About this role">${renderMarkdown(md)}</section>`;
 }
 
 async function loadRolesSafe(root, ctx) {
@@ -122,6 +143,8 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
     const subs = m && !all ? entry.subtopics.map(id => m.subtopics.find(s => s.id === id)?.title ?? id) : [];
     return { ...x, title: m ? String(m.title ?? m.id) : x.module, d, subs };
   });
+  const about = await aboutHtml(role);
+  if (!ctx.alive()) return;
   const label = `Subjects: ${shares.map(p => `${p.title} ${fmtShare(p.share)}`).join(', ')}`;
 
   const levelCard = level => {
@@ -179,6 +202,7 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
       </div>
       ${me.description ? `<p>${esc(me.description)}</p>` : ''}
     </section>
+    ${about}
     <section class="card practice ${mode === GUIDED ? 'is-guided' : ''}" id="practice-card">
       <div class="section-head"><h2 id="practice-title">${mode === GUIDED ? 'Guided practice' : 'Practice'}</h2></div>
       <div class="mode-switch">

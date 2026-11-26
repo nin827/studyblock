@@ -8,4 +8,5 @@ Build a wider and more precise English vocabulary. Pick the right definition, sp
 | Medium | Words common in books, news and school writing |
 | Hard | Less common, more formal words |
 
-**Tip:** in sentence questions, the blank is shown as ____.
+> [!TIP]
+> In sentence questions, the blank is shown as ____.
