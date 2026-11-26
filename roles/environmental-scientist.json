@@ -1,0 +1,18 @@
+{
+  "id": "environmental-scientist",
+  "title": "Environmental Scientist",
+  "icon": "leaf",
+  "flags": ["experience_heavy"],
+  "description": "Pollutant mixing below an outfall, carbon footprints and offsets, sampling plans, and rainfall runoff and water storage, with every factor, limit and rule stated.",
+  "exclusive": "role-environmental-scientist",
+  "mix": {
+    "chemistry": { "weight": 2, "subtopics": ["concentration"] },
+    "ecology": { "weight": 2, "subtopics": ["estimates", "biodiversity"] },
+    "physical-geography": { "weight": 1, "subtopics": ["rivers", "climate-biomes"] },
+    "statistics": { "weight": 3, "subtopics": ["mean-median-mode", "range-iqr", "weighted-average"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "unit-conversion": { "weight": 2, "subtopics": ["mass-volume"] },
+    "exponents-logs": { "weight": 1 }
+  },
+  "subroles": []
+}

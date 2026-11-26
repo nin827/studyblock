@@ -1,0 +1,18 @@
+{
+  "id": "marketing-manager",
+  "title": "Marketing Manager",
+  "icon": "megaphone",
+  "flags": ["creative_oriented", "experience_heavy"],
+  "description": "Campaign funnels, customer acquisition cost and payback, return on ad spend and budget shifts, and promotion profit, with every rule and rate stated.",
+  "exclusive": "role-marketing-manager",
+  "mix": {
+    "marketing": { "weight": 3, "subtopics": ["marketing-mix", "pricing", "segmentation", "boston"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "business-case": { "weight": 2, "subtopics": ["unit-economics", "pricing-decision", "break-even"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "probability": { "weight": 1, "subtopics": ["basic", "expected-value"] },
+    "shopping-money": { "weight": 1, "subtopics": ["discounts", "budgets"] }
+  },
+  "subroles": []
+}

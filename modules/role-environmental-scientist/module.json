@@ -1,0 +1,16 @@
+{
+  "id": "role-environmental-scientist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join pollutant mixing, carbon footprints, sampling plans and rainfall runoff, as an environmental scientist meets them (made-up figures and exercise rules).",
+  "icon": "leaf",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "river-mixing", "title": "Pollutant mixing at an outfall", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "carbon-footprint", "title": "Carbon footprint and offsets", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "sampling-plan", "title": "Sampling plans and guidelines", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "rainfall-runoff", "title": "Rainfall, runoff and water storage", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

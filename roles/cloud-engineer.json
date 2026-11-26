@@ -1,0 +1,18 @@
+{
+  "id": "cloud-engineer",
+  "title": "Cloud Engineer",
+  "icon": "cloud-cog",
+  "flags": ["experience_heavy", "tool_heavy"],
+  "description": "Uptime targets and error budgets, autoscaling fleets, the monthly cloud bill, and storage growth and backups, with every rule and price stated.",
+  "exclusive": "role-cloud-engineer",
+  "mix": {
+    "data-representation": { "weight": 3, "subtopics": ["images", "sound", "compression"] },
+    "networking": { "weight": 2, "subtopics": ["data-transfer"] },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr", "probability"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "interest"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["time-speed", "mass-volume"] },
+    "algorithms": { "weight": 1, "subtopics": ["complexity"] }
+  },
+  "subroles": []
+}

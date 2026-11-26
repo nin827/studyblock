@@ -1,0 +1,16 @@
+{
+  "id": "role-cloud-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join error budgets, autoscaling, the monthly cloud bill and storage backups, as a cloud engineer meets them (made-up figures and exercise rules).",
+  "icon": "cloud-cog",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "error-budget", "title": "Uptime and error budgets", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "autoscaling", "title": "Autoscaling and fleet size", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "cloud-bill", "title": "The monthly cloud bill", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "storage-backup", "title": "Storage growth and backups", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

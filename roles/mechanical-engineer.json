@@ -1,0 +1,18 @@
+{
+  "id": "mechanical-engineer",
+  "title": "Mechanical Engineer",
+  "icon": "cog",
+  "flags": ["experience_heavy"],
+  "description": "Gear trains and motors, bolt and shaft stresses, fits and stack-ups, and hydraulic cylinders: forces, speeds and sizes worked from the figures, with every rule stated.",
+  "exclusive": "role-mechanical-engineer",
+  "mix": {
+    "mechanisms": { "weight": 4 },
+    "fluid-systems": { "weight": 2, "subtopics": ["hydraulics", "pump-power"] },
+    "tolerances": { "weight": 2, "subtopics": ["fits", "stack-up"] },
+    "structures": { "weight": 2, "subtopics": ["stress-strain", "factor-of-safety"] },
+    "forces-energy": { "weight": 2, "subtopics": ["forces", "work-power"] },
+    "gases-pressure": { "weight": 1, "subtopics": ["pressure"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "mass-volume"] }
+  },
+  "subroles": []
+}

@@ -1,6 +1,6 @@
 # 028 — Group roles by industry
 
-**Status:** grouping built; new roles planned (waiting for the user's pick)
+**Status:** grouping built; new roles being built in batches (defaults = the bold picks)
 **Raised:** 2026-11-27
 
 ## Request
@@ -15,7 +15,12 @@ The Roles page is "all over the place". Group it as **Industry → Role → Subr
 - **Service:** Retail Manager, Chef, Nutritionist
 - **Humanities:** Teacher, Historian, Geographer, Linguist
 - **Miscellaneous** (niche roles): Music Theorist, Investigator
-- *Not done yet:* the industry in the role page's breadcrumb.
+- Role page breadcrumb shows the industry (`Home › Roles › Service › Chef`), linking to `#/roles?industry=<id>`.
+
+## New roles built
+- **Batch 1 (2026-11-27):** Logistics Manager (Operations), Hotel Manager (Service), Archaeologist (Humanities), Sports Analyst (Miscellaneous). No subroles.
+- **Batch 2 (2026-11-27):** Cloud Engineer (Technology), Marketing Manager (Business), Environmental Scientist (Science), Mechanical Engineer (Engineering).
+- **Not yet built (pick any):** Database Administrator, Frontend Engineer (needs ticket 027 phase 3), HR Manager, Insurance Underwriter, Astronomer, Aerospace Engineer, Ship Navigator, Air Traffic Planner, Event Planner, Travel Agent, Philosopher, Journalist, Farmer / Agronomist, Puzzle Designer.
 
 ## Plan: more roles (user: no more subroles needed)
 New roles are **role-only**: a mix of existing subjects plus a role-only module with 4 scenario types (like today's roles), but **no subroles**. Health stays out (Medical rules: no doses or diagnosis). Recommended first in **bold**, one or two per thin industry.

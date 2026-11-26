@@ -1,0 +1,16 @@
+{
+  "id": "role-marketing-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join campaign funnels, acquisition cost and payback, return on ad spend and promotion profit, as a marketing manager meets them (made-up figures and exercise rules).",
+  "icon": "megaphone",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "funnel", "title": "Campaign funnel", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "cac-payback", "title": "Acquisition cost and payback", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "roas-budget", "title": "Return on ad spend and budget split", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "promo-profit", "title": "Promotion profit", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

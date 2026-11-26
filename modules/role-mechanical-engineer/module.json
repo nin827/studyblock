@@ -1,0 +1,16 @@
+{
+  "id": "role-mechanical-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join gear trains and motors, bolt and shaft stresses, fits and stack-ups, and hydraulic cylinders, as a mechanical engineer meets them (made-up figures and exercise rules).",
+  "icon": "cog",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "drive-train", "title": "Gear train and motor sizing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "bolt-shaft", "title": "Bolt and shaft stress check", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fit-stackup", "title": "Fits and assembly tolerances", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "hydraulic-cylinder", "title": "Hydraulic cylinder and pump", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}
