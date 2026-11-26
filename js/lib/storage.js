@@ -3,6 +3,7 @@
 import { requestPersistentStorage } from './pwa.js';
 import { isLang, DEFAULT_LANG } from './languages.js';
 import { parseJournal } from './journal.js';
+import { sanitizeVisual } from './visual.js';
 
 const KEY = 'studyblock:data';
 const VERSION = 1;
@@ -768,6 +769,12 @@ export function importText(text, mode) {
   return importObject(incoming, mode);
 }
 
+// { visual } when the stored visual passes sanitizeVisual (js/lib/visual.js), else {}.
+function visualField(v) {
+  const clean = sanitizeVisual(v);
+  return clean ? { visual: clean } : {};
+}
+
 function importObject(incoming, mode) {
   if (mode !== 'merge' && mode !== 'replace') throw new Error('Import mode must be "merge" or "replace".');
   validate(incoming);
@@ -811,6 +818,8 @@ function importObject(incoming, mode) {
       ...(cleanWork(q.work) ? { work: cleanWork(q.work) } : {}),
       // Optional calculator graph saved with the working; validated and capped.
       ...(cleanGraph(q.graph) ? { graph: cleanGraph(q.graph) } : {}),
+      // Optional question visual (ticket 026); re-validated as data, an invalid one is dropped.
+      ...visualField(q.visual),
     })),
   }));
   // Optional mix fields: invalid presets are dropped individually; an invalid draft is ignored.

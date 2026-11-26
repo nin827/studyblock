@@ -5,6 +5,7 @@ import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel, isFlameLevel } from './ui.js';
 import { mountCalculator } from './calculator.js';
+import { visualHtml } from './visual.js';
 import { compileGraph } from './staticgraph.js'; // also defines <sb-graph> (static plots in the review)
 import { isLang, langTitle } from '../lib/languages.js';
 import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates.js';
@@ -1784,6 +1785,7 @@ export async function runQuiz(root, ctx, opts) {
       <section class="card question${guided ? ' is-guided' : ''}${isCodeQuestion(q) ? ' is-code' : ''}">
         ${opts.tagsFor ? opts.tagsFor(q) : opts.showTags ? questionTag(q) : (opts.cardTags ? `<p class="q-tag tag-row">${opts.cardTags}${langTag(q)}</p>` : langRow(q))}
         <div class="prompt prose">${renderPrompt(q.prompt)}</div>
+        ${visualHtml(q.visual)}
         ${guided ? '<div class="guided-hints" aria-live="polite"><ol class="hint-list" id="hint-list" aria-label="Hints"></ol></div>' : ''}
         ${inputHtml(q)}
         ${q.runnable ? '<div class="run-output" id="run-output" aria-live="polite"></div>' : ''}
@@ -2484,6 +2486,8 @@ export function storedQuestion(r, withOrigin) {
     // Accepted by the module's own grader (e.g. SQL output), not by the text match.
     ...(r.correct && r.gradedBy === 'output' ? { gradedBy: 'output' } : {}),
     ...(r.q.explanation ? { explanation: r.q.explanation } : {}),
+    // Question visual (ticket 026): already cleaned by the engine; re-checked on import and display.
+    ...(r.q.visual && typeof r.q.visual === 'object' ? { visual: r.q.visual } : {}),
     ...(withOrigin ? { module: r.q.module, subtopic: r.q.subtopic, difficulty: r.q.difficulty } : {}),
     // Code language (language-aware modules), stored on every quiz kind so the seed regenerates it.
     ...(isLang(r.q.lang) ? { lang: r.q.lang } : {}),
@@ -2511,6 +2515,7 @@ export function guidedItemHtml(q, outcome, tagHtml = '', extra = []) {
         ${tagHtml}
         <p class="guided-outcome">${esc(o.label)}${extra.length ? ` <span class="muted">· ${esc(extra.join(', '))}</span>` : ''}</p>
         <div class="prose">${renderPrompt(q.prompt)}</div>
+        ${visualHtml(q.visual)}
         ${answers}
         ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
       </div>
@@ -2616,6 +2621,7 @@ export function reviewItem(r, showTag = false) {
       ${r.note ? `<p class="grade-note">${icon('info')}<span>${esc(r.note)}</span></p>`
         : correctFlag === true && (r.gradedBy ?? q.gradedBy) === 'output' ? `<p class="grade-note">${icon('info')}<span>Accepted: the output matches the expected result</span></p>` : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
+      ${visualHtml(q.visual)}
       ${answers}
       ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
       ${workHtml(r.work ?? q.work)}

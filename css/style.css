@@ -2187,3 +2187,55 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
 .page-head-link { margin: 0; font-size: 14px; }
 .page-head-link a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 600; }
 .page-head-link .icon { width: 16px; height: 16px; }
+
+/* ================= question visuals (ticket 026; js/views/visual.js) ================= */
+
+.q-visual { margin: 12px 0 14px; max-width: 380px; min-width: 0; }
+.q-visual-table { max-width: 520px; }
+.q-visual-caption { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--text-2); }
+.vis-scale-note { margin: 4px 0 0; font-size: 13px; font-style: italic; color: var(--muted); }
+.review-body .q-visual { margin: 8px 0 10px; }
+/* Phones: in review lists the visual also uses the icon column (20px mark + 12px gap), so chart text stays ≥ 12px. */
+@media (max-width: 639px) { .review-body .q-visual { margin-left: -32px; } }
+
+/* Charts and shapes: inline SVG, coloured by theme tokens (light + dark through the variables). */
+.vis-svg { display: block; width: 100%; height: auto; overflow: visible; font-family: var(--font); }
+.vis-svg text { fill: var(--ink); }
+.vis-svg .vis-tick, .vis-svg .vis-cat { fill: var(--text-2); font-variant-numeric: tabular-nums; }
+.vis-svg .vis-axis-label { fill: var(--text-2); font-weight: 600; }
+.vis-svg .vis-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.vis-svg .vis-angle-label { font-weight: 600; }
+.vis-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+.vis-grid { stroke: var(--line); stroke-width: 1; }
+.vis-zero { stroke: var(--muted); stroke-width: 1; }
+.vis-frame { fill: none; stroke: var(--line); stroke-width: 1; }
+.vis-axis { stroke: var(--muted); stroke-width: 1.25; fill: none; }
+.vis-axis-main { stroke: var(--ink); stroke-width: 1.5; }
+.vis-fill-1 { fill: var(--graph-1); } .vis-fill-2 { fill: var(--graph-2); } .vis-fill-3 { fill: var(--graph-3); }
+.vis-stroke-1 { stroke: var(--graph-1); } .vis-stroke-2 { stroke: var(--graph-2); }
+.vis-stroke-3 { stroke: var(--graph-3); } .vis-stroke-4 { stroke: var(--graph-4); }
+.vis-pbg { fill: var(--surface); }
+.vis-bar { stroke-width: 1.5; }
+.vis-line { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.vis-marker { stroke: var(--surface); stroke-width: 1.25; }
+.vis-shape { fill: var(--accent-soft); stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+.vis-shape.vis-top { fill: var(--surface); }
+.vis-edge { stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+.vis-hidden { stroke-width: 1.5; stroke-dasharray: 5 4; opacity: 0.75; }
+.vis-mark { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.vis-dot { fill: var(--ink); }
+
+/* Tables: a ruled paper note (margin rule on the left, a line under every row). */
+.vis-note {
+  margin: 0; padding: 4px 4px 6px 16px; background: var(--paper);
+  border: 1px solid var(--line); border-left: 3px solid var(--wrong); border-radius: var(--r-control);
+}
+.vis-table { width: auto; min-width: 60%; font-size: 16px; font-variant-numeric: tabular-nums; }
+.vis-table th, .vis-table td { padding: 8px 14px 6px 4px; border-bottom: 1px solid var(--line); overflow-wrap: normal; white-space: nowrap; }
+.vis-table thead th { font-size: 14px; font-weight: 700; color: var(--ink); border-bottom: 2px solid var(--muted); }
+.vis-table tbody tr:last-child > * { border-bottom: 1px solid var(--line); }
+.vis-table .al-right { text-align: right; }
+.vis-table .al-center { text-align: center; }
+.vis-table .al-left { text-align: left; }
+.vis-table .vis-ask { color: var(--accent-ink); font-weight: 700; }
+.vis-ask-mark { display: inline-block; min-width: 1.6em; padding: 0 6px; text-align: center; background: var(--accent-soft); border-radius: 6px; }

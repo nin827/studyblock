@@ -9,6 +9,7 @@ import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDista
 import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
 import { validView, clampView } from './graph.js';
 import { cleanJournalSpec, serialiseJournal, gradeJournal } from './journal.js';
+import { sanitizeVisual } from './visual.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -1072,9 +1073,12 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
   const graph = sanitizeGraphFns(q?.graphFns, q?.graphView, warnKey);
   const hints = sanitizeHints(q?.hints, warnKey);
+  // Question visual (ticket 026; js/lib/visual.js): question level only, also on multi-part.
+  const visual = sanitizeVisual(q?.visual, warnKey);
   // `lang` only on questions from language-aware modules.
   const extra = {
     ...(given ? { given } : {}), ...graph, ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
+    ...(visual ? { visual } : {}),
     // `runnable`: the module's run(question, answer) can show the answer's output (Run button).
     ...(q?.runnable === true ? { runnable: true } : {}),
     // `gradeByOutput`: a text answer that fails the text check is offered to the module's grade().

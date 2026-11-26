@@ -58,6 +58,8 @@ js/lib/net.js           IPv4 octets/ints, masks, network/broadcast, usable hosts
 js/lib/mathutil.js      gcd/lcm, round-half-away (round1/round2/roundTo), isHalfStep, fmtNum/fmtAnswer, bin8 (ciphers.js and net.js re-export them)
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
+js/lib/visual.js        question visuals: sanitizeVisual (validation), visualAxes (the axes the renderer draws)
+js/views/visual.js      question visuals renderer (visualHtml: HTML table or inline SVG)
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
 js/views/roles.js       Roles pages (roles/ = registry)
 js/views/domains.js     Domains tab (#/domains): every domain with its groups and subjects
@@ -260,6 +262,16 @@ export function verify(question, answer) { ... }
 ```
 
 The engine does **not** shuffle generator `choices`: a generator must shuffle its own options (with the rng), or the answer sits in a fixed position. The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
+
+### Question visuals (ticket 026)
+
+A generator question may carry one `visual` (data only, never markup): `{ kind: "table"|"bar"|"line"|"triangle"|"shape"|"coords", caption?, … }`. The fields, limits and generator rules are in ticket 026.
+- **Engine:** `sanitizeVisual` (`js/lib/visual.js`) keeps known fields only and drops a broken visual whole, with one warning per module. It is stored on the attempt and re-checked on import. CSV modules don't get visuals.
+- **Display:** `visualHtml` (`js/views/visual.js`) draws it under the prompt (outside `.prompt`, so answer notes are unchanged), in feedback, the review and History. Tables are a ruled-paper HTML table; the rest are inline SVG (`VB_W` 280, max 380px wide on desktop, tick text ≥ 12px at 360px).
+- **Defaults:** `showValues`, `showPoints`, `toScale` false; `showGrid` true; a `null`/`""` label is left off; captions sit above. Axes, ticks, axis labels, legends and the right-angle marker always draw.
+- **Shape dims:** rectangle width/height; circle radius (label also `diameter`); composite-l width/height/cutWidth/cutHeight (cut at top right; labels also `topWidth`, `rightHeight`); cuboid length/width/height; cylinder radius/height; sector radius/angle (label also `arc`).
+- **Rules for generators:** no rng calls in visual code (fingerprint before and after); Easy–Hard keep the prompt text unchanged; Expert may omit labels, and an omitted value is then absent from the prompt, `given`, hints and alt text; an omitted length needs `toScale: true`, and a value read off a chart sits on a gridline (`visualAxes(v)` gives the drawn ticks, for `verify`) or within tolerance.
+- **Alt text** describes structure and visible labels only; hidden values are never in it.
 
 ### Code languages (Code Writing, Code Reviewing)
 
