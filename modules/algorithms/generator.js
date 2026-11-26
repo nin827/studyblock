@@ -1,6 +1,7 @@
 // Algorithms generator. Uses only the seeded rng passed in by the engine.
 // Language-neutral: lists are shown as [4, 9, 2, 7], indexes start at 0, and steps are plain English.
-// List answers are always multiple choice (a typed list would depend on comma spacing).
+// List answers are multiple choice, except in "Write the trace", where lists are typed (spaces
+// around commas are ignored by the text check) or built from blocks.
 //
 // Algorithm variants (guide.md describes the same ones):
 //   Linear search: compare items from index 0 rightwards; found at index i = i + 1 comparisons,
@@ -563,6 +564,14 @@ const FACTS = [
   { id: "pairs", text: "Comparing every item in a list of n items with every other item", o: "O(n²)", why: "There are n(n - 1)/2 pairs, which grows like n²." },
   { id: "merge", text: "Merge sort on n items", o: "O(n log n)", why: "About log2 n levels of splitting, and each level does about n work to merge." },
   { id: "triples", text: "Checking every group of three items (every i, j, k) in a list of n items", o: "O(n³)", why: "Three nested choices of n items each: about n × n × n combinations." },
+  { id: "pop", text: "Popping the top item off a stack that holds n items", o: "O(1)", why: "Only the top item is touched, however many are below it." },
+  { id: "first", text: "Reading the first item of a list of n items", o: "O(1)", why: "It is one look at a fixed position, whatever the length." },
+  { id: "reverse", text: "Reversing a list of n items by swapping pairs from both ends inwards", o: "O(n)", why: "About n/2 swaps: the work grows in step with n (the 1/2 is a constant factor)." },
+  { id: "copy", text: "Copying every item of a list of n items into a new list", o: "O(n)", why: "One copy per item, so n steps." },
+  { id: "countValue", text: "Counting how many times one value appears in an unsorted list of n items", o: "O(n)", why: "Every item has to be checked once." },
+  { id: "guess", text: "Finding a secret number from 1 to n when each guess is answered \"higher\" or \"lower\" (always guessing the middle), in the worst case", o: "O(log n)", why: "Each answer halves the numbers still possible, so it takes about log2 n guesses." },
+  { id: "table", text: "Filling in an n × n multiplication table", o: "O(n²)", why: "There are n × n cells, one calculation each." },
+  { id: "dupPairs", text: "Checking an unsorted list of n items for duplicates by comparing every item with every later item", o: "O(n²)", why: "That is n(n - 1)/2 comparisons, which grows like n²." },
 ];
 
 // Loop shapes in plain English. count(n) is the generation formula; verify simulates the loops.
@@ -649,7 +658,7 @@ const POW = { "O(1)": 0, "O(n)": 1, "O(n²)": 2, "O(n³)": 3 };
 function genComplexity(difficulty, rng) {
   const roll = rng.next();
 
-  if (difficulty === "easy" && roll < 0.35) {
+  if (difficulty === "easy" && roll < 0.25) {
     const f = rng.pick(FACTS);
     return {
       prompt: `What is the time complexity (Big-O) of this? ${f.text}.`,
@@ -666,11 +675,11 @@ function genComplexity(difficulty, rng) {
   }
 
   // Growth factor when n is multiplied by m (easy: doubling; medium: x2 or x3).
-  if ((difficulty === "easy" && roll < 0.55) || (difficulty === "medium" && roll < 0.3)) {
+  if ((difficulty === "easy" && roll < 0.45) || (difficulty === "medium" && roll < 0.3)) {
     const o = rng.pick(["O(1)", "O(n)", "O(n²)", "O(n³)"]);
-    const m = difficulty === "easy" ? rng.pick([2, 3]) : rng.pick([2, 3, 10]);
+    const m = difficulty === "easy" ? rng.pick([2, 3, 4, 5]) : rng.pick([2, 3, 10]);
     const ans = m ** POW[o];
-    const word = m === 2 ? "doubles (is multiplied by 2)" : m === 3 ? "triples (is multiplied by 3)" : "is multiplied by 10";
+    const word = m === 2 ? "doubles (is multiplied by 2)" : m === 3 ? "triples (is multiplied by 3)" : `is multiplied by ${m}`;
     return {
       prompt: `An algorithm is ${o}: its running time is ${SCALE_FN[o].label}. When n ${word}, the new running time is how many times the old one? Assume the time follows the formula exactly.`,
       answer: ans,
@@ -728,7 +737,7 @@ function genComplexity(difficulty, rng) {
   }
 
   // Loop structures: Big-O (choice), count for a given n (number), or both (hard multi-part).
-  const pool = difficulty === "easy" ? LOOPS.filter((l) => ["single", "nested", "fixed", "sequence"].includes(l.id)) : LOOPS;
+  const pool = difficulty === "easy" ? LOOPS.filter((l) => ["single", "nested", "fixed", "sequence", "fixedInner"].includes(l.id)) : LOOPS;
   const loop = rng.pick(pool);
   const c = rng.pick([10, 20, 50, 100]);
   const n = loopN(loop, rng, difficulty);
@@ -760,7 +769,7 @@ function genComplexity(difficulty, rng) {
     };
   }
 
-  if ((difficulty === "easy" && roll < 0.8) || (difficulty !== "easy" && roll < 0.65)) {
+  if ((difficulty === "easy" && roll < 0.85) || (difficulty !== "easy" && roll < 0.65)) {
     return {
       prompt: `${desc} How many times does the statement run when n = ${n}?`,
       answer: cnt,
@@ -950,6 +959,7 @@ ${opsText(kind, ops)}
 // ---------- entry point ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (subtopic === "trace") return genTrace(difficulty, rng);
   if (difficulty === "expert") return genExpert(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {
@@ -1025,6 +1035,7 @@ const vPass = (algo, a, k) => (algo === "bubble" ? vBubble(a, k).list : algo ===
 const FACT_CHECK = {
   index: "O(1)", push: "O(1)", swapEnds: "O(1)", linear: "O(n)", max: "O(n)", sum: "O(n)", binary: "O(log n)",
   bubble: "O(n²)", selection: "O(n²)", insertion: "O(n²)", pairs: "O(n²)", merge: "O(n log n)", triples: "O(n³)",
+  pop: "O(1)", first: "O(1)", reverse: "O(n)", copy: "O(n)", countValue: "O(n)", guess: "O(log n)", table: "O(n²)", dupPairs: "O(n²)",
 };
 
 // Run the loop shape literally and count statement executions.
@@ -1118,6 +1129,7 @@ export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
   if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
+  if (p.kind === "trace") return verifyTrace(p, question, answer);
   switch (p.kind) {
     case "linear-count": {
       if (!isDistinct(p.a)) return false;
@@ -1868,4 +1880,177 @@ function verifyExpert(p, question, answer) {
     default:
       return false;
   }
+}
+
+// =====================================================================================
+// Write the trace (subtopic "trace"): typed lists with a Blocks alternative.
+// The learner types numbers separated by commas (spaces optional; `[…]` and spaces-only also
+// accepted): the values binary search compares, the list after pass k of a sort, the values a
+// stack/queue gives back or holds, or (Expert) a merge-sort level. Blocks: one block per number,
+// joiner ", ", plus decoys: easy 0-1, medium 2-3, hard 4-6, expert 6-10. Decoys come from the
+// question's own numbers where that's natural (list items binary search never looks at, values
+// still in the structure), else nearby numbers that aren't in the list.
+// Verify re-derives every answer with the independent routines above (vBinary, vPass, vRun) and a
+// recursive merge sort.
+
+const T_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const T_FORM = "Type the numbers in order, separated by commas, like `4, 9, 2`.";
+const tList = (a) => a.join(", ");
+const tAccepts = (a) => [`[${tList(a)}]`, a.join(" ")];
+
+// Decoy numbers: from `pool` (shuffled) first, then neighbours of the answer not in `avoid`.
+function tDecoys(rng, count, pool, answer, avoid) {
+  const used = new Set([...answer, ...avoid].map(Number));
+  const out = [];
+  for (const x of rng.shuffle(pool)) if (out.length < count && !used.has(x)) { out.push(x); used.add(x); }
+  const near = rng.shuffle(answer.flatMap((x) => [x - 1, x + 1, x + 2, x - 2])).filter((x) => x > 0);
+  for (const x of near) if (out.length < count && !used.has(x)) { out.push(x); used.add(x); }
+  return out;
+}
+function tBlocks(rng, answer, decoys) {
+  return { tiles: rng.shuffle([...answer, ...decoys].map(String)), joiner: ", ", useAll: false };
+}
+
+function tBinary(difficulty, rng) {
+  const n = difficulty === "easy" ? rng.int(7, 9) : difficulty === "medium" ? rng.int(10, 15) : rng.int(16, 24);
+  const a = sortedList(rng, n);
+  const found = difficulty === "easy" || (difficulty === "medium" && rng.next() < 0.5);
+  const minSteps = { easy: 2, medium: 3, hard: 4 }[difficulty];
+  let t, tr;
+  for (let tries = 0; tries < 50; tries++) {
+    t = found ? a[rng.int(0, n - 1)] : missingValue(rng, a);
+    tr = binaryTrace(a, t);
+    if (tr.steps.length >= minSteps) break;
+  }
+  const seq = tr.steps.map((s) => s.v);
+  return {
+    kind: "bs", data: { a, t }, answer: seq, decoyPool: a.filter((x) => !seq.includes(x)), avoid: a,
+    prompt: `Binary search looks for ${t} in this sorted list (indexes start at 0):\n\n${code(a)}\n\n${BS_RULE} It stops when it finds ${t} or when lo > hi.\n\nWhich values does it compare ${t} with, in order? ${T_FORM}`,
+    explanation: `${tr.steps.map((s, i) => `- ${stepLine(s, t, i)}`).join("\n")}${tr.found ? "" : `\n- Now lo = ${tr.lo} > hi = ${tr.hi}, so ${t} is not in the list.`}\n\nThe values compared: **${tList(seq)}**.`,
+    hints: [
+      BS_RULE,
+      `Step 1: lo = 0, hi = ${n - 1}, so mid = floor((0 + ${n - 1}) / 2) = ${Math.floor((n - 1) / 2)}. Write down the value there.`,
+      `Keep going until you find ${t} or the range is empty (lo > hi). Every mid you look at goes in the answer.`,
+    ],
+  };
+}
+
+function tSort(difficulty, rng) {
+  const n = { easy: 5, medium: 6, hard: 7, expert: 8 }[difficulty];
+  const algo = difficulty === "easy" ? "bubble" : rng.pick(["bubble", "insertion", "selection"]);
+  const k = difficulty === "easy" ? 1 : difficulty === "medium" ? rng.int(1, 2) : difficulty === "hard" ? rng.int(2, 3) : rng.int(3, 4);
+  for (let tries = 0; tries < 60; tries++) {
+    const a = distinct(rng, n, 1, 50);
+    const st = statesOf(algo, a);
+    // The pass must change the list, and the list must still be unsorted after it.
+    if (fmt(st[k]) === fmt(st[k - 1]) || fmt(st[k]) === fmt(asc(a))) continue;
+    const lines = [];
+    for (let p = 1; p <= k; p++) lines.push(`- ${passDetail(algo, st[p - 1], st[p], p)}`);
+    return {
+      kind: "sort", data: { algo, a, k }, answer: st[k], decoyPool: [], avoid: a,
+      prompt: `${ALGO_NAME[algo]} (ascending) runs on this list:\n\n${code(a)}\n\nWhat is the list after pass ${k}? ${T_FORM}`,
+      explanation: `${ALGO_RULE[algo]}\n\n${lines.join("\n")}\n\nAfter pass ${k}: **${tList(st[k])}**.`,
+      hints: passListHints(algo, st, k),
+    };
+  }
+  throw new Error("trace: could not build a sort question");
+}
+
+function tStruct(difficulty, rng) {
+  const kind = rng.pick(["stack", "queue"]);
+  const count = difficulty === "easy" ? rng.int(5, 6) : difficulty === "medium" ? rng.int(7, 8) : rng.int(9, 11);
+  const ops = makeOps(rng, kind, count, difficulty === "easy" ? 2 : 3);
+  if (!ops) throw new Error("trace: could not build operations");
+  const { final, removed, states } = runOps(kind, ops);
+  const pushed = ops.filter((o) => o.op === "add").map((o) => o.v);
+  const askEnd = difficulty === "hard" && final.length >= 2;
+  const rem = kind === "stack" ? "pop" : "dequeue";
+  const lines = traceLines(kind, ops, states, removed);
+  const answer = askEnd ? final : removed;
+  return {
+    kind: "ds", data: { ds: kind, ops, end: askEnd }, answer,
+    decoyPool: askEnd ? removed : final, avoid: pushed,
+    prompt: `An empty ${kind} runs these operations in order:\n\n${opsText(kind, ops)}\n\n${askEnd ? `What does the ${kind} hold at the end, from ${ORDER[kind]}?` : `Which values do the ${rem} operations return, in order?`} ${T_FORM}`,
+    explanation: `${DS_RULE[kind]}\n\nLists show the ${kind} from ${ORDER[kind]}.\n\n${lines.join("\n")}\n\n${askEnd ? `At the end it holds **${tList(final)}**.` : `The ${rem}s return **${tList(removed)}**.`}`,
+    hints: [
+      DS_RULE[kind],
+      `Write the ${kind} down after every operation, ${ORDER[kind]}. After the first two operations it is ${code(states[1])}.`,
+      askEnd ? `Removed items are gone for good; the answer is what is left after the last operation.` : `Each ${rem} gives back the ${kind === "stack" ? "top (newest)" : "front (oldest)"} item. Note them down as you go.`,
+    ],
+  };
+}
+
+// Bottom-up merge sort of 8 items: after level 1 the list is in sorted pairs, after level 2 in
+// sorted fours.
+function tMerge(rng) {
+  const a = distinct(rng, 8, 1, 60);
+  const level = 2;
+  const runs = (xs, w) => { const out = []; for (let i = 0; i < xs.length; i += w) out.push(asc(xs.slice(i, i + w))); return out; };
+  const l1 = runs(a, 2).flat();
+  const l2 = runs(a, 4).flat();
+  const answer = level === 1 ? l1 : l2;
+  const show = (xs, w) => runs(xs, w).map((r) => `[${r.join(", ")}]`).join(" ");
+  return {
+    kind: "merge", data: { a, level }, answer, decoyPool: [], avoid: a,
+    prompt: `Bottom-up merge sort starts with 8 lists of one item each and merges neighbouring lists level by level: after level 1 the list is made of sorted pairs, after level 2 of sorted groups of four, after level 3 it is fully sorted.\n\n${code(a)}\n\nWhat is the whole list after level ${level}? ${T_FORM}`,
+    explanation: `Level 1 merges neighbours into sorted pairs: ${show(a, 2)}.${level === 2 ? `\n\nLevel 2 merges neighbouring pairs into sorted fours: ${show(a, 4)}.` : ""}\n\nWritten as one list: **${tList(answer)}**.`,
+    hints: [
+      "Merging never moves an item out of its group: level 1 only reorders positions 0-1, 2-3, 4-5 and 6-7.",
+      `Level 1 gives pairs: the first pair is [${asc(a.slice(0, 2)).join(", ")}].`,
+      level === 2 ? "Level 2 merges pair 1 with pair 2 and pair 3 with pair 4: each merged group of four is in ascending order." : "Write the four sorted pairs one after another.",
+    ],
+  };
+}
+
+function genTrace(difficulty, rng) {
+  if (!T_EXTRA[difficulty]) throw new Error(`Unknown difficulty: ${difficulty}`);
+  const roll = rng.next();
+  let t;
+  if (difficulty === "expert") t = roll < 0.5 ? tMerge(rng) : tSort(difficulty, rng);
+  else t = roll < 0.4 ? tBinary(difficulty, rng) : roll < 0.7 ? tSort(difficulty, rng) : tStruct(difficulty, rng);
+  const [lo, hi] = T_EXTRA[difficulty];
+  const extra = rng.int(lo, hi);
+  const decoys = tDecoys(rng, Math.min(extra, 24 - t.answer.length), t.decoyPool, t.answer, t.avoid);
+  return {
+    prompt: t.prompt,
+    answerType: "text",
+    answer: tList(t.answer),
+    accepts: tAccepts(t.answer),
+    blocks: tBlocks(rng, t.answer, decoys),
+    explanation: t.explanation,
+    params: { kind: "trace", sub: t.kind, ...t.data },
+    hints: t.hints,
+  };
+}
+
+// Recursive top-down check for the merge levels: sort each group of width w directly.
+function vMergeLevel(a, level) {
+  const w = 2 ** level;
+  const out = [];
+  for (let i = 0; i < a.length; i += w) {
+    const g = a.slice(i, i + w);
+    // insertion by repeated minimum extraction (a different method from asc)
+    const rest = g.slice();
+    while (rest.length) { const m = rest.indexOf(Math.min(...rest)); out.push(rest[m]); rest.splice(m, 1); }
+  }
+  return out;
+}
+
+function verifyTrace(p, question, answer) {
+  let want;
+  if (p.sub === "bs") want = vBinary(p.a, p.t);
+  else if (p.sub === "sort") want = vPass(p.algo, p.a, p.k);
+  else if (p.sub === "ds") { const r = vRun(p.ds, p.ops); if (!r) return false; want = p.end ? r.final : r.removed; }
+  else if (p.sub === "merge") want = vMergeLevel(p.a, p.level);
+  else return false;
+  if (!Array.isArray(want) || !want.length || !isDistinct(want)) return false;
+  // Parse the answer as numbers (commas, optional brackets) and compare item by item.
+  const nums = String(answer ?? "").replace(/^\s*\[|\]\s*$/g, "").split(/\s*,\s*|\s+/).filter(Boolean).map(Number);
+  if (nums.length !== want.length || !nums.every((x, i) => x === want[i])) return false;
+  if (question.answer !== want.join(", ")) return false;
+  const b = question.blocks;
+  if (!b || b.joiner !== ", " || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  const vals = b.tiles.map((t) => String(typeof t === "object" ? t.value : t));
+  // Every answer number is a block exactly once; decoys are other numbers.
+  return new Set(vals).size === vals.length && want.every((x) => vals.includes(String(x)));
 }

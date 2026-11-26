@@ -1267,6 +1267,7 @@ function genPopulation(difficulty, rng) {
 // ---------- entry ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (subtopic === "write") return genWriteGenetics(difficulty, rng);
   if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "punnett") return genPunnett(difficulty, rng);
@@ -1484,6 +1485,7 @@ function matches(exp, answer, q) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.sub === "write") return wgVerify(p, question, answer);
   if (p.expert) return xVerify(question, answer);
   if (question.answerType === "multi") {
     if (!answer || typeof answer !== "object" || !Array.isArray(question.parts)) return false;
@@ -2342,4 +2344,221 @@ function xTriEnum(v, pred) {
     if (pred(x.map((xi, i) => xi + y[i]))) hit++;
   }
   return hit / tot;
+}
+
+// =====================================================================================
+// Write gametes & genotypes (subtopic "write"): typed lists with a Blocks alternative.
+// Answers are gametes or offspring genotypes written gene by gene (capital first within a gene)
+// and listed in alphabetical order with each capital before its lower-case letter (TT, Tt, tt),
+// separated by commas; the prompt states this order. Capitals matter, so every question sets
+// `caseSensitive: true` (the engine compares without lowercasing), and verify compares exactly.
+// Blocks: one block per gamete/genotype, joiner ", ", plus decoys (impossible gametes or
+// genotypes, a whole genotype offered as a gamete, a single gene's pair): easy 0-1, medium 2-3,
+// hard 4-6, expert 6-10.
+// Generation builds the lists gene by gene in order (dominant first); verify enumerates every
+// gamete pairing literally and sorts by gene ranks instead.
+
+const WG_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const wgText = (genes, ks) => genes.map((g, i) => g1(g.L, ks[i])).join("");
+const wgAlleles = (L, k) => (k === 2 ? [L] : k === 0 ? [L.toLowerCase()] : [L, L.toLowerCase()]);
+function wgGametes(genes, ks) {
+  let out = [""];
+  genes.forEach((g, i) => { out = out.flatMap((p) => wgAlleles(g.L, ks[i]).map((a) => p + a)); });
+  return out;
+}
+// Distinct offspring genotypes, gene by gene from most to fewest dominant alleles (= the stated order).
+function wgOffspring(genes, k1, k2) {
+  const per = genes.map((g, i) => {
+    const s = new Set();
+    for (const x of wgAlleles(g.L, k1[i])) for (const y of wgAlleles(g.L, k2[i])) s.add((x === g.L ? 1 : 0) + (y === g.L ? 1 : 0));
+    return [...s].sort((p, q) => q - p);
+  });
+  let out = [[]];
+  for (const ks of per) out = out.flatMap((pre) => ks.map((k) => [...pre, k]));
+  return out.map((ks) => wgText(genes, ks));
+}
+// Every genotype over the genes (for decoys).
+function wgAllGenos(genes) {
+  let out = [[]];
+  for (let i = 0; i < genes.length; i++) out = out.flatMap((pre) => [2, 1, 0].map((k) => [...pre, k]));
+  return out.map((ks) => wgText(genes, ks));
+}
+const WG_ORDER_GENO = "Write each genotype gene by gene with the capital first (`Dd`, not `dD`), and list them in alphabetical order with each capital before its lower-case letter, like `DDEe, DdEe, ddEe`. Separate them with commas. Capitals matter.";
+const WG_ORDER_GAM = "List the gametes in alphabetical order with each capital before its lower-case letter, like `DE, De, dE, de`. Separate them with commas. Capitals matter.";
+const wgIntro = (many, genes) =>
+  `In ${many}, ${genes.map((g) => `${code(g.L)} (${g.dom}) is dominant over ${code(g.L.toLowerCase())} (${g.rec})`).join("; ")}.` +
+  (genes.length > 1 ? ` The genes are on different chromosomes, so they assort independently.` : "");
+const diGenes = (t) => [t.A, t.B].map((g) => ({ L: g.L, dom: `${g.dom} ${t.noun}`, rec: `${g.rec} ${t.noun}` }));
+
+// Described parent for Expert: per gene "het" (dominant, mother showed the recessive), "rec"
+// (shows the recessive) or "hom" (true-breeding dominant).
+const WG_K = { hom: 2, het: 1, rec: 0 };
+function wgDescribe(genes, states, label) {
+  const look = genes.map((g, i) => (states[i] === "rec" ? g.rec : g.dom));
+  const het = genes.filter((_, i) => states[i] === "het").map((g) => g.rec);
+  const hom = genes.filter((_, i) => states[i] === "hom").map((g) => g.dom);
+  const bits = [`${label}: ${look.join(", ")}.`];
+  if (het.length) bits.push(`Its mother showed ${het.join(" and ")}.`);
+  if (hom.length) bits.push(`It comes from a line that is true-breeding for ${hom.join(" and ")}.`);
+  return bits.join(" ");
+}
+const wgWhy = (genes, states) =>
+  genes.map((g, i) => `${g.L}: ${states[i] === "het" ? `shows ${g.dom} but its mother showed ${g.rec} (${code(g1(g.L, 0))}), so ${code(g1(g.L, 1))}` : states[i] === "rec" ? `shows ${g.rec}, so ${code(g1(g.L, 0))}` : `true-breeding for ${g.dom}, so ${code(g1(g.L, 2))}`}`).join("; ");
+
+function wgDecoys(rng, count, pool, answer) {
+  const have = new Set(answer);
+  const out = [];
+  for (const d of rng.shuffle([...new Set(pool)])) if (out.length < count && !have.has(d)) { out.push(d); have.add(d); }
+  return out;
+}
+
+function genWriteGenetics(difficulty, rng) {
+  if (!WG_EXTRA[difficulty]) throw new Error(`Unknown difficulty: ${difficulty}`);
+  const roll = rng.next();
+  let q;
+  if (difficulty === "easy" && roll < 0.5) {
+    // One gene: offspring genotypes.
+    const t = rng.pick(MONO);
+    const genes = [{ L: t.L, dom: t.dom, rec: t.rec }];
+    const [k1, k2] = rng.pick([[1, 1], [1, 0], [0, 1], [2, 1], [1, 2]]);
+    q = { kind: "geno", genes, k1: [k1], k2: [k2], many: t.many, one: t.one };
+  } else if (difficulty === "easy" || (difficulty === "medium" && roll < 0.4)) {
+    // Gametes of a two-gene genotype (easy: one gene heterozygous; medium: both).
+    const t = rng.pick(DI);
+    const ks = difficulty === "easy" ? rng.pick([[1, 2], [1, 0], [2, 1], [0, 1]]) : [1, 1];
+    q = { kind: "gam", genes: diGenes(t), ks, many: t.many, one: t.one };
+  } else if (difficulty === "medium" && roll < 0.65) {
+    // Three genes, two heterozygous: four gametes.
+    const t = rng.pick(X_TRI);
+    const homo = rng.int(0, 2);
+    const ks = [0, 1, 2].map((i) => (i === homo ? rng.pick([0, 2]) : 1));
+    q = { kind: "gam", genes: t.genes, ks, many: t.many, one: t.one };
+  } else if (difficulty === "medium" || difficulty === "hard") {
+    // Two genes: offspring genotypes (medium 2-4 of them, hard 4-6).
+    const t = rng.pick(DI);
+    const genes = diGenes(t);
+    const [lo, hi] = difficulty === "medium" ? [2, 4] : [4, 6];
+    let k1, k2, n;
+    for (let i = 0; i < 100; i++) {
+      k1 = [rng.int(0, 2), rng.int(0, 2)];
+      k2 = [rng.int(0, 2), rng.int(0, 2)];
+      n = wgOffspring(genes, k1, k2).length;
+      if (n >= lo && n <= hi && !(difficulty === "medium" && k1.every((k) => k === 1) && k2.every((k) => k === 1))) break;
+    }
+    q = { kind: "geno", genes, k1, k2, many: t.many, one: t.one };
+  } else if (roll < 0.5) {
+    // Expert: work out a described parent's genotype (three genes), then its gametes.
+    const t = rng.pick(X_TRI);
+    let states;
+    do states = [0, 1, 2].map(() => rng.pick(["het", "het", "rec", "hom"]));
+    while (states.filter((s) => s === "het").length < 2);
+    q = { kind: "gam", genes: t.genes, ks: states.map((s) => WG_K[s]), many: t.many, one: t.one, states };
+  } else {
+    // Expert: two described parents (two of the three genes), then every offspring genotype.
+    const t = rng.pick(X_TRI);
+    const pair = rng.shuffle([0, 1, 2]).slice(0, 2).sort();
+    const genes = pair.map((i) => t.genes[i]);
+    let s1, s2, n;
+    for (let i = 0; i < 100; i++) {
+      s1 = genes.map(() => rng.pick(["het", "het", "rec", "hom"]));
+      s2 = genes.map(() => rng.pick(["het", "het", "rec", "hom"]));
+      n = wgOffspring(genes, s1.map((s) => WG_K[s]), s2.map((s) => WG_K[s])).length;
+      if (n >= 4) break;
+    }
+    q = { kind: "geno", genes, k1: s1.map((s) => WG_K[s]), k2: s2.map((s) => WG_K[s]), many: t.many, one: t.one, s1, s2 };
+  }
+
+  const { genes } = q;
+  const [lo, hi] = WG_EXTRA[difficulty];
+  const extra = rng.int(lo, hi);
+  const intro = wgIntro(q.many, genes);
+  let answer, decoyPool, prompt, explanation, hints, params;
+  if (q.kind === "gam") {
+    answer = wgGametes(genes, q.ks);
+    const geno = wgText(genes, q.ks);
+    // Impossible gametes, the whole genotype, single-gene pairs.
+    decoyPool = [...wgGametes(genes, genes.map(() => 1)), geno, ...genes.map((g) => g1(g.L, 1))];
+    prompt = q.states
+      ? `${intro}\n\n${wgDescribe(genes, q.states, cap(`a ${q.one}`))}\n\nWhich different gametes can this ${q.one} make?\n\n${WG_ORDER_GAM}`
+      : `${intro}\n\nWhich different gametes can a ${code(geno)} ${q.one} make?\n\n${WG_ORDER_GAM}`;
+    const perGene = genes.map((g, i) => `${code(g1(g.L, q.ks[i]))} gives ${wgAlleles(g.L, q.ks[i]).map(code).join(" or ")}`).join("; ");
+    explanation = `${q.states ? `First the genotype: ${wgWhy(genes, q.states)}. So it is ${code(geno)}.\n\n` : ""}A gamete gets one allele of each gene: ${perGene}. Combine every choice: ${answer.length} gamete${answer.length === 1 ? "" : "s"}, **${answer.join(", ")}**.`;
+    hints = [
+      ...(q.states ? [`Work out the genotype first. A ${genes[0].dom} parent whose mother was ${genes[0].rec} must carry ${code(genes[0].L.toLowerCase())}; a parent that shows the recessive trait is homozygous recessive.`] : []),
+      "A gamete gets exactly one allele of each gene, never both letters of one gene.",
+      `A heterozygous gene doubles the number of gamete types; a homozygous one gives the same letter to all of them. Expect 2^(number of heterozygous genes) gametes.`,
+    ];
+    params = { sub: "write", kind: "gam", letters: genes.map((g) => g.L), ks: q.ks, states: q.states || null };
+  } else {
+    answer = wgOffspring(genes, q.k1, q.k2);
+    const p1 = wgText(genes, q.k1), p2 = wgText(genes, q.k2);
+    decoyPool = [...wgAllGenos(genes), ...(genes.length > 1 ? wgGametes(genes, q.k1) : [])];
+    const cross = q.s1
+      ? `Two ${q.many} are crossed:\n\n- ${wgDescribe(genes, q.s1, "Parent 1")}\n- ${wgDescribe(genes, q.s2, "Parent 2")}\n\n`
+      : `A ${code(p1)} ${q.one} is crossed with a ${code(p2)} ${q.one}. `;
+    prompt = `${intro}\n\n${cross}Which different genotypes can the offspring have?\n\n${genes.length === 1 ? WG_ORDER_GENO.replace("`DDEe, DdEe, ddEe`", "`DD, Dd, dd`") : WG_ORDER_GENO}`;
+    const perGene = genes.map((g, i) => {
+      const ks = [...new Set(wgOffspring([g], [q.k1[i]], [q.k2[i]]))];
+      return `${code(g1(g.L, q.k1[i]))} × ${code(g1(g.L, q.k2[i]))} gives ${ks.map(code).join(", ")}`;
+    });
+    explanation = `${q.s1 ? `First the parents. Parent 1: ${wgWhy(genes, q.s1)}; so ${code(p1)}. Parent 2: ${wgWhy(genes, q.s2)}; so ${code(p2)}.\n\n` : ""}${genes.length > 1 ? "Take one gene at a time: " : ""}${perGene.join("; ")}.${genes.length > 1 ? " Combine every option of the first gene with every option of the second." : ""}\n\nThe ${answer.length} genotypes: **${answer.join(", ")}**.`;
+    hints = [
+      ...(q.s1 ? ["Work out each parent's genotype first: a dominant-looking parent whose mother showed the recessive trait is heterozygous; one that shows the recessive trait is homozygous recessive."] : []),
+      genes.length > 1 ? "Split the cross into one-gene crosses and list the genotypes each can give." : "Write each parent's gametes, then fill in a Punnett square.",
+      genes.length > 1 ? "Combine every genotype of the first gene with every genotype of the second, then sort them: the first gene decides the order, then the second." : "List each different box once, in the order stated.",
+    ];
+    params = { sub: "write", kind: "geno", letters: genes.map((g) => g.L), k1: q.k1, k2: q.k2, s1: q.s1 || null, s2: q.s2 || null };
+  }
+  const decoys = wgDecoys(rng, Math.min(extra, 24 - answer.length), decoyPool, answer);
+  return {
+    prompt,
+    answerType: "text",
+    answer: answer.join(", "),
+    accepts: [answer.join(" ")],
+    caseSensitive: true,
+    blocks: { tiles: rng.shuffle([...answer, ...decoys]), joiner: ", ", useAll: false },
+    explanation,
+    params,
+    hints,
+  };
+}
+
+// verify for "write": pair every gamete of one parent with every gamete of the other (or list a
+// parent's gametes allele slot by slot), then sort by gene ranks; exact, case-sensitive compare.
+function wgVerify(p, question, answer) {
+  const L = p.letters;
+  if (!Array.isArray(L) || !L.length) return false;
+  const kFrom = (states, ks) => (states ? states.map((s) => ({ hom: 2, het: 1, rec: 0 })[s]) : ks);
+  const slots = (ks) => {
+    // all 2^n slot choices, duplicates included
+    let out = [[]];
+    ks.forEach((k, i) => {
+      const two = [k >= 1 ? L[i] : L[i].toLowerCase(), k === 2 ? L[i] : L[i].toLowerCase()];
+      out = out.flatMap((pre) => two.map((a) => [...pre, a]));
+    });
+    return out;
+  };
+  const rank = (s) => [...s].map((c) => (c === c.toUpperCase() ? 0 : 1));
+  const cmp = (x, y) => { const a = rank(x), b = rank(y); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  let want;
+  if (p.kind === "gam") {
+    const ks = kFrom(p.states, p.ks);
+    if (!ks || ks.length !== L.length) return false;
+    want = [...new Set(slots(ks).map((g) => g.join("")))].sort(cmp);
+  } else {
+    const k1 = kFrom(p.s1, p.k1), k2 = kFrom(p.s2, p.k2);
+    if (!k1 || !k2 || k1.length !== L.length || k2.length !== L.length) return false;
+    const set = new Set();
+    for (const a of slots(k1)) for (const b of slots(k2)) {
+      set.add(a.map((x, i) => (x === L[i] || b[i] !== L[i] ? x + b[i] : b[i] + x)).join(""));
+    }
+    want = [...set].sort(cmp);
+  }
+  const got = String(answer ?? "").split(",").map((s) => s.trim());
+  if (got.length !== want.length || !got.every((g, i) => g === want[i])) return false;
+  if (question.answer !== want.join(", ") || question.caseSensitive !== true) return false;
+  const b = question.blocks;
+  if (!b || b.joiner !== ", " || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  const vals = b.tiles.map((t) => String(typeof t === "object" ? t.value : t));
+  return new Set(vals).size === vals.length && want.every((w) => vals.includes(w));
 }

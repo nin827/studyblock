@@ -6,10 +6,12 @@
   "type": "generator",
   "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "subtopics": [
     { "id": "punnett", "title": "Punnett squares", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "dihybrid", "title": "Dihybrid crosses", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "sex-linked", "title": "Sex-linked & blood groups", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "population", "title": "Population genetics", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "population", "title": "Population genetics", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "write", "title": "Write gametes & genotypes", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

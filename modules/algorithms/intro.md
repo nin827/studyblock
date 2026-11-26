@@ -8,12 +8,14 @@ An algorithm is a precise recipe a computer follows. Here you trace classic algo
 - **Sorting:** bubble, insertion and selection sort. What the list looks like after a given pass, and how many swaps happen.
 - **Complexity:** Big-O. Name the growth rate of an algorithm or a loop, count how often a statement runs, and predict how the running time changes when n grows.
 - **Stacks and queues:** run a sequence of push/pop or enqueue/dequeue operations and say what comes out and what's left.
+- **Write the trace:** type the trace yourself: the values binary search compares, the list after a sort pass, what a stack or queue gives back or holds, or (Expert) a level of merge sort.
 
 ## How to answer
 
 - Lists are written like `[4, 9, 2, 7]`. **Indexes start at 0**, so 4 is at index 0 and 7 at index 3.
 - When the answer is a whole list, you usually pick it from the options. For what a stack or queue holds at the end, you build the list from blocks instead: one block per value added, and the removed ones are left over.
 - Counts, values and indexes are typed as whole numbers.
+- In **Write the trace** you type the numbers separated by commas, like `4, 9, 2` (spaces don't matter). You can switch to **Blocks** and build the list from number blocks instead, but a few blocks are decoys, and on Hard and Expert a Blocks answer earns a little less credit (85% and 70%).
 - Each question spells out the exact version of the algorithm it uses, and the **How to solve** card in Guided mode has the same rules.
 
 ## Expert

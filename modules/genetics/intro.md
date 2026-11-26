@@ -19,4 +19,6 @@ Work out what offspring to expect from a cross. Every question builds a fresh cr
 
 **Answer formats:** type percentages without the % sign (`25` for 25%), and fractions in simplest form like `2/3`. Each question says how to round. Ratios are picked from a list, in the order the question gives (for example tall : short).
 
+**Write gametes & genotypes:** type the list yourself, gene by gene with the capital first (`Rr`), in the alphabetical order the question gives (`RR, Rr, rr`), separated by commas. **Capitals matter.** You can switch to **Blocks** and build the list from blocks, some of which are decoys. On Hard and Expert, a Blocks answer earns a little less credit (85% and 70%).
+
 Every question states its assumptions: complete dominance, independent assortment for two genes, and Hardy–Weinberg equilibrium for populations.
