@@ -474,7 +474,7 @@ function genKettle(rng, tier) {
     if (tier === "expert") ex.push(`**Fuse:** ${fixed(r.I, 2)} A is above ${FUSES[FUSES.indexOf(fuse) - 1] ?? 0} A and below ${fuse} A, so **${fuse} A**.`);
     return finish(
       `An immersion heater rated **${P} W** heats **${m} kg** of water from **${T1} °C** to **${T1 + dT} °C**. The specific heat capacity of water is 4200 J/kg°C and the supply is ${V} V.${tier === "expert" ? ` Only **${eta}%** of the electrical energy reaches the water.` : " Assume all the electrical energy goes into the water."}`,
-      parts, ex.join("\n\n"), "ph-kettle", { m, dT, P, eta, V, order, tier }, [["_mass", m], ["_rise", dT], ["_power", P], ["_volts", V]].concat(tier === "expert" ? [["_eff", eta]] : []),
+      parts, ex.join("\n\n"), "ph-kettle", { m, dT, P, eta, V, order, tier }, [["_mass", m], ["_power", P], ["_volts", V]].concat(tier === "expert" ? [["_eff", eta]] : []),
       ["Energy first, then power turns energy into time.", "Keep joules and watts together, and convert to kJ or minutes only for the answer."],
     );
   }

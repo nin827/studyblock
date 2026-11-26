@@ -395,7 +395,7 @@ function genMask(rng) {
       void pk;
       return finish(
         `A control register holds **0x${hexOf(old)}**. Firmware must clear the **${names[clr[0]]}** (bit ${clr[0]}) and **${names[clr[1]]}** (bit ${clr[1]}) flags with an AND, then set **${names[set[0]]}** (bit ${set[0]}) and **${names[set[1]]}** (bit ${set[1]}) with an OR. Bits are numbered from 0 at the right.\n\n${tableMd(names)}`,
-        parts, ex, "ec-mask", { tmpl, old, clr, set, names }, [["_old", old]],
+        parts, ex, "ec-mask", { tmpl, old, clr, set, names }, [],
         ["Do the AND first, then the OR, one bit column at a time.", "Write each value as 8 bits before applying the mask."],
       );
     }
@@ -422,7 +422,7 @@ function genMask(rng) {
     ].join("\n\n");
     return finish(
       `Firmware toggled bits of a status register by XOR-ing it with the mask **0x${hexOf(mask)}**. The register now reads **0x${hexOf(now)}**. Bits are numbered from 0 at the right.\n\n${tableMd(names)}`,
-      parts, ex, "ec-xor", { tmpl, old, mask, now, a, b }, [["_now", now], ["_mask", mask]],
+      parts, ex, "ec-xor", { tmpl, old, mask, now, a, b }, [],
       ["Work backwards: XOR with the same mask again undoes the change.", "Write each value as 8 bits before applying the mask."],
     );
   }

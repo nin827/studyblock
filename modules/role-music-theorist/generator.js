@@ -316,7 +316,7 @@ function genProg(rng, tier) {
         `${ctx[0].toUpperCase() + ctx.slice(1)} in **${kn}** uses the progression **${rn.join(DASH)}** (upper case = major triad, lower case = minor triad). ${CAD_RULE}`,
         parts,
         `**Scale:** ${fmtList(sc)}.\n\n**Chords:** ${rn.map((r, j) => `${r} = ${names[j]}`).join(", ")}, so **${names.join(DASH)}**.\n\n**Cadence:** the last two chords are ${rn[2]} then ${rn[3]}, which is **${cad}**.`,
-        "pg-med", { t, degs }, [["_chords", 4]],
+        "pg-med", { t, degs }, [],
         ["Roman numerals count scale degrees: I is the tonic, V the fifth note.", "Check the last two numerals against the cadence rule."],
       );
     }
@@ -346,7 +346,7 @@ function genProg(rng, tier) {
         `${ctx[0].toUpperCase() + ctx.slice(1)} has a key signature of **${sigPhrase(k)}** (major key) and the chords **${names.join(DASH)}** (m = minor). ${CAD_RULE}`,
         parts,
         `**Key:** ${sigPhrase(k)} in major is **${kn}**, scale ${fmtList(sc)}.\n\n**Numerals:** ${names.map((n, j) => `${n} = ${rn[j]}`).join(", ")}.\n\n**Cadence:** ${rn[2]} then ${rn[3]} is **${cad}**.\n\n**Last chord:** ${names[3]} is **${fmtList(lastCh.notes)}**.`,
-        "pg-exp", { sig: k, names }, [["_accidentals", Math.abs(k)], ["_chords", 4]],
+        "pg-exp", { sig: k, names }, [["_accidentals", Math.abs(k)]],
         ["Identify the key from the signature first.", "The last chord's name tells you its root and quality; spell it from the scale."],
       );
     }

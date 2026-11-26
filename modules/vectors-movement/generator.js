@@ -760,9 +760,9 @@ function genInterp(d, rng) {
         `Round up to a whole frame: **${frames}**. Check: after ${frames - 1} frames the gap is about ${num(G * Math.pow(1 - f, frames - 1))}, after ${frames} it is about ${num(G * Math.pow(1 - f, frames))}.`,
       hints: [
         `The gap starts at |${target} − ${x0}| = ${G} and keeps ${num((1 - f) * 100)}% of itself each frame: after n frames it is \`${G} × ${num(1 - f)}^n\`.`,
-        `Find the smallest whole n with \`${G} × ${num(1 - f)}^n ≤ ${close}\`. Use logs: \`n ≥ ln(${close} / ${G}) / ln(${num(1 - f)})\` (in the calculator: \`ln(_close / _gap) / ln(1 - _f)\`), then round up.`,
+        `Find the smallest whole n with \`${G} × ${num(1 - f)}^n ≤ ${close}\`. Use logs: \`n ≥ ln(${close} / ${G}) / ln(${num(1 - f)})\` (in the calculator: put the starting gap in a row \`_gap\`, then \`ln(_close / _gap) / ln(1 - _f)\`), then round up.`,
       ],
-      given: giv({ gap: G, f, close }),
+      given: giv({ f, close }),
       params: { kind: "smoothframes", v: { G, f, close } },
       candidates: [frames - 1, frames + 1, Math.round(G / (G * f))],
       rng,

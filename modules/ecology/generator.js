@@ -341,7 +341,7 @@ function genEstimates(difficulty, rng) {
   area = L * W;
   const exact = (mean / qa) * area;
   const story = `A student places ${k} ${qTxt} at random in a field ${L} m × ${W} m and counts the ${plant} in each: ${counts.join(", ")}.`;
-  const giv = [{ label: "_total", value: sum }, { label: "_k", value: k }, { label: "_L", value: L }, { label: "_W", value: W }, { label: "_quadrat", value: qa }];
+  const giv = [{ label: "_k", value: k }, { label: "_L", value: L }, { label: "_W", value: W }];
   const areaLine = qa === 1 ? "" : `Each quadrat is 0.5 m × 0.5 m = 0.25 m² (not 2500: that is in cm²).\n\n`;
   const expl =
     `Mean per quadrat: \`${sum} ÷ ${k}\` ${resultTxt(mean, 2)}.\n\n${areaLine}` +
@@ -355,12 +355,12 @@ function genEstimates(difficulty, rng) {
         {
           id: "mean", label: "Mean", ask: "What is the mean number per quadrat? Round to 2 decimal places.",
           answerType: "number", answer: roundTo(mean, 2), tolerance: 0.005,
-          hint: "Add up all the counts and divide by the number of quadrats (`_total / _k`).",
+          hint: "Add up all the counts and divide by the number of quadrats (in the calculator, put the total of the counts in a row `_total`, then `_total / _k`).",
         },
         {
           id: "total", label: "Estimate", ask: `Estimate the total number of ${plant} in the field. Use the unrounded mean and round to the nearest whole number.`,
           answerType: "number", answer: roundTo(exact, 0), tolerance: 0,
-          hint: "Find the field area in m², then how many 0.25 m² quadrats fit in it (divide by `_quadrat`). Multiply that by the mean.",
+          hint: "Find the field area in m², then how many 0.25 m² quadrats fit in it (divide by the quadrat area in m², for example in a row `_quadrat`). Multiply that by the mean.",
         },
       ],
       explanation: expl,
@@ -375,8 +375,8 @@ function genEstimates(difficulty, rng) {
       hints: [
         "Find the mean number per quadrat: add up the counts and divide by how many quadrats there are. Keep it unrounded.",
         qa === 1
-          ? "Each quadrat is 1 m², so the mean is the number per m². Multiply by the field area in m² (in the calculator: `_total / _k * _L * _W`)."
-          : "Each quadrat is 0.5 m × 0.5 m. Work out how many quadrats fit in the field (area ÷ quadrat area, both in m²), then multiply by the mean (in the calculator: `_total / _k * _L * _W / _quadrat`).",
+          ? "Each quadrat is 1 m², so the mean is the number per m². Multiply by the field area in m² (in the calculator: put the total of the counts in a row `_total`, then `_total / _k * _L * _W`)."
+          : "Each quadrat is 0.5 m × 0.5 m. Work out how many quadrats fit in the field (area ÷ quadrat area, both in m²), then multiply by the mean (in the calculator: put the total of the counts in a row `_total` and the quadrat area in m² in a row `_quadrat`, then `_total / _k * _L * _W / _quadrat`).",
       ],
       given: giv,
       params: { sub: "est", kind: "quad", counts, qa, L, W },

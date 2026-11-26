@@ -171,7 +171,7 @@ function genGrid(rng, tier) {
     if (nearHalf(bearingOf(dx, dy), 0, 0.08)) continue;
     const v = rng.pick(WALK);
     const minutes = (6 * D) / v;
-    const given = [["_dx", Math.abs(dx) / 10], ["_dy", Math.abs(dy) / 10]];
+    const given = []; // grid differences are the learner's own first step
     const refTxt = `Start **${fmtRef(eA, nA)}**, finish **${fmtRef(eB, nB)}**.`;
     const exDist = `**Distance:** across ${Math.abs(dx) / 10} km and along ${Math.abs(dy) / 10} km: √(${Math.abs(dx) / 10}² + ${Math.abs(dy) / 10}²) = **${km} km**.`;
     const dirTxt = `${dy >= 0 ? "north" : "south"} ${dx >= 0 ? "east" : "west"}`;

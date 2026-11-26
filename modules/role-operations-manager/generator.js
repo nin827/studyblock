@@ -81,7 +81,7 @@ function genRoute(rng, tier) {
     const arr = dep + total + diff * 60; // arrival, destination local
     if (arr < 60 || arr > 1380) continue;
     const n = TIER_PARTS[tier];
-    const given = [["_dist", dist], ["_speed", v], ["_gap", diff]];
+    const given = [["_dist", dist], ["_speed", v]];
     const route = `The depot is on **${utcText(oa)}** and the customer's site is on **${utcText(ob)}** (fixed offsets, no daylight saving). The trip is **${commas(dist)} km** at an average of **${v} km/h**. All clock times are 24-hour.`;
     const exDrive = `**Driving time:** ${commas(dist)} ÷ ${v} × 60 = **${m} min**.`;
     const exTotal = `**Total time:** ${m} min of driving has ${Math.floor(m / 120)} break${Math.floor(m / 120) === 1 ? "" : "s"} of 15 min (${brk} min), so **${total} min**.`;

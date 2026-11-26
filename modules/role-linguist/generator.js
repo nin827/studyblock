@@ -250,7 +250,6 @@ function genAgree(rng, tier) {
   return {
     prompt, parts, explanation: exp.join("\n\n"),
     params: { kind: "agree", tier, sentences, es, ei: E.idx, wrong: E.wrong, fix: E.fix, rule: E.rule, dir: E.dir, info: E.info },
-    given: givenRows([["_words", total]]),
     hints: [
       "Read the sentence slowly and check each word against the one it depends on.",
       "Only one word is wrong; every other word follows the stated rules.",
@@ -451,7 +450,6 @@ function genWord(rng, tier) {
       parts,
       explanation: `${word} = ${pre}- + ${R.r} + -${suf}${c.change ? ", after the spelling rules" : ""}. Prefix | suffix: **${preL} | ${sufL}**; root: **${R.r}** (${R.pos}). Meaning: **${meaning}**. The suffix ${sufL} makes it ${/^[aeiou]/.test(pos) ? "an" : "a"} **${pos}**.`,
       params: { kind: "word", tier, root: R.r, pp: R.pp, dbl: R.dbl, rpos: R.pos, pre, suf, key },
-      given: givenRows([["_letters", word.length]]),
       hints: ["Check both ends of the word against the glossary.", "The meaning is built from the root meaning plus the prefix and suffix meanings."],
     };
   }
@@ -469,7 +467,6 @@ function genWord(rng, tier) {
     parts,
     explanation: `${piece.replace(/\*\*/g, "")} gives **${word}**${c.change ? " after the spelling rules" : ""}. Meaning: **${meaning}**. Word class: **${pos}**.` + (tier === "expert" ? ` It has **${word.length}** letters.` : ""),
     params: { kind: "word", tier, root: R.r, pp: R.pp, dbl: R.dbl, rpos: R.pos, pre, suf, key },
-    given: givenRows([["_pieces", used.length + 1]]),
     hints: ["Use only the pieces named in the question; the other glossary entries are not needed.", "The meaning combines the root with the prefix and suffix meanings."],
   };
 }
@@ -574,7 +571,6 @@ function genLang(rng, tier) {
       ],
       explanation: `Word by word in ${L.order} order: **${ans}**. The sentence needed the **${featTxt[f].toLowerCase()}** rule.`,
       params: { kind: "lang", tier, L, sp },
-      given: givenRows([["_words", en.split(" ").length]]),
       hints: ["Replace each English word by its vocabulary word first.", "Then reorder to the stated word order and add the marker that the sentence needs."],
     };
   }
@@ -593,7 +589,6 @@ function genLang(rng, tier) {
       ],
       explanation: `A in ${L.name}: **${ans}** (${n} marked word${n === 1 ? "" : "s"}: suffixed words and particles). B in English: **${en2}**.`,
       params: { kind: "lang", tier, L, sp, sp2 },
-      given: givenRows([["_words", engOf(sp).split(" ").length]]),
       hints: ["Handle one sentence at a time.", "Marked words are the ones that differ from the plain vocabulary word: suffixed words and separate particles."],
     };
   }
@@ -617,7 +612,6 @@ function genLang(rng, tier) {
         ],
         explanation: `A in ${L.name}: **${ans}** (${n} marked words). B in English: **${en2}**. In B, **${tk.w}** is explained by the **${KIND_TXT[tk.k].toLowerCase()}** rule.`,
         params: { kind: "lang", tier, L, sp, sp2, askTok: tk.w },
-        given: givenRows([["_words", engOf(sp).split(" ").length]]),
         hints: ["Check the vocabulary list for every word before you translate.", "A marked word is either a particle (a separate word) or a vocabulary word with the plural suffix."],
       };
     }
@@ -640,7 +634,6 @@ function genLang(rng, tier) {
     ],
     explanation: `The first example shows the plural suffix **-${L.suf}**; the second shows the past particle **${L.pastP}**. The sentence becomes **${ans}**, with **${n}** marked word${n === 1 ? "" : "s"}.`,
     params: { kind: "lang", tier, L, sp, ex1, ex2 },
-    given: givenRows([["_words", engOf(sp).split(" ").length]]),
     hints: ["The two examples reveal the two unstated rules.", "Marked words are suffixed words and separate particles, including the negation particle."],
   };
 }

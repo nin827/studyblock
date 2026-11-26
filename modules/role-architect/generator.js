@@ -276,7 +276,7 @@ function genDaylight(rng, tier) {
       const pct = (100 * G100) / F100;
       if (pct < 4 || pct > 40) continue;
       const room = `A room is **${l} m × ${w} m** and has **${n} window${n > 1 ? "s" : ""}**${n > 1 ? ", each" : ". The window is"} ${winTxt}.`;
-      const given = [["_n", n], ["_win_w", ww / 10], ["_win_h", wh / 10], ["_floor", F]];
+      const given = [["_n", n], ["_win_w", ww / 10], ["_win_h", wh / 10]];
       const gPart = numPart("glazing", "Glazing area", "Total window area (m²)", G, 1, `Area of one window = width × height; multiply by the number of windows.`, false);
       const pPart = numPart("pct", "Glazing ratio", "Window area as a percentage of the floor area (%)", pct, 1, "Divide the total window area by the floor area, then multiply by 100.", false);
       const exG = `**Window area:** ${ww / 10} × ${wh / 10} = ${a.toFixed(2).replace(/0$/, "")} m² each; × ${n} = **${fix1(G)} m²**.`;

@@ -108,7 +108,7 @@ function genScale(rng, tier) {
       ];
       const ex = `**Usable:** ${B} × ${S} = ${commas(B * S)} g in stock, and ${y}% of it is usable: ${commas(B * S)} × ${y} ÷ 100 = **${commas(usable)} g**.\n\n**Portions:** ${commas(usable)} ÷ ${q} = ${f(roundTo(ports, 2))}, round down to **${ports0}**.\n\n**Packs:** ${C} covers × ${q} g = ${commas(C * q)} g usable, so the raw weight needed is ${commas(C * q)} × 100 ÷ ${y} = ${commas(rawNeed)} g. Missing: ${commas(rawNeed)} − ${commas(B * S)} = ${commas(shortfall)} g, and ${commas(shortfall)} ÷ ${S} = ${f(roundTo(k0, 2))}, round up to **${k0c}** packs.\n\n**Verdict:** ${k} pack${k === 1 ? " is" : "s are"} ${enough ? "at least" : "fewer than"} ${k0c}, so the stock is **${enough ? "Enough" : "Short"}**. The order costs ${k} × ${money(pp)} = ${money(cost)}, which is ${within ? "no more than" : "more than"} $${bud}: **${within ? "Within" : "Over"}** budget.`;
       return finish(`The kitchen has **${B} packs** of ${ing} in stock, each **${S} g**, for a booking of **${C} covers** of ${dish}. The recipe uses **${Q} g** of usable ${ing} for **${N} portions**. ${yieldRule(y)}`,
-        parts, ex, "chf-scl4", { tier, B, S, y, q, C, k, pp, bud }, [["_B", B], ["_S", S], ["_y", y], ["_q", q], ["_C", C], ["_k", k], ["_price", pp], ["_budget", bud]],
+        parts, ex, "chf-scl4", { tier, B, S, y, q, C, k, pp, bud }, [["_B", B], ["_S", S], ["_y", y], ["_C", C], ["_k", k], ["_price", pp], ["_budget", bud]],
         ["Stock first: packs × size, then the usable share.", "Then work from the covers back to the raw weight needed, and judge the proposal."]);
     }
     const M = rng.pick([20, 24, 25, 30, 36, 40, 45, 48, 50, 60, 75, 80, 100]);

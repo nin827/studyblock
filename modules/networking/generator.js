@@ -1397,10 +1397,10 @@ function xKth(rng) {
         hint: "The first usable host is the network address plus 1." },
     ],
     explanation: `A /${m} subnet has 2^${32 - m} = ${size} addresses.\n\n- Subnet ${k} starts ${k} × ${size} = ${commas(k * size)} addresses after \`${dotted(base)}\`${k * size >= 256 ? ` (${Math.floor(k * size / 256)} × 256 + ${(k * size) % 256}, so the third octet goes up by ${Math.floor(k * size / 256)} and the fourth is ${(k * size) % 256})` : ""}: **${dotted(net)}**.\n- Broadcast: + ${size - 1} → **${dotted(bc)}**.\n- First usable host: **${dotted(addToOctets(net, 1))}**.`,
-    given: [{ label: "_k", value: k }, { label: "_size", value: size }],
+    given: [{ label: "_k", value: k }],
     params: { kind: "x-kth", base, p, m, k },
     hints: [
-      `Subnet size: 2^(32 − ${m}) addresses. Calculator: \`_k * _size\` gives how far subnet ${k} starts from the base.`,
+      `Subnet size: 2^(32 − ${m}) addresses. Calculator: put that size in a row \`_size\`, then \`_k * _size\` gives how far subnet ${k} starts from the base.`,
       "Turn that offset into octets: divide by 256; the whole-number part adds to the third octet and the remainder is the fourth.",
       "Broadcast = start + size − 1; first host = start + 1.",
     ],
