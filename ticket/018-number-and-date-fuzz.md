@@ -34,3 +34,4 @@ The named profiles are replaced by a number. 0 means exact, 1 means normal (the 
 - **Text:** `"fuzzy": n`. Up to floor(n) typos are allowed, and each extra typo costs 15% more (never below 25%). `false` still means 0.
 - **Numbers:** `"fuzzyNumber": n` scales the relative bands. For example, at 2: ≤ 0.2% → 90%, ≤ 2% → 75%, ≤ 4% → 50%.
 - **Years and dates:** `"fuzzyNumber": { "mode": "years", "level": n }`. Being up to n years (or months/days) off earns 50%.
+- **Smooth years and dates** (user): off by d earns 1 − d / (level + 1). At level 1: 1 off → 50%, 2 off → 0. At level 2: 1 off → 67%, 2 off → 33%, 3 off → 0.
