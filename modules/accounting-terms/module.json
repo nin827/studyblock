@@ -4,6 +4,7 @@
   "description": "Financial statements, assets and liabilities, the accounting equation and key terms.",
   "icon": "book-open-check",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "statements", "title": "Financial statements", "difficulties": ["easy", "medium", "hard"] },

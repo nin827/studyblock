@@ -4,6 +4,7 @@
   "description": "Exact values, SOH CAH TOA in right-angled triangles, and the sine and cosine rules.",
   "icon": "triangle-right",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "exact-values", "title": "Exact values", "difficulties": ["easy"] },

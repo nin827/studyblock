@@ -4,6 +4,7 @@
   "description": "Logic gates, evaluating Boolean expressions and reading truth tables.",
   "icon": "toggle-left",
   "type": "generator",
+  "fuzzyNumber": 0,
   "fuzzy": false,
   "questionsPerQuiz": 10,
   "subtopics": [

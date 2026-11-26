@@ -3,7 +3,8 @@
 ## General
 - Build a mental timeline with a few anchor dates, then place other events before or after them.
 - Link each event to a place and a person; one clue often brings back the other two.
-- For year questions, type the year only. Watch BC vs AD: BC years count down towards AD 1.
+- For year questions, type the year only, adding BC where needed (`27 BC`). Watch BC vs AD: BC years count down towards AD 1, and there is no year 0.
+- Date questions say how much to give: the year, the month and year, or the full date. `July 1969`, `Jul 1969`, `20 July 1969`, `July 20, 1969` and `20/7/1969` all work; numeric dates are read day first, so check the "Read as" line. One unit off (a year, a month or a day, at the level asked) earns half credit, so a close guess is worth giving.
 
 ## Ancient world
 1. Place the civilisation on the map: Egypt on the Nile, Mesopotamia between the Tigris and Euphrates, Greece around the Aegean, Rome in Italy.

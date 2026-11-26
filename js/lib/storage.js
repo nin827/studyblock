@@ -160,14 +160,19 @@ export function cleanParts(list) {
   return out.length ? out : null;
 }
 
-// Close-answer credit on a stored question (`fuzzy`) or part (`close`):
-// { kind: "text", typos, factor } | { kind: "number", relErr, factor }, factor 0-1. Else null.
+// Close-answer credit on a stored question (`fuzzy`) or part (`close`), factor 0-1:
+// { kind: "text", typos, factor, level } | { kind: "number", relErr, factor, level }
+// | { kind: "number", mode: "years", off, factor, level } | { kind: "date", off, factor, level }.
+// Optional fields are kept only when valid (level 0-5). Else null.
 export function cleanClose(v) {
-  if (!isObj(v) || (v.kind !== 'text' && v.kind !== 'number')) return null;
+  if (!isObj(v) || !['text', 'number', 'date'].includes(v.kind)) return null;
   if (!isNum(v.factor) || v.factor < 0 || v.factor > 1) return null;
   const out = { kind: v.kind, factor: v.factor };
   if (v.kind === 'text' && Number.isInteger(v.typos) && v.typos >= 0 && v.typos <= 50) out.typos = v.typos;
+  if (v.kind === 'number' && v.mode === 'years') out.mode = 'years';
   if (v.kind === 'number' && isNum(v.relErr) && v.relErr >= 0) out.relErr = v.relErr;
+  if (v.kind !== 'text' && isNum(v.off) && v.off >= 0 && v.off <= 1e6) out.off = v.off;
+  if (isNum(v.level) && v.level >= 0 && v.level <= 5) out.level = v.level;
   return out;
 }
 

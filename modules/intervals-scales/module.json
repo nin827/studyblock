@@ -4,6 +4,7 @@
   "description": "Note names, semitones, intervals, major and minor scales, and key signatures, all spelled correctly.",
   "icon": "keyboard-music",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "calculator": false,
   "fuzzy": false,

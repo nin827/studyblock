@@ -4,6 +4,7 @@
   "description": "Points, distances and midpoints, gradients and straight lines, parallel and perpendicular lines, and where lines meet.",
   "icon": "chart-scatter",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "points-distance", "title": "Points & distance", "difficulties": ["easy", "medium", "hard", "expert"] },

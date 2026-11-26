@@ -4,6 +4,7 @@
   "description": "Simplify and share ratios, direct and inverse proportion, and percentage change.",
   "icon": "percent",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "ratios", "title": "Ratios", "difficulties": ["easy", "medium", "hard"] },

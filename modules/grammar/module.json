@@ -4,6 +4,7 @@
   "description": "Parts of speech, verb tenses, punctuation and agreement in English sentences.",
   "icon": "spell-check",
   "type": "csv",
+  "fuzzyNumber": 0,
   "fuzzy": false,
   "questionsPerQuiz": 4,
   "calculator": false,

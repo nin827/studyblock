@@ -4,6 +4,7 @@
   "description": "Map scales and real distances, 4- and 6-figure grid references, three-figure bearings and time zones.",
   "icon": "compass",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "scale-distance", "title": "Scale & distance", "difficulties": ["easy", "medium", "hard"] },

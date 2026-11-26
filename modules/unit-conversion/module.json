@@ -4,6 +4,7 @@
   "description": "Convert lengths, masses, volumes, times, speeds and temperatures between metric and everyday units.",
   "icon": "ruler",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "length", "title": "Length", "difficulties": ["easy", "medium", "hard"] },

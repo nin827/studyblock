@@ -4,6 +4,7 @@
   "description": "Speed, acceleration and the equations of uniformly accelerated motion, with units in metres and seconds.",
   "icon": "gauge",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "speed", "title": "Speed", "difficulties": ["easy", "medium", "hard", "expert"] },

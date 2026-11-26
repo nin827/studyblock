@@ -4,6 +4,7 @@
   "description": "Latin and Greek roots, prefixes and suffixes that unlock the meaning of English words.",
   "icon": "sprout",
   "type": "csv",
+  "fuzzyNumber": 0,
   "fuzzy": false,
   "questionsPerQuiz": 4,
   "calculator": false,

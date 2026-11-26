@@ -4,6 +4,7 @@
   "description": "Differentiate and integrate polynomials: gradients, tangents, stationary points and areas under curves.",
   "icon": "chart-spline",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "derivatives", "title": "Derivatives", "difficulties": ["easy", "medium", "hard", "expert"] },

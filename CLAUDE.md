@@ -40,6 +40,7 @@ js/lib/csv.js           RFC4180-ish CSV parser (quotes, commas, newlines, "")
 js/lib/rng.js           seeded PRNG (mulberry32) + helpers
 js/lib/storage.js       localStorage store, cookie cache, import/export
 js/lib/engine.js        loads modules, generates + verifies questions, checks answers
+js/lib/dates.js         date parsing/formatting/distance for date answers
 js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
 js/lib/languages.js     code languages list (python, csharp, cpp, gdscript, rust)
 js/lib/codelang.js      language-neutral code AST, 5 renderers, interpreter
@@ -198,6 +199,7 @@ The engine seeds `rng` per question and stores the seed, so any question can be 
 Header: `subtopic,difficulty,prompt,answer,choices,explanation`
 - `choices` is `|`-separated; empty means free-text answer.
 - `difficulty` may be empty (applies to all).
+- Optional `type` column: empty = as above, `date` = a date answer (see Date answers).
 The engine samples rows with the seeded rng and shuffles choices.
 
 ### Answer checking
@@ -233,12 +235,27 @@ A typed **text** question may also give `blocks: { tiles, joiner, useAll, soluti
 
 ### Close answers (partial credit)
 
-A near miss earns part credit; `correct` stays false. Applies to single questions and to each multi-part part (whose credit is then averaged).
-- **Text** (Damerau-Levenshtein after the text rules; an adjacent swap is 1 typo): 1–3 characters exact only; 4–7 chars, 1 typo → 0.75; 8–14 → 0.85; 15+ → 0.90; 2 or more typos → 0. Answers containing a digit get no typo credit.
-- **Numbers:** only for a non-integer, non-zero answer with the sign right, in a module with the calculator on. Relative error beyond tolerance: ≤ 0.1% → 0.90, ≤ 1% → 0.75, ≤ 2% → 0.50.
-- **Never applies to:** choice, tiles, Blocks mode, a question with `fuzzy: false`, or a module with `"fuzzy": false`. Modules with `"fuzzy": false`: number-bases, data-representation, networking, number-theory, elements, chemistry, boolean-logic, rhythm, grammar, vocabulary, word-roots, sql-queries, algorithms, code-writing, code-reviewing, chords, intervals-scales.
-- **Lookalikes:** an exact match for another real answer gets 0. That means another answer in the same CSV subtopic, or anything in the question's `nearMisses`.
-- **Display and storage:** "Close · 85% credit" (`circle-dot`, warn colours). Stored as `fuzzy: { kind, typos | relErr, factor }`, or `parts[i].close` per part. In Guided mode it reads "Almost", and a retry is allowed.
+A near miss earns part credit; `correct` stays false. This applies to single questions and to each multi-part part (whose credits are averaged). Never for choice, tiles or Blocks mode. Tickets 017 and 018.
+- **Leniency levels** (numbers, 0–5; 0 = exact, 1 = normal, higher = more lenient; fractions allowed), set in `module.json` and overridable per question or part:
+  - `"fuzzy": <level>` sets text leniency. `false` = 0; `true` or missing = 1.
+  - `"fuzzyNumber": <level>` sets relative number leniency, or `{ "mode": "years", "level": n }` for years. Missing = relative at 1, or 0 when `fuzzy` is 0.
+- **Text** (Damerau-Levenshtein after the text rules; an adjacent swap is 1 typo): up to floor(L) typos. The first typo gives a base by answer length: 4–7 chars 0.75, 8–14 chars 0.85, 15+ chars 0.90. Each extra typo costs 0.15, down to a minimum of 0.25. Answers of 1–3 characters, and any answer containing a digit, must be exact.
+- **Numbers, relative mode:** the band edges are × L. Within 0.1%·L → 0.90, 1%·L → 0.75, 2%·L → 0.50. Applies to integers and decimals; the answer must be non-zero and the sign right. Without an explicit `fuzzyNumber`, it applies only when the calculator is on.
+- **Years mode and dates:** off by d earns max(0, 1 − d/(L+1)), at 2 dp. At L = 1: 1 off 0.5. At L = 2: 1 off 0.67, 2 off 0.33. There is no year 0, so 1 BC → AD 1 is 1 off. "44 BC" and "AD 79" are read, including on CSV year answers.
+- **Per module:** `fuzzyNumber` is 0 for arithmetic, fractions, sequences, probability, number-theory, radioactivity, map-skills, elements, chemistry, number-bases, boolean-logic, algorithms, networking, data-representation, sql-queries, vocabulary, word-roots, grammar, intervals-scales, chords and rhythm (and code via `fuzzy: false`). It is `{mode: "years", level: 1}` for timelines, world-history and inventions, and 1 elsewhere. Text `fuzzy: false` is set on the exact-answer modules (bases, data representation, networking, number theory, elements, chemistry, boolean logic, rhythm, grammar, vocabulary, word roots, SQL, algorithms, code, music).
+- **Lookalikes:** an exact match for another real answer (another answer in the same CSV subtopic, or in the question's `nearMisses`) earns 0.
+- **Display and storage:**
+  - Feedback reads "Close · 85% credit" (`circle-dot`, warn colours). In Guided mode it reads "Almost", and a retry is allowed.
+  - Stored as `fuzzy` (or `parts[i].close`) in one of these shapes: `{kind:"text", typos, factor, level}`, `{kind:"number", relErr, factor, level}`, `{kind:"number", mode:"years", off, factor, level}` or `{kind:"date", off, factor, level}`.
+  - All of these are optional and validated on import.
+
+### Date answers (`answerType: "date"`)
+
+- **Shape:** `{ answerType: "date", precision: "year" | "month" | "day", answer: "20 July 1969" }`. The answer is canonical text ("1969", "July 1969", "20 July 1969"); BC is allowed only at year precision. Dates can also be multi-part parts. A malformed one regenerates.
+- **Parsing:** `js/lib/dates.js` (pure). It accepts month names and abbreviations, ordinals, `Month D, YYYY`, ISO `Y-M(-D)`, and numeric D/M/Y read **day first**. All-numeric dates need a 3–4 digit year. Real dates only: no 31 April, and leap years are honoured.
+- **Checking:** correct means the same value at the answer's precision; extra detail is ignored. Less detail is wrong, with the hint "give the month and year". Close credit uses the years formula, in units of the precision, across month and year ends.
+- **UI:** a text field with a placeholder that fits the precision. A live "Read as: …" line (aria-live) shows the parsed date, or "Not a date yet". Check needs a value that parses. Feedback repeats "Your answer read as: …". Use is disabled.
+- **CSV:** an optional `type` column. `date` makes the row a date answer, with its precision taken from the answer's format. Bad rows are skipped with one warning per module. Date rows are in World History and Inventions.
 
 ### Run (test the output)
 

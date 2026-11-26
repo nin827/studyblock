@@ -4,6 +4,7 @@
   "description": "Triads and seventh chords spelled from letter names, inversions, and the chords of a major key in Roman numerals.",
   "icon": "piano",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "calculator": false,
   "fuzzy": false,

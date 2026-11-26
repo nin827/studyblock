@@ -4,6 +4,7 @@
   "description": "Trace searches and sorts by hand, pick the Big-O, and run stacks and queues step by step.",
   "icon": "arrow-down-up",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "calculator": false,
   "fuzzy": false,

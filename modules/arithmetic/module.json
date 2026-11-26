@@ -4,6 +4,7 @@
   "description": "Mental math drills: addition, subtraction, multiplication and division at three difficulty levels.",
   "icon": "calculator",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [

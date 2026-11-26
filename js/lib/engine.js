@@ -5,6 +5,7 @@ import { parseCSV } from './csv.js';
 import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
 import { LANG_IDS, isLang } from './languages.js';
 import { getCodeLang } from './storage.js';
+import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -137,9 +138,43 @@ export async function loadModule(id) {
     languages: parseLanguages(m, id),
     // Blocks-mode credit factor per difficulty for dual Type | Blocks questions (missing = 1).
     tilesMultiplier: parseTilesMultiplier(m, id),
-    // Close-answer partial credit; a module opts out with "fuzzy": false.
-    fuzzy: m.fuzzy !== false,
+    // Close-answer leniency: text level (false = 0, true/missing = 1) and the number spec
+    // ({ mode, level } or null when unset; see numberSpecOf).
+    fuzzy: parseLevel(m.fuzzy, id, 'fuzzy') ?? 1,
+    fuzzyNumber: parseFuzzyNumber(m.fuzzyNumber, id),
   };
+}
+
+// ---- close-answer leniency levels (0 = exact, 1 = normal, higher = more lenient, max 5) ----
+export const LEVEL_MAX = 5;
+const levelWarned = new Set();
+function warnLevel(key, msg) {
+  if (!key || levelWarned.has(key)) return;
+  levelWarned.add(key);
+  console.warn(`StudyBlock: ${msg}`);
+}
+// A leniency level: false -> 0, true -> 1, a number 0-5 (clamped). undefined when missing/invalid.
+export function parseLevel(v, warnId, field = 'fuzzy') {
+  if (v === undefined || v === null) return undefined;
+  if (v === false) return 0;
+  if (v === true) return 1;
+  if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return Math.min(v, LEVEL_MAX);
+  if (warnId) warnLevel(`${warnId}|${field}`, `module ${warnId}: "${field}" must be true, false or a number 0-${LEVEL_MAX}; ignoring it`);
+  return undefined;
+}
+// "fuzzyNumber": a level (relative mode) or { mode: "relative" | "years", level }. -> { mode, level } | undefined.
+export function parseFuzzyNumber(v, warnId) {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'number' || typeof v === 'boolean') {
+    const level = parseLevel(v, warnId, 'fuzzyNumber');
+    return level === undefined ? undefined : { mode: 'relative', level };
+  }
+  if (typeof v === 'object' && !Array.isArray(v) && (v.mode === 'relative' || v.mode === 'years')) {
+    const level = v.level === undefined ? 1 : parseLevel(v.level, warnId, 'fuzzyNumber');
+    if (level !== undefined) return { mode: v.mode, level };
+  }
+  if (warnId) warnLevel(`${warnId}|fuzzyNumber`, `module ${warnId}: "fuzzyNumber" must be a number 0-${LEVEL_MAX} or { "mode": "relative" | "years", "level": n }; ignoring it`);
+  return undefined;
 }
 
 // module.json "tilesMultiplier": { easy, medium, hard, expert } numbers 0-1; a missing or invalid
@@ -175,7 +210,9 @@ export function tilesMultiplierOf(mod, difficulty) {
 function decorate(q, mod, difficulty) {
   if (!q) return q;
   const out = { ...q, srcModule: mod.id, calculator: mod.calculator !== false };
-  if (mod.fuzzy === false) out.fuzzy = false;
+  // Module leniency (the question's own `fuzzy` / `fuzzyNumber` win; see textLevelOf / numberSpecOf).
+  out.modFuzzy = typeof mod.fuzzy === 'number' ? mod.fuzzy : (mod.fuzzy === false ? 0 : 1);
+  if (mod.fuzzyNumber) out.modFuzzyNumber = mod.fuzzyNumber;
   if (out.blocks) out.blocks = { ...out.blocks, multiplier: tilesMultiplierOf(mod, difficulty) };
   return out;
 }
@@ -293,11 +330,44 @@ async function loadGenerator(id) {
   return mod;
 }
 
+const csvWarned = new Set();
 async function loadCsvRows(id) {
   await assertListed(id);
   const text = await loadText(`modules/${id}/questions.csv`);
-  return parseCSV(text);
+  // Optional `type` column: empty = text/choice (as before), "date" = a date answer whose
+  // precision comes from the answer's own format. Bad rows are skipped, one warning per module.
+  const bad = [];
+  const rows = parseCSV(text).filter((r, i) => {
+    const ok = csvRowOk(r);
+    if (!ok) bad.push(i + 2);
+    return ok;
+  });
+  if (bad.length && !csvWarned.has(id)) {
+    csvWarned.add(id);
+    console.warn(`StudyBlock: module ${id}: skipping invalid questions.csv row(s) on line(s) ${bad.slice(0, 20).join(', ')}`);
+  }
+  return rows;
 }
+
+const csvType = r => String(r?.type ?? '').trim().toLowerCase();
+function csvRowOk(r) {
+  const type = csvType(r);
+  if (!type) return true;
+  if (type !== 'date') return false;
+  if (String(r.choices ?? '').trim()) return false;
+  return dateAnswerOk(String(r.answer ?? '').trim());
+}
+
+// A canonical date answer: parses, and BC only at year precision. -> its precision, or null.
+function datePrecisionOf(answer) {
+  const d = parseDate(answer);
+  if (!d || (d.year < 0 && d.precision !== 'year')) return null;
+  return d.precision;
+}
+const dateAnswerOk = (answer, precision) => {
+  const p = datePrecisionOf(answer);
+  return !!p && (precision === undefined || p === precision);
+};
 
 function csvPool(rows, subtopic, difficulty) {
   return rows.filter(r =>
@@ -317,12 +387,14 @@ function csvQuestion(pool, seed, near = null) {
   const choicesRaw = (row.choices || '').trim();
   const choices = choicesRaw ? rng.shuffle(choicesRaw.split('|').map(s => s.trim()).filter(Boolean)) : undefined;
   const answer = (row.answer ?? '').trim();
-  const nearMisses = !choices && near ? near.filter(a => normText(a) !== normText(answer)) : [];
+  const isDate = !choices && csvType(row) === 'date';
+  const nearMisses = !choices && !isDate && near ? near.filter(a => normText(a) !== normText(answer)) : [];
   return {
     seed,
     prompt: row.prompt ?? '',
     answer,
-    answerType: choices ? 'choice' : 'text',
+    answerType: choices ? 'choice' : isDate ? 'date' : 'text',
+    ...(isDate ? { precision: datePrecisionOf(answer) } : {}),
     choices,
     tolerance: undefined,
     explanation: row.explanation || '',
@@ -330,7 +402,7 @@ function csvQuestion(pool, seed, near = null) {
   };
 }
 
-const PART_TYPES = ['number', 'text', 'choice'];
+const PART_TYPES = ['number', 'text', 'choice', 'date'];
 export const MULTI_MIN_PARTS = 2;
 export const MULTI_MAX_PARTS = 4;
 
@@ -347,6 +419,7 @@ function normalizePart(p, warnKey) {
     answer: p?.answer,
     choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
     tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
+    ...(answerType === 'date' ? { answer: String(p?.answer ?? '').trim(), precision: datePrecisionFor(p) } : {}),
     ...(hint ? { hint } : {}),
     ...closeExtras(p, answerType),
   };
@@ -365,11 +438,22 @@ function cleanStrList(raw, max) {
   }
   return out.length ? out : undefined;
 }
-// `accepts` (text / tiles answers), `nearMisses` (text / number) and `fuzzy: false`, when given.
+// `accepts` (text / tiles answers), `nearMisses` (text / number) and the question's own leniency
+// (`fuzzy` level, `fuzzy: false` kept as is; `fuzzyNumber` as { mode, level }), when given.
 function closeExtras(q, answerType) {
   const accepts = answerType === 'text' || answerType === 'tiles' ? cleanStrList(q?.accepts, ACCEPTS_MAX) : undefined;
   const nearMisses = answerType === 'text' || answerType === 'number' ? cleanStrList(q?.nearMisses, NEAR_MISSES_MAX) : undefined;
-  return { ...(accepts ? { accepts } : {}), ...(nearMisses ? { nearMisses } : {}), ...(q?.fuzzy === false ? { fuzzy: false } : {}) };
+  const level = q?.fuzzy === false ? false : parseLevel(q?.fuzzy);
+  const num = parseFuzzyNumber(q?.fuzzyNumber);
+  return {
+    ...(accepts ? { accepts } : {}), ...(nearMisses ? { nearMisses } : {}),
+    ...(level !== undefined ? { fuzzy: level } : {}), ...(num ? { fuzzyNumber: num } : {}),
+  };
+}
+
+// A date question's precision: its own valid `precision`, else the answer's format.
+function datePrecisionFor(q) {
+  return PRECISIONS.includes(q?.precision) ? q.precision : (datePrecisionOf(String(q?.answer ?? '').trim()) ?? 'year');
 }
 
 // Shape check for a raw multi-part question: 2-4 parts, unique ids matching ID_RE, a label,
@@ -388,6 +472,9 @@ export function multiShapeOk(raw) {
     } else if (p.answerType === 'text') {
       if (typeof p.answer !== 'string' && typeof p.answer !== 'number') return false;
       if (!String(p.answer).trim()) return false;
+    } else if (p.answerType === 'date') {
+      if (typeof p.answer !== 'string' || !dateAnswerOk(p.answer.trim(), p.precision)) return false;
+      if (p.precision !== undefined && !PRECISIONS.includes(p.precision)) return false;
     } else {
       if (!Array.isArray(p.choices) || p.choices.length < 2) return false;
       const cs = p.choices.map(String);
@@ -650,6 +737,7 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
     tolerance: typeof q.tolerance === 'number' ? q.tolerance : undefined,
     explanation: q.explanation ? String(q.explanation) : '',
     ...closeExtras(q, answerType),
+    ...(answerType === 'date' ? { answer: String(q.answer ?? '').trim(), precision: datePrecisionFor(q) } : {}),
     ...(blocks !== undefined ? { blocks } : {}),
     ...extra,
   };
@@ -677,6 +765,11 @@ function generateVerified(gen, subtopic, difficulty, seed, lang = null, maxTries
         own = raw.answer;
       } else {
         shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
+        // A date answer is canonical text matching its precision ("July 1969"; BC at year precision only).
+        if (shapeOk && q.answerType === 'date') {
+          shapeOk = typeof raw.answer === 'string' && dateAnswerOk(raw.answer.trim(), raw.precision)
+            && (raw.precision === undefined || PRECISIONS.includes(raw.precision));
+        }
         // A block alternative must spell exactly the typed answer.
         if (shapeOk && q.blocks !== undefined) shapeOk = blocksSpecOk(q.blocks, String(q.answer ?? ''), raw.blocks?.solution !== undefined);
         if (shapeOk && raw.blocks !== undefined && raw.blocks !== null && q.answerType !== 'text') shapeOk = false;
@@ -1123,14 +1216,30 @@ export function textTier(len) {
   return 0.9;
 }
 
-// Credit for a relative error r beyond tolerance: ≤ 0.1% 0.9, ≤ 1% 0.75, ≤ 2% 0.5, else 0.
-export function numberTier(r) {
+// Credit for k typos at text level L: up to floor(L) typos; the length tier for 1 typo, then
+// 0.15 less per extra typo (minimum 0.25). Level < 1 = exact only.
+export function textCredit(len, typos, level = 1) {
+  const base = textTier(len);
+  if (!base || !(typos >= 1) || typos > Math.floor(level)) return 0;
+  return Math.max(0.25, Math.round((base - 0.15 * (typos - 1)) * 100) / 100);
+}
+
+// Credit for a relative error r beyond tolerance at level L (band edges × L):
+// ≤ 0.1%·L 0.9, ≤ 1%·L 0.75, ≤ 2%·L 0.5, else 0. Level 0 = exact.
+export function numberTier(r, level = 1) {
   const e = 1e-9;
-  if (!(r >= 0)) return 0;
-  if (r <= 0.001 + e) return 0.9;
-  if (r <= 0.01 + e) return 0.75;
-  if (r <= 0.02 + e) return 0.5;
+  if (!(r >= 0) || !(level > 0)) return 0;
+  if (r <= 0.001 * level + e) return 0.9;
+  if (r <= 0.01 * level + e) return 0.75;
+  if (r <= 0.02 * level + e) return 0.5;
   return 0;
+}
+
+// Years/absolute mode (and dates, in units of the precision): off by d > 0 at level L earns
+// max(0, 1 − d/(L+1)), 2 dp (L = 1: 1 off 0.5, 2 off 0; L = 2: 0.67, 0.33, 0). Level 0 = exact.
+export function offTier(d, level = 1) {
+  if (!(d > 0) || !(level > 0)) return 0;
+  return Math.max(0, Math.round((1 - d / (level + 1)) * 100) / 100);
 }
 
 const parseNumber = v => {
@@ -1139,46 +1248,107 @@ const parseNumber = v => {
   return str ? Number(str) : NaN;
 };
 
+// ---- leniency of one question or part (`owner` = the question a part belongs to) ----
+const firstDefined = (...vs) => vs.find(v => v !== undefined && v !== null);
+const asLevel = v => (v === false ? 0 : v === true ? 1 : typeof v === 'number' && v >= 0 ? Math.min(v, LEVEL_MAX) : undefined);
+// Text level: the part's, else the question's, else the module's (missing = 1).
+export function textLevelOf(q, owner = q) {
+  const v = firstDefined(asLevel(q?.fuzzy), owner !== q ? asLevel(owner?.fuzzy) : undefined, asLevel(owner?.modFuzzy), asLevel(q?.modFuzzy));
+  return v === undefined ? 1 : v;
+}
+/*
+ * Number spec { mode: 'relative' | 'years', level, explicit }: the part's, the question's or the
+ * module's `fuzzyNumber`; with none, relative at level 1, or 0 when the text level is 0 (so
+ * modules with "fuzzy": false stay exact). `explicit` (any fuzzyNumber set) drops the calculator gate.
+ */
+export function numberSpecOf(q, owner = q) {
+  const set = firstDefined(q?.fuzzyNumber, owner !== q ? owner?.fuzzyNumber : undefined, owner?.modFuzzyNumber, q?.modFuzzyNumber);
+  if (set && typeof set === 'object' && (set.mode === 'relative' || set.mode === 'years') && asLevel(set.level) !== undefined) {
+    return { mode: set.mode, level: asLevel(set.level), explicit: true };
+  }
+  return { mode: 'relative', level: textLevelOf(q, owner) === 0 ? 0 : 1, explicit: false };
+}
+// Date level: `fuzzyNumber` in years mode, else 1 (relative-mode numbers don't apply to dates).
+function dateLevelOf(q, owner = q) {
+  const spec = numberSpecOf(q, owner);
+  if (spec.explicit && spec.mode === 'years') return spec.level;
+  return spec.explicit || textLevelOf(q, owner) !== 0 ? 1 : 0;
+}
+const yearsMode = (q, owner) => numberSpecOf(q, owner).mode === 'years';
+
 // Lookalike rule: typed text that exactly matches another real answer earns nothing.
 const isLookalike = (q, u) => Array.isArray(q.nearMisses) && q.nearMisses.some(n => normText(n) === u);
 
-function closeText(q, userAnswer) {
+function closeYears(q, a, userAnswer, spec) {
+  const u = parseYear(userAnswer);
+  if (!Number.isFinite(u) || !Number.isFinite(a)) return null;
+  if (Array.isArray(q.nearMisses) && q.nearMisses.some(n => parseYear(n) === u)) return null;
+  const d = yearDistance(u, a);
+  const factor = offTier(d, spec.level);
+  return factor > 0 ? { kind: 'number', mode: 'years', off: d, factor, level: spec.level } : null;
+}
+
+function closeText(q, userAnswer, owner) {
   const u = normText(userAnswer);
   if (!u || isLookalike(q, u)) return null;
-  let best = 0;
+  // Year answers in a years-mode module (CSV "1066", "44 BC"): off-by-years credit.
+  const spec = numberSpecOf(q, owner);
+  if (spec.mode === 'years' && Number.isFinite(parseYear(q.answer))) return closeYears(q, parseYear(q.answer), userAnswer, spec);
+  const level = textLevelOf(q, owner);
+  const maxTypos = Math.floor(level);
+  if (maxTypos < 1) return null;
+  let best = null;
   for (const target of [q.answer, ...(Array.isArray(q.accepts) ? q.accepts : [])].map(normText)) {
     // Answers with digits (years, fractions, times, codes) are never "close": a changed digit is a
     // different answer, not a typo.
     if (/\d/.test(target)) continue;
-    const tier = textTier(Array.from(target).length);
-    if (tier > best && dlDistance(u, target, 1) === 1) best = tier;
+    const typos = dlDistance(u, target, maxTypos);
+    const factor = textCredit(Array.from(target).length, typos, level);
+    if (factor > 0 && (!best || factor > best.factor)) best = { kind: 'text', typos, factor, level };
   }
-  return best > 0 ? { kind: 'text', typos: 1, factor: best } : null;
+  return best;
 }
 
-function closeNumber(q, userAnswer) {
-  const u = parseNumber(userAnswer);
+function closeNumber(q, userAnswer, owner) {
+  const spec = numberSpecOf(q, owner);
+  if (!(spec.level > 0)) return null;
+  // Without an explicit fuzzyNumber, numbers need the calculator (as before).
+  if (!spec.explicit && (owner?.calculator === false || q.calculator === false)) return null;
   const a = Number(q.answer);
-  if (!Number.isFinite(u) || !Number.isFinite(a) || a === 0 || Number.isInteger(a)) return null;
+  if (spec.mode === 'years') return closeYears(q, a, userAnswer, spec);
+  const u = parseNumber(userAnswer);
+  if (!Number.isFinite(u) || !Number.isFinite(a) || a === 0) return null;
   if (Math.sign(u) !== Math.sign(a)) return null;
   if (Array.isArray(q.nearMisses) && q.nearMisses.some(n => Number(n) === u)) return null;
   const tol = typeof q.tolerance === 'number' ? Math.max(q.tolerance, 1e-9) : 1e-9;
   if (Math.abs(u - a) <= tol) return null; // already correct
   const r = Math.abs(u - a) / Math.abs(a);
-  const factor = numberTier(r);
-  return factor > 0 ? { kind: 'number', relErr: Math.round(r * 1e6) / 1e6, factor } : null;
+  const factor = numberTier(r, spec.level);
+  return factor > 0 ? { kind: 'number', relErr: Math.round(r * 1e6) / 1e6, factor, level: spec.level } : null;
+}
+
+function closeDate(q, userAnswer, owner) {
+  const level = dateLevelOf(q, owner);
+  const precision = PRECISIONS.includes(q.precision) ? q.precision : 'year';
+  const a = parseDate(q.answer);
+  const u = parseDate(userAnswer);
+  if (!a || !u || !hasPrecision(u, precision)) return null;
+  const d = dateDistance(u, a, precision);
+  const factor = offTier(d, level);
+  return factor > 0 ? { kind: 'date', off: d, factor, level } : null;
 }
 
 /*
- * Close-answer credit for a wrong typed answer: { kind: 'text', typos, factor } |
- * { kind: 'number', relErr, factor } | null. `q` is a single question or one multi-part part;
- * `owner` is the question it belongs to (module/question-level `fuzzy: false` and `calculator`).
- * Never for choice or tiles answers; numbers only when the calculator is on.
+ * Close-answer credit for a wrong typed answer: { kind: 'text', typos, factor, level } |
+ * { kind: 'number', relErr | (mode: 'years', off), factor, level } | { kind: 'date', off, factor, level }
+ * | null. `q` is a single question or one multi-part part; `owner` is the question it belongs to
+ * (question and module leniency, `calculator`). Never for choice or tiles answers.
  */
 export function closeOf(q, userAnswer, owner = q) {
-  if (!q || q.fuzzy === false || owner?.fuzzy === false) return null;
-  if (q.answerType === 'text') return closeText(q, userAnswer);
-  if (q.answerType === 'number' && owner?.calculator !== false && q.calculator !== false) return closeNumber(q, userAnswer);
+  if (!q) return null;
+  if (q.answerType === 'text') return closeText(q, userAnswer, owner);
+  if (q.answerType === 'number') return closeNumber(q, userAnswer, owner);
+  if (q.answerType === 'date') return closeDate(q, userAnswer, owner);
   return null;
 }
 
@@ -1195,7 +1365,7 @@ export function checkAnswer(question, userAnswer) {
     const given = userAnswer && typeof userAnswer === 'object' ? userAnswer : {};
     const parts = (question.parts || []).map(p => {
       const has = Object.prototype.hasOwnProperty.call(given, p.id);
-      const correct = has && checkSingle(p, given[p.id]);
+      const correct = has && checkSingle(p, given[p.id], question);
       const close = has && !correct ? closeOf(p, given[p.id], question) : null;
       return { id: p.id, label: p.label, correct, ...(close ? { close } : {}) };
     });
@@ -1209,8 +1379,8 @@ export function checkAnswer(question, userAnswer) {
 /*
  * Full grading result: { correct, credit, parts?, fuzzy?, mode?, multiplier? }.
  * `mode` "blocks" (dual Type | Blocks questions answered with blocks): credit = correct × the
- * question's blocks multiplier, never a close answer. Typed text/number answers that miss may earn
- * close-answer credit (`fuzzy`); `correct` stays false for those.
+ * question's blocks multiplier, never a close answer. Typed text/number/date answers that miss may
+ * earn close-answer credit (`fuzzy`); `correct` stays false for those.
  */
 export function gradeAnswer(q, userAnswer, mode = 'type') {
   if (q.answerType === 'multi') {
@@ -1228,10 +1398,21 @@ export function gradeAnswer(q, userAnswer, mode = 'type') {
   return close ? { correct: false, credit: close.factor, fuzzy: close } : { correct: false, credit: 0 };
 }
 
-function checkSingle(question, userAnswer) {
+// A date answer: same value at the answer's precision (extra detail ignored; less detail is wrong).
+export function checkDate(question, userAnswer) {
+  const precision = PRECISIONS.includes(question.precision) ? question.precision : 'year';
+  const a = parseDate(question.answer);
+  const u = parseDate(userAnswer);
+  return !!a && !!u && hasPrecision(u, precision) && dateDistance(u, a, precision) === 0;
+}
+
+function checkSingle(question, userAnswer, owner = question) {
   switch (question.answerType) {
+    case 'date':
+      return checkDate(question, userAnswer);
     case 'number': {
-      const u = parseNumber(userAnswer);
+      // Years mode also reads "44 BC", "AD 79".
+      const u = yearsMode(question, owner) ? parseYear(userAnswer) : parseNumber(userAnswer);
       const a = Number(question.answer);
       if (!Number.isFinite(u) || !Number.isFinite(a)) return false;
       const tol = typeof question.tolerance === 'number' ? Math.max(question.tolerance, 1e-9) : 1e-9;
@@ -1241,7 +1422,13 @@ function checkSingle(question, userAnswer) {
       return String(userAnswer) === String(question.answer);
     default: {
       const u = normText(userAnswer);
-      return u === normText(question.answer) || (Array.isArray(question.accepts) && question.accepts.some(a => normText(a) === u));
+      if (u === normText(question.answer) || (Array.isArray(question.accepts) && question.accepts.some(a => normText(a) === u))) return true;
+      // Years mode: a year answer also matches the same year written another way ("AD 1066").
+      if (question.answerType === 'text' && yearsMode(question, owner)) {
+        const a = parseYear(question.answer);
+        return Number.isFinite(a) && parseYear(userAnswer) === a;
+      }
+      return false;
     }
   }
 }

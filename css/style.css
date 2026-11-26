@@ -920,6 +920,13 @@ body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-s
 .part.is-close { border-color: var(--warn); }
 .part-result.partial .part-result-mark { color: var(--warn-fg); }
 .part-result-close { font-weight: 600; color: var(--warn-fg); }
+
+/* date answers: live "Read as" line under the field (icon + text) */
+.date-readas { display: flex; align-items: center; gap: 6px; min-height: 22px; margin: 8px 0 0; font-size: 14px; color: var(--text-2); overflow-wrap: anywhere; }
+.date-readas .icon { width: 16px; height: 16px; flex-shrink: 0; color: var(--accent-ink); }
+.date-readas.is-invalid, .date-readas.is-invalid .icon { color: var(--warn-fg); }
+.date-readas strong { color: var(--ink); }
+.date-read-back { margin: 0 0 6px; }
 .review-mode { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--accent-ink); }
 .review-mode .icon { width: 16px; height: 16px; }
 

@@ -4,6 +4,7 @@
   "description": "Supply and demand, price elasticity, GDP and inflation, and the effects of taxes and price controls.",
   "icon": "scale",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "supply-demand", "title": "Supply and demand", "difficulties": ["easy", "medium", "hard", "expert"] },

@@ -4,6 +4,7 @@
   "description": "Years between events across BC and AD, centuries and decades, putting events in order, and famous dates.",
   "icon": "calendar-clock",
   "type": "generator",
+  "fuzzyNumber": { "mode": "years", "level": 1 },
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "years-between", "title": "Years between", "difficulties": ["easy", "medium", "hard"] },

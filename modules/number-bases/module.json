@@ -4,6 +4,7 @@
   "description": "Convert between binary, decimal and hexadecimal, add binary numbers and work with two's complement.",
   "icon": "binary",
   "type": "generator",
+  "fuzzyNumber": 0,
   "fuzzy": false,
   "calculator": false,
   "questionsPerQuiz": 10,

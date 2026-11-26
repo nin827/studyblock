@@ -4,6 +4,7 @@
   "description": "The 2D maths that moves things in games: vectors, frame-rate independent movement, lerp and angles.",
   "icon": "move-up-right",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "vectors", "title": "Vectors", "difficulties": ["easy", "medium", "hard", "expert"] },

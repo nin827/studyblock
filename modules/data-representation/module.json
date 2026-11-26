@@ -4,6 +4,7 @@
   "description": "How computers store images, sound and text, and how compression and storage space work.",
   "icon": "file-digit",
   "type": "generator",
+  "fuzzyNumber": 0,
   "fuzzy": false,
   "questionsPerQuiz": 10,
   "subtopics": [

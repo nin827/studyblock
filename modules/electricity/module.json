@@ -4,6 +4,7 @@
   "description": "Ohm's law, electrical power and energy, and the total resistance of series and parallel circuits.",
   "icon": "zap",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "ohms-law", "title": "Ohm's law", "difficulties": ["easy", "medium", "hard", "expert"] },

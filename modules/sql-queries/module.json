@@ -4,6 +4,7 @@
   "description": "Read small tables, work out what SELECT, WHERE, ORDER BY, aggregates, GROUP BY and JOIN queries return, and write your own.",
   "icon": "database",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
   "calculator": false,
   "fuzzy": false,

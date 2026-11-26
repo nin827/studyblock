@@ -6,6 +6,7 @@ import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel } from './ui.js';
 import { mountCalculator } from './calculator.js';
 import { isLang, langTitle } from '../lib/languages.js';
+import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
 // address it was opened on, may restore it from sessionStorage. Every other run starts empty.
@@ -15,6 +16,36 @@ const CALC_KEY = 'studyblock:calc';
 const CALC_PANEL_COOKIE = 'calcPanel'; // "closed" = desktop panel collapsed
 const DESKTOP_CALC = '(min-width: 900px)';
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+
+// ---- date answers (answerType "date"; parsing in js/lib/dates.js) ----
+const DATE_EXAMPLES = { year: 'e.g. 1969 or 44 BC', month: 'e.g. July 1969', day: 'e.g. 20 July 1969' };
+const datePlaceholder = precision => DATE_EXAMPLES[precision] || DATE_EXAMPLES.year;
+// The live "Read as" line under a date field (aria-live polite). `id` is already safe.
+function readAsHtml(id, precision) {
+  return `<p class="date-readas" id="${id}" aria-live="polite" data-precision="${esc(precision || 'year')}">${readAsInner('', precision)}</p>`;
+}
+function readAsInner(text, precision) {
+  if (!String(text ?? '').trim()) return `<span class="muted">${esc(precisionHint(precision))}, ${esc(datePlaceholder(precision))}</span>`;
+  const d = parseDate(text);
+  if (!d) return `${icon('calendar-x')}<span>Not a date yet</span>`;
+  const short = !hasPrecision(d, precision);
+  return `${icon(short ? 'circle-alert' : 'calendar-check')}<span>Read as: <strong>${esc(formatDate(d))}</strong>${short ? ` · ${esc(precisionHint(precision))}` : ''}</span>`;
+}
+function updateReadAs(el, text, precision) {
+  if (!el) return;
+  el.innerHTML = readAsInner(text, precision);
+  const d = parseDate(text);
+  el.classList.toggle('is-invalid', !!String(text ?? '').trim() && (!d || !hasPrecision(d, precision)));
+  icons();
+}
+// Feedback: how a wrong date answer was read.
+function dateReadHtml(text, precision) {
+  const d = parseDate(text);
+  if (!d) return '';
+  const short = !hasPrecision(d, precision);
+  return `<p class="date-read-back">Your answer read as: <strong>${esc(formatDate(d))}</strong>${short ? ` · not enough detail (${esc(precisionHint(precision).replace(/^Give/, 'give').toLowerCase())})` : ''}</p>`;
+}
+const offText = (n, unit) => `${n} ${unit || 'year'}${n === 1 ? '' : 's'}`;
 
 function forgetSheet() {
   try { sessionStorage.removeItem(CALC_KEY); } catch { /* ignore */ }
@@ -235,9 +266,12 @@ export async function runQuiz(root, ctx, opts) {
     calc.setVisible(on);
     if (!on) setSheet(false);
     // Multi-part: Use follows the part that last had focus (disabled on a choice group).
-    const typed = isMulti(q) ? partOf(q)(lastPart)?.answerType !== 'choice' : q.answerType !== 'choice' && !inBlocks(q);
+    const kind = isMulti(q) ? partOf(q)(lastPart)?.answerType : q.answerType;
+    const isDate = kind === 'date';
+    const typed = isMulti(q) ? kind !== 'choice' && !isDate : q.answerType !== 'choice' && !isDate && !inBlocks(q);
     calc.setUseEnabled(on && typed && phase === 'answer',
       inBlocks(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+        : isDate ? 'Use fills number answers. For this question, type a date.'
         : !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
         : phase !== 'answer' ? 'Use fills the answer on the next question.' : '');
   }
@@ -343,12 +377,14 @@ export async function runQuiz(root, ctx, opts) {
       </div>`;
     }
     const num = p.answerType === 'number';
+    const date = p.answerType === 'date';
     return `<div class="part" data-part="${esc(p.id)}">
       ${head}
       <label class="part-ask" for="part-${esc(p.id)}">${renderInline(p.ask || p.label)}</label>
-      <input id="part-${esc(p.id)}" class="answer-input part-input" data-part="${esc(p.id)}" type="text" ${num ? 'inputmode="decimal"' : ''}
+      <input id="part-${esc(p.id)}" class="answer-input part-input${date ? ' date-input' : ''}" data-part="${esc(p.id)}" type="text" ${num ? 'inputmode="decimal"' : date ? 'inputmode="text"' : ''}
         enterkeyhint="${last ? 'go' : 'next'}" autocapitalize="off" autocorrect="off" spellcheck="false"
-        placeholder="${num ? 'Type a number' : 'Type your answer'}">
+        placeholder="${num ? 'Type a number' : date ? datePlaceholder(p.precision) : 'Type your answer'}"${date ? ` aria-describedby="part-${esc(p.id)}-readas"` : ''}>
+      ${date ? readAsHtml(`part-${esc(p.id)}-readas`, p.precision) : ''}
       ${partHintHtml(p)}
     </div>`;
   }
@@ -371,7 +407,10 @@ export async function runQuiz(root, ctx, opts) {
     return out;
   }
   const isFilled = v => String(v ?? '').trim() !== '';
-  const allFilled = q => Object.values(readParts(q)).every(isFilled);
+  // A part is ready for Check once it has a value (date parts: a value that reads as a date).
+  const partReady = (p, v) => (p?.answerType === 'date' ? !!parseDate(v) : isFilled(v));
+  const partsReady = (q, vals) => (q.parts || []).every(p => partReady(p, vals?.[p.id]));
+  const allFilled = q => partsReady(q, readParts(q));
 
   // `reveal`: also scroll the part to the middle, so the phone's sticky action bar can't hide it.
   function focusPart(id, reveal = false) {
@@ -404,11 +443,12 @@ export async function runQuiz(root, ctx, opts) {
     const vals = readParts(q);
     const ids = (q.parts || []).map(p => p.id);
     const start = Math.max(0, ids.indexOf(fromId));
+    const ready = id => partReady(partOf(q)(id), vals[id]);
     for (let k = 1; k <= ids.length; k++) {
       const id = ids[(start + k) % ids.length];
-      if (!isFilled(vals[id])) { focusPart(id, true); return; }
+      if (!ready(id)) { focusPart(id, true); return; }
     }
-    if (!isFilled(vals[fromId])) { focusPart(fromId, true); return; }
+    if (!ready(fromId)) { focusPart(fromId, true); return; }
     submit(vals);
   }
 
@@ -421,7 +461,12 @@ export async function runQuiz(root, ctx, opts) {
       if (allFilled(q)) submit(readParts(q));
       else enterMulti(q, lastPart);
     });
-    form.addEventListener('input', () => updateCheck(q));
+    form.addEventListener('input', e => {
+      const id = e.target.closest?.('.part')?.dataset.part;
+      const p = id ? partOf(q)(id) : null;
+      if (p?.answerType === 'date') updateReadAs(root.querySelector(`#part-${CSS.escape(id)}-readas`), e.target.value, p.precision);
+      updateCheck(q);
+    });
     const track = e => { const id = e.target.closest?.('[data-part]')?.dataset.part; if (id) setLastPart(id); };
     form.addEventListener('focusin', track);
     form.addEventListener('pointerdown', track); // Safari doesn't focus buttons on click
@@ -1104,6 +1149,15 @@ export async function runQuiz(root, ctx, opts) {
         `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
     }
     const num = q.answerType === 'number';
+    if (q.answerType === 'date') {
+      return `<form class="answer-form" id="answer-form" autocomplete="off">
+      <label class="field-label" for="answer">Your answer</label>
+      <input id="answer" class="answer-input date-input" type="text" inputmode="text" enterkeyhint="go"
+        autocapitalize="off" autocorrect="off" spellcheck="false"
+        placeholder="${datePlaceholder(q.precision)}" aria-describedby="answer-readas">
+      ${readAsHtml('answer-readas', q.precision)}
+    </form>`;
+    }
     // The Check button lives in the action bar (sticky on phones) and targets this form by id.
     return `<form class="answer-form" id="answer-form" autocomplete="off">
       <label class="field-label" for="answer">Your answer</label>
@@ -1269,6 +1323,17 @@ export async function runQuiz(root, ctx, opts) {
     const form = root.querySelector('.answer-form');
     if (form) {
       form.addEventListener('submit', e => { e.preventDefault(); submit(root.querySelector('#answer').value); });
+      if (q.answerType === 'date') {
+        // Live "Read as" line; Check needs a value that reads as a date.
+        const input = root.querySelector('#answer');
+        const sync = () => {
+          updateReadAs(root.querySelector('#answer-readas'), input.value, q.precision);
+          const btn = root.querySelector('#check');
+          if (btn && phase === 'answer') btn.disabled = !parseDate(input.value);
+        };
+        input.addEventListener('input', sync);
+        sync();
+      }
       root.querySelector('#answer').focus();
     }
     root.querySelectorAll('.choice').forEach(b =>
@@ -1327,13 +1392,13 @@ export async function runQuiz(root, ctx, opts) {
     const multi = isMulti(q);
     const blocks = inBlocks(q);
     if (multi) {
-      if (!value || typeof value !== 'object' || !Object.values(value).every(isFilled)) { enterMulti(q, lastPart); return; }
+      if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
     } else if (q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
       if (!b || b.disabled) return;
     } else if (blocks) {
       if (!tilesReady()) return;
-    } else if (!String(value ?? '').trim()) {
+    } else if (!String(value ?? '').trim() || (q.answerType === 'date' && !parseDate(value))) {
       root.querySelector('#answer')?.focus();
       return;
     }
@@ -1367,7 +1432,9 @@ export async function runQuiz(root, ctx, opts) {
     const nRight = multi ? res.parts.filter(p => p.correct).length : 0;
     // A close answer counts as "almost": still a try, with a nudge to check spelling or rounding.
     const almost = !multi && !!res.fuzzy;
-    const nudge = almost ? (res.fuzzy.kind === 'number' ? 'very close, check your rounding' : 'very close, check the spelling') : '';
+    const nudge = !almost ? '' : res.fuzzy.kind === 'date' ? `${offText(res.fuzzy.off, q.precision)} out, check the date`
+      : res.fuzzy.mode === 'years' ? `${offText(res.fuzzy.off, 'year')} out`
+      : res.fuzzy.kind === 'number' ? 'very close, check your rounding' : 'very close, check the spelling';
     root.querySelector('#feedback').innerHTML = `<div class="feedback ${almost ? 'partial' : 'bad'} guided-retry">
         <p class="feedback-title">${icon(almost ? 'circle-dot' : 'circle-x')}<span>${almost ? `Almost · ${esc(nudge)}` : 'Not quite, try again'}</span></p>
         <p class="feedback-sub">${multi ? `${nRight} of ${res.parts.length} parts right${nClose ? ` · ${nClose} almost` : ''} · ` : ''}Tries: ${gs.tries}</p>
@@ -1513,8 +1580,8 @@ export async function runQuiz(root, ctx, opts) {
     const q = questions[idx];
     const multi = isMulti(q);
     if (multi) {
-      if (!value || typeof value !== 'object' || !Object.values(value).every(isFilled)) { enterMulti(q, lastPart); return; }
-    } else if (q.answerType !== 'choice' && !String(value ?? '').trim()) {
+      if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
+    } else if (q.answerType !== 'choice' && (!String(value ?? '').trim() || (q.answerType === 'date' && !parseDate(value)))) {
       if (!inBlocks(q)) root.querySelector('#answer')?.focus();
       return;
     }
@@ -1597,7 +1664,7 @@ export async function runQuiz(root, ctx, opts) {
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${feedbackTitle(g, state, partsSub)}</p>
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
-          : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
+          : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
         ${q.runnable ? '<div class="expected-output" id="expected-output"></div>' : ''}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;

@@ -4,6 +4,7 @@
   "description": "Perimeter and area, angles, Pythagoras and the volume of solids.",
   "icon": "triangle",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "perimeter-area", "title": "Perimeter and area", "difficulties": ["easy", "medium", "hard", "expert"] },

@@ -4,6 +4,7 @@
   "description": "Who made the breakthroughs in communication, transport, medicine and everyday technology, and when.",
   "icon": "lightbulb",
   "type": "csv",
+  "fuzzyNumber": { "mode": "years", "level": 1 },
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "communication", "title": "Communication", "difficulties": ["easy", "medium", "hard"] },

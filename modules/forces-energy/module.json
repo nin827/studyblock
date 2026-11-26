@@ -4,6 +4,7 @@
   "description": "Newton's second law, weight, work, power, efficiency, kinetic and potential energy, and momentum, in SI units.",
   "icon": "rocket",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "forces", "title": "Forces", "difficulties": ["easy", "medium", "hard", "expert"] },
