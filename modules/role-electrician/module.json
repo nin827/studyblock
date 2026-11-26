@@ -1,0 +1,16 @@
+{
+  "id": "role-electrician",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join circuit loads, breaker and cable choices, resistor networks and running costs, as a working electrician meets them (arithmetic practice only).",
+  "icon": "plug-zap",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "breaker-load", "title": "Circuit load and breaker", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "cable-drop", "title": "Cable and voltage drop", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fault-finding", "title": "Resistor networks and faults", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "running-cost", "title": "Running cost and payback", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "role-surveyor",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join bearings, coordinates, traverse closure, plot areas and level books, as a land surveyor meets them.",
+  "icon": "land-plot",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "coordinates", "title": "Bearings and coordinates", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "traverse-closure", "title": "Traverse closure", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "plot-area", "title": "Plot area by coordinates", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "levelling", "title": "Level books and misclosure", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

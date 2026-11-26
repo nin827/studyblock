@@ -1,0 +1,16 @@
+{
+  "id": "role-pilot",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join the wind triangle, fuel, chart distances and bearings, time zones and descent planning, as a pilot meets them (practice figures only).",
+  "icon": "plane",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "wind-triangle", "title": "Wind triangle and ground speed", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fuel-planning", "title": "Fuel planning", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "chart-work", "title": "Chart distances and bearings", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "eta-descent", "title": "ETA, time zones and descent", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "id": "electrician",
+  "title": "Electrician",
+  "icon": "plug-zap",
+  "flags": ["safety_critical", "license_oriented", "experience_heavy", "region_specific"],
+  "startNotice": {
+    "title": "For learning only",
+    "text": "This role is **arithmetic practice only**. Every figure and table is made up, and none of it is a wiring rule or a design value. **Never work on real wiring** from these questions: that needs a qualified electrician and your local rules."
+  },
+  "description": "Circuit loads, breakers, cable and voltage drop, resistor networks and running costs: arithmetic practice with made-up tables and every rule stated.",
+  "exclusive": "role-electrician",
+  "mix": {
+    "electricity": { "weight": 5 },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "time-speed"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "business-math": { "weight": 1, "subtopics": ["percentages", "margins"] },
+    "algebra": { "weight": 1, "subtopics": ["linear"] }
+  },
+  "subroles": [
+    {
+      "id": "installation-electrician",
+      "title": "Installation Electrician",
+      "icon": "cable",
+      "description": "Circuit loads, breaker choice from a stated list, cable sizing from a stated table and voltage drop.",
+      "mix": {
+        "electricity": { "weight": 5, "subtopics": ["ohms-law", "power"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["length"] },
+        "algebra": { "weight": 1, "subtopics": ["linear"] }
+      },
+      "exclusiveSubtopics": ["breaker-load", "cable-drop"]
+    },
+    {
+      "id": "maintenance-electrician",
+      "title": "Maintenance Electrician",
+      "icon": "wrench",
+      "description": "Fault finding with Ohm's law, series and parallel resistance, power and the running cost of motors and appliances.",
+      "mix": {
+        "electricity": { "weight": 5, "subtopics": ["ohms-law", "series-parallel", "power"] },
+        "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] }
+      },
+      "exclusiveSubtopics": ["fault-finding", "running-cost"]
+    }
+  ]
+}
