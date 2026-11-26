@@ -4,7 +4,8 @@
   "icon": "network",
   "flags": [
     "experience_heavy",
-    "tool_heavy"
+    "tool_heavy",
+    "tool_specific"
   ],
   "description": "Subnets, transfer times, ciphers and logs, worked from the address plan to the security alert.",
   "exclusive": "role-network-engineer",

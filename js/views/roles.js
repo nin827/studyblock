@@ -59,11 +59,13 @@ const FLAGS = {
     text: 'Laws and standards differ between countries; questions use general textbook versions.' },
   tool_heavy: { label: 'Tool-driven', icon: 'wrench', kind: 'TIP', title: 'Real work runs on tools',
     text: 'Day to day this is done in software (spreadsheets, SQL, engines, simulators). These questions practise the reasoning behind the tools.' },
+  tool_specific: { label: 'Tool-specific', icon: 'lock', kind: 'NOTE', title: 'Tied to specific tools',
+    text: 'Some questions assume a particular language, tool, standard or piece of gear, named in the question. Others work differently, so check their conventions before applying an answer elsewhere.' },
   creative_oriented: { label: 'Creative-oriented', icon: 'palette', kind: 'TIP', title: 'Taste and judgement count',
     text: 'Creative choices matter; theory here is a toolkit, not a rulebook.' },
   theory_heavy: { label: 'Theory-led', icon: 'book-open' },
 };
-const CALLOUT_ORDER = ['safety_critical', 'authority_required', 'experience_heavy', 'license_oriented', 'region_specific', 'tool_heavy', 'creative_oriented'];
+const CALLOUT_ORDER = ['safety_critical', 'authority_required', 'experience_heavy', 'license_oriented', 'region_specific', 'tool_specific', 'tool_heavy', 'creative_oriented'];
 
 const warnedFlags = new Set();
 // Known flag ids of one raw role/subrole object (legacy experience_based: true counts); unknown ids warn once per role.

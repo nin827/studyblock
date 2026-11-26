@@ -4,7 +4,8 @@
   "icon": "chart-line",
   "flags": [
     "experience_heavy",
-    "tool_heavy"
+    "tool_heavy",
+    "tool_specific"
   ],
   "description": "Turns data into answers: queries, experiments, KPIs and the statistics behind a call.",
   "exclusive": "role-data-analyst",

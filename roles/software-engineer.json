@@ -4,7 +4,8 @@
   "icon": "code-xml",
   "flags": [
     "experience_heavy",
-    "tool_heavy"
+    "tool_heavy",
+    "tool_specific"
   ],
   "description": "Reads, writes and reviews code, picks the right algorithm and talks to databases and networks.",
   "exclusive": "role-software-engineer",

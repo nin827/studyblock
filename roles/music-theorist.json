@@ -64,6 +64,9 @@
     {
       "id": "arranger",
       "title": "Arranger",
+      "flags": [
+        "tool_specific"
+      ],
       "icon": "list-music",
       "description": "Tempo, bar and piece lengths, note values, and moving parts and keys by an interval.",
       "mix": {
