@@ -20,10 +20,10 @@ const SEP = " | ";
 const segsOf = (c) => (Array.isArray(c) ? c.map(String) : String(c).split(SEP));
 const keyOf = (c) => segsOf(c).join(SEP);
 
-const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
-const cash = (n) => (Number.isInteger(n) ? fmt(n) : Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const fmt = (n) => fmtGroup(n, 0, 2);
+const cash = (n) => (Number.isInteger(n) ? fmt(n) : fmtGroup(n, 2, 2));
 const money = (n) => (n < 0 ? `−$${cash(-n)}` : `$${cash(n)}`);
-import { round2 } from "../../js/lib/mathutil.js";
+import { round2, fmtGroup } from "../../js/lib/mathutil.js";
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const fill = (t, vars) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
 

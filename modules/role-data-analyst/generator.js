@@ -22,7 +22,8 @@ const safeAt = (n, d, margin = 0.05) => Math.abs((Math.abs(n) * 10 ** d) % 1 - 0
 const awayFromInt = (n, margin = 0.02) => Math.abs(n - Math.round(n)) > margin;
 const fmt = (n, d = 4) => String(roundTo(n, d));
 const fix = (n, d) => roundTo(n, d).toFixed(d);
-const thou = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+import { fmtGroup } from "../../js/lib/mathutil.js";
+const thou = (n) => fmtGroup(n, 0, 2);
 const money = (n) => `$${thou(roundTo(n, 2))}`;
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 const givenRows = (pairs) => pairs.map(([label, value]) => ({ label, value }));

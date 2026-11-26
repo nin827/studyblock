@@ -61,3 +61,37 @@ export function fmtAnswer(n, to2dp) {
 }
 
 export const bin8 = d => d.toString(2).padStart(8, '0');
+
+// Thousands-grouped number text, same as the en-US locale formatter with { minimumFractionDigits: minDp,
+// maximumFractionDigits: maxDp }) but pure (the first locale-formatter call loads Intl data, ~20 ms).
+// Rounds the shortest decimal form half away from zero (as ICU does, so 1.005 -> "1.01"), keeps the
+// sign of -0 and of values that round to zero ("-0"), and returns "NaN" / "∞" / "-∞" like en-US.
+export function fmtGroup(n, minDp = 0, maxDp = minDp) {
+  n = Number(n);
+  if (Number.isNaN(n)) return 'NaN';
+  if (!Number.isFinite(n)) return n < 0 ? '-∞' : '∞';
+  const neg = n < 0 || Object.is(n, -0);
+  let s = String(Math.abs(n));
+  let e = 0;
+  const ei = s.indexOf('e');
+  if (ei >= 0) { e = Number(s.slice(ei + 1)); s = s.slice(0, ei); }
+  let [ip, fp = ''] = s.split('.');
+  if (e > 0) { fp = fp.padEnd(e, '0'); ip += fp.slice(0, e); fp = fp.slice(e); }
+  else if (e < 0) { ip = ip.padStart(1 - e, '0'); fp = ip.slice(e) + fp; ip = ip.slice(0, e); }
+  if (fp.length > maxDp) {
+    const up = fp.charCodeAt(maxDp) >= 53; // digit >= 5
+    fp = fp.slice(0, maxDp);
+    if (up) {
+      const d = (ip + fp).split('');
+      let i = d.length - 1;
+      while (i >= 0 && d[i] === '9') d[i--] = '0';
+      if (i < 0) d.unshift('1'); else d[i] = String(Number(d[i]) + 1);
+      const all = d.join('');
+      ip = all.slice(0, all.length - maxDp);
+      fp = all.slice(all.length - maxDp);
+    }
+  }
+  fp = fp.replace(/0+$/, '').padEnd(minDp, '0');
+  ip = ip.replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+$)/g, ',');
+  return (neg ? '-' : '') + ip + (fp ? '.' + fp : '');
+}

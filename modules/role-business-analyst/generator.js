@@ -17,10 +17,10 @@ import { execQuery } from "../../js/lib/sql.js";
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
-const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+const fmt = (n) => fmtGroup(n, 0, 2);
 const money = (n) => (n < 0 ? `−$${fmt(-n)}` : `$${fmt(n)}`);
 const kmoney = (n) => `$${fmt(n)}k`;
-import { round2 } from "../../js/lib/mathutil.js";
+import { round2, fmtGroup } from "../../js/lib/mathutil.js";
 // verify() uses its own round1, so it does not depend on the library's.
 const round1 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 10 + 1e-9) / 10;
 const signed1 = (n) => (n > 0 ? `+${n.toFixed(1)}%` : n < 0 ? `−${(-n).toFixed(1)}%` : "0.0%");

@@ -13,13 +13,14 @@
 //   resource-plan   effort hours and team size -> working days (round up) -> finish date -> cost; expert-plus works back from a deadline
 
 import { civilToDays, daysToCivil, weekdayOfDays, formatDMY, WEEKDAYS, MONTHS } from "../../js/lib/dates.js";
+import { fmtGroup } from "../../js/lib/mathutil.js";
 
 const TRY = 400;
 const IDS = "ABCDEFGH";
 const SEP = " → ";
 const TIER_N = { medium: 5, hard: 6, expert: 7, "expert-plus": 7 };
 const sum = (a) => a.reduce((s, x) => s + x, 0);
-const money = (n) => (n < 0 ? "−$" : "$") + Math.abs(n).toLocaleString("en-US");
+const money = (n) => (n < 0 ? "−$" : "$") + fmtGroup(Math.abs(n), 0, 3);
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const ord = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] || "th"}`;
 const close = (a, b) => Math.abs(a - b) < 1e-9;

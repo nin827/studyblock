@@ -10,7 +10,7 @@
 
 // ---------- helpers ----------
 
-import { roundTo } from "../../js/lib/mathutil.js";
+import { roundTo, fmtGroup } from "../../js/lib/mathutil.js";
 function nearHalf(n, d, margin = 0.05) {
   const x = Math.abs(n) * 10 ** d;
   return Math.abs(x - Math.floor(x) - 0.5) < margin;
@@ -423,8 +423,8 @@ function genCulture(rng, tier) {
     const all = [
       numPart("g", "Doublings", `Number of doublings in ${fmt(t, 2)} hours`, r.g, 1, "Doublings = time ÷ doubling time."),
       numPart("pop", "Population", "Number of cells after that time", r.pop, 0, "Population = starting number × 2^(number of doublings)."),
-      numPart("ts", "Time to target", `Time from the start until the culture first reaches ${Tg.toLocaleString("en-US")} cells (hours)`, r.ts, 1, "Solve N₀ × 2^g = target. Take logs: g = log₂(target ÷ N₀), or ln(target ÷ N₀) ÷ ln 2. Then multiply by the doubling time."),
-      yesNo("reach", "Within window?", `Does the culture reach ${Tg.toLocaleString("en-US")} cells within ${W} hours of the start?`, ok, "Compare your time to the target with the window."),
+      numPart("ts", "Time to target", `Time from the start until the culture first reaches ${fmtGroup(Tg, 0, 3)} cells (hours)`, r.ts, 1, "Solve N₀ × 2^g = target. Take logs: g = log₂(target ÷ N₀), or ln(target ÷ N₀) ÷ ln 2. Then multiply by the doubling time."),
+      yesNo("reach", "Within window?", `Does the culture reach ${fmtGroup(Tg, 0, 3)} cells within ${W} hours of the start?`, ok, "Compare your time to the target with the window."),
     ];
     const ex = [
       `**Doublings:** ${fmt(t, 2)} ÷ ${Td} = **${fixed(r.g, 1)}**.`,
@@ -433,7 +433,7 @@ function genCulture(rng, tier) {
       `**Window:** ${fixed(r.ts, 1)} h is ${ok ? "within" : "more than"} ${W} h, so **${ok ? "Yes" : "No"}**.`,
     ].slice(0, n).join("\n\n");
     return finish(
-      `A bacterial culture starts with **${N0}** cells and its doubling time is **${Td} hours**. It grows without limit during the experiment. You take a reading at **${fmt(t, 2)} hours**.${n >= 3 ? ` A sample is needed once the culture reaches **${Tg.toLocaleString("en-US")}** cells.` : ""}`,
+      `A bacterial culture starts with **${N0}** cells and its doubling time is **${Td} hours**. It grows without limit during the experiment. You take a reading at **${fmt(t, 2)} hours**.${n >= 3 ? ` A sample is needed once the culture reaches **${fmtGroup(Tg, 0, 3)}** cells.` : ""}`,
       all.slice(0, n), ex, "gd-culture", { N0, Td, t, Tg, W, n }, [["_start", N0], ["_double", Td], ["_time", t]].concat(n >= 3 ? [["_target", Tg]] : []),
       ["Count how many doublings fit in the time first.", "Each doubling multiplies the number of cells by 2."],
     );
@@ -544,8 +544,8 @@ function genGrowthBack(rng) {
     const parts = [
       numPart("td", "Doubling time", "Doubling time of the culture (hours)", r.td, 1, "From N₁ = N₀ × 2^g, the number of doublings is g = log₂(N₁ ÷ N₀). Doubling time = time ÷ g."),
       numPart("p2", "Later count", `Number of cells at ${fmt(T2, 2)} hours`, r.p2, 0, "Doublings = time ÷ doubling time. Then N₀ × 2^doublings."),
-      numPart("ts", "Time to target", `Time from the start until the culture first reaches ${Tg.toLocaleString("en-US")} cells (hours)`, r.ts, 1, "Take logs: doublings needed = log₂(target ÷ N₀), then multiply by the doubling time."),
-      yesNo("reach", "Within window?", `Does the culture reach ${Tg.toLocaleString("en-US")} cells within ${W} hours of the start?`, ok, "Compare your time to the target with the window."),
+      numPart("ts", "Time to target", `Time from the start until the culture first reaches ${fmtGroup(Tg, 0, 3)} cells (hours)`, r.ts, 1, "Take logs: doublings needed = log₂(target ÷ N₀), then multiply by the doubling time."),
+      yesNo("reach", "Within window?", `Does the culture reach ${fmtGroup(Tg, 0, 3)} cells within ${W} hours of the start?`, ok, "Compare your time to the target with the window."),
     ];
     const ex = [
       `**Doubling time:** g = log₂(${N1} ÷ ${N0}) = ${fmt(Math.log(N1 / N0) / Math.LN2, 3)} doublings in ${fmt(t1, 2)} h, so **${fixed(r.td, 1)} h**.`,
@@ -554,7 +554,7 @@ function genGrowthBack(rng) {
       `**Window:** ${fixed(r.ts, 1)} h is ${ok ? "within" : "more than"} ${W} h, so **${ok ? "Yes" : "No"}**.`,
     ].join("\n\n");
     return finish(
-      `A bacterial culture starts with **${N0}** cells. After **${fmt(t1, 2)} hours** there are **${N1}** cells. It keeps doubling at the same rate. A sample is needed once the culture reaches **${Tg.toLocaleString("en-US")}** cells, and the laboratory allows **${W} hours** from the start.`,
+      `A bacterial culture starts with **${N0}** cells. After **${fmt(t1, 2)} hours** there are **${N1}** cells. It keeps doubling at the same rate. A sample is needed once the culture reaches **${fmtGroup(Tg, 0, 3)}** cells, and the laboratory allows **${W} hours** from the start.`,
       parts, ex, "gd-back", { N0, N1, t1, T2, Tg, W }, [["_start", N0], ["_count", N1], ["_time", t1], ["_later", T2], ["_target", Tg]],
       ["Work backwards: the two counts tell you how many doublings happened.", "Once you have the doubling time, the rest is the same growth formula."],
     );

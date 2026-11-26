@@ -11,7 +11,7 @@ import { MONTHS, WEEKDAYS, civilToDays, daysToCivil, weekdayOfDays, formatDMY } 
 const IDS = "ABCDEFGHIJ";
 const SEP = " → ";
 const EXACT = { fuzzyNumber: 0 };
-// Whole dollars with comma groups. Hand-rolled: the first toLocaleString call loads Intl data,
+// Whole dollars with comma groups. Hand-rolled: the first locale-formatting call loads Intl data,
 // which alone took ~20 ms and pushed single generate() calls past the time limit.
 const money = (n) => (n < 0 ? "−$" : "$") + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;

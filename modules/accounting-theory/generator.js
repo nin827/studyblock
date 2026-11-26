@@ -127,7 +127,8 @@ function checkDifficulty(d) {
   if (!["easy", "medium", "hard", "expert"].includes(d)) throw new Error(`unknown difficulty ${d}`);
 }
 
-const money = (n) => `$${n.toLocaleString("en-US")}`;
+import { fmtGroup } from "../../js/lib/mathutil.js";
+const money = (n) => `$${fmtGroup(n, 0, 3)}`;
 
 // ---------------------------------------------------------------------------------------------
 // Transactions. dr/cr are the generator's own answer; `eff` lists the accounts that change and
@@ -525,7 +526,7 @@ function expected(p) {
     case "eq": {
       const d = vTotals(p.tx);
       if (!d) return null;
-      if (p.diff === "hard") return d.map((x) => (x === 0 ? "No change" : `${x > 0 ? "↑" : "↓"} $${p.amount.toLocaleString("en-US")}`));
+      if (p.diff === "hard") return d.map((x) => (x === 0 ? "No change" : `${x > 0 ? "↑" : "↓"} $${fmtGroup(p.amount, 0, 3)}`));
       return d.map((x) => (x === 0 ? "No change" : x > 0 ? "↑ Increase" : "↓ Decrease"));
     }
     default: return null;

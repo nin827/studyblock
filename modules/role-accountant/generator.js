@@ -18,7 +18,8 @@
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
-const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
+import { fmtGroup } from "../../js/lib/mathutil.js";
+const fmt = (n) => fmtGroup(n, 0, 2);
 const money = (n) => (n < 0 ? `−$${fmt(-n)}` : `$${fmt(n)}`);
 const r2 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9) / 100;
 const r1 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 10 + 1e-9) / 10;

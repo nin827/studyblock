@@ -21,7 +21,7 @@ import { roundTo, isHalfStep } from "../../js/lib/mathutil.js";
 
 const TRY = 800;
 const sum = (a) => a.reduce((s, x) => s + x, 0);
-// Thousands separators by hand: toLocaleString's first call warms up Intl (~10–20 ms).
+// Thousands separators by hand: the first locale-formatting call warms up Intl (~10–20 ms).
 const fmt = (n) => { const [i, d] = String(n).split("."); return i.replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (d ? `.${d}` : ""); };
 const r2 = (x) => roundTo(x, 2);
 const f2 = (x) => r2(x).toFixed(2);

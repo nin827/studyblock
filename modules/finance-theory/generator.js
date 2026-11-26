@@ -128,8 +128,9 @@ function checkDifficulty(d) {
   if (!["easy", "medium", "hard", "expert"].includes(d)) throw new Error(`unknown difficulty ${d}`);
 }
 
-const money = (n) => `${n < 0 ? "−" : ""}$${Math.abs(n).toLocaleString("en-US")}`;
-const signed = (n) => `${n < 0 ? "−" : "+"}$${Math.abs(n).toLocaleString("en-US")}`;
+import { fmtGroup } from "../../js/lib/mathutil.js";
+const money = (n) => `${n < 0 ? "−" : ""}$${fmtGroup(Math.abs(n), 0, 3)}`;
+const signed = (n) => `${n < 0 ? "−" : "+"}$${fmtGroup(Math.abs(n), 0, 3)}`;
 const r1 = (x) => Math.round(x * 10 + 1e-9 * Math.sign(x)) / 10;
 const r2 = (x) => Math.round(x * 100 + 1e-9 * Math.sign(x)) / 100;
 // True when x sits (almost) exactly on a rounding half-step at `dp` decimals.
@@ -569,7 +570,8 @@ function vNpv(I, flows, rate) {
   flows.forEach((f, i) => { s += Math.round(f * V_DF[rate][i] * 1000) / 1000; });
   return Math.round(s);
 }
-const vMoney = (n) => `${n < 0 ? "−" : "+"}$${Math.abs(n).toLocaleString("en-US")}`;
+// verify side: its own comma grouping (npv is a whole number), independent of the generator's fmtGroup.
+const vMoney = (n) => `${n < 0 ? "−" : "+"}$${String(Math.abs(n)).replace(/\B(?=(\d{3})+$)/g, ",")}`;
 const vPct = (x) => `${Math.round(x * 10) / 10}%`;
 
 function expected(p) {

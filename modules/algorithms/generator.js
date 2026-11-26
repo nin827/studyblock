@@ -18,6 +18,7 @@
 
 // ---------- helpers ----------
 
+import { fmtGroup } from "../../js/lib/mathutil.js";
 const fmt = (a) => `[${a.join(", ")}]`;
 const code = (a) => "`" + fmt(a) + "`";
 const asc = (a) => a.slice().sort((x, y) => x - y);
@@ -1504,10 +1505,10 @@ function xBudget(rng) {
   while (T1 * (best + 1) ** p <= B * n1 ** p) best++;
   while (T1 * best ** p > B * n1 ** p) best--;
   return {
-    prompt: `An algorithm's running time grows like **${word}** (${o}). It takes **${T1} s** for n = ${n1.toLocaleString("en-GB")} items. Assume the time is exactly proportional to ${word}.`,
+    prompt: `An algorithm's running time grows like **${word}** (${o}). It takes **${T1} s** for n = ${fmtGroup(n1, 0, 3)} items. Assume the time is exactly proportional to ${word}.`,
     answerType: "multi",
     parts: [
-      { id: "time", label: "Time", ask: `How many seconds does it take for n = ${(n1 * m).toLocaleString("en-GB")} items?`, answerType: "number", answer: T2, tolerance: 0,
+      { id: "time", label: "Time", ask: `How many seconds does it take for n = ${fmtGroup(n1 * m, 0, 3)} items?`, answerType: "number", answer: T2, tolerance: 0,
         hint: `n is ${m} times bigger, so the time is ${m}${p > 1 ? `^${p}` : ""} times bigger.` },
       { id: "maxn", label: "Largest n", ask: `What is the largest whole n it can handle in at most **${B} s**?`, answerType: "number", answer: best, tolerance: 0,
         hint: `Solve ${T1} × (n / ${n1})${p > 1 ? `^${p}` : ""} ≤ ${B}, then round **down** to a whole n.` },
