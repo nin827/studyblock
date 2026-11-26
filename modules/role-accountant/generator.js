@@ -35,33 +35,48 @@ const segChoiceOk = (q, id, want, cand) => { const p = partOf(q, id); return !!p
 const FIRMS = ["Northwind Traders", "Harbour & Co", "Bluepeak Retail", "Lumen Goods", "Kestrel Group", "Maple Street Ltd", "Copperleaf Ltd", "Riverside Supplies", "Summit Brands", "Oakline Stores"];
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-// The answer plus up to n − 1 distractors, each differing from it in 1..cols−1 segments.
+// Mixed distances (ticket 022): wrong options differ from the answer in 1..cols−1 columns (1..2 with two
+// columns), at least one in 2+ columns, and the answer's value is not the strict majority in every column.
+// A 3-option set has both wrong options differing in one shared column, one also in a second column.
+function segMixOk(set, answer) {
+  const cols = answer.length, key = answer.join(SEP);
+  const wrong = set.filter((r) => r.join(SEP) !== key);
+  const dist = wrong.map((r) => r.reduce((d, v, i) => d + (v !== answer[i] ? 1 : 0), 0));
+  if (!dist.some((d) => d >= 2)) return false;
+  if (cols >= 3 && dist.some((d) => d >= cols)) return false;
+  const strict = (j) => { const m = set.filter((r) => r[j] === answer[j]).length; return set.every((r) => r[j] === answer[j] || set.filter((x) => x[j] === r[j]).length < m); };
+  return !answer.every((_, j) => strict(j));
+}
+// The answer plus n − 1 distractors drawn from opts (per-column values), redrawn with the same rng until the rule holds.
 function segChoices(rng, answer, opts, prefer = [], n = 5, distinct = false) {
-  const cols = answer.length;
-  const seen = new Set([answer.join(SEP)]);
-  const out = [answer];
-  const add = (c) => {
-    if (out.length >= n) return;
-    const d = c.filter((v, i) => v !== answer[i]).length;
-    if (d < 1 || d >= cols) return;
-    if (distinct && new Set(c).size < cols) return; // e.g. a journal never debits and credits one account
-    const k = c.join(SEP);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(c);
-  };
-  prefer.forEach(add);
-  for (let g = 0; out.length < n && g < 400; g++) {
-    const k = cols > 2 && rng.next() < 0.5 ? 2 : 1;
-    const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
-    const c = answer.slice();
-    for (const i of idx) {
-      const alt = opts[i].filter((v) => v !== answer[i]);
-      if (alt.length) c[i] = rng.pick(alt);
+  const cols = answer.length, maxD = cols === 2 ? 2 : cols - 1;
+  const ok = (c) => !(distinct && new Set(c).size < cols); // e.g. a journal never debits and credits one account
+  const alts = (i) => opts[i].filter((v) => v !== answer[i]);
+  let best = [answer];
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const seen = new Set([answer.join(SEP)]);
+    const out = [answer];
+    const add = (c) => {
+      if (out.length >= n) return;
+      const d = c.filter((v, i) => v !== answer[i]).length;
+      if (d < 1 || d > maxD || !ok(c)) return;
+      const k = c.join(SEP);
+      if (seen.has(k)) return;
+      seen.add(k); out.push(c);
+    };
+    const mk = (idx) => { const c = answer.slice(); for (const i of idx) { const a = alts(i); if (a.length) c[i] = rng.pick(a); } return c; };
+    const order = rng.shuffle([...Array(cols).keys()]);
+    if (n <= 3) {
+      add(mk([order[0]])); add(mk([order[0], order[1]]));
+    } else {
+      if (attempt < 100 && cols > 2) prefer.forEach(add); // with two columns, near-misses on one side would let counting find the answer
+      add(mk(order.slice(0, 2)));
+      for (let g = 0; out.length < n && g < 400; g++) add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 1 + (rng.next() < 0.5 ? 1 : 0) + (cols > 3 && rng.next() < 0.25 ? 1 : 0))));
     }
-    add(c);
+    if (out.length > best.length) best = out;
+    if (out.length >= n && segMixOk(out, answer)) return rng.shuffle(out);
   }
-  return rng.shuffle(out);
+  return rng.shuffle(best);
 }
 function segPart(rng, { id, label, ask, cols, answer, opts, prefer, hint, n, distinct }) {
   const choices = segChoices(rng, answer, opts, prefer, n, distinct);

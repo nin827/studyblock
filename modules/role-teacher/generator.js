@@ -382,8 +382,10 @@ function compose(rng, tier, subtopic) {
 // Choice options for the diagnosis part: error type | next step.
 function diagOptions(rng, typeKey) {
   const answer = [TYPES[typeKey], NEXT[typeKey]];
-  const others = rng.shuffle(Object.keys(TYPES).filter((t) => t !== typeKey));
-  const opts = [answer, [TYPES[others[0]], NEXT[typeKey]], [TYPES[others[1]], NEXT[typeKey]], [TYPES[typeKey], NEXT[others[2]]], [TYPES[typeKey], NEXT[others[3]]]];
+  // Ticket 022: every option is a coherent pair (a type with its own next step), so no value repeats, the
+  // wrong options differ from the answer in both columns, and nothing gives the answer away by counting or fit.
+  const others = Object.keys(TYPES).filter((t) => t !== typeKey);
+  const opts = [answer, ...others.map((t) => [TYPES[t], NEXT[t]])];
   return { answer, choices: rng.shuffle(opts) };
 }
 

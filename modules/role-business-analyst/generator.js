@@ -34,31 +34,41 @@ const part = (answer, id) => (answer && typeof answer === "object" ? answer[id] 
 
 // The answer plus up to n − 1 distractors, each differing from it in 1–2 segments (never all).
 // `prefer` candidates (the likeliest mistakes) are tried first, then random swaps.
+// Ticket 022 (mixed distances): at least one wrong option differs in 2+ columns (both columns allowed with two),
+// none in every column with 3+, and the answer's value is not the strict majority in every column; redrawn
+// with the same rng until the rule holds.
+function segMixOk(set, answer) {
+  const cols = answer.length, key = answer.join(SEP);
+  const wrong = set.filter((r) => r.join(SEP) !== key);
+  const dist = wrong.map((r) => r.reduce((d, v, i) => d + (v !== answer[i] ? 1 : 0), 0));
+  if (!dist.some((d) => d >= 2)) return false;
+  if (cols >= 3 && dist.some((d) => d >= cols)) return false;
+  const strict = (j) => { const m = set.filter((r) => r[j] === answer[j]).length; return set.every((r) => r[j] === answer[j] || set.filter((x) => x[j] === r[j]).length < m); };
+  return !answer.every((_, j) => strict(j));
+}
 function segChoices(rng, answer, opts, prefer = [], n = 5) {
-  const cols = answer.length;
-  const seen = new Set([answer.join(SEP)]);
-  const out = [answer];
-  const add = (c) => {
-    if (out.length >= n) return;
-    const d = c.filter((v, i) => v !== answer[i]).length;
-    if (d < 1 || d >= cols || d > 2) return;
-    const k = c.join(SEP);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(c);
-  };
-  prefer.forEach(add);
-  for (let g = 0; out.length < n && g < 400; g++) {
-    const k = cols > 2 && rng.next() < 0.5 ? 2 : 1;
-    const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
-    const c = answer.slice();
-    for (const i of idx) {
-      const alt = opts[i].filter((v) => v !== answer[i]);
-      if (alt.length) c[i] = rng.pick(alt);
-    }
-    add(c);
+  const cols = answer.length, maxD = cols === 2 ? 2 : cols - 1;
+  const alts = (i) => opts[i].filter((v) => v !== answer[i]);
+  let best = [answer];
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const seen = new Set([answer.join(SEP)]);
+    const out = [answer];
+    const add = (c) => {
+      if (out.length >= n) return;
+      const d = c.filter((v, i) => v !== answer[i]).length;
+      if (d < 1 || d > maxD) return;
+      const k = c.join(SEP);
+      if (seen.has(k)) return;
+      seen.add(k); out.push(c);
+    };
+    const mk = (idx) => { const c = answer.slice(); for (const i of idx) { const a = alts(i); if (a.length) c[i] = rng.pick(a); } return c; };
+    if (attempt < 100) prefer.forEach(add);
+    add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 2)));
+    for (let g = 0; out.length < n && g < 400; g++) add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 1 + (rng.next() < 0.5 ? 1 : 0))));
+    if (out.length > best.length) best = out;
+    if (out.length >= n && segMixOk(out, answer)) return rng.shuffle(out);
   }
-  return rng.shuffle(out);
+  return rng.shuffle(best);
 }
 
 // A segmented choice part: `answer` and options are arrays, one segment per column.
@@ -253,7 +263,7 @@ function genSalesReview(rng) {
   const mshare = ((focus.rev_2026 / m.size_2026) * 100).toFixed(2);
   const flipS = bcgOf(highG, !highS), flipG = bcgOf(!highG, highS);
   const rsOpts = [...new Set([rsTxt, inv, mshare, (focus.rev_2025 / focus.rival_2026).toFixed(2)])];
-  preferRs.push([inv, cat], [rsTxt, flipS], [rsTxt, flipG], [mshare, cat]);
+  preferRs.push([inv, bcgOf(highG, parseFloat(inv) >= 1)], [inv, cat],[rsTxt, flipS], [rsTxt, flipG], [mshare, cat]);
   const bcgPart = segPart(rng, {
     id: "bcg", label: "Boston matrix", ask: "The product's relative market share (2 decimal places) and its Boston matrix category?",
     cols: ["Relative share", "Boston category"], answer: [rsTxt, cat], opts: [rsOpts, BCG], prefer: preferRs,

@@ -55,20 +55,43 @@ const hexAccepts = (n) => { const h = hexOf(n); return [...new Set([`0x${h}`, h.
 const popcount = (n) => { let c = 0; for (let i = 0; i < 8; i++) if ((n >> i) & 1) c++; return c; };
 
 // Build `n` distinct segmented options (answer included) that differ from the answer in 1..cols-1 columns.
-function segOptions(rng, answer, opts, n) {
-  const out = [answer];
-  const key = (a) => a.join(" | ");
-  let guard = 0;
-  while (out.length < n && guard++ < 400) {
-    const c = answer.slice();
-    const idx = rng.shuffle(answer.map((_, i) => i)).slice(0, rng.int(1, answer.length - 1 || 1));
-    for (const i of idx) { const alt = opts[i].filter((v) => v !== answer[i]); if (alt.length) c[i] = rng.pick(alt); }
-    if (!out.some((o) => key(o) === key(c))) out.push(c);
-  }
-  return rng.shuffle(out);
+// Ticket 022 (mixed distances): at least one wrong option differs in 2+ columns (both columns allowed with two),
+// none in every column with 3+, and the answer's value is not the strict majority in every column; redrawn
+// with the same rng until the rule holds. `valid` keeps every option a sensible combination.
+function segMixOk(set, answer) {
+  const cols = answer.length, key = answer.join(" | ");
+  const wrong = set.filter((r) => r.join(" | ") !== key);
+  const dist = wrong.map((r) => r.reduce((d, v, i) => d + (v !== answer[i] ? 1 : 0), 0));
+  if (!dist.some((d) => d >= 2)) return false;
+  if (cols >= 3 && dist.some((d) => d >= cols)) return false;
+  const strict = (j) => { const m = set.filter((r) => r[j] === answer[j]).length; return set.every((r) => r[j] === answer[j] || set.filter((x) => x[j] === r[j]).length < m); };
+  return !answer.every((_, j) => strict(j));
 }
-function segPart(rng, { id, label, ask, cols, answer, opts, hint, n }) {
-  const choices = segOptions(rng, answer, opts, n);
+function segOptions(rng, answer, opts, n, valid = () => true) {
+  const cols = answer.length, maxD = cols === 2 ? 2 : cols - 1;
+  const alts = (i) => opts[i].filter((v) => v !== answer[i]);
+  let best = [answer];
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const seen = new Set([answer.join(" | ")]);
+    const out = [answer];
+    const add = (c) => {
+      if (out.length >= n) return;
+      const d = c.filter((v, i) => v !== answer[i]).length;
+      if (d < 1 || d > maxD || !valid(c)) return;
+      const k = c.join(" | ");
+      if (seen.has(k)) return;
+      seen.add(k); out.push(c);
+    };
+    const mk = (idx) => { const c = answer.slice(); for (const i of idx) { const a = alts(i); if (a.length) c[i] = rng.pick(a); } return c; };
+    add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 2)));
+    for (let g = 0; out.length < n && g < 400; g++) add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 1 + (rng.next() < 0.5 ? 1 : 0))));
+    if (out.length > best.length) best = out;
+    if (out.length >= n && segMixOk(out, answer)) return rng.shuffle(out);
+  }
+  return rng.shuffle(best);
+}
+function segPart(rng, { id, label, ask, cols, answer, opts, hint, n, valid }) {
+  const choices = segOptions(rng, answer, opts, n, valid);
   const extraSegs = [];
   cols.forEach((c, i) => { for (const v of new Set(opts[i])) if (v !== answer[i]) extraSegs.push([i, v]); });
   return { id, label, ask, answerType: "choice", choiceCols: cols, choices, answer, extraSegs, hint };
@@ -164,7 +187,7 @@ function genBack(rng) {
       numPart("Rt", "Total resistance", "Total resistance the supply sees (Ω)", r.Rt, 2, "The rated power and the supply voltage fix the total resistance: P = V² ÷ R."),
       numPart("R3", "Unknown resistor", "Value of the unknown resistor R₃ (Ω)", r.R3, 1, "Subtract R₁ from the total to get the parallel block, then solve 1/R_block = 1/R₂ + 1/R₃ for R₃."),
       numPart("I", "Current", "Supply current (A)", r.I, 2, "Rated power = V × I, so I = P ÷ V."),
-      segPart(rng, { id: "fuse", label: "Fuse and cable", ask: "Choose the fuse and the cable", cols, answer, opts, n: 5, hint: "Fuse: smallest rating above the current. Cable: smallest rating that is at least the fuse rating." }),
+      segPart(rng, { id: "fuse", label: "Fuse and cable", ask: "Choose the fuse and the cable", cols, answer, opts, n: 5, valid: (c) => parseInt(c[1], 10) >= parseInt(c[0], 10), hint: "Fuse: smallest rating above the current. Cable: smallest rating that is at least the fuse rating." }),
     ];
     const ex = [
       `**Total resistance:** P = V² ÷ R, so R = ${V}² ÷ ${P} = **${fixed(r.Rt, 2)} Ω**.`,

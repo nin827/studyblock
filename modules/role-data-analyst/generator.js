@@ -34,28 +34,44 @@ const TOL = [0, 0.05, 0.005, 0.0005, 0.00005];
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
 // The answer plus up to n - 1 distractors, each differing from it in 1 to (cols - 1) segments.
-function segChoices(rng, answer, opts, n = 5) {
-  const cols = answer.length;
-  const seen = new Set([answer.join(SEP)]);
-  const out = [answer];
-  for (let g = 0; out.length < n && g < 400; g++) {
-    const k = cols > 2 && rng.next() < 0.5 ? 2 : 1;
-    const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
-    const c = answer.slice();
-    for (const i of idx) {
-      const alt = opts[i].filter((v) => v !== answer[i]);
-      if (alt.length) c[i] = rng.pick(alt);
-    }
-    const dd = c.filter((v, i) => v !== answer[i]).length;
-    const key = c.join(SEP);
-    if (dd < 1 || dd >= cols || seen.has(key)) continue;
-    seen.add(key);
-    out.push(c);
-  }
-  return rng.shuffle(out);
+// Ticket 022 (mixed distances): at least one wrong option differs in 2+ columns (both columns allowed with two),
+// none in every column with 3+, and the answer's value is not the strict majority in every column; redrawn
+// with the same rng until the rule holds. `prefer` lists coherent combinations, tried first.
+function segMixOk(set, answer) {
+  const cols = answer.length, key = answer.join(SEP);
+  const wrong = set.filter((r) => r.join(SEP) !== key);
+  const dist = wrong.map((r) => r.reduce((d, v, i) => d + (v !== answer[i] ? 1 : 0), 0));
+  if (!dist.some((d) => d >= 2)) return false;
+  if (cols >= 3 && dist.some((d) => d >= cols)) return false;
+  const strict = (j) => { const m = set.filter((r) => r[j] === answer[j]).length; return set.every((r) => r[j] === answer[j] || set.filter((x) => x[j] === r[j]).length < m); };
+  return !answer.every((_, j) => strict(j));
 }
-function segPart(rng, { id, label, ask, cols, answer, opts, hint }) {
-  const choices = segChoices(rng, answer, opts, cols.length > 2 ? 5 : 4);
+function segChoices(rng, answer, opts, n = 5, prefer = [], valid = () => true) {
+  const cols = answer.length, maxD = cols === 2 ? 2 : cols - 1;
+  const alts = (i) => opts[i].filter((v) => v !== answer[i]);
+  let best = [answer];
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const seen = new Set([answer.join(SEP)]);
+    const out = [answer];
+    const add = (c) => {
+      if (out.length >= n) return;
+      const d = c.filter((v, i) => v !== answer[i]).length;
+      if (d < 1 || d > maxD || !valid(c)) return;
+      const k = c.join(SEP);
+      if (seen.has(k)) return;
+      seen.add(k); out.push(c);
+    };
+    const mk = (idx) => { const c = answer.slice(); for (const i of idx) { const a = alts(i); if (a.length) c[i] = rng.pick(a); } return c; };
+    if (attempt < 100) prefer.forEach(add);
+    add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 2)));
+    for (let g = 0; out.length < n && g < 400; g++) add(mk(rng.shuffle([...Array(cols).keys()]).slice(0, 1 + (rng.next() < 0.5 ? 1 : 0))));
+    if (out.length > best.length) best = out;
+    if (out.length >= n && segMixOk(out, answer)) return rng.shuffle(out);
+  }
+  return rng.shuffle(best);
+}
+function segPart(rng, { id, label, ask, cols, answer, opts, hint, prefer, valid }) {
+  const choices = segChoices(rng, answer, opts, cols.length > 2 ? 5 : 4, prefer, valid);
   const extraSegs = [];
   cols.forEach((c, i) => { for (const v of new Set(opts[i])) if (v !== answer[i]) extraSegs.push([i, v]); });
   return { id, label, ask, answerType: "choice", choiceCols: cols, choices, answer, extraSegs, hint };
@@ -132,7 +148,10 @@ function genAb(rng, tier) {
     numPart("prob", "Chance", `Probability that at least one of ${d.m} B-${ex.unit} converts, to 4 decimal places`, d.pAtLeast, 4, `Find the chance that none of ${d.m} converts, (1 − p)^${d.m} with B's rate as p, and subtract it from 1.`),
     numPart("need", "Volume needed", `${ex.unit[0].toUpperCase() + ex.unit.slice(1)} B needs to expect ${d.K} conversions (round up to a whole number)`, Math.ceil(d.needV), 0, `Work backwards: ${ex.unit} needed = conversions wanted ÷ B's rate (as a fraction). Round up, since only whole ${ex.unit} can be counted.`, true),
     segPart(rng, { id: "plan", label: "Plan", ask: "Judge each check, then the call", cols: ["Lift check", "Volume check", "Call"], answer: planAns,
-      opts: [["Passes", "Fails"], ["Passes", "Fails"], ["Ship B", "Keep A"]], hint: "Judge the lift check and the volume check separately against their limits. The call is Ship B only if both pass." }),
+      opts: [["Passes", "Fails"], ["Passes", "Fails"], ["Ship B", "Keep A"]],
+      // Coherent combinations first: the call follows from the two checks.
+      prefer: (() => { const f = (v) => (v === "Passes" ? "Fails" : "Passes"), c = (a, b) => [a, b, a === "Passes" && b === "Passes" ? "Ship B" : "Keep A"]; return [c(f(passes[0]), passes[1]), c(passes[0], f(passes[1])), c(f(passes[0]), f(passes[1]))]; })(),
+      hint: "Judge the lift check and the volume check separately against their limits. The call is Ship B only if both pass." }),
   ];
   const exl = {
     rateb: `**Rate of B:** ${d.cB} ÷ ${thou(d.n)} × 100 = **${fix(rateBR, 2)}%**. (Rate of A: ${d.cA} ÷ ${thou(d.n)} × 100 = ${fix(d.rateA, 2)}%.)`,
@@ -206,7 +225,7 @@ function genKpi(rng, tier) {
     choicePart("met", "Target met?", `The target is growth of at least ${d.G}%. Was it met?`, met ? "Yes" : "No", ["Yes", "No"], "Compare the total change % you found with the target. 'At least' includes the target itself."),
     numPart("need", "Needed", `${name} ${set.kpi} needed next quarter (${set.unit}) for total growth of ${d.g}%, other segments flat`, d.need, 0, `Work backwards: the target total is this quarter's total × (1 + ${d.g}/100). Subtract what the other two segments already bring in.`, true),
     segPart(rng, { id: "rank", label: "Ranking", ask: "Name the largest and smallest contributors, then judge the target", cols: ["Largest", "Smallest", `Target ${d.G}% met?`], answer: rank,
-      opts: [set.segs, set.segs, ["Yes", "No"]], hint: "Rank the segments by their change in money, this quarter minus last. Then compare the total change % with the target." }),
+      opts: [set.segs, set.segs, ["Yes", "No"]], valid: (c) => c[0] !== c[1], hint: "Rank the segments by their change in money, this quarter minus last. Then compare the total change % with the target." }),
   ];
   const ex = {
     growth: `**Total change:** the totals are ${d.T0} and ${d.T1}, so (${d.T1} − ${d.T0}) ÷ ${d.T0} × 100 = **${growthTxt}**.`,

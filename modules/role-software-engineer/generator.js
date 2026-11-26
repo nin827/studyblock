@@ -67,15 +67,24 @@ const isNum = (v) => v !== null && v !== undefined && String(v).trim() !== "" &&
 const sameInt = (v, want) => isNum(v) && Number(v) === want;
 const same2dp = (v, exact) => isNum(v) && !nearTie2(exact) && Math.abs(Number(v) - round2(exact)) < 0.005 + 1e-9 && Math.abs(Number(v) - exact) < 0.005 + 1e-9;
 
-// Segmented options: the answer plus 4 pairs that differ from it in exactly one column.
+// Segmented options (ticket 022, mixed distances): the answer plus 4 other pairs, each differing from it in one
+// or both columns. Every pair is coherent (the second column never grows faster than the first: an index never
+// costs more than a full scan, and memory never exceeds time), at least one differs in both columns, and the
+// answer's value is not the strict majority in both columns. Redrawn with the same rng until that holds.
 const ORDERS = ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n²)"];
 function pairOptions(rng, answer, pool) {
-  const wrong = [];
-  for (const v of pool) {
-    if (v !== answer[0]) wrong.push([v, answer[1]]);
-    if (v !== answer[1]) wrong.push([answer[0], v]);
+  const rank = (v) => ORDERS.indexOf(v);
+  const all = [];
+  for (const a of pool) for (const b of pool) if (rank(b) <= rank(a) && !(a === answer[0] && b === answer[1])) all.push([a, b]);
+  const count = (set, j, v) => set.filter((r) => r[j] === v).length;
+  const strict = (set, j) => { const m = count(set, j, answer[j]); return set.every((r) => r[j] === answer[j] || count(set, j, r[j]) < m); };
+  let set = null;
+  for (let t = 0; t < 300; t++) {
+    set = [answer, ...rng.shuffle(all.slice()).slice(0, 4)];
+    const far = set.some((r) => r[0] !== answer[0] && r[1] !== answer[1]);
+    if (far && !(strict(set, 0) && strict(set, 1))) break;
   }
-  return rng.shuffle([answer, ...rng.shuffle(wrong).slice(0, 4)]);
+  return rng.shuffle(set);
 }
 const joinSeg = (a) => a.join(" | ");
 function segOk(question, part, answer, want) {
