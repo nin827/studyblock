@@ -13,24 +13,63 @@ const segsOf = (c) => (Array.isArray(c) ? c.map(String) : String(c).split(" | ")
 const keyOf = (t) => segsOf(t).join(" | ");
 const diffCount = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
 
-// A segmented choice: the right tuple plus wrong tuples that differ in 1..n-1 columns. Easy has
-// exactly 3 options, other levels 5. `extraSegs` ([[column label, value]]) are Build-mode decoys:
-// every value seen in the candidates (plus `extra`) that no option already shows in that column.
+// A segmented choice: the right tuple plus wrong tuples. Easy has exactly 3 options, other levels 5.
+// Mixed distances (ticket 022): wrong options differ in 1..n-1 columns (1..2 when n = 2); at least one
+// differs in 2+ columns; the answer is never the strictly most common value in every column; at Easy
+// both wrong options differ in one shared column and one also in a second. The option set is redrawn
+// (same rng) until that holds and counting values does not find the answer; `plaus(tuple)` (optional)
+// marks combinations that make sense together, and sets with more plausible wrong options win.
+// `extraSegs` ([[column label, value]]) are Build-mode decoys: every value seen in the candidates
+// (plus `extra`) that no option already shows in that column.
 const OPTION_COUNT = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const MIN_DECOYS = { easy: 1, medium: 3, hard: 6, expert: 9 };
-function segChoice(cols, correct, candidates, rng, diff, extra = []) {
+const farOk = (d, n) => (n === 2 ? d <= 2 : d < n);
+function mixOk(rows, ans, easy) {
+  const n = ans.length, key = keyOf(ans);
+  const wrong = rows.filter((r) => keyOf(r) !== key);
+  const dists = wrong.map((r) => diffCount(r, ans));
+  if (!dists.some((d) => d >= 2) || !dists.every((d) => d >= 1 && farOk(d, n))) return false;
+  const major = (j) => {
+    const cnt = new Map();
+    for (const r of rows) cnt.set(r[j], (cnt.get(r[j]) || 0) + 1);
+    const mine = cnt.get(ans[j]);
+    for (const [v, k] of cnt) if (v !== ans[j] && k >= mine) return false;
+    return true;
+  };
+  if (ans.every((_, j) => major(j))) return false;
+  if (easy && !ans.some((_, j) => wrong.every((r) => r[j] !== ans[j]))) return false;
+  return true;
+}
+// Counting attack: the answer is the only option with the highest sum of its values' counts.
+function countPick(rows, ans) {
+  const counts = ans.map((_, j) => { const m = new Map(); for (const r of rows) m.set(r[j], (m.get(r[j]) || 0) + 1); return m; });
+  const score = (r) => r.reduce((s, v, j) => s + counts[j].get(v), 0);
+  const a = score(ans), key = keyOf(ans);
+  return rows.every((r) => keyOf(r) === key || score(r) < a);
+}
+function segChoice(cols, correct, candidates, rng, diff, extra = [], plaus = null) {
   const n = cols.length;
   const want = OPTION_COUNT[diff];
   const seen = new Set([keyOf(correct)]);
-  const wrong = [];
-  for (const c of rng.shuffle(candidates)) {
-    if (wrong.length >= want - 1) break;
+  const pool = [];
+  for (const c of candidates) {
     const d = c.length === n ? diffCount(c, correct) : 0;
-    if (d < 1 || d >= n || seen.has(keyOf(c))) continue;
+    if (d < 1 || !farOk(d, n) || seen.has(keyOf(c))) continue;
     seen.add(keyOf(c));
-    wrong.push(c);
+    pool.push(c);
   }
-  if (wrong.length !== want - 1) throw new Error("not enough segmented options");
+  let best = null, bestScore = -1;
+  for (let t = 0; t < 150 && pool.length >= want - 1; t++) {
+    const wrong = rng.shuffle(pool).slice(0, want - 1);
+    const rows = [correct, ...wrong];
+    if (!mixOk(rows, correct, diff === "easy")) continue;
+    const plausN = plaus ? wrong.filter(plaus).length : 0;
+    const score = (countPick(rows, correct) ? 0 : 100) + plausN;
+    if (score > bestScore) { bestScore = score; best = wrong; }
+    if (score >= 100 + (plaus ? want - 1 : 0)) break;
+  }
+  if (!best) throw new Error("not enough segmented options");
+  const wrong = best;
   const shown = cols.map((_, i) => new Set([correct, ...wrong].map((t) => t[i])));
   const extraSegs = [];
   const add = (i, v) => { if (!shown[i].has(v)) { shown[i].add(v); extraSegs.push([cols[i], v]); } };
@@ -45,7 +84,7 @@ function plainChoice(correct, candidates, rng, max = 4) {
 }
 
 // Choice check shared by verify(): shape, distinct options, exactly one right, wrong options never
-// differ in every column, and `answer` is that right option.
+// differ in every column (with 3+ columns), and `answer` is that right option.
 function choiceOk(q, answer, isRight) {
   const ch = q.choices;
   if (!Array.isArray(ch) || ch.length < 2 || ch.length > 6) return false;
@@ -56,7 +95,7 @@ function choiceOk(q, answer, isRight) {
   if (new Set(tuples.map((t) => t.join(" | "))).size !== tuples.length) return false;
   const right = tuples.filter((t) => isRight(t));
   if (right.length !== 1) return false;
-  if (n > 1 && tuples.some((t) => diffCount(t, right[0]) === n)) return false;
+  if (n > 2 && tuples.some((t) => diffCount(t, right[0]) === n)) return false;
   const a = segsOf(answer);
   if (a.length !== n || diffCount(a, right[0]) !== 0) return false;
   if (!q.choiceCols) return true;

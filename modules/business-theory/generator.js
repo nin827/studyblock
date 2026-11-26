@@ -5,7 +5,7 @@
 //
 // Options that combine two or more facts are segmented choices: `choiceCols` names the columns,
 // each choice is an array with one segment per column, and distractors differ from the answer in
-// one or two segments, never all. `extraSegs` adds decoy blocks for Build mode (never the answer's
+// 1 to n-1 segments (1 or 2 when n = 2), see segChoices. `extraSegs` adds decoy blocks for Build mode (never the answer's
 // value in that column, so the answer is the only correct set of blocks).
 //
 // params.kind tells verify() how to recheck. Classification answers are rechecked by finding the
@@ -27,39 +27,66 @@ import { round2 } from "../../js/lib/mathutil.js";
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const fill = (t, vars) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
 
-function segChoices(rng, answer, opts, prefer, n, valid = () => true) {
-  const cols = answer.length;
-  const seen = new Set([answer.join(SEP)]);
-  const out = [answer];
-  const add = (c) => {
-    if (out.length >= n) return;
-    const d = c.filter((v, i) => v !== answer[i]).length;
-    if (d < 1 || d >= cols || d > 2 || !valid(c)) return;
-    const k = c.join(SEP);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(c);
+// Mixed distances (ticket 022): wrong options differ from the answer in 1..n-1 columns (1..2 when
+// n = 2), at least one in 2+ columns; the answer is never the strictly most common value in every
+// column; and counting values must not find the answer. The pool is every combination of the column
+// values (plus `prefer`), filtered by `valid`; the set is redrawn with the same rng, and sets with more
+// `plaus` (columns that make sense together) wrong options win.
+const diffCount = (a, b) => a.reduce((n, v, i) => n + (v !== b[i] ? 1 : 0), 0);
+const farOk = (d, n) => (n === 2 ? d <= 2 : d < n);
+function mixOk(rows, ans) {
+  const n = ans.length, key = ans.join(SEP);
+  const wrong = rows.filter((r) => r.join(SEP) !== key);
+  const dists = wrong.map((r) => diffCount(r, ans));
+  if (!dists.some((d) => d >= 2) || !dists.every((d) => d >= 1 && farOk(d, n))) return false;
+  const major = (j) => {
+    const cnt = new Map();
+    for (const r of rows) cnt.set(r[j], (cnt.get(r[j]) || 0) + 1);
+    const mine = cnt.get(ans[j]);
+    for (const [v, k] of cnt) if (v !== ans[j] && k >= mine) return false;
+    return true;
   };
-  (prefer || []).forEach(add);
-  for (let g = 0; out.length < n && g < 400; g++) {
-    const k = cols > 2 && rng.next() < 0.5 ? 2 : 1;
-    const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
-    const c = answer.slice();
-    for (const i of idx) {
-      const alt = opts[i].filter((v) => v !== answer[i]);
-      if (alt.length) c[i] = rng.pick(alt);
-    }
-    add(c);
+  return !ans.every((_, j) => major(j));
+}
+function countPick(rows, ans) {
+  const counts = ans.map((_, j) => { const m = new Map(); for (const r of rows) m.set(r[j], (m.get(r[j]) || 0) + 1); return m; });
+  const score = (r) => r.reduce((t, v, j) => t + counts[j].get(v), 0);
+  const a = score(ans), key = ans.join(SEP);
+  return rows.every((r) => r.join(SEP) === key || score(r) < a);
+}
+function segChoices(rng, answer, opts, prefer, n, valid = () => true, plaus = null) {
+  const cols = answer.length;
+  const lists = opts.map((o, i) => [answer[i], ...o.filter((v) => v !== answer[i])]);
+  let combos = [[]];
+  for (const l of lists) combos = combos.flatMap((r) => l.map((v) => [...r, v]));
+  const seen = new Set([answer.join(SEP)]);
+  const pool = [];
+  for (const c of [...(prefer || []), ...combos]) {
+    const d = diffCount(c, answer), k = c.join(SEP);
+    if (d < 1 || !farOk(d, cols) || !valid(c) || seen.has(k)) continue;
+    seen.add(k);
+    pool.push(c);
   }
-  return rng.shuffle(out);
+  let best = null, bestScore = -1;
+  for (let t = 0; t < 150 && pool.length >= n - 1; t++) {
+    const wrong = rng.shuffle(pool).slice(0, n - 1);
+    const rows = [answer, ...wrong];
+    if (!mixOk(rows, answer)) continue;
+    const score = (countPick(rows, answer) ? 0 : 100) + (plaus ? wrong.filter(plaus).length : 0);
+    if (score > bestScore) { bestScore = score; best = rows; }
+    if (score >= 100 + (plaus ? n - 1 : 0)) break;
+  }
+  if (!best) throw new Error("not enough segmented options");
+  return rng.shuffle(best);
 }
 
 // A segmented choice question: 3 options at Easy, 5 above. `opts[i]` lists the values distractors
 // may use in column i; `decoys[i]` adds Build-mode decoy blocks for column i.
 const optionCount = (diff) => (diff === "easy" ? 3 : 5);
 function segQ(rng, diff, prompt, cols, answer, opts, prefer, decoys, rest) {
-  const choices = segChoices(rng, answer, opts, prefer, optionCount(diff), rest.valid);
+  const choices = segChoices(rng, answer, opts, prefer, optionCount(diff), rest.valid, rest.plaus);
   delete rest.valid;
+  delete rest.plaus;
   const extraSegs = [];
   cols.forEach((c, i) => {
     for (const v of new Set([...(opts[i] || []), ...((decoys && decoys[i]) || [])])) if (v !== answer[i]) extraSegs.push([c, v]);
@@ -110,6 +137,8 @@ const rowOf = (f) => [
   f.shares === "none" ? "No shares" : f.shares === "private" ? "Shares sold privately" : "Shares sold to the public",
 ];
 
+const FORM_ROWS = new Set(Object.values(FORM_FACTS).map((f) => rowOf(f).join(SEP)));
+
 const FORM_DESC = {
   "Sole trader": [
     "{p1} owns and runs {biz} alone, keeps all of the profit, and could have to sell personal belongings to pay its debts.",
@@ -154,6 +183,7 @@ function genOwnership(diff, rng) {
       {
         explanation: `A ${form.toLowerCase()}: ${FORM_WHY[form]}\n\nSo: **${ans.join(" · ")}**.`,
         hints: OWN_HINTS, params: { kind: "ownMed", form },
+        plaus: (row) => FORM_ROWS.has(row.join(SEP)), // a real form's row
       });
   }
   if (diff === "hard") {
@@ -329,7 +359,9 @@ function genStakeholders(diff, rng) {
     const ans = [type, INTEREST[g]];
     return segQ(rng, diff, `Using stakeholder analysis, is the following group an internal or external stakeholder of ${firm} Ltd, and what is its main interest? **${g}**`,
       ["Type", "Main interest"], ans, [["Internal", "External"], Object.values(INTEREST)], [], null,
-      { explanation: `${g}: ${type === "Internal" ? "inside" : "outside"} the business, so an **${type.toLowerCase()}** stakeholder. Main interest: **${INTEREST[g].toLowerCase()}**.`, hints: STK_HINTS, params: { kind: "stkMed", g } });
+      { explanation: `${g}: ${type === "Internal" ? "inside" : "outside"} the business, so an **${type.toLowerCase()}** stakeholder. Main interest: **${INTEREST[g].toLowerCase()}**.`, hints: STK_HINTS, params: { kind: "stkMed", g },
+        // the interest belongs to some group of that type
+        plaus: ([t, i]) => (t === "Internal" ? INTERNAL : EXTERNAL).some((x) => INTEREST[x] === i) });
   }
   const c = rng.pick(CONFLICTS);
   const ans = [c.gain, c.lose];
@@ -399,7 +431,8 @@ function genObjectives(diff, rng) {
     const ans = [f.M ? "Yes" : "No", f.A === null ? "Can't tell" : f.A ? "Yes" : "No", f.T ? "Yes" : "No"];
     return segQ(rng, diff, `${firm}'s objective: *"${obj}"* ${rule} Using the SMART criteria, is it measurable, achievable and time-bound?`,
       ["Measurable", "Achievable", "Time-bound"], ans, [["Yes", "No"], ["Yes", "No", "Can't tell"], ["Yes", "No"]], [], null,
-      { explanation: expl, hints: SMART_HINTS, params: { kind: "smartMed", t, n, g } });
+      { explanation: expl, hints: SMART_HINTS, params: { kind: "smartMed", t, n, g },
+        plaus: ([m, a]) => (m === "No") === (a === "Can't tell") }); // no number: achievable can't be judged
   }
   // Hard: target value, achievability and whether it was met.
   const R = rng.int(20, 900) * 100;
@@ -477,7 +510,8 @@ function genSwot(diff, rng) {
     ]);
     return segQ(rng, diff, `${firm} is writing a SWOT analysis. Is this factor internal or external, helpful or harmful, and where does it go? **${cap(facs[0])}**`,
       ["Origin", "Effect", "SWOT"], ans, [["Internal", "External"], ["Helpful", "Harmful"], SWOT], prefer, null,
-      { explanation, hints: SWOT_HINTS, params: { kind: "swotMed", facs } });
+      { explanation, hints: SWOT_HINTS, params: { kind: "swotMed", facs },
+        plaus: ([o, e, w]) => swotOf(o === "Internal", e === "Helpful") === w }); // the grid cell fits the two answers
   }
   return segQ(rng, diff, `${firm} is writing a SWOT analysis. Where does each factor belong?\n\n1. ${cap(facs[0])}\n2. ${cap(facs[1])}\n3. ${cap(facs[2])}`,
     ["Factor 1", "Factor 2", "Factor 3"], cats, [SWOT, SWOT, SWOT], [], null,
@@ -542,6 +576,7 @@ function genPestle(diff, rng) {
         explanation: `- PESTLE: ${PESTLE_WHY[c.cat]} So it is **${c.cat}**.\n- It is outside both firms' control, so in SWOT it can only be an opportunity or a threat, never a strength or weakness.\n- It helps ${order ? f1 : f2}, so it is an **opportunity** for Firm ${order ? 1 : 2}, and harms ${order ? f2 : f1}, so it is a **threat** for Firm ${order ? 2 : 1}.`,
         hints: [PESTLE_HINTS[0], "A PESTLE factor is external, so in a SWOT it becomes an opportunity or a threat. Which one depends on whether it helps or harms that particular firm."],
         params: { kind: "pestleExpert", f: c.f, f1, f2 },
+        plaus: ([, a, b]) => (a === "Opportunity" && b === "Threat") || (a === "Threat" && b === "Opportunity"), // an external change helps one firm and harms the other
       });
   }
   const n = diff === "easy" ? 1 : diff === "medium" ? 2 : 3;
@@ -698,7 +733,7 @@ function checkSegChoice(q, p, want, answer) {
   for (const c of ch) {
     const s = segsOf(c);
     if (s.length !== want.length || s.some((x) => !x || x.length > 40)) return false;
-    if (s.filter((x, i) => x !== want[i]).length === want.length) return false;
+    if (want.length > 2 && s.filter((x, i) => x !== want[i]).length === want.length) return false;
   }
   return checkPlainChoice(ch, want.join(SEP), answer);
 }
