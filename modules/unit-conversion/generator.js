@@ -147,7 +147,9 @@ function chainHints(value, chain, fmt, intro) {
 }
 
 // A plain "convert value from one unit to another" question built from a chain of steps.
-function convertQ(rng, { value, from, chain, fmt, prompt, intro, candidates }) {
+// `facts` ([label, number] pairs) are conversion factors the prompt states; with at least one, the
+// question hands the calculator the value and those factors. Omitted when a stated number equals the answer.
+function convertQ(rng, { value, from, chain, fmt, prompt, intro, candidates, facts = [] }) {
   let cur = value;
   let fv = U[from].v;
   const lines = [given(fv, value)];
@@ -166,6 +168,12 @@ function convertQ(rng, { value, from, chain, fmt, prompt, intro, candidates }) {
     params: { kind: "convert", value, from, to, fmt },
     hints: chainHints(value, chain, fmt, intro),
   };
+  if (facts.length) {
+    const nums = [[U[from].v, value], ...facts];
+    if (!nums.some(([, v]) => Math.abs(v - cur) < 1e-9 || Math.abs(v - round2(cur)) < 1e-9)) {
+      base.given = nums.map(([label, v]) => ({ label, value: v }));
+    }
+  }
   return finish(base, cur, fmt, candidates, rng);
 }
 
@@ -235,47 +243,49 @@ function genLength(difficulty, rng) {
     if (kind === "in-cm") {
       const value = rng.int(2, 60) + rng.pick([0, 0, 0.5]);
       return convertQ(rng, { value, from: "in", chain: [mul("cm", 2.54)], fmt: "exact", prompt: conv(value, "in", "cm") + IN,
-        intro: "Each inch is 2.54 cm, so multiply by 2.54.", candidates: [value / 2.54, value * 25.4, value * 2.5] });
+        intro: "Each inch is 2.54 cm, so multiply by 2.54.", candidates: [value / 2.54, value * 25.4, value * 2.5], facts: [["_cm_per_in", 2.54]] });
     }
     if (kind === "cm-in") {
       const n = rng.int(2, 60);
       const value = clean(n * 2.54);
       return convertQ(rng, { value, from: "cm", chain: [div("in", 2.54)], fmt: "exact", prompt: conv(value, "cm", "in") + IN,
-        intro: "Each inch is 2.54 cm, so divide by 2.54.", candidates: [value * 2.54, n * 10, n + 2, n * 2] });
+        intro: "Each inch is 2.54 cm, so divide by 2.54.", candidates: [value * 2.54, n * 10, n + 2, n * 2], facts: [["_cm_per_in", 2.54]] });
     }
     if (kind === "ft-in") {
       const value = rng.int(2, 20) + rng.pick([0, 0, 0.5, 0.25]);
       return convertQ(rng, { value, from: "ft", chain: [mul("in", 12)], fmt: "exact", prompt: conv(value, "ft", "in") + FT,
-        intro: "Each foot is 12 inches, so multiply by 12.", candidates: [value * 10, value / 12, value * 3] });
+        intro: "Each foot is 12 inches, so multiply by 12.", candidates: [value * 10, value / 12, value * 3], facts: [["_in_per_ft", 12]] });
     }
     const value = 3 * rng.int(2, 80);
     return convertQ(rng, { value, from: "in", chain: [div("ft", 12)], fmt: "exact", prompt: conv(value, "in", "ft") + FT,
-      intro: "Each foot is 12 inches, so divide by 12.", candidates: [value * 12, value / 10, value / 3] });
+      intro: "Each foot is 12 inches, so divide by 12.", candidates: [value * 12, value / 10, value / 3], facts: [["_in_per_ft", 12]] });
   }
 
   const kind = rng.pick(["mi-km", "km-mi", "ft-m", "m-ft"]);
   if (kind === "mi-km") {
     const value = dec(rng, 15, 5000, rng.int(0, 1));
     return convertQ(rng, { value, from: "mi", chain: [mul("km", 1.609)], fmt: "2dp", prompt: conv(value, "mi", "km") + " (1 mile = 1.609 km)",
-      intro: "Each mile is 1.609 km, so multiply by 1.609.", candidates: [value / 1.609, value * 1.6, value * 1.609 * 10] });
+      intro: "Each mile is 1.609 km, so multiply by 1.609.", candidates: [value / 1.609, value * 1.6, value * 1.609 * 10], facts: [["_km_per_mi", 1.609]] });
   }
   if (kind === "km-mi") {
     const value = dec(rng, 5, 2000, rng.int(0, 1));
     return convertQ(rng, { value, from: "km", chain: [div("mi", 1.609)], fmt: "2dp", prompt: conv(value, "km", "mi") + " (1 mile = 1.609 km)",
-      intro: "Each mile is 1.609 km, so divide by 1.609.", candidates: [value * 1.609, value / 1.6, value * 0.6] });
+      intro: "Each mile is 1.609 km, so divide by 1.609.", candidates: [value * 1.609, value / 1.6, value * 0.6], facts: [["_km_per_mi", 1.609]] });
   }
   if (kind === "ft-m") {
     const value = dec(rng, 15, 3000, 1);
     return convertQ(rng, { value, from: "ft", chain: [mul("in", 12), mul("cm", 2.54), div("m", 100)], fmt: "2dp",
       prompt: conv(value, "ft", "m") + " (1 ft = 12 in, 1 in = 2.54 cm)",
       intro: "Go feet → inches → centimetres → metres.",
-      candidates: [value * 12 * 2.54, (value * 2.54) / 100, (value * 12) / 100, value / 3] });
+      candidates: [value * 12 * 2.54, (value * 2.54) / 100, (value * 12) / 100, value / 3],
+      facts: [["_in_per_ft", 12], ["_cm_per_in", 2.54]] });
   }
   const value = dec(rng, 10, 1000, 1);
   return convertQ(rng, { value, from: "m", chain: [mul("cm", 100), div("in", 2.54), div("ft", 12)], fmt: "2dp",
     prompt: conv(value, "m", "ft") + " (1 ft = 12 in, 1 in = 2.54 cm)",
     intro: "Go metres → centimetres → inches → feet.",
-    candidates: [(value * 100) / 2.54, (value * 100 * 2.54) / 12, value * 3, (value * 100) / 12] });
+    candidates: [(value * 100) / 2.54, (value * 100 * 2.54) / 12, value * 3, (value * 100) / 12],
+    facts: [["_in_per_ft", 12], ["_cm_per_in", 2.54]] });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -523,22 +533,22 @@ function tempQ(rng, kind, value, fmt, withFormula) {
   const K_OF_C = ". Use K = °C + 273.15.";
   const C_OF_K = ". Use °C = K − 273.15.";
   const spec = {
-    "C-F": { from: "C", chain: [C2F], hint: withFormula ? F_OF_C : "", intro: "Multiply by 9/5, then add 32.",
+    "C-F": { from: "C", chain: [C2F], facts: withFormula ? [["_offset", 32]] : [], hint: withFormula ? F_OF_C : "", intro: "Multiply by 9/5, then add 32.",
       cand: (c) => [(c * 9) / 5, ((c + 32) * 9) / 5, (c * 5) / 9 + 32] },
-    "F-C": { from: "F", chain: [F2C], hint: withFormula ? C_OF_F : "", intro: "Subtract 32 first, then multiply by 5/9.",
+    "F-C": { from: "F", chain: [F2C], facts: withFormula ? [["_offset", 32]] : [], hint: withFormula ? C_OF_F : "", intro: "Subtract 32 first, then multiply by 5/9.",
       cand: (f) => [f - 32, ((f - 32) * 9) / 5, (f * 5) / 9 - 32] },
-    "C-K": { from: "C", chain: [C2K], hint: withFormula ? K_OF_C : KNOTE, intro: "A kelvin step is the same size as a degree Celsius; just add 273.15.",
+    "C-K": { from: "C", chain: [C2K], facts: [["_offset", 273.15]], hint: withFormula ? K_OF_C : KNOTE, intro: "A kelvin step is the same size as a degree Celsius; just add 273.15.",
       cand: (c) => [c - 273.15, c + 273, c + 373.15] },
-    "K-C": { from: "K", chain: [K2C], hint: withFormula ? C_OF_K : KNOTE, intro: "A kelvin step is the same size as a degree Celsius; just subtract 273.15.",
+    "K-C": { from: "K", chain: [K2C], facts: [["_offset", 273.15]], hint: withFormula ? C_OF_K : KNOTE, intro: "A kelvin step is the same size as a degree Celsius; just subtract 273.15.",
       cand: (k) => [k + 273.15, k - 273, k - 373.15] },
-    "F-K": { from: "F", chain: [F2C, C2K], hint: KNOTE, intro: "Go via Celsius: °C = (°F − 32) × 5/9, then K = °C + 273.15.",
+    "F-K": { from: "F", chain: [F2C, C2K], facts: [["_offset", 273.15]], hint: KNOTE, intro: "Go via Celsius: °C = (°F − 32) × 5/9, then K = °C + 273.15.",
       cand: (f) => [((f - 32) * 5) / 9, f + 273.15, ((f - 32) * 9) / 5 + 273.15] },
-    "K-F": { from: "K", chain: [K2C, C2F], hint: KNOTE, intro: "Go via Celsius: °C = K − 273.15, then °F = °C × 9/5 + 32.",
+    "K-F": { from: "K", chain: [K2C, C2F], facts: [["_offset", 273.15]], hint: KNOTE, intro: "Go via Celsius: °C = K − 273.15, then °F = °C × 9/5 + 32.",
       cand: (k) => [k - 273.15, (k * 9) / 5 + 32, ((k + 273.15) * 9) / 5 + 32] },
   }[kind];
   const to = spec.chain[spec.chain.length - 1].to;
   return convertQ(rng, { value, from: spec.from, chain: spec.chain, fmt, prompt: conv(value, spec.from, to) + spec.hint,
-    intro: spec.intro, candidates: spec.cand(value) });
+    intro: spec.intro, candidates: spec.cand(value), facts: spec.facts });
 }
 
 function genTemperature(difficulty, rng) {

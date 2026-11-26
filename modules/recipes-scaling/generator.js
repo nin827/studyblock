@@ -39,6 +39,9 @@ const nearTie = (x, step) => Math.abs((x / step) - Math.floor(x / step) - 0.5) <
 const approx = (x, k) => (Math.abs(x * 10000 - Math.round(x * 10000)) < 1e-6 ? `= ${num(x)}` : `≈ ${x.toFixed(k)}`);
 const EXACT = { fuzzyNumber: 0 }; // whole counts (servings, packs, bakes, minutes) are exact
 
+// `given` rows for the stated numbers ([label, value] pairs); left out when one equals the answer.
+const givenOf = (ans, list) => (list.some(([, v]) => v === ans) ? {} : { given: list.map(([label, value]) => ({ label, value })) });
+
 const FRACTIONS = { 0.25: "¼", 0.5: "½", 0.75: "¾", [1 / 3]: "⅓", [2 / 3]: "⅔" };
 function cupText(c) {
   const whole = Math.floor(c + 1e-9);
@@ -353,24 +356,28 @@ function genUnits(difficulty, rng) {
       const n = rng.int(2, 20);
       const what = rng.pick(SPOONED);
       return { prompt: `Use **1 tablespoon (tbsp) = 3 teaspoons (tsp)**. A recipe needs **${n} tbsp** of ${what}. How many teaspoons is that?`, answerType: "number", answer: 3 * n, tolerance: 0,
-        explanation: `Teaspoons are smaller, so multiply: ${n} × 3 = **${3 * n} tsp**.`, hints: ["A teaspoon is the smaller spoon, so you need more of them.", `Multiply ${n} by 3.`], params: { kind, n } };
+        explanation: `Teaspoons are smaller, so multiply: ${n} × 3 = **${3 * n} tsp**.`, hints: ["A teaspoon is the smaller spoon, so you need more of them.", `Multiply ${n} by 3.`], params: { kind, n },
+        ...givenOf(3 * n, [["_tbsp", n], ["_tsp_per_tbsp", 3]]) };
     }
     if (kind === "tsp-tbsp") {
       const n = 3 * rng.int(2, 20);
       const what = rng.pick(SPOONED);
       return { prompt: `Use **1 tablespoon (tbsp) = 3 teaspoons (tsp)**. A recipe needs **${n} tsp** of ${what}. How many tablespoons is that?`, answerType: "number", answer: n / 3, tolerance: 0,
-        explanation: `Tablespoons are bigger, so divide: ${n} / 3 = **${n / 3} tbsp**.`, hints: ["A tablespoon is the bigger spoon, so you need fewer of them.", `Divide ${n} by 3.`], params: { kind, n } };
+        explanation: `Tablespoons are bigger, so divide: ${n} / 3 = **${n / 3} tbsp**.`, hints: ["A tablespoon is the bigger spoon, so you need fewer of them.", `Divide ${n} by 3.`], params: { kind, n },
+        ...givenOf(n / 3, [["_tsp", n], ["_tsp_per_tbsp", 3]]) };
     }
     if (kind === "cup-tbsp") {
       const n = rng.int(2, 8);
       const what = rng.pick(CUPPED);
       return { prompt: `Use **1 cup = 16 tablespoons (tbsp)**. How many tablespoons of ${what} are in **${n} cups**?`, answerType: "number", answer: 16 * n, tolerance: 0,
-        explanation: `${n} × 16 = **${16 * n} tbsp**.`, hints: ["A cup holds many tablespoons, so multiply.", `Multiply ${n} by 16.`], params: { kind, n } };
+        explanation: `${n} × 16 = **${16 * n} tbsp**.`, hints: ["A cup holds many tablespoons, so multiply.", `Multiply ${n} by 16.`], params: { kind, n },
+        ...givenOf(16 * n, [["_cups", n], ["_tbsp_per_cup", 16]]) };
     }
     const n = rng.int(2, 8);
     const what = rng.pick(["milk", "water", "stock", "cream", "juice", "coconut milk"]);
     return { prompt: `Use **1 cup = 240 mL**. How many millilitres of ${what} are in **${n} cups**?`, answerType: "number", answer: 240 * n, tolerance: 0,
-      explanation: `${n} × 240 = **${240 * n} mL**.`, hints: ["Each cup holds the same amount, so multiply.", `Multiply ${n} by the millilitres in one cup.`], params: { kind, n } };
+      explanation: `${n} × 240 = **${240 * n} mL**.`, hints: ["Each cup holds the same amount, so multiply.", `Multiply ${n} by the millilitres in one cup.`], params: { kind, n },
+      ...givenOf(240 * n, [["_cups", n], ["_ml_per_cup", 240]]) };
   }
 
   if (difficulty === "medium") {
@@ -382,29 +389,34 @@ function genUnits(difficulty, rng) {
       if (third) {
         const ans = Math.round(c * 48);
         return { prompt: `Use **1 cup = 16 tbsp** and **1 tbsp = 3 tsp**. How many **teaspoons** of ${what} are in **${cupText(c)} cup**?`, answerType: "number", answer: ans, tolerance: 0,
-          explanation: `1 cup = 16 × 3 = 48 tsp. ${cupText(c)} of 48 = **${ans} tsp**.`, hints: ["First find how many teaspoons are in a whole cup: 16 tbsp × 3.", `Then take ${cupText(c)} of that.`], params: { kind, c, to: "tsp" } };
+          explanation: `1 cup = 16 × 3 = 48 tsp. ${cupText(c)} of 48 = **${ans} tsp**.`, hints: ["First find how many teaspoons are in a whole cup: 16 tbsp × 3.", `Then take ${cupText(c)} of that.`], params: { kind, c, to: "tsp" },
+          ...givenOf(ans, [["_tbsp_per_cup", 16], ["_tsp_per_tbsp", 3]]) }; // c is a third, shown as a fraction: not given
       }
       const ans = Math.round(c * 16);
       return { prompt: `Use **1 cup = 16 tablespoons**. How many tablespoons of ${what} are in **${cupText(c)} cup${c > 1 ? "s" : ""}**?`, answerType: "number", answer: ans, tolerance: 0,
-        explanation: `${num(c)} × 16 = **${ans} tbsp**.`, hints: [`Write ${cupText(c)} as a decimal: ${num(c)}.`, "Multiply it by 16."], params: { kind, c, to: "tbsp" } };
+        explanation: `${num(c)} × 16 = **${ans} tbsp**.`, hints: [`Write ${cupText(c)} as a decimal: ${num(c)}.`, "Multiply it by 16."], params: { kind, c, to: "tbsp" },
+        ...givenOf(ans, [["_cups", c], ["_tbsp_per_cup", 16]]) };
     }
     if (kind === "ml-tsp") {
       const n = 5 * rng.int(2, 30);
       const what = rng.pick(["vanilla extract", "soy sauce", "lemon juice", "olive oil", "maple syrup"]);
       return { prompt: `Use **1 teaspoon = 5 mL**. How many teaspoons is **${n} mL** of ${what}?`, answerType: "number", answer: n / 5, tolerance: 0,
-        explanation: `${n} / 5 = **${n / 5} tsp**.`, hints: ["Each teaspoon holds 5 mL.", `Divide ${n} by 5.`], params: { kind, n } };
+        explanation: `${n} / 5 = **${n / 5} tsp**.`, hints: ["Each teaspoon holds 5 mL.", `Divide ${n} by 5.`], params: { kind, n },
+        ...givenOf(n / 5, [["_ml", n], ["_ml_per_tsp", 5]]) };
     }
     if (kind === "oz-g") {
       const n = rng.int(2, 32);
       const what = rng.pick(["cheese", "chocolate", "butter", "pasta", "nuts", "raisins"]);
       return { prompt: `Use **1 ounce (oz) = 28 g**. How many grams is **${n} oz** of ${what}?`, answerType: "number", answer: 28 * n, tolerance: 0,
-        explanation: `${n} × 28 = **${28 * n} g**.`, hints: ["Grams are smaller than ounces, so multiply.", `Multiply ${n} by 28.`], params: { kind, n } };
+        explanation: `${n} × 28 = **${28 * n} g**.`, hints: ["Grams are smaller than ounces, so multiply.", `Multiply ${n} by 28.`], params: { kind, n },
+        ...givenOf(28 * n, [["_oz", n], ["_g_per_oz", 28]]) };
     }
     if (kind === "c-f") {
       const c = 5 * rng.int(24, 50);
       const what = rng.pick(BAKES);
       return { prompt: `A recipe for ${what} says to bake at **${c} °C**. What is that in °F? Use **°F = °C × 9 / 5 + 32**.`, answerType: "number", answer: (c * 9) / 5 + 32, tolerance: 0,
-        explanation: `${c} × 9 / 5 = ${(c * 9) / 5}; + 32 = **${(c * 9) / 5 + 32} °F**.`, hints: [`Multiply ${c} by 9 and divide by 5 first.`, "Then add 32."], params: { kind, c } };
+        explanation: `${c} × 9 / 5 = ${(c * 9) / 5}; + 32 = **${(c * 9) / 5 + 32} °F**.`, hints: [`Multiply ${c} by 9 and divide by 5 first.`, "Then add 32."], params: { kind, c },
+        ...givenOf((c * 9) / 5 + 32, [["_C", c], ["_offset", 32]]) };
     }
     let f;
     do f = 5 * rng.int(50, 95); while ((((f - 32) * 5) % 9) === 0);
@@ -412,7 +424,8 @@ function genUnits(difficulty, rng) {
     const exact = ((f - 32) * 5) / 9;
     const ans = fix(exact, 1);
     return { prompt: `A recipe for ${what} says to bake at **${f} °F**. What is that in °C? Use **°C = (°F − 32) × 5 / 9** and round to the nearest degree.`, answerType: "number", answer: ans, tolerance: 0,
-      explanation: `${f} − 32 = ${f - 32}; × 5 / 9 ≈ ${exact.toFixed(2)}, which rounds to **${ans} °C**.`, hints: [`Subtract 32 from ${f} first.`, "Then multiply by 5 and divide by 9, and round."], params: { kind, f } };
+      explanation: `${f} − 32 = ${f - 32}; × 5 / 9 ≈ ${exact.toFixed(2)}, which rounds to **${ans} °C**.`, hints: [`Subtract 32 from ${f} first.`, "Then multiply by 5 and divide by 9, and round."], params: { kind, f },
+      ...givenOf(ans, [["_F", f], ["_offset", 32]]) };
   }
 
   if (difficulty === "hard") {
@@ -449,7 +462,8 @@ function genUnits(difficulty, rng) {
       } while (nearTie(exact, 0.1) || g % 14 === 0);
       const ans = fix(exact, 0.1);
       return { prompt: `Use **1 tbsp of butter = 14 g**. How many tablespoons is **${g} g** of butter? Round to 1 decimal place.`, answerType: "number", answer: ans, tolerance: 0.05,
-        explanation: `${g} / 14 ≈ ${exact.toFixed(3)}, which rounds to **${ans.toFixed(1)} tbsp**.`, hints: ["Divide the grams by the grams in one tablespoon.", "Round to 1 decimal place."], params: { kind, g } };
+        explanation: `${g} / 14 ≈ ${exact.toFixed(3)}, which rounds to **${ans.toFixed(1)} tbsp**.`, hints: ["Divide the grams by the grams in one tablespoon.", "Round to 1 decimal place."], params: { kind, g },
+        ...givenOf(ans, [["_g", g], ["_g_per_tbsp", 14]]) };
     }
     if (kind === "lb-g") {
       let lb, oz, exact;
@@ -472,7 +486,8 @@ function genUnits(difficulty, rng) {
     } while (nearTie(exact, 0.01) || Number.isInteger(exact * 4));
     const ans = fix(exact, 0.01);
     return { prompt: `Use **1 cup = 240 mL**. How many cups is **${ml} mL** of milk? Round to 2 decimal places.`, answerType: "number", answer: ans, tolerance: 0.005,
-      explanation: `${ml} / 240 ≈ ${exact.toFixed(4)}, which rounds to **${ans.toFixed(2)} cups**.`, hints: ["Divide the millilitres by 240.", "Round to 2 decimal places."], params: { kind, ml } };
+      explanation: `${ml} / 240 ≈ ${exact.toFixed(4)}, which rounds to **${ans.toFixed(2)} cups**.`, hints: ["Divide the millilitres by 240.", "Round to 2 decimal places."], params: { kind, ml },
+      ...givenOf(ans, [["_ml", ml], ["_ml_per_cup", 240]]) };
   }
 
   // expert

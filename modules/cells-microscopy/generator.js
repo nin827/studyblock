@@ -356,9 +356,15 @@ function unitConv(v, from, to, rng, level, retry = false) {
   }
   const rule = chain.join(", ");
   const prompt = `Convert ${num(val)} ${from} to ${to}. (1 m = 1000 mm, 1 mm = 1000 µm, 1 µm = 1000 nm, 1 cm = 10 mm.)`;
+  // The stated numbers: the size, the factor of 1000 and/or the cm-to-mm factor of 10 on this route.
+  const stated = [["_size", val]];
+  if (stepUnits.includes("cm")) stated.push(["_cm_mm", 10]);
+  if (stepUnits.length > (stepUnits.includes("cm") ? 2 : 1)) stated.push(["_step", 1000]);
+  const givenRows = stated.some(([, x]) => x === exact) ? {} : { given: stated.map(([label, value]) => ({ label, value })) };
   return finish(
     {
       prompt,
+      ...givenRows,
       explanation: `Each step between m, mm, µm and nm is a factor of 1000; cm to mm is a factor of 10.\n\n${rule}, so ${op} ${num(factor)} in total.\n\n\`${num(val)} ${op} ${num(factor)}\` = **${num(exact)} ${to}**`,
       hints: [
         `Going from ${UNIT_NAME[from]} to ${UNIT_NAME[to]}, the unit gets ${e > 0 ? "smaller, so the number gets bigger (multiply)" : "bigger, so the number gets smaller (divide)"}.`,
