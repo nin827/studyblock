@@ -1,11 +1,29 @@
 {
   "id": "stem-focus",
   "name": "STEM focus",
-  "description": "Math and Science only, weighted toward algebra and kinematics.",
+  "description": "Math, Science, Computing and Engineering, weighted toward algebra and kinematics.",
   "config": {
     "domains": {
-      "math": { "weight": 2, "modules": { "arithmetic": 1, "algebra": 2 } },
-      "science": { "weight": 1, "modules": { "kinematics": 2, "elements": 1 } }
+      "math": {
+        "weight": 2,
+        "modules": {
+          "arithmetic": 1,
+          "algebra": 2
+        }
+      },
+      "science": {
+        "weight": 2,
+        "modules": {
+          "kinematics": 2,
+          "elements": 1
+        }
+      },
+      "computing": {
+        "weight": 1
+      },
+      "engineering": {
+        "weight": 1
+      }
     },
     "difficulty": "medium",
     "count": 15

@@ -1,3 +1,11 @@
 {
-  "presets": ["daily-warmup", "stem-focus", "world-and-money"]
+  "presets": [
+    "daily-warmup",
+    "stem-focus",
+    "world-and-money",
+    "humanities",
+    "code-and-logic",
+    "life-sciences",
+    "everyday-skills"
+  ]
 }

@@ -4,10 +4,48 @@
   "description": "A quick, easy mix across every domain.",
   "config": {
     "domains": {
-      "math": { "weight": 1 },
-      "science": { "weight": 1 },
-      "geography": { "weight": 1 },
-      "business": { "weight": 1 }
+      "math": {
+        "weight": 1
+      },
+      "science": {
+        "weight": 1
+      },
+      "computing": {
+        "weight": 1
+      },
+      "geography": {
+        "weight": 1
+      },
+      "history": {
+        "weight": 1
+      },
+      "business": {
+        "weight": 1
+      },
+      "language": {
+        "weight": 1
+      },
+      "game-dev": {
+        "weight": 1
+      },
+      "music": {
+        "weight": 1
+      },
+      "biology": {
+        "weight": 1
+      },
+      "medical": {
+        "weight": 1
+      },
+      "logic": {
+        "weight": 1
+      },
+      "everyday-math": {
+        "weight": 1
+      },
+      "engineering": {
+        "weight": 1
+      }
     },
     "difficulty": "easy",
     "count": 10
