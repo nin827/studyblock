@@ -45,4 +45,5 @@ Subjects: Business (business-math, business-case, finance), Trigonometry, Geomet
 
 ## Open questions
 - **Screen readers and omitted values:** the alt text describes the structure and the visible values only, so a screen-reader user can't estimate a hidden value. *Options:* keep it (default), or give hidden values in the alt text, or skip omissions when a screen reader is detected (not reliably possible).
+  - *Now bites harder (2026-11-27):* 14 Expert read-off templates in 7 subjects (see CLAUDE.md) can't be solved without sight. Extra option: a per-user Settings toggle "Describe chart values" that puts the hidden values in the alt text (and could skip read-off templates), so nothing depends on detecting a screen reader.
 - **Which other subjects next** (physics graphs, economics supply and demand, structures beams).

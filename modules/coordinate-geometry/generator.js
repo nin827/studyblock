@@ -1,3 +1,4 @@
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 // Coordinate Geometry generator. Uses only the seeded rng passed in by the engine.
 // Answer formats:
 //   whole numbers and exact decimals (midpoints like 2.5, areas like 12.5)  tolerance 0
@@ -1586,19 +1587,107 @@ function xParallelEdge(rng) {
   };
 }
 
+// ---- Expert "read it off the picture" templates (ticket 026) ----
+// The grid is -5 to 5 on both axes with a gridline at every whole number, and the marked points sit on
+// grid intersections. No coordinates appear in the prompt, given rows, hints or asks (their text has no
+// numbers at all): the learner reads them off the axes. verify() rebuilds the points from the visual.
+const GRID_VIEW = { xMin: -5, xMax: 5, yMin: -5, yMax: 5, showGrid: true };
+const gridVis = (pts, names, { segments = [], lines = [] } = {}) => ({
+  kind: "coords", ...GRID_VIEW, points: pts.map(([x, y], i) => ({ x, y, label: names[i] })), segments, lines,
+});
+const FRAC_READ = " Give a whole number or a fraction in simplest form (minus sign in front).";
+const EXACT_READ = " Give the exact value, as a whole number or a decimal.";
+const gridPt = (rng) => [rng.int(-5, 5), rng.int(-5, 5)];
+
+// points-distance: three points on a grid; read them, then AB, the midpoint of AB and the area.
+function xReadPts(rng) {
+  const pts = draw(
+    () => [0, 1, 2].map(() => gridPt(rng)),
+    ([A, B, C]) => {
+      const ab = Math.hypot(B[0] - A[0], B[1] - A[1]);
+      return Math.abs(cross3(A, B, C)) >= 6 && !Number.isInteger(ab) && !nearHalf(ab);
+    }
+  );
+  const [A, B, C] = pts;
+  const ab2 = sqd(A, B), ab = Math.sqrt(ab2);
+  const M = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+  const area = Math.abs(cross3(A, B, C)) / 2;
+  const parts = [
+    { id: "ab", label: "Length AB", ask: `Length of AB.${DP2}`, answerType: "number", answer: round2(ab), tolerance: 0.005, hint: "Go along and up between A and B, and use Pythagoras on those two differences." },
+    { id: "mx", label: "Midpoint: x", ask: `x-coordinate of the midpoint of AB.${EXACT_READ}`, answerType: "number", answer: M[0], tolerance: 0, hint: "The midpoint's x is halfway between the x values of A and B." },
+    { id: "my", label: "Midpoint: y", ask: `y-coordinate of the midpoint of AB.${EXACT_READ}`, answerType: "number", answer: M[1], tolerance: 0, hint: "The midpoint's y is halfway between the y values of A and B." },
+    { id: "area", label: "Area", ask: `Area of triangle ABC.${EXACT_READ}`, answerType: "number", answer: area, tolerance: 0, hint: "Use the coordinates you read in the shoelace formula, or draw a box round the triangle and subtract the corner triangles." },
+  ];
+  return {
+    prompt: "Points A, B and C are marked on the grid, each on a grid intersection, and joined to make a triangle. No coordinates are given: read them from the diagram.",
+    answerType: "multi", parts,
+    explanation: [
+      `Reading the grid: A = ${pt(A)}, B = ${pt(B)}, C = ${pt(C)}.`,
+      `AB = √(${(B[0] - A[0]) ** 2} + ${(B[1] - A[1]) ** 2}) = √${ab2} ≈ ${ab.toFixed(4)}, which rounds to **${fmt2(ab)}**.`,
+      `Midpoint of AB: ((${num(A[0])} + ${par(B[0])}) ÷ 2, (${num(A[1])} + ${par(B[1])}) ÷ 2) = **${pt(M)}**.`,
+      `Area (shoelace): |${num(cross3(A, B, C))}| ÷ 2 = **${num(area)}**.`,
+    ].join("\n\n"),
+    hints: [
+      "Read the coordinates of A, B and C from the axes first: go along, then up or down.",
+      "The length of a line between two points is the hypotenuse of a right-angled triangle made from the horizontal and vertical differences.",
+      "The midpoint is the average of the two x values and the average of the two y values.",
+    ],
+    visual: gridVis(pts, ["A", "B", "C"], { segments: TRI }),
+    params: { kind: "x-readpts" },
+  };
+}
+
+// gradient-lines: a line through two marked grid points; read them, then gradient and both intercepts.
+function xReadLine(rng) {
+  const [A, B] = draw(
+    () => [gridPt(rng), gridPt(rng)],
+    ([P, Q]) => {
+      if (P[0] === Q[0] || P[1] === Q[1] || Math.abs(P[0] - Q[0]) + Math.abs(P[1] - Q[1]) < 3) return false;
+      return lineThrough(P, Q).c !== 0; // the line misses the origin, so both intercepts are non-zero
+    }
+  );
+  const L = lineThrough(A, B);
+  const m = slopeOf(L), c = yIntOf(L);
+  const xi = frac(L.c, L.a); // x-intercept: a·x = c
+  const parts = [
+    { id: "m", label: "Gradient", ask: `The gradient of the line.${FRAC_READ}`, answerType: "text", answer: fracStr(m), hint: "Pick two marked points: gradient = change up ÷ change along." },
+    { id: "c", label: "y-intercept", ask: `The y-coordinate where the line crosses the y-axis.${FRAC_READ}`, answerType: "text", answer: fracStr(c), hint: "Start at a marked point and use the gradient to move along to the y-axis, or put a point into y = mx + c." },
+    { id: "xi", label: "x-intercept", ask: `The x-coordinate where the line crosses the x-axis.${FRAC_READ}`, answerType: "text", answer: fracStr(xi), hint: "Put zero in for y in the equation of the line and solve for x." },
+  ];
+  return {
+    prompt: "A straight line is drawn on the grid. The points A and B on it sit on grid intersections. No coordinates are given: read them from the diagram.",
+    answerType: "multi", parts,
+    explanation: [
+      `Reading the grid: A = ${pt(A)} and B = ${pt(B)}.`,
+      gradExplain(A, B),
+      `y-intercept: c = y − mx = ${num(A[1])} − ${fracStr(m)} × ${par(A[0])} = **${fracStr(c)}**, so the line is \`${fmtLine(L)}\`.`,
+      `x-intercept: set y = 0 in \`${fmtGeneral(L)}\`: ${L.a}x = ${L.c}, so x = **${fracStr(xi)}**.`,
+    ].join("\n\n"),
+    hints: [
+      "Read the coordinates of A and B from the axes first: go along, then up or down.",
+      "The gradient is the change in y divided by the change in x between the two points; write it as a fraction in simplest form.",
+      "Use the gradient and one point to find where the line meets each axis.",
+    ],
+    visual: gridVis([A, B], ["A", "B"], { lines: [drawnLine(L)] }),
+    params: { kind: "x-readline" },
+  };
+}
+
 function genExpert(subtopic, rng) {
   if (subtopic === "points-distance") {
-    const t = rng.int(0, 3);
+    const t = rng.int(0, 4);
     if (t === 0) return xRatio(rng);
     if (t === 1) return xEquidistant(rng);
     if (t === 2) return xTriHeight(rng);
-    return xParallelogram(rng);
+    if (t === 3) return xParallelogram(rng);
+    return xReadPts(rng);
   }
   if (subtopic === "gradient-lines") {
-    const t = rng.int(0, 2);
+    const t = rng.int(0, 3);
     if (t === 0) return xCollinear(rng);
     if (t === 1) return xAxisTriangle(rng);
-    return xFare(rng);
+    if (t === 2) return xFare(rng);
+    return xReadLine(rng);
   }
   if (subtopic === "parallel-perpendicular") {
     const t = rng.int(0, 2);
@@ -1851,6 +1940,7 @@ function checkOne(spec, answer, answerType, choices) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false; // regenerate from the seed to get params back
+  if (p.kind === "x-readpts" || p.kind === "x-readline") return verifyRead(p, question, answer);
   if (p.multi) {
     if (question.answerType !== "multi" || !Array.isArray(question.parts) || !answer || typeof answer !== "object") return false;
     if (p.parts.length !== question.parts.length) return false;
@@ -1860,6 +1950,46 @@ export function verify(question, answer) {
     });
   }
   return checkOne(p, answer, question.answerType, question.choices);
+}
+
+// ---- Read-it-off-the-grid templates: every figure is rebuilt from the visual itself ----
+// The points must sit on gridline intersections (visualAxes ticks, step 1), and every part is checked
+// against the points read back from the drawing, not against the generator's variables.
+function verifyRead(p, question, a) {
+  const v = sanitizeVisual(question && question.visual);
+  if (!v || v.kind !== "coords" || !v.showGrid || !a || typeof a !== "object") return false;
+  const ax = visualAxes(v);
+  if (ax.x.step !== 1 || ax.y.step !== 1) return false;
+  const P = {};
+  for (const q of v.points) {
+    if (!q.label || P[q.label] || !ax.x.ticks.includes(q.x) || !ax.y.ticks.includes(q.y)) return false;
+    P[q.label] = [q.x, q.y];
+  }
+  const ans = (id) => a[id];
+  if (p.kind === "x-readpts") {
+    const [A, B, C] = ["A", "B", "C"].map((n) => P[n]);
+    if (!A || !B || !C || v.points.length !== 3 || v.lines.length) return false;
+    const ab = numVal(ans("ab"));
+    if (!Number.isFinite(ab) || !(ab > 0) || Math.abs(ab * ab - sqd(A, B)) > 0.005 * (2 * ab + 0.01) + 1e-9) return false;
+    // Midpoint M: A and B are equally far from it on a line, so 2M = A + B.
+    const mx = numVal(ans("mx")), my = numVal(ans("my"));
+    if (!(2 * mx === A[0] + B[0] && 2 * my === A[1] + B[1])) return false;
+    // Area by Heron's formula in whole numbers (16·area² from the squared sides).
+    const area = numVal(ans("area"));
+    return area > 0 && Math.abs(16 * area * area - heron16(A, B, C)) < 1e-6;
+  }
+  const [A, B] = ["A", "B"].map((n) => P[n]);
+  if (!A || !B || v.points.length !== 2 || v.lines.length !== 1 || !("m" in v.lines[0])) return false;
+  const { m, c } = v.lines[0];
+  if (Math.abs(m * A[0] + c - A[1]) > 1e-9 || Math.abs(m * B[0] + c - B[1]) > 1e-9) return false; // the drawn line passes through both
+  const fm = parseFracAnswer(ans("m")), fc = parseFracAnswer(ans("c")), fx = parseFracAnswer(ans("xi"));
+  if (!fm || !fc || !fx) return false;
+  // Exact checks on the drawn line y = mx + c with m = dy/dx from the two points.
+  const dx = B[0] - A[0], dy = B[1] - A[1];
+  const okM = fm[1] * dy === fm[0] * dx;
+  const okC = dx * (fc[0] - A[1] * fc[1]) === dy * (0 - A[0] * fc[1]); // (0, c) is collinear with A and B
+  const okX = dx * (0 - A[1]) * fx[1] === dy * (fx[0] - A[0] * fx[1]); // (xi, 0) is collinear with A and B
+  return okM && okC && okX;
 }
 
 // ---- Expert verification (independent of the expert generators above) ----

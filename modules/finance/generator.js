@@ -16,6 +16,7 @@ const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 10
 // (shortest form, up to `dp` decimals; never "-0") come from mathutil.
 import { fmtAnswer as fmtAns, fmtNum } from "../../js/lib/mathutil.js";
 import { visualFor } from "./visuals.js";
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 const num = (n, dp = 4) => fmtNum(n, dp);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise.
@@ -677,6 +678,69 @@ function xCompare(rng) {
   ]);
 }
 
+// depreciation / expert 3: read the straight-line book-value chart (no value labels). The cost, the
+// salvage value and the life sit on gridlines and are left out of the prompt, the given rows and the
+// hints; the learner finds the yearly charge, the book value at a stated year and the gain or loss on a
+// stated sale price. Whole-dollar charge, so every answer is exact from the chart values.
+const CD_STEPS = [500, 1000, 2000, 2500, 5000];
+const numbersIn = (texts) => {
+  const out = new Set();
+  for (const t of texts) for (const m of String(t).replace(/(\d),(?=\d)/g, "$1").matchAll(/\d+(?:\.\d+)?/g)) out.add(Number(m[0]));
+  return out;
+};
+// True when any hidden value is written anywhere in the learner-facing text of a question.
+const showsHidden = (q, hidden) => {
+  const parts = Array.isArray(q.parts) ? q.parts : [];
+  const texts = [q.prompt, ...(q.hints || []), ...parts.flatMap((pt) => [pt.label, pt.ask, pt.hint]), ...(q.given || []).map((g) => g.value)];
+  const seen = numbersIn(texts.filter((t) => t !== undefined && t !== null));
+  return hidden.some((h) => seen.has(Number(Number(h).toFixed(2))));
+};
+function xChartDep(rng) {
+  const a = rng.pick(ASSETS);
+  let q;
+  for (let t = 0; t < 80; t++) {
+    const Y = rng.pick(CD_STEPS);
+    const c = rng.int(3, 6);
+    const sm = rng.int(0, 2);
+    const n = rng.int(4, 10);
+    const k = rng.int(1, n - 1);
+    const pctOfBook = rng.int(60, 140);
+    const C = c * Y;
+    const S = sm * Y;
+    if ((C - S) % n) continue;
+    const charge = (C - S) / n;
+    const book = C - k * charge;
+    const X = 50 * Math.max(1, Math.round((book * pctOfBook) / 100 / 50));
+    if (Math.abs(X - book) < 1) continue;
+    const gain = X - book;
+    const prompt =
+      `${a.biz} bought ${a.asset} and depreciates it by the straight-line method down to its salvage value. The chart shows its book value over its planned life. ` +
+      `Not every value is labelled: read the cost, the salvage value and the life from the chart. Every value you need sits exactly on a gridline. ` +
+      `After ${years(k)} it sells the asset for ${cash(X)}. Round money answers to 2 decimal places.`;
+    const lines = [
+      given("_cost", mv(C)), given("_salvage", mv(S)), given("_life", n), given("_used", k), given("_sale", mv(X)),
+      step("_charge", "(_cost - _salvage) / _life", final(charge, "2dp", "money")),
+      step("_book", "_cost - _charge * _used", final(book, "2dp", "money")),
+      step("_gain", "_sale - _book", `${final(gain, "2dp", "money")}${gain < 0 ? " (a loss)" : " (a gain)"}`),
+    ];
+    q = xQ("x-chartdep", { C, S, n, k, X, Y }, prompt, [
+      xNum("charge", "Yearly charge", "What is the yearly depreciation charge, in dollars?", charge, "2dp",
+        "Straight line: the same charge every year, (cost - salvage) ÷ life. Round to 2 decimal places."),
+      xNum("book", "Book value", `What is the book value after ${years(k)}, in dollars?`, book, "2dp",
+        "Book value = cost minus the yearly charge for each year used. Round to 2 decimal places."),
+      xNum("gain", "Gain or loss", "What is the gain on disposal, in dollars (negative for a loss)?", gain, "2dp",
+        "Compare the sale price with the book value at the sale, not with the cost or the salvage value."),
+    ], "Read the cost, salvage value and life from the chart, then work out the yearly charge, the book value at the sale and the gain or loss.", lines,
+    xGiven([["_used", k], ["_sale", X]]), [
+      "Read three values from the chart: the book value at year 0 (the cost), the book value at the end of the life (the salvage value), and the life in years.",
+      "Straight line means the line falls by the same amount every year: the yearly charge is (cost - salvage) ÷ life.",
+      "Book value after the years used = cost - charge × years. Gain on disposal = sale price - book value; a sale below book value is a loss.",
+    ]);
+    if (!showsHidden(q, [C, S, n, charge, book, C - S])) return q;
+  }
+  return q;
+}
+
 const XLOAN_RULE =
   " Payments are made at the end of each month, with monthly rate i = annual rate ÷ 12 and payment = loan × i ÷ (1 - (1 + i)^-n). " +
   "Round the payment to the cent and use that rounded payment in every later step.";
@@ -998,7 +1062,7 @@ function xDrawdown(rng) {
 const drawYears = (F, i, W) => -Math.log(1 - (F * i) / W) / Math.log(1 + i);
 
 function generateExpert(subtopic, rng) {
-  if (subtopic === "depreciation") return [xDisposal, xRbBackwards, xCompare][rng.int(0, 2)](rng);
+  if (subtopic === "depreciation") return [xDisposal, xRbBackwards, xCompare, xChartDep][rng.int(0, 3)](rng);
   if (subtopic === "loans") return [xPayoff, xAfford, xSplit, xExtra][rng.int(0, 3)](rng);
   if (subtopic === "annuities-savings") return [xRetire, xDelay, xDue, xDrawdown][rng.int(0, 3)](rng);
   throw new Error(`Unknown subtopic: ${subtopic}`);
@@ -1276,6 +1340,26 @@ function verifyExpert(question, answer) {
       if (ids !== "book,gain") return false;
       const bookRes = (b) => (k.C - b) * k.n - k.k * (k.C - k.S); // (cost - book) × life = years × (cost - salvage)
       return res(bookRes(val("book")), k.n) && res(bookRes(k.X - val("gain")), k.n);
+    }
+    case "x-chartdep": {
+      if (ids !== "charge,book,gain") return false;
+      // Read the chart's own data (not params): the cost, the salvage value and the life must sit on gridlines.
+      const v = sanitizeVisual(visualFor(question, "depreciation", "expert"));
+      if (!v || v.kind !== "line" || v.showValues || v.series.length !== 1 || v.series[0].points.length !== 2) return false;
+      const ax = visualAxes(v);
+      const [p0, p1] = v.series[0].points;
+      const onX = (x) => ax.x.ticks.some((t) => Math.abs(t - x) < 1e-6);
+      const onY = (y) => ax.y.ticks.some((t) => Math.abs(t - y) < 1e-6);
+      if (p0[0] !== 0 || !(onY(p0[1]) && onY(p1[1]) && onX(p1[0]) && Number.isInteger(p1[0]))) return false;
+      const C = p0[1];
+      const S = p1[1];
+      const n = p1[0];
+      if (C !== k.C || S !== k.S || n !== k.n || !(C > S) || !(k.k >= 1 && k.k < n)) return false;
+      const charge = (C - S) / n;
+      const book = C - k.k * charge;
+      if (!Number.isInteger(charge) || Math.abs(k.X - book) < 1) return false;
+      if (showsHidden(question, [C, S, n, charge, book, C - S])) return false;
+      return close(val("charge"), charge) && close(val("book"), book) && close(val("gain"), k.X - book);
     }
     case "x-rbback": {
       if (ids !== "cost,dep,first") return false;

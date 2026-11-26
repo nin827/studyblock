@@ -4,8 +4,8 @@
 //
 // Easy-Hard: the visual only restates numbers that are already in the prompt (a written-style
 // table of price and cost, a break-even chart, a cash-flow bar chart). Expert: the same, with no
-// values omitted (every Expert question needs all of its numbers, and nothing here is read off a
-// chart), so verify() and the hints are unchanged.
+// values omitted, except the two read-off-the-chart templates (be-chart, inv-chart): their charts
+// have no value labels and the learner reads the figures from gridlines (checked in verify()).
 
 import { fmtNum, round2 } from "../../js/lib/mathutil.js";
 
@@ -292,6 +292,38 @@ function expert(q) {
         xLabel: "Year",
         yLabel: "Cash flow ($)",
         showValues: true,
+      };
+    // Read-off charts (Expert): no value labels, so the learner reads fixed costs, break-even and the
+    // bars from the gridlines. Every value read sits on a tick (checked in verify with visualAxes).
+    case "be-chart":
+      return {
+        kind: "line",
+        caption: "Revenue and total cost per month",
+        series: [
+          { name: "Revenue", points: [[0, 0], [p.xMax, round2((p.Pc * p.xMax) / 100)]] },
+          { name: "Total cost", points: [[0, p.F], [p.xMax, round2(p.F + (p.Vc * p.xMax) / 100)]] },
+        ],
+        xLabel: "Units sold per month",
+        yLabel: "Dollars per month",
+        xMin: 0,
+        xMax: p.xMax,
+        xStep: p.sx,
+        yMin: 0,
+        yMax: p.yMax,
+        yStep: p.Y,
+        showPoints: false,
+        showValues: false,
+      };
+    case "inv-chart":
+      return {
+        kind: "bar",
+        caption: `Cash flows, discount rate ${pct(p.r)}`,
+        categories: ["Year 0", ...p.flows.map((_, i) => `Year ${i + 1}`)],
+        series: [{ name: "Cash flow ($ thousand)", values: [-p.C, ...p.flows] }],
+        xLabel: "Year",
+        yLabel: "Cash flow ($ thousand)",
+        yStep: p.step,
+        showValues: false,
       };
     default:
       return undefined;

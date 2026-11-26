@@ -1,3 +1,4 @@
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 // Geometry generator. Uses only the seeded rng passed in by the engine.
 // Whole-number answers are exact; anything with π or a square root is rounded to 2 decimals
 // (tolerance 0.005). Every prompt says which, and gives the unit.
@@ -1184,10 +1185,118 @@ function xSimilar(rng) {
   };
 }
 
+// ---- Expert "read it off the picture" templates (ticket 026) ----
+// A labelled grid (one gridline per unit) with the lettered corners on grid intersections and NO
+// coordinates or lengths in the prompt, given rows, hints or asks (their text has no numbers at all).
+// The learner reads the corners off the axes. verify() rebuilds every figure from the visual itself.
+const gridVisual = (pts, names, segments) => {
+  const xMin = Math.min(...pts.map((p) => p[0])) - 1;
+  const yMin = Math.min(...pts.map((p) => p[1])) - 1;
+  return {
+    kind: "coords", xMin, xMax: xMin + 10, yMin, yMax: yMin + 10, showGrid: true,
+    points: pts.map(([x, y], i) => ({ x, y, label: names[i] })), segments, lines: [],
+  };
+};
+
+// perimeter-area: an L-shaped plate on a grid; read the sides, then perimeter, area and the distance AD.
+function xGridPlate(rng) {
+  const w = rng.int(5, 8), h = rng.int(5, 8);
+  const cw = rng.int(2, w - 2), ch = rng.int(2, h - 2);
+  const flipX = rng.next() < 0.5, flipY = rng.next() < 0.5;
+  const ox = rng.int(1, 4), oy = rng.int(1, 4); // the shape stays off the axes, so the labels never sit on tick numbers
+  const base = [[0, 0], [w, 0], [w, h - ch], [w - cw, h - ch], [w - cw, h], [0, h]];
+  const pts = base.map(([x, y]) => [ox + (flipX ? w - x : x), oy + (flipY ? h - y : y)]);
+  const area = w * h - cw * ch;
+  const perim = 2 * (w + h);
+  const d = Math.hypot(w - cw, h - ch);
+  if (tie2(d)) return xGridPlate(rng);
+  return {
+    prompt: "A flat plate ABCDEF is drawn on a grid, with every corner on a grid intersection. Each grid square is one centimetre by one centimetre. No lengths are given: read them from the diagram.",
+    answerType: "multi",
+    parts: [
+      xPart("perimeter", "Perimeter", "Perimeter of the plate (cm). Give a whole number.", perim, false, "Read each side off the grid and add them all up, going once round the outside."),
+      xPart("area", "Area", "Area of the plate (cm²). Give a whole number.", area, false, "Split the plate into rectangles, or take a corner rectangle away from a bigger one."),
+      xPart("ad", "Distance AD", "Straight-line distance from A to D (cm). Round to 2 decimal places.", d, true, "Find the horizontal and vertical difference between A and D: they are the two short sides of a right-angled triangle."),
+    ],
+    explanation: [
+      `Reading the grid, the plate is a ${w} cm by ${h} cm rectangle with a ${cw} cm by ${ch} cm corner removed (the corner at the notch).`,
+      `Perimeter: the outline has the same length as the full rectangle, \`2 × (${w} + ${h})\` = **${perim} cm**.`,
+      `Area: \`${w} × ${h} - ${cw} × ${ch} = ${w * h} - ${cw * ch}\` = **${area} cm²**.`,
+      `A to D goes across ${w - cw} and up or down ${h - ch}: \`√(${w - cw}² + ${h - ch}²)\` ${result(d, true, "cm")}`,
+    ].join("\n\n"),
+    params: { kind: "x-gridplate" },
+    visual: gridVisual(pts, ["A", "B", "C", "D", "E", "F"], [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]]),
+    hints: [
+      "Read the coordinates of each lettered corner from the axes: go along, then up or down. The side lengths are the differences between neighbouring corners.",
+      "Every side runs along a gridline, so each length is a difference of two x values or two y values.",
+      "For the straight-line distance, use Pythagoras on the horizontal and vertical differences between the two corners.",
+    ],
+  };
+}
+
+// pythagoras: triangle ABC on a grid; read the corners, then AB, BC and whether it is right-angled.
+function xGridRead(rng) {
+  let A, B, C, right;
+  for (;;) {
+    right = rng.next() < 0.5;
+    A = [rng.int(0, 8), rng.int(0, 8)];
+    const p = rng.int(-5, 5), q = rng.int(-5, 5), k = rng.int(1, 2);
+    B = [A[0] + p, A[1] + q];
+    C = [A[0] - k * q, A[1] + k * p];
+    if (!right) {
+      const nudge = rng.pick([[1, 0], [0, 1], [-1, 0], [0, -1]]);
+      C = [C[0] + nudge[0], C[1] + nudge[1]];
+    }
+    if (p === 0 && q === 0) continue;
+    if (![A, B, C].every((P) => P[0] >= 0 && P[0] <= 8 && P[1] >= 0 && P[1] <= 8)) continue;
+    const pts = [A, B, C];
+    const dots = [0, 1, 2].map((i) => {
+      const P = pts[i], Q = pts[(i + 1) % 3], R = pts[(i + 2) % 3];
+      return (Q[0] - P[0]) * (R[0] - P[0]) + (Q[1] - P[1]) * (R[1] - P[1]);
+    });
+    const cross = (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]);
+    if (cross === 0 || (!right && dots.some((x) => x === 0))) continue;
+    const ab = Math.hypot(B[0] - A[0], B[1] - A[1]);
+    const bc = Math.hypot(C[0] - B[0], C[1] - B[1]);
+    if (!tie2(ab) && !tie2(bc)) break;
+  }
+  const ox = rng.int(1, 4), oy = rng.int(1, 4); // the shape stays off the axes, so the labels never sit on tick numbers
+  const pts = [A, B, C].map(([x, y]) => [x + ox, y + oy]);
+  const sq = (P, Q) => (Q[0] - P[0]) ** 2 + (Q[1] - P[1]) ** 2;
+  const [ab2, bc2, ca2] = [sq(A, B), sq(B, C), sq(C, A)];
+  const ab = Math.sqrt(ab2), bc = Math.sqrt(bc2);
+  const big = Math.max(ab2, bc2, ca2);
+  const ans = right ? "Yes" : "No";
+  return {
+    prompt: "Triangle ABC is drawn on a grid, with every corner on a grid intersection. Each grid square is one unit by one unit. No coordinates are given: read them from the diagram. Round lengths to 2 decimal places where needed.",
+    answerType: "multi",
+    parts: [
+      xPart("ab", "AB", "Length of AB", ab, true, "Horizontal change and vertical change between A and B are the legs of a right-angled triangle; AB is its hypotenuse."),
+      xPart("bc", "BC", "Length of BC", bc, true, "Same method: the horizontal and vertical changes between B and C."),
+      xChoice("right", "Right angle?", "Is triangle ABC right-angled?", ans, rng.shuffle(["Yes", "No"]),
+        "Compare the squared lengths of the three sides: it is right-angled only if the two smaller squares add up exactly to the largest."),
+    ],
+    explanation: [
+      `Reading the grid: A = (${A[0] + ox}, ${A[1] + oy}), B = (${B[0] + ox}, ${B[1] + oy}), C = (${C[0] + ox}, ${C[1] + oy}).`,
+      `\`AB² = ${B[0] - A[0]}² + ${B[1] - A[1]}² = ${ab2}\`, so AB ${result(ab, true, "units")}`,
+      `\`BC² = ${C[0] - B[0]}² + ${C[1] - B[1]}² = ${bc2}\`, so BC ${result(bc, true, "units")}`,
+      `\`CA² = ${A[0] - C[0]}² + ${A[1] - C[1]}² = ${ca2}\`.`,
+      `The two smaller squares add to \`${ab2 + bc2 + ca2 - big}\`, the largest is \`${big}\`. ${right ? "They are equal" : "They are not equal"}, so the answer is **${ans}**.`,
+    ].join("\n\n"),
+    params: { kind: "x-gridread" },
+    visual: gridVisual(pts, ["A", "B", "C"], [[0, 1], [1, 2], [2, 0]]),
+    hints: [
+      "Read the coordinates of A, B and C from the axes first: go along, then up or down.",
+      "The distance between two corners is the hypotenuse of a right-angled triangle whose legs are the horizontal and vertical differences.",
+      "For the right angle, work with the squared lengths (whole numbers) so rounding can't fool you.",
+    ],
+  };
+}
+
 function genExpert(subtopic, rng) {
-  if (subtopic === "perimeter-area") return [xComposite, xRectBack, xBorder, xWire][rng.int(0, 3)](rng);
+  if (subtopic === "perimeter-area") return [xComposite, xRectBack, xBorder, xWire, xGridPlate][rng.int(0, 4)](rng);
   if (subtopic === "angles") return [xPolyExt, xAlgAngles, xRatioAngles][rng.int(0, 2)](rng);
-  if (subtopic === "pythagoras") return [xCuboid, xLadder, xCoord][rng.int(0, 2)](rng);
+  if (subtopic === "pythagoras") return [xCuboid, xLadder, xCoord, xGridRead][rng.int(0, 3)](rng);
   if (subtopic === "volume") return [xTank, xCompSolid, xPour, xSimilar][rng.int(0, 3)](rng);
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
@@ -1206,7 +1315,7 @@ export function generate({ subtopic, difficulty, rng }) {
 // allowed residual is 0.005 × (how strongly the relation reacts to the answer).
 export function verify(question, answer) {
   const p = question && question.params;
-  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer);
+  if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer, question);
   if (!p || !p.values) return false;
 
   if (question.answerType === "choice") {
@@ -1313,7 +1422,54 @@ const xs = (a, id) => (a && typeof a === "object" && a[id] !== undefined ? Strin
 const okRes = (res, sens) => Number.isFinite(res) && Math.abs(res) <= 0.005 * Math.abs(sens) + 1e-6;
 const isWhole = (x) => Number.isInteger(x);
 
-function verifyExpert(p, a) {
+// The corners of a grid visual, read back from the drawing itself: { A: [x, y], … } (null when the picture
+// is not a one-unit grid with every lettered corner on a gridline intersection).
+function gridCorners(question) {
+  const v = sanitizeVisual(question && question.visual);
+  if (!v || v.kind !== "coords" || !v.showGrid || v.lines.length) return null;
+  const ax = visualAxes(v);
+  if (ax.x.step !== 1 || ax.y.step !== 1) return null;
+  const out = {};
+  for (const P of v.points) {
+    if (!P.label || out[P.label] || !ax.x.ticks.includes(P.x) || !ax.y.ticks.includes(P.y)) return null;
+    out[P.label] = [P.x, P.y];
+  }
+  return { v, pts: out };
+}
+
+function verifyGrid(p, a, question) {
+  const g = gridCorners(question);
+  if (!g) return false;
+  const { v, pts } = g;
+  if (p.kind === "x-gridplate") {
+    const L = ["A", "B", "C", "D", "E", "F"].map((n) => pts[n]);
+    if (L.some((P) => !P) || v.points.length !== 6 || v.segments.length !== 6) return false;
+    // Every side runs along a gridline: add up the unit steps.
+    let perim = 0, twice = 0;
+    for (let i = 0; i < 6; i++) {
+      const P = L[i], Q = L[(i + 1) % 6];
+      if (P[0] !== Q[0] && P[1] !== Q[1]) return false;
+      perim += Math.abs(P[0] - Q[0]) + Math.abs(P[1] - Q[1]);
+      twice += P[0] * Q[1] - Q[0] * P[1];
+    }
+    const [A, D] = [L[0], L[3]];
+    return xp(a, "perimeter") === perim && xp(a, "area") === Math.abs(twice) / 2 && okRes(xp(a, "ad") ** 2 - ((D[0] - A[0]) ** 2 + (D[1] - A[1]) ** 2), 2 * xp(a, "ad") + 0.01);
+  }
+  const [A, B, C] = ["A", "B", "C"].map((n) => pts[n]);
+  if (!A || !B || !C || v.points.length !== 3) return false;
+  const sq = (P, Q) => (Q[0] - P[0]) ** 2 + (Q[1] - P[1]) ** 2;
+  const ab = xp(a, "ab"), bc = xp(a, "bc");
+  if (!(ab > 0 && bc > 0) || !okRes(ab * ab - sq(A, B), 2 * ab + 0.01) || !okRes(bc * bc - sq(B, C), 2 * bc + 0.01)) return false;
+  const pp = [A, B, C];
+  const right = [0, 1, 2].some((i) => {
+    const P = pp[i], Q = pp[(i + 1) % 3], R = pp[(i + 2) % 3];
+    return (Q[0] - P[0]) * (R[0] - P[0]) + (Q[1] - P[1]) * (R[1] - P[1]) === 0;
+  });
+  return xs(a, "right") === (right ? "Yes" : "No");
+}
+
+function verifyExpert(p, a, question) {
+  if (p.kind === "x-gridplate" || p.kind === "x-gridread") return verifyGrid(p, a, question);
   switch (p.kind) {
     case "x-composite": {
       const x = xp(a, "area"), y = xp(a, "perimeter");

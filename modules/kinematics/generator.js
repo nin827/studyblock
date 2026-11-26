@@ -4,6 +4,8 @@
 // Rounding half away from zero (round1 keeps given values like 2.3 + 1.1 from printing as 3.4000000000000004),
 // answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
 import { fmtAnswer as fmtAns, fmtNum, round1, round2 } from "../../js/lib/mathutil.js";
+// Chart reading (Expert): the picture's own data is validated and its gridlines used in verify().
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 const num = (n) => fmtNum(n);
 
 // Negative numbers in brackets when substituted into a formula.
@@ -984,10 +986,135 @@ function xPolice(rng) {
   });
 }
 
+// ---- Expert: graphs whose values are NOT written on the picture (read off the gridlines) ----
+//
+// The learner reads corner points from a velocity-time or distance-time graph. Every corner sits
+// exactly on a gridline intersection (times are whole multiples of the x step, values of the y
+// step), the axes, tick numbers and labels always show, and showValues is false: no read value
+// appears in the prompt, the part asks, the hints or the alt text (the axes end one step above the
+// data, so the axis range doesn't give the end values away). The explanation states them.
+// verify() takes the corner points from the drawn visual, checks they sit on its ticks and equal
+// the generator's data, and recomputes the answers from the picture (trapezium areas and
+// gradients), not from the generator's stage formulas.
+
+// A line graph with no value labels; axes end one step above the data.
+const readGraph = (caption, name, yLabel, pts, tStep, vStep) => {
+  const tEnd = Math.max(...pts.map((p) => p[0]));
+  const yTop = Math.max(...pts.map((p) => p[1]));
+  return lineGraph(caption, name, yLabel, pts, {
+    xMax: tEnd + tStep, yMin: 0, yMax: yTop + vStep, xStep: tStep, yStep: vStep, showValues: false,
+  });
+};
+
+const READ_VT_CTX = [
+  { who: "A cyclist", vs: [1, 2], ts: [2, 5] },
+  { who: "A car", vs: [5], ts: [2, 5] },
+  { who: "A train", vs: [5, 10], ts: [5, 10] },
+  { who: "A tram", vs: [2, 5], ts: [5, 10] },
+];
+
+// acceleration / expert: read a velocity-time graph (change speed, cruise, brake to rest).
+function xReadVt(rng) {
+  const C = rng.pick(READ_VT_CTX);
+  const vStep = rng.pick(C.vs);
+  const tStep = rng.pick(C.ts);
+  const fromRest = rng.next() < 0.5;
+  const kTop = rng.int(2, 6);
+  const kStart = fromRest ? 0 : rng.int(1, kTop);
+  const na = rng.int(1, 2);
+  const nb = rng.int(1, 2);
+  const nc = rng.int(1, 2);
+  if (kStart === kTop) return null; // no first-section acceleration to read
+  const u = kStart * vStep;
+  const top = kTop * vStep;
+  const t1 = na * tStep;
+  const t2 = (na + nb) * tStep;
+  const t3 = (na + nb + nc) * tStep;
+  const a1 = (top - u) / t1;
+  const a3 = -top / (nc * tStep);
+  if (Math.abs(a1) > 4 || Math.abs(a3) > 4) return null;
+  const dist = 0.5 * (u + top) * t1 + top * (nb * tStep) + 0.5 * top * (nc * tStep);
+  const avg = dist / t3;
+  const pts = [[0, u], [t1, top], [t2, top], [t3, 0]];
+  const q = xMulti({
+    kind: "x-readvt",
+    v: { pts },
+    prompt: `${C.who} moves in a straight line. Its velocity–time graph is shown, made of straight-line sections. Read the values from the graph.`,
+    parts: [
+      xNum("a1", "First section", "Acceleration in the first section, in m/s² (negative if slowing)", a1, 2, "Read the time and velocity at both ends of the first section. Acceleration = change in velocity ÷ change in time."),
+      xNum("a3", "Last section", "Acceleration in the last section, in m/s² (negative if slowing)", a3, 2, "The last section ends at rest. Use the same gradient idea: change in velocity ÷ change in time."),
+      xNum("dist", "Distance", "Total distance travelled, in m", dist, 1, "The distance is the area under the graph. Split it into trapeziums and a rectangle."),
+      xNum("avg", "Average speed", "Average speed over the whole journey, in m/s", avg, 2, "Average speed = total distance ÷ total time. Read the end time from the graph."),
+    ],
+    steps: [
+      `Read from the graph: (0, ${u}), (${t1}, ${top}), (${t2}, ${top}), (${t3}, 0), with time in s and velocity in m/s.`,
+      `First section: \`(${top} - ${u}) / ${t1}\` → ${xs(a1)}, so **${xr(a1, 2)} m/s²**. Last section: \`(0 - ${top}) / ${t3 - t2}\` → ${xs(a3)}, so **${xr(a3, 2)} m/s²**.`,
+      `Distance = area under the graph: \`0.5 * (${u} + ${top}) * ${t1} + ${top} * ${t2 - t1} + 0.5 * ${top} * ${t3 - t2}\` = **${xr(dist, 1)} m**.`,
+      `Average speed = \`${xs(dist)} / ${t3}\` → ${xs(avg)}, which rounds to **${xr(avg, 2)} m/s**.`,
+    ],
+    given: [],
+    hints: [
+      "Find the corners of the graph, where the line changes direction. At each one, read the time along the bottom and the velocity up the side; every corner sits on a gridline crossing.",
+      "Acceleration is the gradient of a section: change in velocity ÷ change in time. A section sloping downwards means slowing down, so the acceleration is negative.",
+      "The distance is the area under the graph. For the average speed, divide that distance by the total time.",
+    ],
+  });
+  return q ? { ...q, visual: readGraph("Velocity–time graph", "Velocity", "Velocity (m/s)", pts, tStep, vStep) } : q;
+}
+
+// speed / expert: read a distance-time graph (out, stopped, on again); speeds, time stopped, average.
+function xReadDt(rng) {
+  const tStep = rng.pick([5, 10, 20]);
+  const dStep = rng.pick([10, 20, 50, 100]);
+  const na = rng.int(1, 2);
+  const nb = rng.int(1, 2);
+  const nc = rng.int(1, 2);
+  const kd1 = rng.int(1, 3);
+  const kd2 = rng.int(1, 3);
+  const t1 = na * tStep;
+  const t2 = (na + nb) * tStep;
+  const t3 = (na + nb + nc) * tStep;
+  const d1 = kd1 * dStep;
+  const d3 = (kd1 + kd2) * dStep;
+  const v1 = d1 / t1;
+  const v3 = (d3 - d1) / (nc * tStep);
+  const avg = d3 / t3;
+  if (v1 === v3 || Math.max(v1, v3) > 15 || Math.min(v1, v3) < 0.5) return null;
+  const top = Math.max(v1, v3);
+  const who = top <= 2.5 ? "A walker" : top <= 7 ? "A runner" : "A cyclist";
+  const pts = [[0, 0], [t1, d1], [t2, d1], [t3, d3]];
+  const stop = t2 - t1;
+  const q = xMulti({
+    kind: "x-readdt",
+    v: { pts },
+    prompt: `${who} travels along a straight path. The distance–time graph is shown, made of straight-line sections. Read the values from the graph.`,
+    parts: [
+      { id: "stop", label: "Stopped", ask: "Time spent stopped, in s", answerType: "number", answer: stop, tolerance: 0,
+        hint: "A flat section of a distance–time graph means no distance is covered. Read the times at its two ends.", _exact: stop, _dp: null },
+      xNum("v1", "First section", "Speed in the first section, in m/s", v1, 2, "Speed is the gradient of a distance–time graph: distance moved ÷ time taken, for that section."),
+      xNum("v3", "Last section", "Speed in the last section, in m/s", v3, 2, "Use the distance moved in the last section only, not the distance from the start."),
+      xNum("avg", "Average speed", "Average speed over the whole journey, in m/s", avg, 2, "Total distance ÷ total time, with the stop included in the time."),
+    ],
+    steps: [
+      `Read from the graph: (0, 0), (${t1}, ${d1}), (${t2}, ${d1}), (${t3}, ${d3}), with time in s and distance in m.`,
+      `Stopped: the flat section runs from ${t1} s to ${t2} s, so **${stop} s**.`,
+      `First section: \`${d1} / ${t1}\` → ${xs(v1)}, so **${xr(v1, 2)} m/s**. Last section: \`(${d3} - ${d1}) / ${t3 - t2}\` → ${xs(v3)}, so **${xr(v3, 2)} m/s**.`,
+      `Average speed = \`${d3} / ${t3}\` → ${xs(avg)}, which rounds to **${xr(avg, 2)} m/s**.`,
+    ],
+    given: [],
+    hints: [
+      "Find the corners of the graph, where the line changes direction. At each one, read the time along the bottom and the distance up the side; every corner sits on a gridline crossing.",
+      "Speed is the gradient of a section: distance moved ÷ time taken. A flat section is a stop.",
+      "For the average speed use the total distance and the total time from start to finish, including the stop.",
+    ],
+  });
+  return q ? { ...q, visual: readGraph("Distance–time graph", "Distance", "Distance (m)", pts, tStep, dStep) } : q;
+}
+
 function genExpert(subtopic, rng) {
   const pick = (list) => list[rng.int(0, list.length - 1)];
-  if (subtopic === "speed") return xTry(pick([xLegs, xTarget, xChase]), rng);
-  if (subtopic === "acceleration") return xTry(pick([xPhases, xReadings, xKmh]), rng);
+  if (subtopic === "speed") return xTry(pick([xLegs, xTarget, xChase, xReadDt]), rng);
+  if (subtopic === "acceleration") return xTry(pick([xPhases, xReadings, xKmh, xReadVt]), rng);
   if (subtopic === "motion-equations") return xTry(pick([xStop, xCliff, xPolice]), rng);
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
@@ -1048,6 +1175,39 @@ const X_TRUTH = {
   },
 };
 
+// Picture-based truth for the chart-reading templates: the corner points come from the drawn
+// visual itself (checked to sit on its gridlines), never from the generator's stage values.
+const slope = (p, q) => (q[1] - p[1]) / (q[0] - p[0]);
+const READ_TRUTH = {
+  "x-readvt": (pts) => {
+    let area = 0;
+    for (let i = 0; i + 1 < pts.length; i++) area += ((pts[i + 1][0] - pts[i][0]) * (pts[i][1] + pts[i + 1][1])) / 2;
+    const T = pts[pts.length - 1][0] - pts[0][0];
+    return { a1: slope(pts[0], pts[1]), a3: slope(pts[pts.length - 2], pts[pts.length - 1]), dist: area, avg: area / T };
+  },
+  "x-readdt": (pts) => {
+    let stop = 0;
+    for (let i = 0; i + 1 < pts.length; i++) if (pts[i + 1][1] === pts[i][1]) stop += pts[i + 1][0] - pts[i][0];
+    const T = pts[pts.length - 1][0] - pts[0][0];
+    return { stop, v1: slope(pts[0], pts[1]), v3: slope(pts[pts.length - 2], pts[pts.length - 1]), avg: (pts[pts.length - 1][1] - pts[0][1]) / T };
+  },
+};
+
+function xVerifyRead(question, answer) {
+  const p = question.params;
+  const vis = sanitizeVisual(question.visual);
+  if (!vis || vis.kind !== "line" || vis.series.length !== 1 || vis.showValues !== false) return false;
+  const pts = vis.series[0].points;
+  const ax = visualAxes(vis);
+  const on = (ticks, x) => ticks.some((t) => Math.abs(t - x) < 1e-9 * Math.max(1, Math.abs(x)));
+  // every read value sits exactly on a gridline crossing
+  if (!pts.every(([x, y]) => on(ax.x.ticks, x) && on(ax.y.ticks, y))) return false;
+  const want = p.v && p.v.pts;
+  if (!Array.isArray(want) || want.length !== pts.length || want.some((q, i) => q[0] !== pts[i][0] || q[1] !== pts[i][1])) return false;
+  if (!pts.every((q, i) => i === 0 || q[0] > pts[i - 1][0])) return false;
+  return xVerify(question, answer, { [p.kind]: () => READ_TRUTH[p.kind](pts) });
+}
+
 export function generate({ subtopic, difficulty, rng }) {
   if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "speed") return genSpeed(difficulty, rng);
@@ -1060,6 +1220,7 @@ export function generate({ subtopic, difficulty, rng }) {
 // For rounded answers the allowed residual is 0.005 × (how strongly the formula reacts to the unknown).
 export function verify(question, answer) {
   const p = question && question.params;
+  if (p && (p.kind === "x-readvt" || p.kind === "x-readdt")) return xVerifyRead(question, answer);
   if (p && typeof p.kind === "string" && p.kind.startsWith("x-")) return xVerify(question, answer, X_TRUTH);
   if (!p || !p.values) return false; // regenerate from the seed to get params back
 

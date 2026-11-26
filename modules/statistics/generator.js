@@ -5,6 +5,8 @@
 
 // Round half away from zero (the 1e-9 nudge absorbs binary error) and intermediate numbers come from mathutil.
 import { fmtNum, round2 } from "../../js/lib/mathutil.js";
+// Chart reading (Expert): the picture's own data is validated and its gridlines used in verify().
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 
 // Answer/choice formatter: whole numbers as-is (prompts say "round if it is not a whole number"),
 // others with exactly 2 decimals; never "-0".
@@ -1210,12 +1212,160 @@ function genXBlend(rng) {
   };
 }
 
+// ---- Expert: bar charts whose bar values are NOT written on the chart (read off the gridlines) ----
+//
+// The chart has its axes, tick numbers, axis labels and legend, but showValues is false, so the
+// learner reads each bar against the gridlines. Every bar height is a whole multiple of the y step
+// (so it sits exactly on a gridline), and the axis ends one step above the tallest bar. No bar value
+// appears in the prompt, the part asks, the hints or the alt text; the explanation states them.
+// verify() takes the bar heights from the drawn visual (checked against its ticks) and recomputes.
+
+const READ_BAR_MAX_K = 6; // bars are 1..6 steps tall, so the axis has at most 8 labelled ticks
+
+// A bar chart with no value labels: heights are `ks[i] * step`, y axis one step above the tallest.
+function readBarVisual(caption, cats, name, ks, step, xLabel, yLabel) {
+  return {
+    kind: "bar",
+    caption,
+    categories: cats,
+    series: [{ name, values: ks.map((k) => k * step) }],
+    xLabel,
+    yLabel,
+    yStep: step,
+    yMax: (Math.max(...ks) + 1) * step,
+    showValues: false,
+  };
+}
+
+const READ_FREQ_CTX = [
+  { cap: "Goals scored in each match", intro: "The bar chart shows how many goals a team scored in each of its matches this season.", x: "Goals in a match", y: "Number of matches", items: "matches", start: 0 },
+  { cap: "Pets owned by each pupil", intro: "A class was asked how many pets each pupil owns. The bar chart shows the results.", x: "Pets owned", y: "Number of pupils", items: "pupils", start: 0 },
+  { cap: "Shoe sizes in a class", intro: "The bar chart shows the shoe sizes of the pupils in a class.", x: "Shoe size", y: "Number of pupils", items: "pupils", start: 3 },
+  { cap: "Books read in the holidays", intro: "Pupils counted the books they read in the holidays. The bar chart shows the results.", x: "Books read", y: "Number of pupils", items: "pupils", start: 1 },
+];
+
+// mean-median-mode / expert, template 3: a frequency bar chart with no values written on it.
+function genXReadFreq(rng) {
+  const ctx = rng.pick(READ_FREQ_CTX);
+  const m = rng.int(5, 7);
+  const step = rng.pick([1, 2]);
+  const cats = [];
+  for (let i = 0; i < m; i++) cats.push(ctx.start + i);
+  let ks, mean, n;
+  for (let t = 0; ; t++) {
+    ks = [];
+    for (let i = 0; i < m; i++) ks.push(rng.int(1, READ_BAR_MAX_K));
+    n = sum(ks) * step;
+    mean = sum(ks.map((k, i) => k * step * cats[i])) / n;
+    const top = Math.max(...ks);
+    const uniqueMode = ks.filter((k) => k === top).length === 1;
+    if ((uniqueMode && n >= 12 && !isTie2(mean)) || t > 300) break;
+  }
+  if (isTie2(mean) || n < 12) {
+    // fallback (never seen in testing)
+    ks = [2, 4, 6, 3, 1, 3, 2].slice(0, m);
+    n = sum(ks) * step;
+    mean = sum(ks.map((k, i) => k * step * cats[i])) / n;
+  }
+  const freqs = ks.map((k) => k * step);
+  const data = [];
+  cats.forEach((c, i) => { for (let j = 0; j < freqs[i]; j++) data.push(c); });
+  const med = medianOf(data);
+  const mid = n % 2 ? `the ${ord((n + 1) / 2)} value` : `halfway between the ${ord(n / 2)} and ${ord(n / 2 + 1)} values`;
+  const steps = [
+    `Read the bars: ${cats.map((c, i) => `${c} → ${freqs[i]}`).join(", ")}.`,
+    `Total = ${freqs.join(" + ")} = **${n}**.`,
+    `The median is ${mid}. Adding the frequencies from the left reaches it at **${dp(med)}**.`,
+    `Mean = \`(${cats.map((c, i) => `${c} × ${freqs[i]}`).join(" + ")}) / ${n}\` ${result(mean, true)}.`,
+  ];
+  return {
+    prompt: `${ctx.intro} Read the values from the chart.`,
+    answerType: "multi",
+    parts: [
+      { id: "total", label: "Total", ask: `The total number of ${ctx.items} in the data`, answerType: "number", answer: n, tolerance: 0,
+        hint: "Read the height of every bar and add the heights together." },
+      { id: "median", label: "Median", ask: `The median (${X_ROUND})`, answerType: "number", answer: round2(med), tolerance: 0.005,
+        hint: "List the values in order, each repeated as often as its bar says. Find the middle position from the total." },
+      { id: "mean", label: "Mean", ask: `The mean (${X_ROUND})`, answerType: "number", answer: round2(mean), tolerance: 0.005,
+        hint: "Multiply each value by the height of its bar, add those products, then divide by the total." },
+    ],
+    explanation: steps.join("\n\n"),
+    visual: readBarVisual(ctx.cap, cats.map(String), "Frequency", ks, step, ctx.x, ctx.y),
+    params: { kind: "x-readfreq", values: { cats, freqs } },
+    hints: [
+      "Read each bar's height against the gridlines on the y-axis: every bar ends exactly on a line. Write the heights down as a frequency table.",
+      "The total number of values is the sum of the heights. The median is the middle value when all the values are listed in order, so use the total to find its position.",
+      "For the mean, work out value × frequency for each bar and add them up (the sum of all the values), then divide by the total.",
+    ],
+  };
+}
+
+const READ_BARS_CTX = [
+  { cap: "Visitors to a museum each week", x: "Week", y: "Visitors", name: "Visitors", unit: "weekly total", steps: [10, 20], label: (i) => `W${i + 1}`, n: [7, 8, 9, 10] },
+  { cap: "Cups of hot chocolate sold each week", x: "Week", y: "Cups sold", name: "Cups sold", unit: "weekly total", steps: [5, 10], label: (i) => `W${i + 1}`, n: [7, 8, 9, 10] },
+  { cap: "Books borrowed each day", x: "Day", y: "Books borrowed", name: "Books borrowed", unit: "daily total", steps: [10, 20], label: (i) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i], n: [7] },
+  { cap: "Cakes sold each day", x: "Day", y: "Cakes sold", name: "Cakes sold", unit: "daily total", steps: [5, 10], label: (i) => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i], n: [7] },
+];
+
+// range-iqr / expert, template 2: a bar chart with no values written on it; range, IQR and a share.
+function genXReadBars(rng) {
+  const ctx = rng.pick(READ_BARS_CTX);
+  const n = rng.pick(ctx.n);
+  const step = rng.pick(ctx.steps);
+  let ks, vals, range, iqr, pct, total;
+  for (let t = 0; ; t++) {
+    ks = [];
+    for (let i = 0; i < n; i++) ks.push(rng.int(1, READ_BAR_MAX_K));
+    vals = ks.map((k) => k * step);
+    const s = sorted(vals);
+    const qs = quartiles(s);
+    range = s[n - 1] - s[0];
+    iqr = qs.q3 - qs.q1;
+    total = sum(vals);
+    pct = (100 * s[n - 1]) / total;
+    const tie1 = Math.abs(((pct * 10) % 1) - 0.5) < 1e-6;
+    if ((range > 0 && iqr > 0 && !tie1) || t > 300) break;
+  }
+  const s = sorted(vals);
+  const { lower, upper, q1, q3 } = quartiles(s);
+  const mx = s[n - 1];
+  const steps = [
+    `Read the bars: ${vals.join(", ")}.`,
+    `Sorted: ${list(s)}. Range = \`${mx} - ${s[0]}\` = **${range}**.`,
+    `${n % 2 ? `Leave out the middle value (${s[(n - 1) / 2]}). ` : ""}Lower half: ${list(lower)}, so Q1 = ${num(q1)}. Upper half: ${list(upper)}, so Q3 = ${num(q3)}. IQR = \`${num(q3)} - ${num(q1)}\` = **${dp(iqr)}**.`,
+    `Total = ${total}. Share of the tallest bar = \`100 × ${mx} / ${total}\` ≈ ${(pct).toFixed(4)}, which rounds to **${(Math.round(pct * 10 + 1e-9) / 10).toFixed(1)}%**.`,
+  ];
+  return {
+    prompt: `The bar chart shows the ${ctx.unit} for ${n} ${ctx.x === "Week" ? "weeks" : "days"}. Read the values from the chart.${QUARTILE_METHOD}`,
+    answerType: "multi",
+    parts: [
+      { id: "range", label: "Range", ask: "The range of the values", answerType: "number", answer: range, tolerance: 0,
+        hint: "Read the tallest and the shortest bar. Range = largest - smallest." },
+      { id: "iqr", label: "IQR", ask: `The interquartile range (${X_ROUND})`, answerType: "number", answer: round2(iqr), tolerance: 0.005,
+        hint: `Write the heights in order, then split them into halves of ${Math.floor(n / 2)}. IQR = Q3 - Q1.` },
+      { id: "share", label: "Share", ask: "The tallest bar as a percentage of the total of all the bars, to 1 decimal place (no % sign)", answerType: "number", answer: Math.round(pct * 10 + 1e-9) / 10, tolerance: 0.05,
+        hint: "Add all the bar heights for the total. Share = tallest ÷ total × 100." },
+    ],
+    explanation: steps.join("\n\n"),
+    visual: readBarVisual(ctx.cap, ks.map((_, i) => ctx.label(i)), ctx.name, ks, step, ctx.x, ctx.y),
+    params: { kind: "x-readbars", values: { vals } },
+    hints: [
+      "Read each bar's height against the gridlines on the y-axis: every bar ends exactly on a line. Write the heights down.",
+      `Sort the ${n} heights${n % 2 ? ", leave out the middle one," : ""} and split them into a lower and upper half. Q1 and Q3 are the medians of the halves.`,
+      "For the percentage, add up every bar to get the total, then divide the tallest bar by it and multiply by 100.",
+    ],
+  };
+}
+
 function genExpert(subtopic, rng) {
   if (subtopic === "mean-median-mode") {
-    const t = rng.int(0, 2);
-    return t === 0 ? genXRunningMean(rng) : t === 1 ? genXMissing(rng) : genXCorrection(rng);
+    const t = rng.int(0, 3);
+    return t === 0 ? genXRunningMean(rng) : t === 1 ? genXMissing(rng) : t === 2 ? genXCorrection(rng) : genXReadFreq(rng);
   }
-  if (subtopic === "range-iqr") return rng.next() < 0.5 ? genXOutliers(rng) : genXIqrBack(rng);
+  if (subtopic === "range-iqr") {
+    const t = rng.int(0, 2);
+    return t === 0 ? genXOutliers(rng) : t === 1 ? genXIqrBack(rng) : genXReadBars(rng);
+  }
   if (subtopic === "probability") return rng.next() < 0.6 ? genXTable(rng) : genXPooled(rng);
   if (subtopic === "weighted-average") {
     const t = rng.int(0, 2);
@@ -1359,8 +1509,44 @@ const partFrac = (ans, id) => {
 };
 const near = (a, b, tol) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a - b) <= tol + 1e-9;
 
+// The bar heights of a chart-reading question, taken from the drawn visual: null unless it is a
+// one-series bar chart with no value labels whose every bar sits exactly on a gridline.
+function readBarHeights(question) {
+  const v = sanitizeVisual(question.visual);
+  if (!v || v.kind !== "bar" || v.series.length !== 1 || v.showValues !== false) return null;
+  const vals = v.series[0].values;
+  if (vals.some((x) => x === null || !(x > 0))) return null;
+  const ticks = visualAxes(v).y.ticks;
+  if (!vals.every((x) => ticks.some((t) => Math.abs(t - x) < 1e-9 * Math.max(1, x)))) return null;
+  return { v, vals };
+}
+const sameList = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+
 function verifyExpert(p, question, answer) {
   const k = p.values;
+  if (p.kind === "x-readfreq") {
+    const r = readBarHeights(question);
+    if (!r || !sameList(r.vals, k.freqs) || !sameList(r.v.categories.map(Number), k.cats)) return false;
+    // rebuild the data list from the picture and use the counting routes for the median and mean
+    const data = [];
+    r.v.categories.map(Number).forEach((c, i) => { for (let j = 0; j < r.vals[i]; j++) data.push(c); });
+    const n = data.length;
+    const mean = partNum(answer, "mean");
+    return partNum(answer, "total") === n && near(partNum(answer, "median"), medianByCount(data, 0, n), 0.005)
+      && Number.isFinite(mean) && Math.abs(data.reduce((s, v) => s + (v - mean), 0)) <= 0.005 * n + 1e-9;
+  }
+  if (p.kind === "x-readbars") {
+    const r = readBarHeights(question);
+    if (!r || !sameList(r.vals, k.vals)) return false;
+    const d = r.vals;
+    const n = d.length;
+    const h = Math.floor(n / 2);
+    const iqr = medianByCount(d, n - h, h) - medianByCount(d, 0, h);
+    const total = d.reduce((s, v) => s + v, 0);
+    const share = partNum(answer, "share");
+    return partNum(answer, "range") === Math.max(...d) - Math.min(...d) && near(partNum(answer, "iqr"), iqr, 0.005)
+      && Number.isFinite(share) && Math.abs(share * total - 100 * Math.max(...d)) <= 0.05 * total + 1e-9;
+  }
   if (p.kind === "x-running") {
     const a = partNum(answer, "next");
     const b = partNum(answer, "needed");

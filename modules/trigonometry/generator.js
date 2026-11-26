@@ -10,6 +10,7 @@
 // Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...), the
 // half-step test and the 2-dp answer string come from mathutil.
 import { fmtAnswer, isHalfStep, round2 } from "../../js/lib/mathutil.js";
+import { sanitizeVisual } from "../../js/lib/visual.js";
 
 // Strip binary noise (0.1 * 3 = 0.30000000000000004) without changing a real value; never "-0".
 function clean(n) {
@@ -1217,10 +1218,89 @@ function xBearingCos(rng) {
   };
 }
 
+// ---- Expert "read it off the picture" templates (ticket 026): the angle is left off on purpose ----
+// The triangle is drawn to scale from the true angle (a multiple of 5°). The learner picks the closest of
+// four options at least 15° apart, then works out lengths from that angle. The angle, and the lengths that
+// depend on it, never appear in the prompt, the given rows, the hints or the part asks: `leaks()` redraws
+// the question if any of them would.
+const estOptions = (rng, ang, lo, hi) => {
+  const ks = [0, 1, 2, 3].filter((k) => ang - 15 * k >= lo && ang - 15 * k + 45 <= hi);
+  if (!ks.length) return null;
+  const s = ang - 15 * ks[rng.int(0, ks.length - 1)];
+  return rng.shuffle([0, 1, 2, 3].map((i) => `${s + 15 * i}°`));
+};
+const textOfQ = (q) => [q.prompt, ...(q.hints || []), ...q.parts.flatMap((p) => [p.ask, p.hint, p.label])].join("\n");
+const leaks = (q, omitted) => omitted.some((v) => inPrompt(textOfQ(q), v) || inPrompt(textOfQ(q), round2(v)));
+
+// right-angles / expert: right triangle with the hypotenuse labelled; estimate θ, then both legs.
+function xEstRight(rng) {
+  const H = rng.int(8, 60);
+  const theta = 5 * rng.int(4, 14);
+  const opts = estOptions(rng, theta, 10, 80);
+  if (!opts) return null;
+  const opp = H * sinD(theta);
+  const adj = H * cosD(theta);
+  if (!okDp(opp, adj)) return null;
+  const q = {
+    prompt: `A right-angled triangle is drawn to scale. Its hypotenuse is ${H} cm. The angle θ is not given: estimate it from the diagram, then use that angle.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      { id: "angle", label: "Angle θ", ask: "Which of these is closest to θ, judging from the diagram?", answerType: "choice", answer: `${theta}°`, choices: opts, hint: "θ is the angle at the bottom right. Compare it with the right-angle corner and with half of a right angle, then rule options out by eye." },
+      part2("opp", "Opposite", "Length of the side opposite θ, using the angle you chose", opp, "cm", "The hypotenuse is known and θ is chosen: opposite = hypotenuse × sin(θ)."),
+      part2("adj", "Adjacent", "Length of the side adjacent to θ, using the angle you chose", adj, "cm", "Adjacent = hypotenuse × cos(θ)."),
+    ],
+    explanation: [
+      `Measuring the picture against a right angle gives θ = **${theta}°** (the triangle was drawn from that angle).`,
+      [fact("_theta", theta), given("_H", H), row("_opp", "_H * sin(_theta)", final(opp, "2dp", "cm")), row("_adj", "_H * cos(_theta)", final(adj, "2dp", "cm"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-estR", H },
+    visual: rightVis({ opp: null, adj: null, hyp: ulab(H, "cm"), theta: "θ", lengths: { adj, hyp: H, opp }, force: true }),
+    hints: [
+      "The hypotenuse is the side opposite the right angle. Estimate θ first: compare it with the right-angle corner, and with half of one.",
+      "Once you have chosen θ, the side opposite it comes from sine and the side next to it from cosine, both with the hypotenuse.",
+      `Use your chosen angle in the calculator and keep the values unrounded.${LATE}`,
+    ],
+  };
+  return leaks(q, [theta, opp, adj]) ? null : q;
+}
+
+// non-right / expert: triangle ABC with BC and CA labelled; estimate angle C, then AB and the area.
+function xEstGeneral(rng) {
+  const a = rng.int(6, 30);
+  const b = rng.int(6, 30);
+  const C = 5 * rng.int(8, 24);
+  const opts = estOptions(rng, C, 20, 160);
+  if (!opts || Math.max(a, b) / Math.min(a, b) > 2.5) return null;
+  const c = Math.sqrt(a * a + b * b - 2 * a * b * cosD(C));
+  const area = 0.5 * a * b * sinD(C);
+  if (!okDp(c, area) || !fatEnough([a, b, c])) return null;
+  const q = {
+    prompt: `In triangle ABC, BC = ${a} cm and CA = ${b} cm. The triangle is drawn to scale, but angle C is not given: estimate it from the diagram, then use that angle.${UNROUNDED}${ROUND}`,
+    answerType: "multi",
+    parts: [
+      { id: "angle", label: "Angle C", ask: "Which of these is closest to angle C, judging from the diagram?", answerType: "choice", answer: `${C}°`, choices: opts, hint: "Angle C is between the two sides you know. Compare it with a right angle and with half of one, then rule options out by eye." },
+      part2("ab", "AB", "Length of AB, using the angle you chose", c, "cm", "AB is opposite angle C: use the cosine rule with BC, CA and C."),
+      part2("area", "Area", "Area of the triangle, using the angle you chose", area, "cm²", "Area = ½ × BC × CA × sin(C)."),
+    ],
+    explanation: [
+      `Comparing angle C with a right angle gives **${C}°** (the triangle was drawn from that angle).`,
+      [fact("_angC", C), given("_a", a), given("_b", b), row("_AB", "sqrt(_a^2 + _b^2 - 2 * _a * _b * cos(_angC))", final(c, "2dp", "cm")), row("_area", "0.5 * _a * _b * sin(_angC)", final(area, "2dp", "cm²"))].join("\n"),
+    ].join("\n\n"),
+    params: { kind: "x-estG", a, b },
+    visual: triVis({ a: ulab(a, "cm"), b: ulab(b, "cm") }, { C: "?" }, [a, b, c], true),
+    hints: [
+      "Estimate angle C first: it sits between the two sides you are given. Compare it with a right angle, and with half of one.",
+      "With C chosen, the cosine rule gives the side opposite it: AB² = BC² + CA² - 2 × BC × CA × cos(C).",
+      `For the area use two sides and the angle between them. Keep values unrounded.${LATE}`,
+    ],
+  };
+  return leaks(q, [C, c, area]) ? null : q;
+}
+
 const XGENS = {
   "right-sides": [xElevTwo, xAltitude, xPoleField],
-  "right-angles": [xCuboid, xBearingBack, xLadderMove],
-  "non-right": [xAmbiguous, xChain, xBearingCos],
+  "right-angles": [xCuboid, xBearingBack, xLadderMove, xEstRight],
+  "non-right": [xAmbiguous, xChain, xBearingCos, xEstGeneral],
 };
 
 function genExpert(subtopic, rng) {
@@ -1365,7 +1445,7 @@ function exactOf(p) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p || !p.kind) return false;
-  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer);
+  if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, answer, question);
 
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -1485,8 +1565,43 @@ function expertExact(p) {
   }
 }
 
-function verifyExpert(p, answer) {
+// The estimate templates: the angle is drawn from the visual itself (lengths -> atan2 / cosine rule), so the
+// check does not trust the generator's params. The chosen option must be the closest one to the drawn angle.
+function verifyEst(p, answer, question) {
+  const v = sanitizeVisual(question && question.visual);
+  if (!v || v.kind !== "triangle" || !v.toScale || !v.lengths) return false;
+  const choices = ((question.parts || []).find((x) => x.id === "angle") || {}).choices;
+  if (!Array.isArray(choices) || choices.length !== 4) return false;
+  const opts = choices.map((s) => (/^(\d+)°$/.exec(String(s)) || [])[1]).map(Number);
+  if (opts.some((n) => !Number.isFinite(n)) || new Set(opts).size !== 4) return false;
+  const sorted = [...opts].sort((x, y) => x - y);
+  if (sorted.some((n, i) => i && n - sorted[i - 1] < 12)) return false;
+  const m = /^(\d+)°$/.exec(String(answer.angle));
+  if (!m) return false;
+  const chosen = Number(m[1]);
+  const L = v.lengths;
+  let drawn;
+  if (p.kind === "x-estR") {
+    if (!v.angles[1].right || Math.abs(L[1] - p.H) > 1e-9) return false;
+    drawn = Math.atan2(L[2], L[0]) / RAD; // angle at C: opposite AB over adjacent BC
+  } else {
+    if (Math.abs(L[0] - p.a) > 1e-9 || Math.abs(L[1] - p.b) > 1e-9) return false;
+    drawn = Math.acos((L[0] * L[0] + L[1] * L[1] - L[2] * L[2]) / (2 * L[0] * L[1])) / RAD;
+  }
+  if (!opts.includes(chosen) || Math.abs(chosen - drawn) > 0.01) return false;
+  if (opts.some((o) => o !== chosen && Math.abs(o - drawn) <= Math.abs(chosen - drawn))) return false;
+  const near = (id, truth) => answer[id] !== "" && Number.isFinite(Number(answer[id])) && Math.abs(Number(answer[id]) - truth) <= 0.005 + 1e-9;
+  if (p.kind === "x-estR") {
+    const t = Math.tan(chosen * RAD);
+    return near("opp", (L[1] * t) / Math.sqrt(1 + t * t)) && near("adj", L[1] / Math.sqrt(1 + t * t));
+  }
+  const ab = Math.sqrt(L[0] * L[0] + L[1] * L[1] - 2 * L[0] * L[1] * Math.cos(chosen * RAD));
+  return near("ab", ab) && near("area", heron(L[0], L[1], ab));
+}
+
+function verifyExpert(p, answer, question) {
   if (!answer || typeof answer !== "object") return false;
+  if (p.kind === "x-estR" || p.kind === "x-estG") return verifyEst(p, answer, question);
   const ex = expertExact(p);
   if (!ex) return false;
   for (const [id, v] of Object.entries(ex)) {

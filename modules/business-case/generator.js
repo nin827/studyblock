@@ -10,6 +10,7 @@
 // Rounding half away from zero, answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
 import { fmtAnswer as fmtAns, fmtNum, gcd, round2 } from "../../js/lib/mathutil.js";
 import { visualFor } from "./visuals.js";
+import { sanitizeVisual, visualAxes } from "../../js/lib/visual.js";
 const num = (n) => fmtNum(n);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise (no $, no commas).
@@ -2619,10 +2620,170 @@ function xHrContract(rng) {
   };
 }
 
+// ---- Read-off-the-chart templates (Expert, ticket 026): the learner reads values that the chart leaves
+// unlabelled. Every value read sits exactly on a gridline, and none of them appears in the prompt, the
+// given rows, the hints or the part asks (the explanation may state them). The charts are built in
+// visuals.js from params only.
+
+const BE_Y_STEPS = [25000, 20000, 10000, 5000, 2500, 2000, 1000, 500, 250, 200, 100];
+const BE_UNIT_STEPS = [500, 250, 200, 100, 50, 20, 10];
+const IC_STEPS = [10, 20, 25, 50]; // $ thousand per gridline
+const IC_RATES = [6, 7, 8, 9, 11, 12, 13]; // never a multiple of 5, so a rate can't match a bar height
+
+// The numbers written in some texts (commas inside numbers ignored), as a Set.
+const numbersIn = (texts) => {
+  const out = new Set();
+  for (const t of texts) for (const m of String(t).replace(/(\d),(?=\d)/g, "$1").matchAll(/\d+(?:\.\d+)?/g)) out.add(Number(m[0]));
+  return out;
+};
+// True when any hidden value is written anywhere in the learner-facing text of a question.
+const showsHidden = (q, hidden) => {
+  const parts = Array.isArray(q.parts) ? q.parts : [];
+  const texts = [q.prompt, ...(q.hints || []), ...parts.flatMap((pt) => [pt.label, pt.ask, pt.hint]), ...(q.given || []).map((g) => g.value)];
+  const seen = numbersIn(texts.filter((t) => t !== undefined && t !== null));
+  return hidden.some((h) => seen.has(Number(Number(h).toFixed(2))));
+};
+
+// Break-even / expert 3: a revenue and total-cost chart with no value labels. Fixed costs, the
+// break-even units and the break-even revenue all sit on gridlines; the learner reads them to find the
+// price, the profit at a stated volume, and whether the margin of safety rule is met.
+function xBeChart(rng) {
+  const s = rng.pick(SHOPS);
+  const sx = BE_UNIT_STEPS.find((u) => u <= s.vol[1] / 6) || 10;
+  let q;
+  for (let t = 0; t < 300; t++) {
+    // Gridlines first: fixed costs F = f gridlines, break-even revenue R = r gridlines, break-even at k x-gridlines.
+    const Y = rng.pick(BE_Y_STEPS);
+    const r = rng.int(3, 6);
+    const f = rng.int(1, r - 1);
+    const k = rng.int(2, 4);
+    const more = rng.int(2, 3);
+    const Qm = rng.int(1, k + 3);
+    const Dm = rng.int(80, 220);
+    const T = rng.pick([10, 15, 20, 25, 30, 35, 40]);
+    const N = k * sx;
+    const Q = Qm * sx;
+    const F = f * Y;
+    const R = r * Y;
+    // Prices must be whole cents and in this business's range; unit cost between a quarter and three quarters of the price.
+    if (Q === N || (R * 100) % N || ((R - F) * 100) % N) continue;
+    const Pc = (R * 100) / N;
+    const Vc = ((R - F) * 100) / N;
+    if (Pc < s.price[0] * 75 || Pc > s.price[1] * 125 || f / r < 0.25 || f / r > 0.75) continue;
+    const xMax = (k + more) * sx;
+    const yMax = Math.ceil((Pc * xMax) / 100 / Y) * Y;
+    if (yMax / Y > 7) continue; // at most 8 gridlines, so every tick number is shown
+    const D = Math.max(sx, Math.round((N * Dm) / 100 / 10) * 10);
+    const mos = ((D - N) / D) * 100;
+    if (D === N || Math.abs(mos - T) < 2) continue;
+
+    const P = Pc / 100;
+    const m = (Pc - Vc) / 100;
+    const profit = Q * m - F;
+    const ok = mos >= T;
+    const prompt =
+      `${s.biz} sells ${s.sells}. The chart shows its revenue and its total cost (fixed costs plus variable costs) for a month at different sales volumes. ` +
+      `Not every value is labelled: read what you need from the chart. Every value you need sits exactly on a gridline. ` +
+      `In one busy month it sells ${Q} ${s.units}. It expects to sell ${D} ${s.units} in a normal month and goes ahead only if its margin of safety, ` +
+      `(expected sales − break-even sales) ÷ expected sales × 100, is at least ${T}%.`;
+    const lines = [
+      ...xRow([["_fixed", F], ["_be_units", N], ["_be_revenue", R], ["_units", Q], ["_expected", D], ["_limit", T]]),
+      step("_price", "_be_revenue / _be_units", final(P, "2dp", "money")),
+      step("_margin", "_fixed / _be_units", final(m, "2dp", "money")),
+      step("_profit", "_units * _margin - _fixed", `${final(profit, "2dp", "money")}${profit < 0 ? " (a loss)" : ""}`),
+      step("_mos", "(_expected - _be_units) / _expected * 100", final(mos, "2dp", "pct")),
+    ];
+    const explanation =
+      explain("Read the fixed costs where the total cost line meets the vertical axis, and the break-even units and revenue where the two lines cross. At break-even, margin × units = fixed costs.", lines) +
+      `\n\nThe margin of safety (${num(round2(mos))}%) is ${ok ? "at least" : "below"} the limit of ${T}%, so the answer is **${ok ? YES : NO}**.`;
+    q = {
+      prompt,
+      answerType: "multi",
+      parts: [
+        xPart("price", "Selling price", `What is the selling price per ${s.unit}, in dollars? Round to 2 decimal places.`, P, 0.005,
+          "Price per unit = revenue at the crossing ÷ units at the crossing. Round to 2 decimal places."),
+        xPart("profit", "Profit", `What is the profit in the month it sells ${Q} ${s.units}, in dollars (negative for a loss)? Round to 2 decimal places.`, round2(profit), 0.005,
+          "Profit = units × margin per unit − fixed costs. At break-even margin × units equals fixed costs, so the margin per unit is fixed costs ÷ break-even units."),
+        xChoice("rec", "Recommendation", `Should it go ahead with the expected ${D} ${s.units}?`, ok ? YES : NO, REC_CHOICES.demand,
+          "Margin of safety = (expected − break-even) ÷ expected × 100. Compare it with the limit stated in the question."),
+      ],
+      explanation,
+      params: { x: "be-chart", sx, N, Pc, Vc, F, Y, xMax, yMax, Q, D, T },
+      given: xGiven([["_units", Q], ["_expected", D], ["_limit", T]]),
+      hints: [
+        "Read three values off the chart: where the total cost line meets the vertical axis (the fixed costs), and the units and dollars where the revenue and total cost lines cross (break-even).",
+        "At break-even revenue equals total cost, so price = break-even revenue ÷ break-even units, and margin per unit × break-even units = fixed costs.",
+      ],
+    };
+    if (!showsHidden(q, [F, N, R, P, Vc / 100, m])) return q;
+  }
+  return q;
+}
+
+// Investment / expert 3: a cash-flow bar chart in $ thousand with no value labels. The learner reads
+// the cost and the five inflows off the gridlines, then finds the NPV, the simple payback and a decision.
+function xInvChart(rng) {
+  const p = rng.pick(PROJECTS);
+  let q;
+  for (let t = 0; t < 80; t++) {
+    const gs = rng.pick(IC_STEPS);
+    const c = rng.int(3, 5);
+    const ms = Array.from({ length: 5 }, () => rng.int(1, Math.min(c, 7 - c)));
+    const r = rng.pick(IC_RATES);
+    const maxY = rng.int(2, 4);
+    const C = c * gs;
+    const flows = ms.map((m) => m * gs);
+    let cum = -C;
+    let pb = 0;
+    flows.forEach((f, i) => {
+      cum += f;
+      if (!pb && cum >= 0) pb = i + 1;
+    });
+    const npv = pvOf(flows, r) - C;
+    if (!pb || halfCent(npv) || Math.abs(npv) < 0.5 || c + Math.max(...ms) > 7) continue; // at most 8 gridlines, so every tick number is shown
+    const ok = pb <= maxY && npv > 0;
+    const prompt =
+      `${p.biz} is considering ${p.asset}. The chart shows the project's cash flows in thousands of dollars: year 0 is the cost, and years 1 to 5 are the cash coming in at the end of each year. ` +
+      `Not every value is labelled: read each bar from the gridlines. The discount rate is ${r}%. ` +
+      `The owner invests only if the (undiscounted) payback period is at most ${years(maxY)} and the NPV is positive.`;
+    const lines = [
+      ...xRow([["_cost", C], ["_rate", r], ["_limit", maxY], ...flows.map((f, i) => [`_cf${i + 1}`, f])]),
+      ...flows.map((f, i) => step(`_pv${i + 1}`, `_cf${i + 1} / (1 + _rate / 100) ^ ${i + 1}`, num(f / Math.pow(1 + r / 100, i + 1)))),
+      step("_npv", "_pv1 + _pv2 + _pv3 + _pv4 + _pv5 - _cost", final(npv, "2dp")),
+    ];
+    let run = -C;
+    const explanation =
+      explain("Read the cost and the five inflows from the bars (in thousands of dollars), discount the inflows for the NPV, and keep a running total of the raw flows for the payback.", lines) +
+      `\n\nRunning totals of the raw flows, starting from the cost: ${flows.map((f, i) => `year ${i + 1}: ${(run += f)}`).join(", ")}. It first reaches zero or above in **year ${pb}**.` +
+      `\n\nPayback is ${pb <= maxY ? "within" : "more than"} ${years(maxY)} and the NPV is ${npv > 0 ? "positive" : "not positive"}, so the answer is **${ok ? INVEST : PASS}**.`;
+    q = {
+      prompt,
+      answerType: "multi",
+      parts: [
+        r2part("npv", "NPV", "What is the NPV, in thousands of dollars (12.5 means $12 500)? Round to 2 decimal places.", npv,
+          "Discount each inflow by (1 + rate/100)^year, add the five results and subtract the year 0 cost. Round to 2 decimal places."),
+        xPart("payback", "Payback year", "In which year does the running total of the undiscounted cash flows, starting from the year 0 cost, first reach zero or above? Answer with the year number.", pb, 0,
+          "Start the running total at the (negative) year 0 bar and add each year's bar in turn; stop at the first year where the total is zero or above."),
+        xChoice("rec", "Recommendation", "Should it invest?", ok ? INVEST : PASS, REC_CHOICES.invest,
+          `Both conditions must hold: your *Payback year* answer is at most ${maxY} and your *NPV* answer is positive.`),
+      ],
+      explanation,
+      params: { x: "inv-chart", step: gs, C, flows, r, maxY },
+      given: xGiven([["_rate", r], ["_limit", maxY]]),
+      hints: [
+        "Read each bar's height from the gridlines: the year 0 bar is below zero (the cost), the other five are above it.",
+        "NPV discounts year t's inflow by (1 + rate/100)^t and subtracts the cost. The payback ignores discounting: it only adds up the raw bars.",
+      ],
+    };
+    if (!showsHidden(q, [C, ...flows, npv])) return q;
+  }
+  return q;
+}
+
 const EXPERT = {
-  "break-even": [xBePrice, xBeLeverage, xBeMix],
+  "break-even": [xBePrice, xBeLeverage, xBeMix, xBeChart],
   "unit-economics": [xUeChurn, xUeBlend],
-  investment: [xInvAnnuity, xInvCompare, xInvDpay],
+  investment: [xInvAnnuity, xInvCompare, xInvDpay, xInvChart],
   "pricing-decision": [xPrElastic, xPrSpecial],
   inventory: [xIvDiscount, xIvBack],
   hiring: [xHrSales, xHrContract],
@@ -2839,6 +3000,50 @@ function verifyExpert(question, answer) {
       const contractor = p.Hm * p.R * 1200;
       if (Math.abs(contractor - total) < p.R * 1200) return false; // at least an hour from break-even
       return ch("rec") === (contractor > total ? HIRE : CONTRACT);
+    }
+    case "be-chart": {
+      // Read everything off the chart's own data (not from params), and check it sits on gridlines.
+      const v = sanitizeVisual(visualFor(question, "break-even", "expert"));
+      if (!v || v.kind !== "line" || v.showValues || v.series.length !== 2) return false;
+      const ax = visualAxes(v);
+      const onX = (x) => ax.x.ticks.some((t) => Math.abs(t - x) < 1e-6);
+      const onY = (y) => ax.y.ticks.some((t) => Math.abs(t - y) < 1e-6);
+      const [rev, cost] = v.series;
+      const xe = rev.points[1][0];
+      if (rev.points[0][0] !== 0 || rev.points[0][1] !== 0 || cost.points[0][0] !== 0 || cost.points[1][0] !== xe) return false;
+      const sR = rev.points[1][1] / xe;
+      const F = cost.points[0][1];
+      const m = sR - (cost.points[1][1] - F) / xe;
+      if (!(m > 0.01)) return false;
+      const N = Math.round((F / m) * 1e6) / 1e6;
+      if (!Number.isInteger(N) || Math.abs(N - p.N) > 1e-6 || Math.abs(F - p.F) > 1e-6) return false;
+      const R = sR * N;
+      if (!(onX(N) && onY(F) && onY(R) && onX(xe))) return false;
+      const mos = ((p.D - N) / p.D) * 100;
+      if (Math.abs(mos - p.T) < 2 || Math.abs(p.Q - N) < 1) return false;
+      if (!near2(a("price"), sR) || !near2(a("profit"), p.Q * m - F)) return false;
+      if (showsHidden(question, [F, N, R, sR, sR - m, m])) return false;
+      return ch("rec") === (mos >= p.T ? YES : NO);
+    }
+    case "inv-chart": {
+      const v = sanitizeVisual(visualFor(question, "investment", "expert"));
+      if (!v || v.kind !== "bar" || v.showValues || v.series.length !== 1 || v.series[0].values.length !== 6) return false;
+      const ax = visualAxes(v);
+      const vals = v.series[0].values;
+      if (!vals.every((y) => y !== null && ax.y.ticks.some((t) => Math.abs(t - y) < 1e-6))) return false;
+      const C = -vals[0];
+      const flows = vals.slice(1);
+      if (!(C > 0) || !flows.every((f) => f > 0) || C !== p.C || flows.some((f, i) => f !== p.flows[i])) return false;
+      const npv = pvOf(flows, p.r) - C;
+      let cum = -C;
+      let pb = 0;
+      flows.forEach((f, i) => {
+        cum += f;
+        if (!pb && cum >= 0) pb = i + 1;
+      });
+      if (!pb || Math.abs(npv) < 0.5 || !near2(a("npv"), npv) || a("payback") !== pb) return false;
+      if (showsHidden(question, [C, ...flows, npv])) return false;
+      return ch("rec") === (pb <= p.maxY && npv > 0 ? INVEST : PASS);
     }
     default:
       return false;

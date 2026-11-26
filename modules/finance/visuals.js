@@ -1,8 +1,9 @@
 // Question visuals for Finance (ticket 026). Pure post-processing: visualFor() reads the finished
 // question's params and returns a `visual` or undefined. It never calls the rng, so every seed
 // gives the same question as before. Every number shown is already in the prompt; "?" marks the
-// asked cell. Expert questions show their stated facts only (nothing omitted, nothing read off a
-// chart), so verify() and the hints are unchanged.
+// asked cell. Expert questions show their stated facts only (nothing omitted), except x-chartdep:
+// a book-value chart with no value labels, whose cost, salvage value and life are read from gridlines
+// (checked in verify()).
 
 import { fmtNum, round2 } from "../../js/lib/mathutil.js";
 
@@ -128,6 +129,23 @@ function expert(p) {
       return facts("The plan", [["Deposit each month", usd(v.D)], ["Rate per year", pct(v.r)], ["Years", String(v.yrs)]]);
     case "x-drawdown":
       return facts("The fund", [["Invested", usd(v.F)], ["Rate per year", pct(v.r)], ["Withdrawal each year", usd(v.W)]]);
+    // Read-off chart (Expert): no value labels; the cost, salvage value and life sit on gridlines.
+    case "x-chartdep":
+      return {
+        kind: "line",
+        caption: "Straight-line book value",
+        series: [{ name: "Book value", points: [[0, v.C], [v.n, v.S]] }],
+        xLabel: "Year",
+        yLabel: "Book value ($)",
+        xMin: 0,
+        xMax: v.n,
+        xStep: 1,
+        yMin: 0,
+        yMax: v.C + v.Y,
+        yStep: v.Y,
+        showPoints: true,
+        showValues: false,
+      };
     default:
       return undefined;
   }
