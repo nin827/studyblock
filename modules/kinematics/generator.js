@@ -87,6 +87,24 @@ function finish(base, exact, rounded, candidates, rng) {
   return { ...base, answer: rounded ? round2(exact) : exact, answerType: "number", choices: undefined };
 }
 
+// ---- Question visuals (ticket 026): built only from values already drawn, no rng calls ----
+// Easy to Hard draw only quantities the prompt states, so no visual gives away the answer.
+
+const clean = (x) => Math.round(x * 1e6) / 1e6; // no float noise in plotted values
+const withVisual = (v) => (v ? { visual: v } : {});
+
+// A straight line on a time axis through the given points (all stated values).
+const lineGraph = (caption, name, yLabel, points, extra = {}) => ({
+  kind: "line",
+  caption,
+  series: [{ name, points: points.map(([x, y]) => [clean(x), clean(y)]) }],
+  xLabel: "Time (s)",
+  yLabel,
+  xMin: 0,
+  showPoints: true,
+  ...extra,
+});
+
 function genSpeed(difficulty, rng) {
   const rounded = difficulty === "hard";
   const unknown = rng.pick(["v", "d", "t"]);
@@ -154,6 +172,13 @@ function genSpeed(difficulty, rng) {
   }
 
   prompt = realistic(prompt, who, [unknown === "v" ? exact : v], []);
+  // Distance (m) and time (s) known: the distance-time line; speed and time known: the speed-time line.
+  const visual =
+    unknown === "v"
+      ? lineGraph("Distance–time graph", "Distance", "Distance (m)", [[0, 0], [t, d]], { yMin: 0, showValues: true })
+      : unknown === "d"
+        ? lineGraph("Speed–time graph", "Speed", "Speed (m/s)", [[0, v], [t, v]], { yMin: 0, showValues: true })
+        : undefined;
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,
@@ -162,7 +187,7 @@ function genSpeed(difficulty, rng) {
     given: givenFrom(values),
     hints,
   };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), ...withVisual(visual) };
 }
 
 function genAccel(difficulty, rng) {
@@ -263,6 +288,8 @@ function genAccel(difficulty, rng) {
     [unknown === "u" ? exact : u, unknown === "v" ? exact : v],
     [unknown === "a" ? exact : a]
   );
+  // Start and end velocity and the time are all stated when the acceleration is the unknown.
+  const visual = unknown === "a" ? lineGraph("Velocity–time graph", "Velocity", "Velocity (m/s)", [[0, u], [t, v]], { showValues: true }) : undefined;
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,
@@ -271,7 +298,7 @@ function genAccel(difficulty, rng) {
     given: givenFrom(values),
     hints,
   };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), ...withVisual(visual) };
 }
 
 function genMotion(difficulty, rng) {
@@ -416,6 +443,9 @@ function genMotion(difficulty, rng) {
     const V = unknown === "v" ? exact : v !== undefined ? v : U + A * t;
     prompt = realistic(prompt, who, [U, V], [A]);
   }
+  // u, a and t are stated when the distance is the unknown: the graph's area is that distance.
+  // Values are not printed, so the final velocity (a working step) isn't given away.
+  const visual = kind === "s1" ? lineGraph("Velocity–time graph", "Velocity", "Velocity (m/s)", [[0, u], [t, u + a * t]]) : undefined;
   const base = {
     prompt,
     tolerance: rounded ? 0.005 : 0,
@@ -424,7 +454,7 @@ function genMotion(difficulty, rng) {
     given: givenFrom(values, u === 0 ? ["u"] : []), // u = 0 is stated as "from rest"
     hints,
   };
-  return finish(base, exact, rounded, candidates, rng);
+  return { ...finish(base, exact, rounded, candidates, rng), ...withVisual(visual) };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -495,6 +525,9 @@ function xMulti({ kind, v, prompt, parts, steps, given, hints }) {
     hints,
   };
 }
+
+// Attach a visual (built lazily from values already in scope) to a question, or pass null through.
+const withExpertVisual = (q, makeVisual) => (q ? { ...q, visual: makeVisual() } : q);
 
 // Bisection: a root of f between lo and hi (f must change sign), else NaN.
 function xRoot(f, lo, hi) {
@@ -760,7 +793,7 @@ function xReadings(rng) {
   const V = a > 0 ? xr(vB + rng.int(5, 100) / 10, 1) : 0;
   const tV = (V - u) / a;
   const ask = a > 0 ? `Time at which it reaches ${xs(V)} m/s, in s` : "Time at which it comes to rest, in s";
-  return xMulti({
+  return withExpertVisual(xMulti({
     kind: "x-readings",
     v: { tA, vA, tB, vB, V },
     prompt: `A trolley moves in a straight line with constant acceleration. A data logger records ${xs(vA)} m/s at t = ${tA} s and ${xs(vB)} m/s at t = ${tB} s. ${X_UNROUNDED}`,
@@ -780,7 +813,10 @@ function xReadings(rng) {
       "The velocity at t = 0 is not the first reading: the trolley was already accelerating for `_tA` seconds before it.",
       `Then use \`v = u + at\` with ${a > 0 ? "v = `_V`" : "v = 0"} and rearrange for t.`,
     ],
-  });
+  }), () =>
+    // The two logged readings (both stated in the prompt). Nothing is omitted: they are arbitrary
+    // two-decimal values that cannot sit on gridlines, and every part asks for 2 decimal places.
+    lineGraph("Data logger readings", "Logged velocity", "Velocity (m/s)", [[tA, vA], [tB, vB]], { showValues: true }));
 }
 
 // acceleration / expert: km/h conversion, acceleration and a braking stage.

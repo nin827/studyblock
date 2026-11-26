@@ -126,6 +126,47 @@ function dataWithMode(rng, n, lo, hi, allowRunnerUp) {
   return rng.shuffle(data);
 }
 
+// ---- Question visuals (ticket 026): built only from values already drawn, no rng calls ----
+
+// Bar chart of how often each value appears (at most 10 different values, else no visual).
+function freqVisual(data) {
+  const vals = [...new Set(data)].sort((a, b) => a - b);
+  if (vals.length > 10) return undefined;
+  return {
+    kind: "bar",
+    caption: "How often each value appears",
+    categories: vals.map((v) => String(v)),
+    series: [{ name: "Frequency", values: vals.map((v) => data.filter((x) => x === v).length) }],
+    xLabel: "Value",
+    yLabel: "Frequency",
+    yStep: 1,
+    showValues: true,
+  };
+}
+
+// Bar chart of the marbles in a bag (counts are stated in the prompt).
+const bagVisual = (b) => ({
+  kind: "bar",
+  caption: "Marbles in the bag",
+  categories: b.cols.slice(),
+  series: [{ name: "Marbles", values: b.counts.slice() }],
+  xLabel: "Colour",
+  yLabel: "Number of marbles",
+  showValues: true,
+});
+
+const withVisual = (v) => (v ? { visual: v } : {});
+
+// Table of names with two numeric columns (weights/scores or credits/grades), all stated in the prompt;
+// "?" marks the asked cell.
+const gradeTable = (names, columns, a, b) => ({
+  kind: "table",
+  caption: "Grades and weights",
+  columns,
+  rows: names.map((n, i) => [n, a[i], b[i]]),
+  align: ["left", "right", "right"],
+});
+
 function genCentral(difficulty, rng) {
   checkDifficulty(difficulty);
   const kind = rng.pick(["mean", "median", "mode"]);
@@ -208,7 +249,7 @@ function genCentral(difficulty, rng) {
         : `Only one value appears more than once.`,
     ];
     const base = { prompt, tolerance: 0, explanation, params: { kind, values: { data }, rounded: false } };
-    return { ...finish(base, exact, false, candidates, rng), hints };
+    return { ...finish(base, exact, false, candidates, rng), hints, ...withVisual(freqVisual(data)) };
   }
   const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values: { data }, rounded } };
   return { ...finish(base, exact, rounded, candidates, rng), hints };
@@ -324,7 +365,7 @@ const COLOURS = ["red", "blue", "green", "yellow", "white", "black"];
 function genProbability(difficulty, rng) {
   checkDifficulty(difficulty);
   // Exact probability is always N/D with whole numbers; params carry the raw counts.
-  let kind, values, prompt, N, D, steps, fracCands, decCands, gv, hints;
+  let kind, values, prompt, N, D, steps, fracCands, decCands, gv, hints, viz;
 
   const bag = (k) => {
     const cols = rng.shuffle(COLOURS).slice(0, k);
@@ -342,6 +383,7 @@ function genProbability(difficulty, rng) {
       const f = b.counts[i];
       values = { f, t: b.total };
       gv = b.cols.map((c, j) => [`_${c}`, b.counts[j]]); // marbles of each colour
+      viz = bagVisual(b);
       prompt = `A bag holds ${bagText(b)} marbles. One marble is picked at random. What is the probability that it is ${b.cols[i]}?`;
       steps = [`There are ${b.total} marbles and ${f} of them are ${b.cols[i]}.`, `P = \`${f}/${b.total}\``];
       hints = [
@@ -400,6 +442,7 @@ function genProbability(difficulty, rng) {
       t1 = t2 = b.total;
       story = `A bag holds ${bagText(b)} marbles. A marble is picked at random, put back, and a second marble is picked. What is the probability that both are ${b.cols[i]}?`;
       gv = b.cols.map((c, j) => [`_${c}`, b.counts[j]]);
+      viz = bagVisual(b);
     } else if (r < 0.67) {
       const target = rng.int(1, 6);
       f1 = 1;
@@ -490,7 +533,7 @@ function genProbability(difficulty, rng) {
       ...givenRows(gv),
     };
     const cands = decCands || (fracCands || []).map(([a, b]) => a / b);
-    return { ...finish(base, exact, true, cands, rng, { lo: 0.01, hi: 0.99, step: 0.01 }), hints };
+    return { ...finish(base, exact, true, cands, rng, { lo: 0.01, hi: 0.99, step: 0.01 }), hints, ...withVisual(viz) };
   }
   const answer = fracStr(N, D);
   const [rn, rd] = reduce(N, D);
@@ -499,9 +542,9 @@ function genProbability(difficulty, rng) {
   if (rd === 1 || rn === 0) return genProbability(difficulty, rng);
   if (rng.next() < 0.35) {
     const { answer: a, choices } = fracChoices(N, D, fracCands, rng);
-    return { ...base, prompt: prompt + " Choose the answer in simplest form.", answer: a, answerType: "choice", choices, hints };
+    return { ...base, prompt: prompt + " Choose the answer in simplest form.", answer: a, answerType: "choice", choices, hints, ...withVisual(viz) };
   }
-  return { ...base, prompt: prompt + FRAC_NOTE, answer, answerType: "text", choices: undefined, hints };
+  return { ...base, prompt: prompt + FRAC_NOTE, answer, answerType: "text", choices: undefined, hints, ...withVisual(viz) };
 }
 
 function genWeighted(difficulty, rng) {
@@ -509,7 +552,7 @@ function genWeighted(difficulty, rng) {
   const hard = difficulty === "hard";
   const kind = hard ? rng.pick(["percent", "credits", "required"]) : rng.pick(["percent", "credits"]);
   const rounded = true;
-  let prompt, exact, explanation, candidates, values, gv, hints;
+  let prompt, exact, explanation, candidates, values, gv, hints, viz;
 
   if (kind === "percent" || kind === "required") {
     const names = rng.shuffle(["Homework", "Quizzes", "Project", "Midterm", "Lab work", "Essay"]);
@@ -540,6 +583,7 @@ function genWeighted(difficulty, rng) {
       } while ((need < 0 || need > 100) && tries < 50);
       if (need < 0 || need > 100) return genWeighted(difficulty, rng);
       values = { weights, scores, target: T };
+      viz = gradeTable([...parts, "Final exam"], ["Component", "Weight (%)", "Score"], weights, [...scores, "?"]);
       // _w4 is the final exam's weight: 4 weights + 3 scores + target = 8 rows.
       gv = [...weights.map((w, i) => [`_w${i + 1}`, w]), ...scores.map((x, i) => [`_s${i + 1}`, x]), ["_target", T]];
       exact = need;
@@ -558,11 +602,12 @@ function genWeighted(difficulty, rng) {
         `So \`${partial} + ${wf}x = ${100 * T}\`: take ${partial} from both sides, then divide by \`_w${k}\` (${wf}). Round to 2 decimal places if needed.`,
       ];
       const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-      return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, hi: 100, step: 1 }), hints };
+      return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, hi: 100, step: 1 }), hints, ...withVisual(viz) };
     }
     const parts = names.slice(0, k);
     const scores = parts.map(() => rng.int(40, 100));
     values = { weights, scores };
+    viz = gradeTable(parts, ["Component", "Weight (%)", "Score"], weights, scores);
     gv = [...weights.map((w, i) => [`_w${i + 1}`, w]), ...scores.map((x, i) => [`_s${i + 1}`, x])];
     const total = sum(scores.map((s, i) => s * weights[i]));
     exact = total / 100;
@@ -583,6 +628,7 @@ function genWeighted(difficulty, rng) {
     const credits = courses.map(() => rng.int(1, 5));
     const grades = courses.map(() => (hard ? rng.int(0, 8) / 2 : rng.int(1, 4))); // grade points 0–4
     values = { weights: credits, scores: grades };
+    viz = gradeTable(courses, ["Course", "Credits", "Grade points"], credits, grades);
     gv = [...credits.map((c, i) => [`_c${i + 1}`, c]), ...grades.map((g, i) => [`_g${i + 1}`, g])]; // 5 courses = 10 rows: skipped
     const total = sum(grades.map((g, i) => g * credits[i]));
     const cr = sum(credits);
@@ -600,7 +646,7 @@ function genWeighted(difficulty, rng) {
     ];
   }
   const base = { prompt, tolerance: 0.005, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
-  return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 }), hints };
+  return { ...finish(base, exact, rounded, candidates, rng, { lo: 0, step: kind === "credits" ? 0.1 : 1 }), hints, ...withVisual(viz) };
 }
 
 // ---- Expert: multi-step questions (easy/medium/hard above are untouched) ----
@@ -621,6 +667,25 @@ const SCORE_CTX = [
   { items: "darts rounds", item: "round", what: "score", lo: 10, hi: 180, mLo: 50, mHi: 120 },
   { items: "spelling quizzes", item: "quiz", what: "score", lo: 0, hi: 50, mLo: 20, mHi: 40 },
 ];
+
+// Line chart of the mean after each test: two means so far and the target (all stated in the prompt).
+function runningVisual(ctx, n, m, m2, m3) {
+  const lo = Math.max(0, Math.floor((Math.min(m, m2, m3) - 5) / 5) * 5);
+  const hi = Math.ceil((Math.max(m, m2, m3) + 5) / 5) * 5;
+  return {
+    kind: "line",
+    caption: `Mean ${ctx.what} after each ${ctx.item}`,
+    series: [
+      { name: "Mean so far", points: [[n, m], [n + 1, m2]] },
+      { name: "Target", points: [[n + 2, m3]] },
+    ],
+    xLabel: `${ctx.item[0].toUpperCase()}${ctx.item.slice(1)} number`,
+    yLabel: `Mean ${ctx.what}`,
+    xMin: n - 1, xMax: n + 3, yMin: lo, yMax: hi, xStep: 1,
+    showPoints: true,
+    showValues: true,
+  };
+}
 
 // mean-median-mode / expert, template 0: working backwards from a changing mean (multi-part).
 function genXRunningMean(rng) {
@@ -662,6 +727,7 @@ function genXRunningMean(rng) {
         hint: `The target total after ${n + 2} ${ctx.items} is \`${n + 2} × _m3\`. Subtract the total you already have after ${n + 1}.` },
     ],
     explanation: steps.join("\n\n"),
+    visual: runningVisual(ctx, n, m, m2, m3),
     params: { kind: "x-running", values: { n, m, m2, m3 } },
     ...xGiven([["_n", n], ["_m", m], ["_m2", m2], ["_m3", m3]]),
     hints: [
@@ -974,6 +1040,13 @@ function genXPooled(rng) {
         hint: `Expected count = number of ${ctx.trials} × estimated probability.` },
     ],
     explanation: steps.join("\n\n"),
+    visual: {
+      kind: "table",
+      caption: "Results of the two experiments",
+      columns: ["Person", "Trials", "Successes"],
+      rows: [[p1, n1, k1], [p2, n2, k2]],
+      align: ["left", "right", "right"],
+    },
     params: { kind: "x-pooled", values: { n1, n2, k1, k2, M } },
     ...xGiven([["_n1", n1], ["_k1", k1], ["_n2", n2], ["_k2", k2], ["_trials", M]]),
     hints: [
@@ -1018,6 +1091,13 @@ function genXClasses(rng) {
         hint: `Add the new score to the combined total and divide by ${N + 1}.` },
     ],
     explanation: steps.join("\n\n"),
+    visual: {
+      kind: "table",
+      caption: "Mean score by group",
+      columns: ["Group", "Students", "Mean score"],
+      rows: [["Class A", nA, mA], ["Class B", nB, "?"], ["All together", N, M]],
+      align: ["left", "right", "right"],
+    },
     params: { kind: "x-classes", values: { nA, mA, nB, M, s } },
     ...xGiven([["_nA", nA], ["_mA", mA], ["_nB", nB], ["_M", M], ["_s", s]]),
     hints: [
@@ -1058,6 +1138,13 @@ function genXFindWeight(rng) {
         hint: "Use the weights you found: coursework part + exam weight × x = 100 × target. Solve for x." },
     ],
     explanation: steps.join("\n\n"),
+    visual: {
+      kind: "table",
+      caption: "Coursework, exam and overall grade",
+      columns: ["Student", "Coursework", "Exam", "Overall"],
+      rows: [[name, c, e, g], ["Other student", c2, "?", T]],
+      align: ["left", "right", "right", "right"],
+    },
     params: { kind: "x-weight", values: { c, e, g, c2, T } },
     ...xGiven([["_c", c], ["_e", e], ["_g", g], ["_c2", c2], ["_target", T]]),
     hints: [
@@ -1106,6 +1193,13 @@ function genXBlend(rng) {
         hint: `Mass of ${ctx.a} ÷ total mass × 100.` },
     ],
     explanation: steps.join("\n\n"),
+    visual: {
+      kind: "table",
+      caption: "The mixture",
+      columns: ["Ingredient", "Price per kg", "Mass (kg)"],
+      rows: [[ctx.a, price(a), x], [ctx.b, price(b), "?"], ["Mixture", price(m), "?"]],
+      align: ["left", "right", "right"],
+    },
     params: { kind: "x-blend", values: { x, a, b, m } },
     ...xGiven([["_x", x], ["_a", a], ["_b", b], ["_m", m]]),
     hints: [

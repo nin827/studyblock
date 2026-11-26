@@ -75,6 +75,68 @@ const givenRows = (pairs) => (pairs ? { given: pairs.map(([label, value]) => ({ 
 
 const dec1 = (rng, lo, hi) => rng.int(lo * 10, hi * 10) / 10; // one decimal place
 
+// ---- Question visuals (ticket 026): data only, built from values already drawn (no rng). ----
+const len = (v, unit = "cm") => `${num(v)} ${unit}`;
+const ratioOk = (...vs) => Math.max(...vs) / Math.min(...vs) <= 3.5; // a shape is drawn to scale only when not extreme
+const NO3 = () => [{ label: null }, { label: null }, { label: null }];
+
+// A triangle is drawn to scale only when it is not a sliver (its height on the longest side is >= 25% of that side).
+function fatEnough(L) {
+  const [a, b, c] = L;
+  const s = (a + b + c) / 2;
+  const area = Math.sqrt(Math.max(0, s * (s - a) * (s - b) * (s - c)));
+  const m = Math.max(a, b, c);
+  return (2 * area) / m / m >= 0.25;
+}
+function triVisual(sides, angles, L, caption) {
+  const v = {
+    kind: "triangle",
+    vertices: NO3(),
+    sides: sides.map((label) => ({ label })),
+    angles: angles.map((label) => ({ label })),
+    toScale: false,
+  };
+  if (L && fatEnough(L)) {
+    v.lengths = L;
+    v.toScale = true;
+  }
+  if (caption) v.caption = caption;
+  return v;
+}
+// Right angle at B (bottom left): `bottom` = BC, `left` = AB, hypotenuse = CA. Labels: strings or null.
+function rightLegs(bottomLab, hypLab, leftLab, bottom, left, caption) {
+  const hyp = Math.hypot(bottom, left);
+  const v = triVisual([bottomLab, hypLab, leftLab], [null, null, null], [bottom, hyp, left], caption);
+  v.angles[1].right = true;
+  return v;
+}
+const rectVisual = (l, w, labels, caption, scale = true) => ({
+  kind: "shape", shape: "rectangle", dims: { width: l, height: w }, labels, toScale: scale && ratioOk(l, w), ...(caption ? { caption } : {}),
+});
+const circleVisual = (r, labels, caption) => ({ kind: "shape", shape: "circle", dims: { radius: r }, labels, toScale: true, ...(caption ? { caption } : {}) });
+const cuboidVisual = (l, w, h, caption) => ({
+  kind: "shape", shape: "cuboid", dims: { length: l, width: w, height: h },
+  labels: { length: len(l), width: len(w), height: len(h) }, toScale: ratioOk(l, w, h), ...(caption ? { caption } : {}),
+});
+const cylinderVisual = (r, h, labels, scale, caption) => ({
+  kind: "shape", shape: "cylinder", dims: { radius: r, height: h }, labels, toScale: scale && ratioOk(2 * r, h), ...(caption ? { caption } : {}),
+});
+// A coordinate grid with the origin in view: pts = [[x, y, label?]], extra = points that only widen the window.
+function coordsVisual(pts, { segments = [], lines = [], extra = [], caption } = {}) {
+  const all = [...pts, ...extra, [0, 0]];
+  const lo = (i) => Math.floor(Math.min(...all.map((p) => p[i]))) - 1;
+  const hi = (i) => Math.ceil(Math.max(...all.map((p) => p[i]))) + 1;
+  let [xMin, xMax, yMin, yMax] = [lo(0), hi(0), lo(1), hi(1)];
+  if (xMax - xMin < 8) { xMin -= Math.ceil((8 - (xMax - xMin)) / 2); xMax = xMin + 8; }
+  if (yMax - yMin < 8) { yMin -= Math.ceil((8 - (yMax - yMin)) / 2); yMax = yMin + 8; }
+  return {
+    kind: "coords", xMin, xMax, yMin, yMax, showGrid: true,
+    points: pts.map(([x, y, label]) => (label ? { x, y, label } : { x, y })),
+    segments, lines, ...(caption ? { caption } : {}),
+  };
+}
+const ptLabel = ([x, y]) => `(${num(x)}, ${num(y)})`;
+
 function genPerimArea(difficulty, rng) {
   checkDifficulty(difficulty);
   const kinds = {
@@ -84,7 +146,7 @@ function genPerimArea(difficulty, rng) {
   }[difficulty];
   const kind = rng.pick(kinds);
   const hard = difficulty === "hard";
-  let prompt, exact, rounded, unit, explanation, candidates, values, gv, hints;
+  let prompt, exact, rounded, unit, explanation, candidates, values, gv, hints, vis;
 
   if (kind === "rect-area" || kind === "rect-perim") {
     let l, w;
@@ -99,6 +161,7 @@ function genPerimArea(difficulty, rng) {
     }
     values = { l, w };
     gv = [["_l", l], ["_w", w]];
+    vis = rectVisual(l, w, { width: len(l), height: len(w) });
     rounded = hard;
     const end = rounded ? ROUND : WHOLE;
     if (kind === "rect-area") {
@@ -158,6 +221,7 @@ function genPerimArea(difficulty, rng) {
     } while (a + b <= c || a + c <= b || b + c <= a);
     values = { a, b, c };
     gv = [["_a", a], ["_b", b], ["_c", c]];
+    vis = triVisual([len(a), len(b), len(c)], [null, null, null], [a, b, c]);
     rounded = false;
     exact = a + b + c;
     unit = "cm";
@@ -183,6 +247,7 @@ function genPerimArea(difficulty, rng) {
     const given = byDiameter ? `a diameter of ${num(d)} cm` : `a radius of ${num(r)} cm`;
     const toR = byDiameter ? `The radius is half the diameter: \`r = ${num(d)} / 2 = ${num(r)}\`.\n\n` : "";
     const radiusHint = `You are given the diameter, ${num(d)} cm. The radius is half of it: \`r = ${num(d)} / 2 = ${num(r)}\`.`;
+    vis = circleVisual(r, byDiameter ? { diameter: `d = ${len(d)}` } : { radius: `r = ${len(r)}` });
     if (kind === "circle-area") {
       values = { r };
       exact = Math.PI * r * r;
@@ -214,6 +279,7 @@ function genPerimArea(difficulty, rng) {
       // circle-radius (hard): area given, rounded to 2 decimals, find the radius.
       const A = round2(Math.PI * r * r);
       values = { A };
+      vis = circleVisual(r, { radius: "?" }, `Area ${A.toFixed(2)} cm²`);
       exact = Math.sqrt(A / Math.PI);
       unit = "cm";
       prompt = `A circle has an area of ${A.toFixed(2)} cm². What is its radius, in cm?${PI_ROUND}`;
@@ -227,7 +293,7 @@ function genPerimArea(difficulty, rng) {
     }
   }
 
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv), ...(vis ? { visual: vis } : {}) };
   return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
@@ -241,7 +307,7 @@ function genAngles(difficulty, rng) {
   const kind = rng.pick(kinds);
   const NAMES = { 3: "triangle", 4: "quadrilateral", 5: "pentagon", 6: "hexagon", 7: "heptagon", 8: "octagon", 9: "nonagon", 10: "decagon", 12: "dodecagon" };
   const shape = (n) => (NAMES[n] ? `${NAMES[n]} (${n} sides)` : `${n}-sided polygon`);
-  let prompt, exact, rounded = false, explanation, candidates, values, gv, hints;
+  let prompt, exact, rounded = false, explanation, candidates, values, gv, hints, vis;
 
   if (kind === "triangle") {
     let a, b;
@@ -251,6 +317,7 @@ function genAngles(difficulty, rng) {
     } while (180 - a - b < 10);
     values = { angles: [a, b], total: 180 };
     gv = [["_a", a], ["_b", b]];
+    vis = triVisual([null, null, null], [`${a}°`, `${b}°`, "?"], null);
     exact = 180 - a - b;
     prompt = `Two angles of a triangle are ${a}° and ${b}°. What is the third angle?${DEG}`;
     explanation = `The angles in a triangle add up to 180°.\n\n\`180 - ${a} - ${b}\` ${result(exact, false, "°")}`;
@@ -279,6 +346,7 @@ function genAngles(difficulty, rng) {
     const apex = difficulty === "medium" ? 2 * rng.int(10, 80) : rng.int(20, 160);
     rounded = apex % 2 !== 0;
     values = { apex };
+    vis = triVisual([null, "equal", "equal"], [`${apex}°`, "?", "?"], [2 * Math.sin((apex / 2) * (Math.PI / 180)), 1, 1]);
     exact = (180 - apex) / 2;
     prompt = `An isosceles triangle has an angle of ${apex}° between its two equal sides. What is each of the other two angles?${DEG}${rounded ? ROUND : WHOLE}`;
     explanation = `The two base angles are equal and all three add up to 180°.\n\n\`(180 - ${apex}) / 2 = ${180 - apex} / 2\` ${result(exact, rounded, "°")}`;
@@ -362,7 +430,7 @@ function genAngles(difficulty, rng) {
     ];
   }
 
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv), ...(vis ? { visual: vis } : {}) };
   return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
@@ -406,9 +474,10 @@ function genPythagoras(difficulty, rng) {
   }
   const rounded = difficulty === "hard";
   const end = rounded ? ROUND : WHOLE;
-  let prompt, exact, explanation, candidates, values, gv, hints;
+  let prompt, exact, explanation, candidates, values, gv, hints, vis;
   if (find === "hyp") {
     values = { a, b };
+    vis = rightLegs(len(a), "?", len(b), a, b);
     gv = [["_a", a], ["_b", b]];
     exact = Math.sqrt(a * a + b * b);
     prompt = `A right triangle has legs of ${num(a)} cm and ${num(b)} cm. How long is the hypotenuse, in cm?${end}`;
@@ -424,6 +493,7 @@ function genPythagoras(difficulty, rng) {
     ];
   } else {
     values = { a, c };
+    vis = rightLegs(len(a), len(c), "?", a, Math.sqrt(c * c - a * a));
     gv = [["_c", c], ["_a", a]];
     exact = Math.sqrt(c * c - a * a);
     prompt = `A right triangle has a hypotenuse of ${num(c)} cm and one leg of ${num(a)} cm. How long is the other leg, in cm?${end}`;
@@ -438,7 +508,7 @@ function genPythagoras(difficulty, rng) {
       `Take the square root of ${num(c * c - a * a)}.${rounded ? " Round to 2 decimal places." : " It comes out as a whole number."}`,
     ];
   }
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind: find, values, rounded }, ...givenRows(gv) };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind: find, values, rounded }, ...givenRows(gv), visual: vis };
   return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
@@ -446,7 +516,7 @@ function genVolume(difficulty, rng) {
   if (difficulty !== "medium" && difficulty !== "hard") throw new Error(`volume has no "${difficulty}" level`);
   const hard = difficulty === "hard";
   const kind = rng.pick(["cuboid", "cylinder", "sphere"]);
-  let prompt, exact, rounded, explanation, candidates, values, gv, hints;
+  let prompt, exact, rounded, explanation, candidates, values, gv, hints, vis;
 
   if (kind === "cuboid") {
     let l, w, h;
@@ -462,6 +532,7 @@ function genVolume(difficulty, rng) {
     rounded = hard;
     values = { l, w, h };
     gv = [["_l", l], ["_w", w], ["_h", h]];
+    vis = cuboidVisual(l, w, h);
     exact = l * w * h;
     prompt = `A cuboid is ${num(l)} cm long, ${num(w)} cm wide and ${num(h)} cm high. What is its volume, in cm³?${rounded ? ROUND : WHOLE}`;
     explanation = `Volume of a cuboid = length × width × height.\n\n\`${num(l)} × ${num(w)} × ${num(h)}\` ${result(exact, rounded, "cm³")}`;
@@ -488,6 +559,9 @@ function genVolume(difficulty, rng) {
     const given = byDiameter ? `a diameter of ${num(d)} cm` : `a radius of ${num(r)} cm`;
     if (kind === "cylinder") {
       values = { r, h };
+      vis = byDiameter
+        ? cylinderVisual(r, h, { height: len(h) }, true, `The diameter is ${len(d)}`)
+        : cylinderVisual(r, h, { radius: `r = ${len(r)}`, height: len(h) }, true);
       gv = [byDiameter ? ["_d", d] : ["_r", r], ["_h", h]]; // whichever the prompt states
       exact = Math.PI * r * r * h;
       prompt = `A cylinder has ${given} and a height of ${num(h)} cm. What is its volume, in cm³?${PI_ROUND}`;
@@ -501,6 +575,7 @@ function genVolume(difficulty, rng) {
       ];
     } else {
       values = { r };
+      vis = circleVisual(r, byDiameter ? { diameter: `d = ${len(d)}` } : { radius: `r = ${len(r)}` }, "A sphere, drawn as a circle");
       exact = (4 / 3) * Math.PI * r ** 3;
       prompt = `A sphere has ${given}. What is its volume, in cm³?${PI_ROUND}`;
       explanation = `${toR}Volume of a sphere = 4/3 × π × r³.\n\n\`4/3 × π × ${num(r)}³ = 4/3 × π × ${num(r ** 3)}\` ${result(exact, true, "cm³")}`;
@@ -513,7 +588,7 @@ function genVolume(difficulty, rng) {
       ];
     }
   }
-  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv) };
+  const base = { prompt, tolerance: rounded ? 0.005 : 0, explanation, params: { kind, values, rounded }, ...givenRows(gv), visual: vis };
   return { ...finish(base, exact, rounded, candidates, rng), hints };
 }
 
@@ -596,6 +671,7 @@ function xRectBack(rng) {
       `They are **${l}** and **${w}**: \`${l} + ${w} = ${S}\` and \`${l} × ${w} = ${A}\`.`,
     ].join("\n\n"),
     params: { kind: "x-rectback", P, A },
+    visual: rectVisual(l, w, { width: "length ?", height: "width ?" }, "Both sides are unknown", false),
     ...xGiven([["_P", P], ["_A", A]]),
     hints: [
       `Halve the perimeter: \`_P / 2 = ${S}\`. That is length + width.`,
@@ -626,6 +702,7 @@ function xBorder(rng) {
       `Outer perimeter = \`2 × (${num(OL)} + ${num(OW)})\` = **${num(outer)} m**.`,
     ].join("\n\n"),
     params: { kind: "x-border", L, W, p },
+    visual: rectVisual(L, W, { width: len(L, "m"), height: len(W, "m") }, `The lawn; a path ${len(p, "m")} wide goes all the way round it`),
     ...xGiven([["_L", L], ["_W", W], ["_p", p]]),
     hints: [
       "Draw it: the path makes a bigger rectangle around the lawn.",
@@ -659,6 +736,7 @@ function xWire(rng) {
       `Difference: \`${((X * X) / (4 * Math.PI)).toFixed(4)} - ${num((X * X) / 16)}\` ${result(diff, true, "cm²")}`,
     ].join("\n\n"),
     params: { kind: "x-wire", X },
+    visual: circleVisual(r, { radius: "?" }, `A ${X} cm wire bent into a circle`),
     hints: [
       `The wire becomes the circumference: \`2 × π × r = ${X}\`. Rearrange for r.`,
       `As a square, the same ${X} cm is shared between 4 equal sides.`,
@@ -760,6 +838,7 @@ function xAlgAngles(rng) {
       `Angles: ${vals.map((v) => `${v}°`).join(", ")}. Largest: **${largest}°**.`,
     ].join("\n\n"),
     params: { kind: "x-algangles", ms, cs, total },
+    ...(quad || exprs.some((e) => e.length > 12) ? {} : { visual: triVisual([null, null, null], exprs, null) }),
     ...xGivenIf(cs.map((c, i) => [`_c${i + 1}`, c]).filter(([, c]) => c !== 0)),
     hints: [
       `The angles of a ${quad ? "quadrilateral" : "triangle"} add up to ${total}°. Add all the expressions together.`,
@@ -835,6 +914,7 @@ function xCuboid(rng) {
       `The longest rod that fits is the space diagonal, about ${f2(d2)} cm. The rod is ${R} cm, so: **${fits}**.`,
     ].join("\n\n"),
     params: { kind: "x-cuboid", l, w, h, R },
+    visual: cuboidVisual(l, w, h, "The rod is not drawn"),
     ...xGiven([["_l", l], ["_w", w], ["_h", h], ["_R", R]]),
     hints: [
       "Start on the floor of the box: the base diagonal is the hypotenuse of a right triangle with legs `_l` and `_w`.",
@@ -872,6 +952,7 @@ function xLadder(rng) {
       `The foot moves \`${d2.toFixed(4)} - ${num(d)}\` ${result(move, true, "m")}`,
     ].join("\n\n"),
     params: { kind: "x-ladder", L, d, s },
+    visual: rightLegs(len(d, "m"), len(L, "m"), "?", d, h, "At first, before the top slides down"),
     ...xGiven([["_L", L], ["_d", d], ["_s", s]]),
     hints: [
       "Draw the right triangle: wall (height), ground (distance of the foot) and the ladder as the hypotenuse.",
@@ -932,6 +1013,7 @@ function xCoord(rng) {
       `Converse of Pythagoras: the two smaller squares add to \`${ab2 + bc2 + ca2 - big}\`, the largest is \`${big}\`. ${right ? "They are equal" : "They are not equal"}, so the answer is **${ans}**.`,
     ].join("\n\n"),
     params: { kind: "x-coord", A, B, C },
+    visual: coordsVisual([[...A, "A"], [...B, "B"], [...C, "C"]], { segments: [[0, 1], [1, 2], [2, 0]] }),
     ...xGiven([["_x1", A[0]], ["_y1", A[1]], ["_x2", B[0]], ["_y2", B[1]], ["_x3", C[0]], ["_y3", C[1]]]),
     hints: [
       "The distance between two points is the hypotenuse of a right triangle: legs are the change in x and the change in y.",
@@ -965,6 +1047,7 @@ function xTank(rng) {
       `With ${Q} litres: \`${Q * 1000} / (π × ${r}²)\` ${result(dQ, true, "cm")}`,
     ].join("\n\n"),
     params: { kind: "x-tank", V, r, Q },
+    visual: cylinderVisual(r, h, { radius: `r = ${len(r)}`, height: "?" }, false, `The tank holds ${V} litres when full`),
     ...xGiven([["_r", r], ["_V", V], ["_Q", Q]]),
     hints: [
       "Work backwards from V = π × r² × h: h = V ÷ (π × r²).",

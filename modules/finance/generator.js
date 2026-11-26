@@ -15,6 +15,7 @@ const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 10
 // Answer/choice formatter (whole numbers as-is, rounded answers with 2 decimals) and intermediate values
 // (shortest form, up to `dp` decimals; never "-0") come from mathutil.
 import { fmtAnswer as fmtAns, fmtNum } from "../../js/lib/mathutil.js";
+import { visualFor } from "./visuals.js";
 const num = (n, dp = 4) => fmtNum(n, dp);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise.
@@ -1027,9 +1028,16 @@ function generateRaw(subtopic, difficulty, rng) {
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
 
-export function generate({ subtopic, difficulty, rng }) {
+function generateBase({ subtopic, difficulty, rng }) {
   if (difficulty === "expert") return generateExpert(subtopic, rng);
   return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+}
+
+// Adds the question visual (ticket 026) after the question is made: built from params only, no rng.
+export function generate(args) {
+  const q = generateBase(args);
+  const visual = visualFor(q, args.subtopic, args.difficulty);
+  return visual ? { ...q, visual } : q;
 }
 
 // ---------------------------------------------------------------------------------------------

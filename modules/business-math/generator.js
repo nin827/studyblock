@@ -368,7 +368,46 @@ function generateRaw(subtopic, difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
-  return withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+  const q = withHints(withGiven(generateRaw(subtopic, difficulty, rng)));
+  const visual = visualFor(q.params);
+  return visual ? { ...q, visual } : q;
+}
+
+// Question visual (ticket 026): a written-style table of the numbers in the prompt, with "?" in the
+// asked cell. Built from params after the question is made (no rng), so seeds are unchanged.
+function visualFor(p) {
+  if (!p || !p.values) return undefined;
+  const k = p.values;
+  const sign = (n) => `${n < 0 ? "-" : "+"}${num(Math.abs(n))}%`;
+  const t = (caption, columns, row) => ({ kind: "table", caption, columns, rows: [row] });
+  switch (p.kind) {
+    case "of":
+      return t("Percentage of an amount", ["Percent", "Amount", "Answer"], [`${num(k.p)}%`, cash(k.N), "?"]);
+    case "change":
+      return t("Price change", ["Old price", "New price", "Change (%)"], [cash(k.A), cash(k.B), "?"]);
+    case "original":
+      return t("Price after a change", ["Original price", "Change", "New price"], ["?", sign(k.p), cash(k.B)]);
+    case "simple-interest":
+      return t("Simple interest", ["Principal", "Rate / year", "Years", "Interest"], [cash(k.P), `${num(k.r)}%`, String(k.t), "?"]);
+    case "simple-total":
+      return t("Simple interest", ["Principal", "Rate / year", "Years", "Total"], [cash(k.P), `${num(k.r)}%`, String(k.t), "?"]);
+    case "simple-rate":
+      return t("Simple interest", ["Principal", "Years", "Interest", "Rate / year"], [cash(k.P), String(k.t), cash(k.I), "?"]);
+    case "compound-total":
+      return t("Compounded annually", ["Principal", "Rate / year", "Years", "Total"], [cash(k.P), `${num(k.r)}%`, String(k.t), "?"]);
+    case "compound-interest":
+      return t("Compounded annually", ["Principal", "Rate / year", "Years", "Interest"], [cash(k.P), `${num(k.r)}%`, String(k.t), "?"]);
+    case "price":
+      return t("Markup on cost", ["Cost", "Markup", "Selling price"], [cash(k.C), `${num(k.m)}%`, "?"]);
+    case "markup":
+      return t("Cost and price", ["Cost", "Selling price", "Markup (%)"], [cash(k.C), cash(k.S), "?"]);
+    case "margin":
+      return t("Cost and price", ["Cost", "Selling price", "Margin (%)"], [cash(k.C), cash(k.S), "?"]);
+    case "target":
+      return t("Target margin", ["Cost", "Margin", "Selling price"], [cash(k.C), `${num(k.g)}%`, "?"]);
+    default:
+      return undefined;
+  }
 }
 
 // Guided-mode hints: built from params after the question is made (never touches the rng). They use

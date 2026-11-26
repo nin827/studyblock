@@ -80,6 +80,97 @@ function attachGiven(q) {
 const row = (label, expr, shown) => `- \`${label} = ${expr}\` → ${shown}`;
 const mid = (n) => show(Math.round(n * 10000) / 10000); // intermediate value, up to 4 decimals
 
+// ---- Question visuals (ticket 026): data only, built from values already drawn (no rng). ----
+const ulab = (v, unit) => `${show(v)}${unit ? ` ${unit}` : ""}`;
+const dlab = (v) => `${show(v)}°`;
+const NO3 = () => [{ label: null }, { label: null }, { label: null }];
+
+// A triangle is drawn to scale only when it is not a sliver: its height on the longest side is at
+// least 25% of that side. Otherwise the picture is schematic ("Not drawn to scale").
+function fatEnough(L) {
+  const [a, b, c] = L;
+  const s = (a + b + c) / 2;
+  const area = Math.sqrt(Math.max(0, s * (s - a) * (s - b) * (s - c)));
+  const m = Math.max(a, b, c);
+  return (2 * area) / m / m >= 0.25;
+}
+
+// Right triangle, right angle at B (bottom left), the angle theta at C (bottom right):
+// adj = BC (bottom), hyp = CA (slope), opp = AB (left). Labels are strings or null; lengths = true sizes.
+function rightVis({ opp, adj, hyp, theta, lengths, caption, force = false }) {
+  const v = {
+    kind: "triangle",
+    vertices: NO3(),
+    sides: [{ label: adj }, { label: hyp }, { label: opp }],
+    angles: [{ label: null }, { label: null, right: true }, { label: theta }],
+    toScale: false,
+  };
+  const L = [lengths.adj, lengths.hyp, lengths.opp];
+  if (force || fatEnough(L)) {
+    v.lengths = L;
+    v.toScale = true;
+  }
+  if (caption) v.caption = caption;
+  return v;
+}
+
+// A side from the side you have (the question's `have`/`want` words): the wanted one shows "?".
+function sideVis(have, g, theta, want, unit, caption) {
+  const L = { opp: rightSide(have, g, theta, "opp"), adj: rightSide(have, g, theta, "adj"), hyp: rightSide(have, g, theta, "hyp") };
+  const lab = (k) => (k === want ? "?" : k === have ? ulab(g, unit) : null);
+  return rightVis({ opp: lab("opp"), adj: lab("adj"), hyp: lab("hyp"), theta: dlab(theta), lengths: L, caption });
+}
+
+// An angle from two sides (sides = { o, a, h }, any two); the angle shows thetaLabel.
+function angVis(s, unit, thetaLabel, hypName = null, caption) {
+  const o = s.o !== undefined ? s.o : Math.sqrt(s.h * s.h - s.a * s.a);
+  const a = s.a !== undefined ? s.a : Math.sqrt(s.h * s.h - s.o * s.o);
+  const h = s.h !== undefined ? s.h : Math.hypot(o, a);
+  return rightVis({
+    opp: s.o !== undefined ? ulab(s.o, unit) : null,
+    adj: s.a !== undefined ? ulab(s.a, unit) : null,
+    hyp: s.h !== undefined ? ulab(s.h, unit) : hypName,
+    theta: thetaLabel,
+    lengths: { adj: a, hyp: h, opp: o },
+    caption,
+  });
+}
+
+// Isosceles triangle: equal sides s, base b, the two base angles unknown.
+function isoVis(s, b) {
+  const L = [b, s, s];
+  const v = {
+    kind: "triangle",
+    vertices: NO3(),
+    sides: [{ label: ulab(b, "cm") }, { label: ulab(s, "cm") }, { label: ulab(s, "cm") }],
+    angles: [{ label: null }, { label: "?" }, { label: "?" }],
+    toScale: false,
+  };
+  if (fatEnough(L)) {
+    v.lengths = L;
+    v.toScale = true;
+  }
+  return v;
+}
+
+// General triangle ABC: side labels { a, b, c } (a = BC, b = CA, c = AB), angle labels { A, B, C },
+// lengths [a, b, c]. `named` puts A, B, C on the corners.
+function triVis(sl, al, L, named = true, caption) {
+  const v = {
+    kind: "triangle",
+    vertices: named ? [{ label: "A" }, { label: "B" }, { label: "C" }] : NO3(),
+    sides: [{ label: sl.a ?? null }, { label: sl.b ?? null }, { label: sl.c ?? null }],
+    angles: [{ label: al.A ?? null }, { label: al.B ?? null }, { label: al.C ?? null }],
+    toScale: false,
+  };
+  if (fatEnough(L)) {
+    v.lengths = L;
+    v.toScale = true;
+  }
+  if (caption) v.caption = caption;
+  return v;
+}
+
 // The value shown on the last row: "**6.88 cm**" or "6.8829 cm, which rounds to **6.88 cm**".
 function final(exact, fmt, unit = "") {
   const shown = fmtAns(exact, fmt);
@@ -337,6 +428,7 @@ function genRightSides(difficulty, rng) {
       [given("_angle", theta), given(`_${have}`, g), row(`_${want}`, st.expr, final(exact, "2dp", "cm"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "side", have, g, theta, want },
+    visual: sideVis(have, g, theta, want, "cm"),
     hints: [
       `Label the sides from the ${show(theta)}° angle: you know the ${SIDE_NAME[have]} (${show(g)} cm) and want the ${SIDE_NAME[want]}.`,
       `The ${SIDE_NAME[have]} and ${SIDE_NAME[want]} go together in ${st.word}.`,
@@ -360,6 +452,7 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_hyp", L), row(up ? "_opp" : "_adj", up ? "_hyp * sin(_angle)" : "_hyp * cos(_angle)", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "side", have: "hyp", g: L, theta, want: up ? "opp" : "adj" },
+      visual: sideVis("hyp", L, theta, up ? "opp" : "adj", "m", "A ladder against a wall"),
       hints: [
         `Sketch it: the ladder is the hypotenuse, ${show(L)} m, and the ${show(theta)}° angle is at the ground.`,
         up
@@ -382,6 +475,7 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_adj", d), given("_eye", eye), row("_opp", "_adj * tan(_angle)", mid(d * tanD(theta))), row("_height", "_opp + _eye", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "elevation", d, theta, eye },
+      visual: rightVis({ opp: "above eye", adj: ulab(d, "m"), hyp: null, theta: dlab(theta), lengths: { adj: d, opp: d * tanD(theta), hyp: d / cosD(theta) }, caption: "From your eyes to the top of the tower" }),
       hints: [
         `The right-angled triangle starts at your eyes, not the ground: the ${d} m is adjacent to the ${show(theta)}° angle, and the opposite side is the part of the tower above eye level.`,
         `Opposite and adjacent go with TOA: \`_opp = _adj * tan(_angle)\` = ${d} × tan(${show(theta)}).`,
@@ -401,6 +495,7 @@ function genRightSideWord(rng) {
         [given("_angle", theta), given("_opp", H), row("_adj", "_opp / tan(_angle)", final(exact, "2dp", "m"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "side", have: "opp", g: H, theta, want: "adj" },
+      visual: sideVis("opp", H, theta, "adj", "m", "The angle is at the boat"),
       hints: [
         `The angle of depression from the cliff top equals the angle of elevation from the boat (alternate angles), so the angle at the boat is ${show(theta)}°.`,
         `From that angle, the cliff (${H} m) is opposite and the distance you want is adjacent: use TOA, tan = opposite / adjacent.`,
@@ -506,6 +601,7 @@ function genRightAngles(difficulty, rng) {
     prompt: `In a right-angled triangle, ${desc.join(" and ")}. Find the acute angle θ.${DEG}${ROUND}`,
     explanation: [`Use ${st.word}, then the inverse function.`, [...sideLines(sides), row("_theta", st.expr, final(exact, "2dp", "°"))].join("\n")].join("\n\n"),
     params: { kind: "angle", ...sides },
+    visual: angVis(sides, "cm", "θ"),
     hints: angleHints(sides),
   };
   return finish(base, exact, "2dp", angleMistakes(sides, exact), rng, { max: 90 });
@@ -513,7 +609,7 @@ function genRightAngles(difficulty, rng) {
 
 function genRightAngleWord(rng) {
   const kind = rng.pick(["ladder", "slope", "shadow", "isosceles", "rectangle"]);
-  let sides, prompt, intro, unit;
+  let sides, prompt, intro, unit, vis;
   if (kind === "ladder") {
     const L = dec1(rng, 3, 12);
     const up = dec1(rng, L * 0.5, L - 0.2);
@@ -521,6 +617,7 @@ function genRightAngleWord(rng) {
     unit = "m";
     prompt = `A ${show(L)} m ladder leans against a vertical wall and reaches ${show(up)} m up the wall. What angle does the ladder make with the level ground?`;
     intro = `The ladder is the hypotenuse and the wall height is opposite the angle at the ground.`;
+    vis = angVis(sides, "m", "?", null, "A ladder against a wall");
   } else if (kind === "slope") {
     const run = rng.int(20, 400);
     const rise = dec1(rng, 1, Math.min(run * 0.6, 120));
@@ -528,6 +625,7 @@ function genRightAngleWord(rng) {
     unit = "m";
     prompt = `A straight road rises ${show(rise)} m over a horizontal distance of ${run} m. At what angle is the road inclined to the horizontal?`;
     intro = `The rise is opposite the angle and the horizontal distance is adjacent.`;
+    vis = angVis(sides, "m", "?", "road");
   } else if (kind === "shadow") {
     const h = dec1(rng, 1, 30);
     const s = dec1(rng, 1, 40);
@@ -535,6 +633,7 @@ function genRightAngleWord(rng) {
     unit = "m";
     prompt = `A vertical pole ${show(h)} m tall casts a shadow ${show(s)} m long on level ground. What is the angle of elevation of the sun?`;
     intro = `The pole is opposite the angle at the tip of the shadow, and the shadow is adjacent.`;
+    vis = angVis(sides, "m", "?", "sun's ray");
   } else if (kind === "isosceles") {
     const s = rng.int(5, 40);
     const b = rng.int(2, 2 * s - 1);
@@ -542,6 +641,7 @@ function genRightAngleWord(rng) {
     unit = "cm";
     prompt = `An isosceles triangle has two equal sides of ${s} cm and a base of ${b} cm. Find the size of one of its base angles.`;
     intro = `Split the triangle down the middle into two right-angled triangles: the hypotenuse is ${s} cm and the side adjacent to the base angle is half the base, ${show(b / 2)} cm.`;
+    vis = isoVis(s, b);
   } else {
     const l = rng.int(5, 60);
     const w = rng.int(2, l - 1);
@@ -549,6 +649,7 @@ function genRightAngleWord(rng) {
     unit = "cm";
     prompt = `A rectangle is ${l} cm long and ${w} cm wide. Find the angle between a diagonal and one of the longer sides.`;
     intro = `The diagonal splits the rectangle into two right-angled triangles. At a corner on a long side, the width is opposite the angle and the length is adjacent.`;
+    vis = angVis(sides, "cm", "?", "diagonal", "Half of the rectangle");
   }
   const exact = rightAngle(sides);
   if (!(exact > 2 && exact < 88)) return null;
@@ -557,6 +658,7 @@ function genRightAngleWord(rng) {
     prompt: `${prompt}${DEG}${ROUND}`,
     explanation: [`${intro} Use ${st.word}.`, [...sideLines(sides, kind === "isosceles"),row("_theta", st.expr, final(exact, "2dp", "°"))].join("\n")].join("\n\n"),
     params: { kind: "angle", ...sides, unit },
+    visual: vis,
     hints: angleHints(sides, intro),
   };
   return finish(base, exact, "2dp", angleMistakes(sides, exact), rng, { max: 180 });
@@ -587,6 +689,7 @@ function genNonRight(difficulty, rng) {
           [given("_angA", A), given("_angB", B), given("_a", a), row("_b", "_a * sin(_angB) / sin(_angA)", final(exact, "2dp", "cm"))].join("\n"),
         ].join("\n\n"),
         params: { kind: "sine-side", A, B, a },
+        visual: triVis({ a: ulab(a, "cm"), b: "?" }, { A: dlab(A), B: dlab(B) }, [a, exact, (a * sinD(C)) / sinD(A)]),
         hints: [
           `You have two angles and a side opposite one of them, so use the sine rule. Side a is opposite angle A, and b is opposite B.`,
           `Write \`a / sin(A) = b / sin(B)\` and rearrange: \`b = a × sin(B) / sin(A)\`.`,
@@ -604,6 +707,7 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_angB", B), given("_c", c), row("_angC", "180 - _angA - _angB", show(C)), row("_a", "_c * sin(_angA) / sin(_angC)", final(exact, "2dp", "cm"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "sine-asa", A, B, c },
+      visual: triVis({ a: "?", c: ulab(c, "cm") }, { A: dlab(A), B: dlab(B) }, [exact, (c * sinD(B)) / sinD(C), c]),
       hints: [
         `Side c is opposite angle C, which you don't know yet. Angles in a triangle add up to 180°.`,
         `C = 180 - ${show(A)} - ${show(B)} = ${show(C)}°.`,
@@ -629,6 +733,7 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_a", a), given("_b", b), row("_sinB", "_b * sin(_angA) / _a", mid(s)), row("_angB", "asin(_sinB)", final(exact, "2dp", "°"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "sine-angle", A, a, b },
+      visual: triVis({ a: ulab(a, "cm"), b: ulab(b, "cm") }, { A: dlab(A), B: "?" }, [a, b, (a * sinD(180 - A - exact)) / sinD(A)]),
       hints: [
         `You know a side-and-angle pair (a and A) and side b, so use the sine rule with the sines on top: \`sin(B) / b = sin(A) / a\`.`,
         `Rearrange: \`sin(B) = b × sin(A) / a\` = ${show(b)} × sin(${show(A)}) ÷ ${show(a)}. Keep it unrounded (\`_sinB\`).`,
@@ -651,6 +756,7 @@ function genNonRight(difficulty, rng) {
         [given("_angA", A), given("_b", b), given("_c", c), row("_a", "sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))", final(exact, "2dp", "cm"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "cos-side", A, b, c },
+      visual: triVis({ a: "?", b: ulab(b, "cm"), c: ulab(c, "cm") }, { A: dlab(A) }, [exact, b, c]),
       hints: [
         `You have two sides and the angle between them, so use the cosine rule: \`a² = b² + c² - 2bc × cos(A)\`.`,
         `Substitute: a² = ${show(b)}² + ${show(c)}² - 2 × ${show(b)} × ${show(c)} × cos(${show(A)}).${A > 90 ? " cos of an obtuse angle is negative, so this term adds on." : ""}`,
@@ -689,6 +795,7 @@ function genNonRight(difficulty, rng) {
         [given(`_${L}`, opp), given(`_${others[0]}`, s1), given(`_${others[1]}`, s2), row(`_cos${lab}`, `(_${others[0]}^2 + _${others[1]}^2 - _${L}^2) / (2 * _${others[0]} * _${others[1]})`, mid(cosX)), row(`_ang${lab}`, `acos(_cos${lab})`, final(exact, "2dp", "°"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "cos-angle", a, b, c, lab },
+      visual: triVis({ a: ulab(a, "cm"), b: ulab(b, "cm"), c: ulab(c, "cm") }, { [lab]: "?" }, [a, b, c]),
       hints: [
         `Three sides and no angles: use the cosine rule rearranged for an angle. ${which === "largest" ? `The largest angle is opposite the longest side, ${L} = ${opp} cm.` : `Angle A is opposite side a = ${a} cm.`}`,
         `\`cos(${lab}) = (${others[0]}² + ${others[1]}² - ${L}²) / (2${others[0]}${others[1]})\`: the side opposite ${lab} is the one you subtract.`,
@@ -710,6 +817,7 @@ function genNonRight(difficulty, rng) {
         [given("_a", a), given("_b", b), given("_angC", C), row("_area", "0.5 * _a * _b * sin(_angC)", final(exact, "2dp", "cm²"))].join("\n"),
       ].join("\n\n"),
       params: { kind: "area", a, b, C },
+      visual: triVis({ a: ulab(a, "cm"), b: ulab(b, "cm") }, { C: dlab(C) }, [a, b, Math.sqrt(a * a + b * b - 2 * a * b * cosD(C))]),
       hints: [
         `With two sides and the angle between them, use area = ½ × a × b × sin(C), not ½ × base × height.`,
         `Substitute: 0.5 × ${a} × ${b} × sin(${C}).${C > 90 ? ` sin of an obtuse angle is still positive.` : ""}${LATE}`,
@@ -735,6 +843,7 @@ function genNonRight(difficulty, rng) {
       [given("_a", a), given("_b", b), given("_c", c), row("_angC", "acos((_a^2 + _b^2 - _c^2) / (2 * _a * _b))", mid(C)), row("_area", "0.5 * _a * _b * sin(_angC)", final(exact, "2dp", "cm²"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "area-sss", a, b, c },
+    visual: triVis({ a: ulab(a, "cm"), b: ulab(b, "cm"), c: ulab(c, "cm") }, {}, [a, b, c], false),
     hints: [
       `Area = ½ × a × b × sin(C) needs an angle, so find one first with the cosine rule.`,
       `Call the sides a = ${a}, b = ${b}, c = ${c}. Angle C is opposite c: \`cos(C) = (a² + b² - c²) / (2ab)\` = (${a}² + ${b}² - ${c}²) ÷ (2 × ${a} × ${b}). Use acos and keep C unrounded (\`_angC\`).`,
@@ -846,6 +955,7 @@ function xAltitude(rng) {
       [given("_c", c), given("_angB", B), given("_angC", C), row("_AD", "_c * sin(_angB)", final(AD, "2dp", "cm")), row("_BD", "_c * cos(_angB)", mid(BD)), row("_DC", "_AD / tan(_angC)", mid(DC)), row("_BC", "_BD + _DC", final(BC, "2dp", "cm"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-alt", c, B, C },
+    visual: triVis({ a: "?", c: ulab(c, "cm") }, { B: dlab(B), C: dlab(C) }, [BC, (c * sinD(B)) / sinD(C), c], true, "D is the foot of the perpendicular from A to BC"),
     hints: [
       `Sketch it: AD splits ABC into two right-angled triangles, ABD and ADC, with the right angles at D. They share the side AD.`,
       `In ABD the hypotenuse is AB = ${show(c)} cm: \`_AD = _c * sin(_angB)\` and \`_BD = _c * cos(_angB)\`.`,
@@ -876,6 +986,10 @@ function xPoleField(rng) {
       [given("_l", l), given("_w", w), given("_theta", theta), row("_AC", "sqrt(_l^2 + _w^2)", final(AC, "2dp", "m")), row("_h", "_AC * tan(_theta)", final(h, "2dp", "m")), row("_phi", "atan(_h / _w)", final(phi, "2dp", "°"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-pole", l, w, theta },
+    visual: {
+      kind: "shape", shape: "rectangle", dims: { width: l, height: w }, labels: { width: `AB = ${l} m`, height: `BC = ${w} m` },
+      toScale: Math.max(l, w) / Math.min(l, w) <= 4, caption: "The field ABCD from above; the pole stands at A",
+    },
     hints: [
       `Start on the ground: in triangle ABC the right angle is at B, so \`_AC = sqrt(_l^2 + _w^2)\`.`,
       `Now the vertical triangle with the pole: AC is adjacent to the ${show(theta)}° angle and the pole is opposite, so use TOA: \`_h = _AC * tan(_theta)\`.`,
@@ -907,6 +1021,10 @@ function xCuboid(rng) {
       [given("_l", l), given("_w", w), given("_h", h), row("_AC", "sqrt(_l^2 + _w^2)", final(AC, "2dp", "cm")), row("_base", "atan(_h / _AC)", final(base, "2dp", "°")), row("_AG", "sqrt(_AC^2 + _h^2)", mid(AG)), row("_edge", "acos(_l / _AG)", final(edge, "2dp", "°"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-cuboid", l, w, h },
+    visual: {
+      kind: "shape", shape: "cuboid", dims: { length: l, width: w, height: h }, labels: { length: `AB = ${l} cm`, width: `BC = ${w} cm`, height: `AE = ${h} cm` },
+      toScale: Math.max(l, w, h) / Math.min(l, w, h) <= 4, caption: "ABCD is the base; G is directly above C",
+    },
     hints: [
       `Start on the base: \`_AC = sqrt(_l^2 + _w^2)\`.`,
       `The space diagonal AG, the base diagonal AC and the edge CG = ${h} cm form a right-angled triangle with the right angle at C. The angle with the base is at A: CG is opposite, AC adjacent.`,
@@ -941,6 +1059,11 @@ function xBearingBack(rng) {
       [given("_a", a), given("_b", b), given("_bear1", b1), row("_dist", "sqrt(_a^2 + _b^2)", final(dist, "2dp", "km")), row("_alpha", "atan(_b / _a)", mid(alpha)), row("_out", `_bear1 ${right ? "+" : "-"} _alpha`, mid(out) + (Math.abs(out - (b1 + (right ? alpha : -alpha))) > 1e-9 ? " (after wrapping into 0 to 360)" : "")), row("_back", "_out ± 180", finalDeg(back))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-bearing", b1, right, a, b },
+    visual: {
+      ...triVis({ a: ulab(b, "km"), b: "?", c: ulab(a, "km") }, {}, [b, dist, a], true, "S to the turning point, then on to E"),
+      vertices: [{ label: "S" }, { label: null }, { label: "E" }],
+      angles: [{ label: null }, { label: null, right: true }, { label: null }],
+    },
     hints: [
       `Sketch it with a north line at S. The two legs meet at a right angle at the turning point, so S, the turning point and E make a right-angled triangle with legs ${show(a)} km and ${show(b)} km.`,
       `The distance SE is the hypotenuse. The angle at S between the first leg and SE is \`atan(_b / _a)\`: the second leg is opposite it.`,
@@ -975,6 +1098,9 @@ function xLadderMove(rng) {
       [given("_L", L), given("_up", up), given("_d", d), row("_ang1", "asin(_up / _L)", final(ang1, "2dp", "°")), row("_foot", "sqrt(_L^2 - _up^2)", mid(foot)), row("_foot2", "_foot - _d", mid(foot2)), row("_ang2", "acos(_foot2 / _L)", final(ang2, "2dp", "°")), row("_rise", "sqrt(_L^2 - _foot2^2) - _up", final(rise, "2dp", "m"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-ladder", L, up, d },
+    // The foot's distance from the wall is left off on purpose (it is a step of the working, not in the
+    // prompt, given rows or hints); the triangle is drawn to scale so it can be estimated.
+    visual: rightVis({ opp: ulab(up, "m"), adj: null, hyp: ulab(L, "m"), theta: "?", lengths: { adj: foot, opp: up, hyp: L }, caption: "Before the foot is pushed closer", force: true }),
     hints: [
       `Before: the ladder (${show(L)} m) is the hypotenuse and the height ${show(up)} m is opposite the angle at the ground, so use asin.`,
       `The foot's distance from the wall is \`_foot = sqrt(_L^2 - _up^2)\`. After the push it is \`_foot - _d\`, and the ladder is still ${show(L)} m long.`,
@@ -1039,6 +1165,7 @@ function xChain(rng) {
       [given("_b", b), given("_c", c), given("_angA", A), row("_a", "sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))", final(a, "2dp", "cm")), row("_angB", "acos((_a^2 + _c^2 - _b^2) / (2 * _a * _c))", final(B, "2dp", "°")), row("_area", "0.5 * _b * _c * sin(_angA)", mid(area)), row("_ht", "2 * _area / _a", final(ht, "2dp", "cm"))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-chain", b, c, A },
+    visual: triVis({ a: "?", b: ulab(b, "cm"), c: ulab(c, "cm") }, { A: dlab(A) }, [a, b, c]),
     hints: [
       `Start with the cosine rule: \`_a = sqrt(_b^2 + _c^2 - 2 * _b * _c * cos(_angA))\`. Keep it unrounded.`,
       `For angle B use the cosine rule rearranged: \`cos(B) = (a² + c² - b²) / (2ac)\`. The side you subtract, b, is the one opposite B.`,
@@ -1078,6 +1205,10 @@ function xBearingCos(rng) {
       [given("_d1", d1), given("_d2", d2), given("_bear1", b1), given("_bear2", b2), fact("_angQ", Bang), row("_PR", "sqrt(_d1^2 + _d2^2 - 2 * _d1 * _d2 * cos(_angQ))", final(AC, "2dp", "km")), row("_angP", "acos((_d1^2 + _PR^2 - _d2^2) / (2 * _d1 * _PR))", mid(angA)), row("_bear", `_bear1 ${right ? "+" : "-"} _angP`, finalDeg(bear) + (Math.abs(bear - (b1 + (right ? angA : -angA))) > 1e-9 ? " (after wrapping into 0 to 360)" : ""))].join("\n"),
     ].join("\n\n"),
     params: { kind: "x-bearcos", b1, b2, d1, d2 },
+    visual: {
+      ...triVis({ a: ulab(d2, "km"), b: "?", c: ulab(d1, "km") }, {}, [d2, AC, d1], true, "Q is where the course changes"),
+      vertices: [{ label: "P" }, { label: "Q" }, { label: "R" }],
+    },
     hints: [
       `Sketch it with a north line at P and at Q. The course turns from ${pad3(b1)}° to ${pad3(b2)}°, a change of ${t}°, so the angle inside the triangle at Q is 180° - ${t}°.`,
       `Cosine rule for PR: \`PR² = d1² + d2² - 2 × d1 × d2 × cos(Q)\`. Keep PR unrounded (\`_PR\`).`,

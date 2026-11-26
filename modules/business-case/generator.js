@@ -9,6 +9,7 @@
 
 // Rounding half away from zero, answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
 import { fmtAnswer as fmtAns, fmtNum, gcd, round2 } from "../../js/lib/mathutil.js";
+import { visualFor } from "./visuals.js";
 const num = (n) => fmtNum(n);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise (no $, no commas).
@@ -2850,7 +2851,7 @@ function verifyExpert(question, answer) {
 // posed gives exactly the same question as before, and the others stay reproducible from the seed.
 const ownAnswer = (q) => (q.answerType === "multi" ? Object.fromEntries(q.parts.map((p) => [p.id, p.answer])) : q.answer);
 
-export function generate({ subtopic, difficulty, rng }) {
+function generateBase({ subtopic, difficulty, rng }) {
   if (difficulty === "expert") return generateExpert(subtopic, rng);
   let q;
   for (let t = 0; t < 10; t++) {
@@ -2858,6 +2859,13 @@ export function generate({ subtopic, difficulty, rng }) {
     if (verify(q, ownAnswer(q)) === true) return q;
   }
   return q;
+}
+
+// Adds the question visual (ticket 026) after the question is made: built from params only, no rng.
+export function generate(args) {
+  const q = generateBase(args);
+  const visual = visualFor(q, args.subtopic, args.difficulty);
+  return visual ? { ...q, visual } : q;
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -102,6 +102,31 @@ const guard = (hint, alt, answer, prompt) => (hasToken(hint, String(answer)) && 
 
 const givenPts = (pts) => pts.flatMap(([x, y], i) => [{ label: `_x${i + 1}`, value: x }, { label: `_y${i + 1}`, value: y }]);
 
+// ---- Question visuals (ticket 026): data only, built from values already drawn (no rng). ----
+// A coordinate grid with the origin in view. pts = [[x, y, label?]]; `extra` only widens the window.
+// Points that are the answer are never drawn. Easy–Hard label unnamed points with their coordinates;
+// named points (A, B, …) show their letter.
+function coordsVisual(pts, { segments = [], lines = [], extra = [], caption } = {}) {
+  const all = [...pts, ...extra, [0, 0]];
+  const lo = (i) => Math.floor(Math.min(...all.map((p) => p[i]))) - 1;
+  const hi = (i) => Math.ceil(Math.max(...all.map((p) => p[i]))) + 1;
+  let [xMin, xMax, yMin, yMax] = [lo(0), hi(0), lo(1), hi(1)];
+  if (xMax - xMin < 8) { xMin -= Math.ceil((8 - (xMax - xMin)) / 2); xMax = xMin + 8; }
+  if (yMax - yMin < 8) { yMin -= Math.ceil((8 - (yMax - yMin)) / 2); yMax = yMin + 8; }
+  return {
+    kind: "coords", xMin, xMax, yMin, yMax, showGrid: true,
+    points: pts.map(([x, y, label]) => (label ? { x, y, label } : { x, y })),
+    segments, lines, ...(caption ? { caption } : {}),
+  };
+}
+const coordLabel = ([x, y]) => `(${num(x)}, ${num(y)})`; // an unnamed point shows its coordinates
+const named = (pts, names) => pts.map((P, i) => [P[0], P[1], names[i]]);
+const located = (pts) => pts.map((P) => [P[0], P[1], coordLabel(P)]);
+const TRI = [[0, 1], [1, 2], [2, 0]];
+// A line ax + by = c as a drawn line, plus one point of it at the question's x (to size the window).
+const drawnLine = ({ a, b, c }) => (b !== 0 ? { m: -a / b, c: c / b } : { x: c / a });
+const onLineNear = ({ a, b, c }, [x, y]) => (b !== 0 ? [x, (c - a * x) / b] : [c / a, y]);
+
 // 4 distinct choices from the answer and candidate strings (dropping ones equal to the answer).
 function pickChoices(answer, cands, rng) {
   const seen = new Set([answer]);
@@ -186,6 +211,7 @@ function qMidpoint(difficulty, rng) {
   const lead = `${nA} = ${pt(A)} and ${nB} = ${pt(B)}.`;
   const explanation = `The midpoint is the average of the coordinates: \`((x1 + x2) / 2, (y1 + y2) / 2)\`.\n\n- x: (${num(A[0])} + ${par(B[0])}) / 2 = ${num(A[0] + B[0])} / 2 = ${num(M[0])}\n- y: (${num(A[1])} + ${par(B[1])}) / 2 = ${num(A[1] + B[1])} / 2 = ${num(M[1])}\n\nSo the midpoint is **${pt(M)}**.`;
   const given = givenPts([A, B]);
+  const visual = coordsVisual(named([A, B], [nA, nB]), { segments: [[0, 1]] });
   if (rng.next() < 0.45) {
     const answer = pt(M);
     const choices = pickChoices(
@@ -194,7 +220,7 @@ function qMidpoint(difficulty, rng) {
       rng
     );
     return {
-      prompt: `${lead} What is the midpoint of ${nA}${nB}?`, answer, answerType: "choice", choices, explanation, given,
+      prompt: `${lead} What is the midpoint of ${nA}${nB}?`, answer, answerType: "choice", choices, explanation, given, visual,
       hints: [
         "The midpoint is halfway along in both directions: average the x-coordinates, then average the y-coordinates.",
         `Add the x-coordinates (${num(A[0])} + ${par(B[0])}) and halve; do the same with the y-coordinates (${num(A[1])} + ${par(B[1])}). In the calculator: \`(_x1 + _x2) / 2\`.`,
@@ -208,7 +234,7 @@ function qMidpoint(difficulty, rng) {
     { id: "y", label: "y-coordinate", ask: `y-coordinate of the midpoint.${EXACT}`, answerType: "number", answer: M[1], tolerance: 0, hint: `Add the y-coordinates, ${num(A[1])} + ${par(B[1])}, then halve (\`(_y1 + _y2) / 2\`).` },
   ];
   return {
-    prompt, answerType: "multi", parts, explanation, given,
+    prompt, answerType: "multi", parts, explanation, given, visual,
     hints: ["Average the coordinates: the midpoint is ((x1 + x2) / 2, (y1 + y2) / 2)."],
     params: { multi: true, parts: [{ id: "x", kind: "half", a: A[0], b: B[0] }, { id: "y", kind: "half", a: A[1], b: B[1] }] },
   };
@@ -241,7 +267,7 @@ function qDistanceWhole(rng) {
     "The segment is the hypotenuse of a right triangle: find how far across and how far up, then use Pythagoras.",
     `Across: ${num(B[0])} − ${par(A[0])}. Up: ${num(B[1])} − ${par(A[1])}. Square both, add, and take the square root (\`sqrt((_x2 - _x1)^2 + (_y2 - _y1)^2)\`).`,
   ];
-  const base = { prompt, explanation, hints, given: givenPts([A, B]), params: { kind: "dist", A, B, rounded: false } };
+  const base = { prompt, explanation, hints, given: givenPts([A, B]), params: { kind: "dist", A, B, rounded: false }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
   return finishNum(base, h, [Math.abs(dx) + Math.abs(dy), h * h, Math.abs(Math.abs(dx) - Math.abs(dy)), h + 1], rng, 0.3, WHOLE);
 }
 
@@ -264,7 +290,7 @@ function qDistanceRounded(rng) {
     "Find how far across and how far up, then use Pythagoras.",
     `Across: ${dx}. Up: ${dy}. Square both, add, take the square root, then round (\`sqrt((_x2 - _x1)^2 + (_y2 - _y1)^2)\`).`,
   ];
-  const base = { prompt, explanation, hints, given: givenPts([A, B]), params: { kind: "dist", A, B, rounded: true } };
+  const base = { prompt, explanation, hints, given: givenPts([A, B]), params: { kind: "dist", A, B, rounded: true }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
   if (rng.next() < 0.3) {
     const { answer, choices } = numChoices(round2(d), [Math.abs(dx) + Math.abs(dy), Math.sqrt(Math.abs(dx * dx - dy * dy)), Math.sqrt(dx * dx + Math.abs(dy)), Math.sqrt(Math.abs(dx) + Math.abs(dy))], rng, fmt2);
     return { ...base, prompt: prompt + DP2, answer, answerType: "choice", choices };
@@ -293,7 +319,7 @@ function qSurd(rng) {
     "Find how far across and how far up, square both and add. Keep it as a square root.",
     `Under the root you get ${par(dx)}² + ${par(dy)}². Work that out, then look for the largest square number (4, 9, 16, 25, ...) that divides it and take its root outside.`,
   ];
-  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "surd", d2: d2 } };
+  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "surd", d2: d2 }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
 }
 
 function qMissingEnd(rng) {
@@ -310,6 +336,7 @@ function qMissingEnd(rng) {
   ];
   return {
     prompt, answerType: "multi", parts, explanation, given: givenPts([A, M]),
+    visual: coordsVisual(named([A, M], ["A", "M"]), { segments: [[0, 1]] }),
     hints: ["The step from A to M is the same as the step from M to B. (The calculator lists A first as _x1, _y1 and M as _x2, _y2.)"],
     params: { multi: true, parts: [{ id: "x", kind: "endPart", a: A[0], m: M[0] }, { id: "y", kind: "endPart", a: A[1], m: M[1] }] },
   };
@@ -370,6 +397,7 @@ function qRightAngle(rng) {
   return {
     prompt, answer: RIGHT_LABELS[at], answerType: "choice", choices: RIGHT_LABELS.slice(), explanation, hints,
     given: givenPts(pts), params: { kind: "right", pts },
+    visual: coordsVisual(named(pts, names), { segments: TRI }),
   };
 }
 
@@ -383,7 +411,7 @@ function qFindK(rng) {
     guard(`The vertical step is ${dy}, so (k − ${par(A[0])})² = ${h}² − ${par(dy)}². Take the positive square root, then add ${par(A[0])}.`,
       `Subtract the square of the vertical step from ${h}², take the positive square root, then add ${par(A[0])}.`, B[0], prompt),
   ];
-  const base = { prompt, explanation, hints, given: [{ label: "_x1", value: A[0] }, { label: "_y1", value: A[1] }, { label: "_y2", value: B[1] }, { label: "_d", value: h }], params: { kind: "findK", x1: A[0], y1: A[1], y2: B[1], d: h } };
+  const base = { prompt, explanation, hints, given: [{ label: "_x1", value: A[0] }, { label: "_y1", value: A[1] }, { label: "_y2", value: B[1] }, { label: "_d", value: h }], params: { kind: "findK", x1: A[0], y1: A[1], y2: B[1], d: h }, visual: coordsVisual(located([A]), { lines: [{ m: 0, c: B[1] }], extra: [[A[0], B[1]]], caption: `The point (k, ${num(B[1])}) lies on this line` }) };
   return finishNum(base, B[0], [A[0] - (B[0] - A[0]), B[0] - A[0], A[0] + h, B[0] + 1], rng, 0.3, WHOLE);
 }
 
@@ -400,6 +428,7 @@ function qPointsMulti(rng) {
   ];
   return {
     prompt, answerType: "multi", parts, explanation, given: givenPts([A, B]),
+    visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]] }),
     hints: ["The midpoint averages the coordinates; the length comes from Pythagoras on the across and up steps."],
     params: { multi: true, parts: [{ id: "mx", kind: "half", a: A[0], b: B[0] }, { id: "my", kind: "half", a: A[1], b: B[1] }, { id: "len", kind: "dist", A, B, rounded: true }] },
   };
@@ -425,7 +454,7 @@ function qPerimeter(rng) {
     "The perimeter is AB + BC + CA. Find each length with Pythagoras.",
     `The squared lengths are AB² = ${sides[0].d2}, BC² = ${sides[1].d2} and CA² = ${sides[2].d2}. Take each square root, add, and round at the end.`,
   ];
-  return { prompt, answer: round2(per), answerType: "number", tolerance: 0.005, explanation, hints, given: givenPts(pts), params: { kind: "perim", pts } };
+  return { prompt, answer: round2(per), answerType: "number", tolerance: 0.005, explanation, hints, given: givenPts(pts), params: { kind: "perim", pts }, visual: coordsVisual(named(pts, ["A", "B", "C"]), { segments: TRI }) };
 }
 
 function genPoints(difficulty, rng) {
@@ -476,7 +505,7 @@ function qGradient(difficulty, rng) {
     "Gradient = change in y ÷ change in x, taking both changes in the same direction (from the first point to the second).",
     `Change in y: ${num(B[1])} − ${par(A[1])}. Change in x: ${num(B[0])} − ${par(A[0])}. Divide${whole ? "" : " and simplify the fraction"} (\`(_y2 - _y1) / (_x2 - _x1)\`).`,
   ];
-  const base = { prompt, explanation: gradExplain(A, B), hints, given: givenPts([A, B]), params: { kind: "grad", A, B } };
+  const base = { prompt, explanation: gradExplain(A, B), hints, given: givenPts([A, B]), params: { kind: "grad", A, B }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
   if (whole) return finishNum(base, m[0], [dx === 0 ? 1 : -m[0], dy === 0 ? 2 : m[0] === 0 ? 1 : Math.round(dx / dy) || 3, dy, -dy], rng, 0.3, WHOLE);
   const wrong = [fracStr(frac(dx, dy)), fracStr(frac(-dy, dx)), fracStr(frac(dy + dx, dx))];
   if (rng.next() < 0.3) {
@@ -561,7 +590,7 @@ function qEquationTwo(rng) {
     `Then put one of the points into y = mx + c and solve for c, for example ${num(A[1])} = m × ${par(A[0])} + c.`,
     "Check your answer: both points must fit the equation.",
   ];
-  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "eq", pts: [A, B] } };
+  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "eq", pts: [A, B] }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
 }
 
 // "y = 2x - 3" (whole m and c only) -> { a, b, c } (generation helper for filtering distractors).
@@ -597,7 +626,7 @@ function qEquationGeneral(rng) {
     `The gradient is (${num(B[1])} − ${par(A[1])}) / (${num(B[0])} − ${par(A[0])}). Multiply through by its denominator to clear the fraction, then move the x and y terms to one side.`,
     "Quick check: substitute both points into each option. Only one works for both.",
   ];
-  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "eq", pts: [A, B] } };
+  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "eq", pts: [A, B] }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
 }
 
 function qLineMulti(rng) {
@@ -612,6 +641,7 @@ function qLineMulti(rng) {
   ];
   return {
     prompt, answerType: "multi", parts, explanation, given: givenPts([A, B]),
+    visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }),
     hints: ["Find the gradient first, then substitute one point to find c."],
     params: { multi: true, parts: [{ id: "m", kind: "coef", L, what: "m" }, { id: "c", kind: "coef", L, what: "c" }] },
   };
@@ -627,7 +657,7 @@ function qXIntercept(rng) {
     "Find the equation of the line first, then set y = 0.",
     `The gradient is (${num(B[1])} − ${par(A[1])}) / (${num(B[0])} − ${par(A[0])}). Write y − ${par(A[1])} = m(x − ${par(A[0])}), put y = 0 and solve for x.`,
   ];
-  return { prompt, answer: fracStr(xi), answerType: "text", explanation, hints, given: givenPts([A, B]), params: { kind: "coef", L, what: "x" } };
+  return { prompt, answer: fracStr(xi), answerType: "text", explanation, hints, given: givenPts([A, B]), params: { kind: "coef", L, what: "x" }, visual: coordsVisual(located([A, B]), { segments: [[0, 1]] }) };
 }
 
 function genGradient(difficulty, rng) {
@@ -746,7 +776,7 @@ function qThroughPoint(rng) {
     `Find the gradient of the given line, then ${rel === "par" ? "keep it the same" : "take its negative reciprocal"}.`,
     `Use that gradient and the point ${pt(P)} in y = mx + c to find c: c = ${num(P[1])} − m × ${par(P[0])}.`,
   ];
-  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: [{ label: "_x1", value: P[0] }, { label: "_y1", value: P[1] }], params: { kind: "through", L0, P, rel } };
+  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: [{ label: "_x1", value: P[0] }, { label: "_y1", value: P[1] }], params: { kind: "through", L0, P, rel }, visual: coordsVisual([[P[0], P[1], "P"]], { lines: [drawnLine(L0)], extra: [onLineNear(L0, P)], caption: "The given line and the point P" }) };
 }
 
 function qBisector(rng) {
@@ -773,7 +803,7 @@ function qBisector(rng) {
     "You need two things: the midpoint of AB, and a gradient perpendicular to AB.",
     `The midpoint is ${pt(M)}. AB has gradient ${fracStr(m)}, so use its negative reciprocal. Then check which option M fits.`,
   ];
-  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "bisector", A, B } };
+  return { prompt, answer, answerType: "choice", choices, explanation, hints, given: givenPts([A, B]), params: { kind: "bisector", A, B }, visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]] }) };
 }
 
 function qFindKLine(rng) {
@@ -805,6 +835,7 @@ function qPerpMulti(rng) {
   ];
   return {
     prompt, answerType: "multi", parts, explanation, given: [{ label: "_x1", value: P[0] }, { label: "_y1", value: P[1] }],
+    visual: coordsVisual([[P[0], P[1], "P"]], { lines: [drawnLine(L0)], extra: [onLineNear(L0, P)], caption: "The given line and the point P" }),
     hints: ["Find N's gradient from the given line first; then use the point to find c."],
     params: { multi: true, parts: [{ id: "m", kind: "slopeRel", L: L0, rel: "perp" }, { id: "c", kind: "perpC", L0, P }] },
   };
@@ -979,7 +1010,7 @@ function qArea(rng) {
     "Use the shoelace formula: Area = |x1(y2 − y3) + x2(y3 − y1) + x3(y1 − y2)| ÷ 2. (Or draw a box round the triangle and subtract the corner triangles.)",
     `In the calculator: \`abs(_x1 * (_y2 - _y3) + _x2 * (_y3 - _y1) + _x3 * (_y1 - _y2)) / 2\`. Don't forget to halve.`,
   ];
-  const base = { prompt, explanation, hints, given: givenPts(pts), params: { kind: "area", pts } };
+  const base = { prompt, explanation, hints, given: givenPts(pts), params: { kind: "area", pts }, visual: coordsVisual(located(pts), { segments: TRI }) };
   return finishNum(base, area, [Math.abs(s), area + 0.5, area * 2 + 1, Math.abs(s) / 4], rng, 0.25, EXACT);
 }
 
@@ -1068,6 +1099,7 @@ function xRatio(rng) {
       `The ratio ${m} : ${n} splits AB into ${s} equal pieces, and P is ${m} of them along from A.`,
       `Work out the step from A to B in x and in y, take ${m}/${s} of each, and add it to A.`,
     ],
+    visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]] }),
     params: { multi: true, parts: [{ id: "x", kind: "x-ratio", A, B, m, n, axis: 0 }, { id: "y", kind: "x-ratio", A, B, m, n, axis: 1 }, { id: "ap", kind: "x-ratioLen", A, B, m, n }] },
   };
 }
@@ -1115,6 +1147,7 @@ function xEquidistant(rng) {
       `Write PA² = ${sqA} and PB² the same way with B, set them equal and expand both sides.`,
       `The t² terms cancel. Collect the t terms on one side and the numbers on the other, then divide.`,
     ],
+    visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]] }),
     params: { multi: true, parts: [{ id: "t", kind: "x-equi", A, B, axis }, { id: "d", kind: "x-equiLen", A, B, axis }] },
   };
 }
@@ -1152,6 +1185,7 @@ function xTriHeight(rng) {
       "Find the area first with the shoelace formula (`abs(_x1*(_y2 - _y3) + _x2*(_y3 - _y1) + _x3*(_y1 - _y2)) / 2`).",
       "The same area is ½ × AB × height, where the height is measured from C at right angles to AB. Find AB, then rearrange: height = 2 × area ÷ AB.",
     ],
+    visual: coordsVisual(named(pts, ["A", "B", "C"]), { segments: TRI }),
     params: { multi: true, parts: [{ id: "area", kind: "area", pts }, { id: "h", kind: "x-height", pts }] },
   };
 }
@@ -1188,6 +1222,7 @@ function xParallelogram(rng) {
       "Going round ABCD, side DC is parallel and equal to AB, so the step from B to A equals the step from C to D.",
       "Or use the diagonals: they bisect each other, so the midpoint of AC is also the midpoint of BD.",
     ],
+    visual: coordsVisual(named(pts, ["A", "B", "C"]), { segments: [[0, 1], [1, 2]] }),
     params: { multi: true, parts: [{ id: "x", kind: "x-para", pts, axis: 0 }, { id: "y", kind: "x-para", pts, axis: 1 }, { id: "bd", kind: "x-paraLen", pts }] },
   };
 }
@@ -1220,6 +1255,7 @@ function xCollinear(rng) {
       "Points on one straight line all give the same gradient, whichever two you pick.",
       `Find the gradient from A to B as a fraction. The gradient from A to C is (${yC} − ${par(A[1])}) / (k − ${par(A[0])}); set the two equal.`,
     ],
+    visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]], lines: [{ m: 0, c: yC }], extra: [[A[0], yC]], caption: `C = (k, ${yC}) lies on the horizontal line y = ${yC}` }),
     params: { multi: true, parts: [{ id: "k", kind: "x-colK", A, B, yC }, { id: "c", kind: "x-colC", A, B }] },
   };
 }
@@ -1263,6 +1299,7 @@ function xAxisTriangle(rng) {
       "Find the equation of the line first: the gradient from the two points, then c by substituting one point.",
       "The triangle's corners are the origin and the two points where the line crosses the axes.",
     ],
+    visual: coordsVisual(located([P, Q]), { segments: [[0, 1]] }),
     params: { multi: true, parts: [{ id: "xi", kind: "x-axInt", P, Q, axis: "x" }, { id: "yi", kind: "x-axInt", P, Q, axis: "y" }, { id: "area", kind: "x-axArea", P, Q }] },
   };
 }
@@ -1348,6 +1385,7 @@ function xFoot(rng) {
       horiz || vert ? "ℓ is parallel to an axis, so the perpendicular through P is parallel to the other axis." : `Find ℓ's gradient, take the negative reciprocal, and write the line through P with that gradient.`,
       "F is where that perpendicular meets ℓ: solve the two equations together.",
     ],
+    visual: coordsVisual([[P[0], P[1], "P"]], { lines: [drawnLine(L)], extra: [onLineNear(L, P)], caption: "The line ℓ and the point P" }),
     params: { multi: true, parts: [{ id: "x", kind: "x-foot", L, P, axis: 0 }, { id: "y", kind: "x-foot", L, P, axis: 1 }, { id: "d", kind: "x-footLen", L, P }] },
   };
 }
@@ -1384,6 +1422,7 @@ function xRightK(rng) {
       "The right angle is at B, so the sides BA and BC are perpendicular: their gradients multiply to −1.",
       `BA has gradient ${fracStr(mBA)}. Write BC's gradient as (${C[1]} − ${par(B[1])}) / (k − ${par(B[0])}) and set it equal to the negative reciprocal.`,
     ],
+    visual: coordsVisual(named([A, B], ["A", "B"]), { segments: [[0, 1]], lines: [{ m: 0, c: C[1] }], extra: [[B[0], C[1]]], caption: `C = (k, ${C[1]}) lies on the horizontal line y = ${C[1]}` }),
     params: { multi: true, parts: [{ id: "k", kind: "x-rightK", A, B, yC: C[1] }, { id: "area", kind: "x-rightArea", A, B, yC: C[1] }] },
   };
 }
@@ -1423,6 +1462,7 @@ function xCircumcentre(rng) {
       "So find two perpendicular bisectors: AB's goes through the midpoint of AB at right angles to AB, and BC's goes through the midpoint of BC at right angles to BC.",
       "The centre is where the two bisectors meet: solve their equations together.",
     ],
+    visual: coordsVisual(named([A, B, C], ["A", "B", "C"]), { segments: TRI }),
     params: { multi: true, parts: [{ id: "x", kind: "x-circ", pts: [A, B, C], axis: 0 }, { id: "y", kind: "x-circ", pts: [A, B, C], axis: 1 }, { id: "r", kind: "x-circR", pts: [A, B, C] }] },
   };
 }

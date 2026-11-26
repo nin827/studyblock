@@ -155,7 +155,11 @@ function barSvg(v) {
       const y0 = ys(Math.max(0, val));
       const y1 = ys(Math.min(0, val));
       body += `<rect x="${r1(x + 0.75)}" y="${r1(y0)}" width="${r1(Math.max(1, bw - 1.5))}" height="${r1(Math.max(0.5, y1 - y0))}" ${barFill(id, si)}/>`;
-      if (v.showValues) values += txt(x + bw / 2, val >= 0 ? y0 - 4 : y1 + 4, fmtValue(val), { dy: val >= 0 ? '0' : '0.85em', cls: 'vis-halo vis-value' });
+      if (v.showValues) {
+        // A negative bar's value goes under its end, or inside the bar when that would hit the category labels.
+        const inside = val < 0 && y1 + 24 > top + plotH;
+        values += txt(x + bw / 2, val >= 0 ? y0 - 4 : inside ? y1 - 7 : y1 + 4, fmtValue(val), { dy: val >= 0 || inside ? '0' : '0.85em', cls: 'vis-halo vis-value' });
+      }
     });
     body += line(cx, top + plotH, cx, top + plotH + 4, 'vis-axis');
     const ly = top + plotH + 8;
