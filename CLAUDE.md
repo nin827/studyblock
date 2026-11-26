@@ -24,6 +24,7 @@ Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser
 ## Workflow
 
 - **Main chat orchestrates; subagents implement or fetch.** The main session plans, writes contracts/instructions, reviews diffs and verifies in the browser. Implementation and web lookups go to subagents with a narrow, explicit brief. Parallel agents must never touch the same files.
+- **Agent models:** Sonnet for general coding and basic research. Opus for critical or sensitive coding, sub-orchestrating, and deeper research. Haiku only for data retrieval or querying.
 - **Don't block on questions.** Open questions/decisions go into `ticket/NNN-slug.md` (see `ticket/README.md`) and work continues with a sensible default. When the user says "clear tickets", walk through the open ones.
 - **Group commits, then push as a checkpoint.** Commit one coherent unit of work (a feature, a module, a fix set), not every small file change. Commit only finished, tested work: never half-written files a running agent still owns. After each grouped commit, push to `origin main`.
 
