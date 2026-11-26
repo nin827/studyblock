@@ -31,6 +31,31 @@ const growTxt = (g) => (g > 0 ? `growing at ${g}% a year` : g < 0 ? `shrinking b
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const fill = (t, vars) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
 
+// Plausibility tables (ticket 022): what a learner could believe, written from the frameworks.
+// Only generation uses them (to prefer convincing wrong options); verify() has its own rules.
+const numOf = (s) => parseFloat(String(s).replace(/−/g, "-").replace(/[+%,]/g, ""));
+// Classic confusions between the 4Ps (packaging is product or promotion, a sale is price or promotion, ...).
+const CONF_P = { Product: ["Promotion", "Place"], Price: ["Promotion"], Place: ["Product", "Promotion"], Promotion: ["Product", "Price"] };
+// Classic confusions between segmentation bases.
+const CONF_BASE = { Demographic: ["Psychographic", "Geographic"], Geographic: ["Demographic"], Psychographic: ["Demographic", "Behavioural"], Behavioural: ["Psychographic", "Demographic"] };
+// A confusion-set column check: the value is the true one or one of its classic confusions.
+const nearOf = (conf, truth) => (t) => t.every((v, i) => v === truth[i] || (conf[truth[i]] || []).includes(v));
+// Boston axes [high growth, high share]; "one axis off" is a plausible misread of one threshold.
+const BCG_AXES = { Star: [1, 1], "Cash cow": [0, 1], "Question mark": [1, 0], Dog: [0, 0] };
+const oneAxisOff = (a, b) => (BCG_AXES[a][0] !== BCG_AXES[b][0]) + (BCG_AXES[a][1] !== BCG_AXES[b][1]) <= 1;
+// Life-cycle stage that fits a stated sales change (%) and profit under the question's rules.
+const stageFits = (chTxt, stage, profit) => {
+  const ch = numOf(chTxt);
+  if (!Number.isFinite(ch)) return false;
+  if (stage === "Introduction") return ch > 0 && profit < 0;
+  if (stage === "Growth") return ch >= 15 && profit > 0;
+  if (stage === "Maturity") return Math.abs(ch) < 5 && profit > 0;
+  return ch <= -5; // Decline
+};
+// Pricing: strategies a learner mixes up (a high launch price: skimming or premium; a low or
+// competitive price: penetration, loss leader or competitive pricing).
+const PRICE_GROUP = { "Price skimming": "A", "Premium pricing": "A", "Penetration pricing": "B", "Loss leader": "B", "Competitive pricing": "B" };
+
 // The answer plus up to n − 1 distractors, each differing from it in 1–2 segments (never all).
 // `prefer` candidates are tried first (the likeliest mistakes), then random single/double swaps.
 // Mixed distances (ticket 022): some distractor differs in 2+ columns and the answer is not the
@@ -49,16 +74,24 @@ function countPick(set, answer) {
   const a = score(answer);
   return set.every((c) => c === answer || score(c) < a);
 }
-function segChoices(rng, answer, opts, prefer = [], n = 4) {
+// `plaus(tuple)` (optional, local to each question type) marks combinations that make sense together
+// (a classic confusion counts). Among sets that pass mixOk, the best set is not solvable by counting,
+// has the answer as more than the only plausible option, then has the most plausible distractors;
+// random swaps try plausible tuples first.
+function segChoices(rng, answer, opts, prefer = [], n = 4, plaus = null) {
   const cols = answer.length;
-  let best = null, bestOk = false;
+  const ansPlaus = plaus ? plaus(answer) : false;
+  let best = null, bestOk = false, bestScore = -1;
   for (let attempt = 0; attempt < 600; attempt++) {
     const seen = new Set([answer.join(SEP)]);
     const out = [answer];
+    let strict = !!plaus && attempt > 0; // random swaps: plausible tuples only, until g runs low
     const add = (c) => {
       if (out.length >= n) return;
       const d = c.filter((v, i) => v !== answer[i]).length;
       if (d < 1 || (cols > 2 && d >= cols) || d > 2) return;
+      // Odd attempts leave the last slot free, so a distractor two columns away can break the majority.
+      if (strict && (out.length < n - 1 || attempt % 2 === 0) && !plaus(c)) return;
       const k = c.join(SEP);
       if (seen.has(k)) return;
       seen.add(k);
@@ -67,6 +100,7 @@ function segChoices(rng, answer, opts, prefer = [], n = 4) {
     // First try the likeliest mistakes in order; on redraws mix in some random swaps.
     (attempt === 0 ? prefer : rng.shuffle(prefer.slice()).slice(0, rng.int(0, Math.max(0, n - 2)))).forEach(add);
     for (let g = 0; out.length < n && g < 400; g++) {
+      if (g === 150) strict = false;
       const k = cols > 2 ? (rng.next() < 0.5 ? 2 : 1) : (rng.next() < 0.5 ? 2 : 1);
       const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
       const c = answer.slice();
@@ -79,8 +113,11 @@ function segChoices(rng, answer, opts, prefer = [], n = 4) {
     if (!best) best = out;
     if (out.length !== n) continue;
     if (!mixOk(out, answer)) { if (!best) best = out; continue; }
-    if (!bestOk) { best = out; bestOk = true; }
-    if (!countPick(out, answer)) { best = out; break; }
+    const plausN = plaus ? out.filter((c) => c !== answer && plaus(c)).length : 0;
+    const score = (ansPlaus && plausN === 0 ? 0 : 1000) + (countPick(out, answer) ? 0 : 100) + plausN;
+    if (!bestOk || score > bestScore) { best = out; bestOk = true; bestScore = score; }
+    if (score >= 1100 + (plaus ? n - 1 : 0)) break;
+    if (attempt >= 150 && bestScore >= 1000) break;
   }
   return rng.shuffle(best);
 }
@@ -96,8 +133,9 @@ function plainChoices(rng, answer, pool, n = 4) {
 // the answer's value, so no other combination of blocks is correct). params.diff lets verify()
 // check the counts.
 const optionCount = (diff) => (diff === "easy" ? 3 : 5);
-function segQ(rng, diff, prompt, cols, answer, opts, prefer, decoys, rest) {
-  const choices = segChoices(rng, answer, opts, prefer, optionCount(diff));
+function segQ(rng, diff, prompt, cols, answer, opts, prefer, decoys, restIn) {
+  const { plaus, ...rest } = restIn; // plaus: optional tuple => bool, never stored on the question
+  const choices = segChoices(rng, answer, opts, prefer, optionCount(diff), plaus || null);
   const extraSegs = [];
   cols.forEach((c, i) => {
     for (const v of new Set([...(opts[i] || []), ...((decoys && decoys[i]) || [])])) if (v !== answer[i]) extraSegs.push([c, v]);
@@ -200,7 +238,7 @@ function genMix(diff, rng) {
   const list = items.map((s, i) => `${i + 1}. ${cap(s)}.`).join("\n");
   return segQ(rng, diff,
     `**${f.firm}** plans these decisions:\n\n${list}\n\nIn the marketing mix (the 4Ps), which P is each decision about?`,
-    items.map((_, i) => `Decision ${i + 1}`), picked.map((x) => x.P), picked.map(() => PS), [], null, { explanation, hints, params });
+    items.map((_, i) => `Decision ${i + 1}`), picked.map((x) => x.P), picked.map(() => PS), [], null, { explanation, hints, params, plaus: nearOf(CONF_P, picked.map((x) => x.P)) });
 }
 
 const MIX_WHY = {
@@ -287,7 +325,12 @@ function genAnsoff(diff, rng) {
       [ans[0], ans[1], ansoffOf(!nw.prodNew, !nw.mktNew)],
     ];
     return segQ(rng, diff, `${intro} Next year it ${fill(plan, f)}. Using the Ansoff matrix, is the product new, is the market new, and which growth strategy is this?`,
-      ["Product", "Market", "Strategy"], ans, [["Existing", "New"], ["Existing", "New"], ANSOFF], rng.shuffle(prefer), null, { explanation, hints: ANSOFF_HINTS, params });
+      ["Product", "Market", "Strategy"], ans, [["Existing", "New"], ["Existing", "New"], ANSOFF], rng.shuffle(prefer), null, {
+        explanation, hints: ANSOFF_HINTS, params,
+        // Plausible: the strategy matches the product/market newness stated, or is the classic
+        // product-development / market-development mix-up.
+        plaus: (t) => ansoffOf(t[0] === "New", t[1] === "New") === t[2] || ((t[0] === "New") !== (t[1] === "New") && (t[2] === "Product development" || t[2] === "Market development")),
+      });
   }
   // Hard: two plans with different risk; which is riskier?
   let s1, s2;
@@ -304,6 +347,8 @@ function genAnsoff(diff, rng) {
         `Risk rises the further a firm moves from what it knows: market penetration is the safest, product and market development are in the middle, and diversification is the riskiest. So **${ans[2]}** is riskier.`,
       hints: [...ANSOFF_HINTS, "Risk grows with each new thing: one new dimension (product or market) is riskier than none, and two is the riskiest."],
       params,
+      // Plausible: the plan named riskier really is the riskier of the two strategies named.
+      plaus: (t) => RISK[t[0]] !== RISK[t[1]] && t[2] === (RISK[t[0]] > RISK[t[1]] ? "Plan A" : "Plan B"),
     });
 }
 
@@ -371,6 +416,8 @@ function genBoston(diff, rng) {
       {
         explanation: `- Growth: ${g}% is ${highG ? "above" : "not above"} 10%, so **${ans[0].toLowerCase()}**.\n- Relative share = ${s} ÷ ${t} ≈ ${fmt(round2(s / t))}, ${hs ? "above" : "below"} 1, so **${ans[1].toLowerCase()}**.\n- ${ans[0]} growth and ${ans[1].toLowerCase()} share make it a **${ans[2]}**.`,
         hints: BCG_HINTS, params: { kind: "bcgMed", g, s, t },
+        // Plausible: the category follows from the growth and share named.
+        plaus: (x) => x[2] === bcgOf(x[0] === "High", x[1] === "High"),
       });
   }
   if (diff === "hard") {
@@ -402,6 +449,8 @@ function genBoston(diff, rng) {
         ],
         given: [{ label: "_last", value: A }, { label: "_now", value: B }, { label: "_sales", value: S }, { label: "_rival", value: R }],
         params: { kind: "bcgHard", A, B, S, R },
+        // Plausible: the category follows from the growth and share figures named.
+        plaus: (x) => x[2] === bcgOf(numOf(x[0]) > BCG_GROWTH, numOf(x[1]) > BCG_SHARE),
       });
   }
   // Expert: a portfolio of three products, each needing growth and relative share worked out.
@@ -429,6 +478,8 @@ function genBoston(diff, rng) {
         BCG_HINTS[1],
       ],
       params: { kind: "bcgExpert", data },
+      // Plausible: each product is placed in its true box or one axis away (one threshold misread).
+      plaus: (t) => t.every((v, i) => oneAxisOff(v, ans[i])),
     });
 }
 
@@ -516,7 +567,11 @@ function genPLC(diff, rng) {
     const prefer = [[signed(chWrong), stage], [signed(ch), others[0]], [signed(ch), others[1]], [signed(ch), others[2]]];
     return segQ(rng, diff, `${data} ${PLC_RULE} Work out the sales change (to 1 decimal place) and the life-cycle stage.`,
       ["Sales change", "Stage"], ans, [chDecoys, PLC], prefer, null,
-      { explanation: why, hints: PLC_HINTS, given: [{ label: "_last", value: L }, { label: "_now", value: T }], params: { kind: "plc", L, T, profit } });
+      {
+        explanation: why, hints: PLC_HINTS, given: [{ label: "_last", value: L }, { label: "_now", value: T }], params: { kind: "plc", L, T, profit },
+        // Plausible: the stage fits the sales change named (and the profit stated) under the rules.
+        plaus: (t) => stageFits(t[0], t[1], profit),
+      });
   }
   if (diff === "hard") {
     // Four years of history; only the latest change and profit decide the stage.
@@ -540,6 +595,8 @@ function genPLC(diff, rng) {
         hints: [...PLC_HINTS, "Usual focus: tell people the product exists, then get it into more places, then extend its life, then cut costs or withdraw."],
         given: [{ label: "_last", value: L }, { label: "_now", value: T }],
         params: { kind: "plcHard", L, T, profit },
+        // Plausible: the focus belongs to the stage named or to a neighbouring stage of the cycle.
+        plaus: (t) => Math.abs(PLC.indexOf(t[0]) - PLC.findIndex((s) => PLC_FOCUS[s] === t[1])) <= 1,
       });
   }
   // Expert: life cycle and Boston matrix together.
@@ -558,6 +615,8 @@ function genPLC(diff, rng) {
       hints: [PLC_HINTS[0], PLC_HINTS[1], BCG_HINTS[1]],
       given: [{ label: "_last", value: L }, { label: "_now", value: T }],
       params: { kind: "plcExpert", L, T, profit, g, r10 },
+      // Plausible: the stage fits the change named, and the Boston category is right or one axis off.
+      plaus: (t) => stageFits(t[0], t[1], profit) && oneAxisOff(t[2], cat),
     });
 }
 
@@ -692,6 +751,13 @@ function genPricing(diff, rng) {
           explanation: `${PRICE_WHY[strat]} So: **${ans.join(" · ")}**.`,
           hints: ["Ask what the firm most wants: quick market share, early profit from keen buyers, an exclusive image, more shoppers, or not to lose sales to similar rivals.", pricingHints[1]],
           params: { kind: "priceScen", t },
+          // Plausible: strategy, price level and aim all point into the same group of strategies a
+          // learner mixes up (skimming and premium are both high-priced; penetration, loss leader and
+          // competitive pricing all aim at winning buyers from rivals).
+          plaus: (t) => ["A", "B"].some((grp) => t.every((v, c) => {
+            const rows = keys.filter((k) => (c === 0 ? k === v : PRICE_ROWS[k][c - 1] === v));
+            return rows.length > 0 && rows.every((k) => PRICE_GROUP[k] === grp);
+          })),
         });
     }
     // Markup and margin from cost and price.
@@ -782,7 +848,7 @@ function genSeg(diff, rng) {
   }
   if (diff === "medium") {
     return segQ(rng, diff,`${firm} defines its target segment with two criteria:\n\n1. ${cap(crit[0])}\n2. ${cap(crit[1])}\n\nWhich basis of market segmentation does each criterion use?`,
-      ["Criterion 1", "Criterion 2"], bases, [BASES, BASES], [], null, { explanation, hints: SEG_HINTS, params: { kind: "seg", crit } });
+      ["Criterion 1", "Criterion 2"], bases, [BASES, BASES], [], null, { explanation, hints: SEG_HINTS, params: { kind: "seg", crit }, plaus: nearOf(CONF_BASE, bases) });
   }
   // Hard: size of a two-criterion segment plus the basis of the second criterion.
   const N = rng.int(4, 60) * 10000;

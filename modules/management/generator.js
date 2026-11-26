@@ -21,14 +21,23 @@ const OPTION_COUNT = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const MIN_DECOYS = { easy: 1, medium: 3, hard: 6, expert: 9 };
 // Mixed distances (ticket 022): some wrong option differs in 2+ columns, and the answer is not the
 // strictly most common value in every column.
-function mixOk(tuples, correct) {
+// With 3+ columns no wrong option differs in every column; at Easy both wrong options differ in one
+// shared column. `plaus(tuple)` (optional) marks combinations that make sense together (a classic
+// confusion counts); the option set with the most plausible wrong options wins, and the answer is
+// never the only plausible option when the pool allows it.
+const farOk = (d, n) => (n === 2 ? d <= 2 : d < n);
+function mixOk(tuples, correct, easy) {
+  const n = correct.length;
   const wrong = tuples.filter((t) => keyOf(t) !== keyOf(correct));
-  if (!wrong.some((t) => diffCount(t, correct) >= 2)) return false;
+  const dists = wrong.map((t) => diffCount(t, correct));
+  if (!dists.some((d) => d >= 2) || !dists.every((d) => d >= 1 && farOk(d, n))) return false;
   const major = (j) => {
     const cnt = (v) => tuples.filter((t) => t[j] === v).length;
     return tuples.every((t) => t[j] === correct[j] || cnt(t[j]) < cnt(correct[j]));
   };
-  return !correct.every((_, j) => major(j));
+  if (correct.every((_, j) => major(j))) return false;
+  if (easy && !correct.some((_, j) => wrong.every((t) => t[j] !== correct[j]))) return false;
+  return true;
 }
 // Counting attack: the answer is the only option with the highest sum of its values' counts.
 function countPick(tuples, correct) {
@@ -37,30 +46,33 @@ function countPick(tuples, correct) {
   const a = score(correct), key = keyOf(correct);
   return tuples.every((t) => keyOf(t) === key || score(t) < a);
 }
-function segChoice(cols, correct, candidates, rng, diff, extra = []) {
+function segChoice(cols, correct, candidates, rng, diff, extra = [], plaus = null) {
   const n = cols.length;
   const want = OPTION_COUNT[diff];
   const ok = [];
   const seen = new Set([keyOf(correct)]);
   for (const c of candidates) {
     const d = c.length === n ? diffCount(c, correct) : 0;
-    if (d < 1 || (n > 2 && d >= n) || seen.has(keyOf(c))) continue;
+    if (d < 1 || !farOk(d, n) || seen.has(keyOf(c))) continue;
     seen.add(keyOf(c));
     ok.push(c);
   }
-  // Redraw (same rng) until the option set cannot be solved by counting.
-  // A set that is only mixOk is kept as a fallback if no set also beats counting.
-  let wrong = [], fallback = [];
-  for (let tries = 0; tries < 600; tries++) {
-    wrong = rng.shuffle(ok).slice(0, want - 1);
-    if (wrong.length === want - 1 && mixOk([correct, ...wrong], correct)) {
-      if (!countPick([correct, ...wrong], correct)) break;
-      if (!fallback.length) fallback = wrong;
-    }
-    wrong = [];
+  // Redraw (same rng) among sets that pass mixOk: best = not solvable by counting, answer not the
+  // only plausible option, then the most plausible wrong options.
+  const ansPlaus = plaus ? plaus(correct) : false;
+  let best = null, bestScore = -1;
+  for (let t = 0; t < 400 && ok.length >= want - 1; t++) {
+    const wrong = rng.shuffle(ok).slice(0, want - 1);
+    const rows = [correct, ...wrong];
+    if (!mixOk(rows, correct, diff === "easy")) continue;
+    const plausN = plaus ? wrong.filter(plaus).length : 0;
+    const score = (ansPlaus && plausN === 0 ? 0 : 1000) + (countPick(rows, correct) ? 0 : 100) + plausN;
+    if (score > bestScore) { bestScore = score; best = wrong; }
+    if (score >= 1100 + (plaus ? want - 1 : 0)) break;
+    if (t >= 150 && bestScore >= 1000) break;
   }
-  if (!wrong.length) wrong = fallback;
-  if (wrong.length !== want - 1) throw new Error("not enough segmented options");
+  if (!best) throw new Error("not enough segmented options");
+  const wrong = best;
   const shown = cols.map((_, i) => new Set([correct, ...wrong].map((t) => t[i])));
   const extraSegs = [];
   const add = (i, v) => { if (!shown[i].has(v)) { shown[i].add(v); extraSegs.push([cols[i], v]); } };
@@ -188,7 +200,8 @@ function genMotivation(diff, rng) {
       for (const h of HERZ) for (const e of EFFECTS) cands.push([h, e]);
       return {
         prompt: `${firm} improves ${it.text}. Using **Herzberg's two-factor theory**, what kind of factor is this, and what does improving it do?`,
-        ...segChoice(["Factor", "Effect of improving it"], correct, cands, rng, diff),
+        // Plausible: the effect is one of Herzberg's two real effects (the swapped one is the classic confusion).
+        ...segChoice(["Factor", "Effect of improving it"], correct, cands, rng, diff, [], (t) => t[1] === HERZ_EFFECT[HERZ[0]] || t[1] === HERZ_EFFECT[HERZ[1]]),
         explanation: `It is a **${HERZ[it.h].toLowerCase()}**. ${it.h === 0 ? "Improving a hygiene factor **removes dissatisfaction**, but Herzberg says it does not motivate on its own." : "Improving a motivator **increases motivation**, because it comes from the job itself."}`,
         hints: [...motHints.herz, "Herzberg: hygiene factors only stop people being unhappy; motivators make them want to work harder."],
         params: { diff, kind: "herzeffect", item: it.id },
@@ -217,7 +230,12 @@ function genMotivation(diff, rng) {
     for (const m of MASLOW) for (const h of HERZ) cands.push([m, h]);
     return {
       prompt: `${firm} introduces ${it.text}. Classify it with **both** frameworks: which **Maslow** level does it meet, and is it a **Herzberg** hygiene factor or motivator?`,
-      ...segChoice(["Maslow level", "Herzberg"], correct, cands, rng, diff, [["Herzberg", "Neither"]]),
+      // Plausible: hygiene sits with the lower and outer needs, motivators with self-actualisation;
+      // esteem is the known overlap (status is esteem but hygiene), so it pairs with either.
+      ...segChoice(["Maslow level", "Herzberg"], correct, cands, rng, diff, [["Herzberg", "Neither"]], (t) => {
+        const lvl = MASLOW.indexOf(t[0]);
+        return lvl === 3 || (lvl < 3 ? t[1] === HERZ[0] : t[1] === HERZ[1]);
+      }),
       explanation: `Maslow: a **${MASLOW[it.m].toLowerCase()}** need. Herzberg: a **${HERZ[it.h].toLowerCase()}**.${it.id === "office" ? " Status meets esteem needs for Maslow, but Herzberg lists status as a hygiene factor." : ""}`,
       hints: [motHints.maslow[0], motHints.herz[0] + " " + motHints.herz[1]],
       params: { diff, kind: "both", item: it.id },
@@ -273,6 +291,7 @@ const STYLE_BEHAVIOUR = {
 const DECIDER = { Autocratic: "Manager alone, orders only", Democratic: "Manager with team input", "Laissez-faire": "Team members themselves", Paternalistic: "Manager, staff welfare first" };
 const WHO_TXT = { Autocratic: "the manager alone, who simply gives orders", Democratic: "the manager, after taking the team's input", "Laissez-faire": "the team members themselves", Paternalistic: "the manager, who puts staff welfare first" };
 const COMMS = { Autocratic: "One-way, top down", Democratic: "Two-way, with discussion", "Laissez-faire": "Little direction given", Paternalistic: "Top down, with explanation" };
+const LOOKALIKE = { Autocratic: "Paternalistic", Paternalistic: "Autocratic", Democratic: "Laissez-faire", "Laissez-faire": "Democratic" };
 const MCG = ["Theory X", "Theory Y"];
 const STYLE_VIEW = { Autocratic: "Theory X", Democratic: "Theory Y", "Laissez-faire": "Theory Y" };
 const X_BELIEFS = [
@@ -344,7 +363,9 @@ function genLeadership(diff, rng) {
       for (const v of MCG) for (const st of pool) cands.push([v, st]);
       return {
         prompt: `${name}, a manager at ${firm}, believes that ${list[idx]}. Which **McGregor** theory is this, and which leadership style is ${name} most likely to use?`,
-        ...segChoice(["McGregor", "Likely style"], [view, style], cands, rng, diff),
+        // Plausible: a style that fits the view (X: controlling styles; Y: involving or hands-off styles).
+        ...segChoice(["McGregor", "Likely style"], [view, style], cands, rng, diff, [], (t) =>
+          (t[0] === "Theory X" ? ["Autocratic", "Paternalistic", "Bureaucratic"] : ["Democratic", "Laissez-faire", "Charismatic"]).includes(t[1])),
         explanation: `The belief is **${view}**. ${y ? "A manager who trusts staff tends to involve them: **democratic**." : "A manager who distrusts staff tends to control them: **autocratic**."}`,
         hints: mcgHints,
         params: { diff, kind: "mcgstyle", y, idx },
@@ -355,7 +376,8 @@ function genLeadership(diff, rng) {
     for (const s of STYLES) for (const s2 of STYLES) cands.push([s, DECIDER[s2]]);
     return {
       prompt: `${name}, a manager at ${firm}, ${b.text}. Which **leadership style** is this, and who effectively makes the decisions?`,
-      ...segChoice(["Style", "Who decides"], [b.style, DECIDER[b.style]], cands, rng, diff),
+      // Plausible: who decides fits the named style or its look-alike (autocratic/paternalistic, democratic/laissez-faire).
+      ...segChoice(["Style", "Who decides"], [b.style, DECIDER[b.style]], cands, rng, diff, [], (t) => t[1] === DECIDER[t[0]] || t[1] === DECIDER[LOOKALIKE[t[0]]]),
       explanation: `**${b.style}**: decisions are made by **${WHO_TXT[b.style]}**.`,
       hints: styleHints,
       params: { diff, kind: "stylewho", style: b.style, idx: b.idx },
@@ -368,7 +390,9 @@ function genLeadership(diff, rng) {
     for (const s of STYLES) for (const v of MCG) cands.push([s, v]);
     return {
       prompt: `At ${firm}, ${name} ${b.text}. Name the **leadership style**, and the **McGregor** assumption about workers that it reflects.`,
-      ...segChoice(["Style", "McGregor"], [b.style, STYLE_VIEW[b.style]], cands, rng, diff, [["Style", "Bureaucratic"], ["Style", "Charismatic"]]),
+      // Plausible: controlling styles go with Theory X, involving or hands-off styles with Theory Y.
+      ...segChoice(["Style", "McGregor"], [b.style, STYLE_VIEW[b.style]], cands, rng, diff, [["Style", "Bureaucratic"], ["Style", "Charismatic"]], (t) =>
+        t[1] === (t[0] === "Autocratic" || t[0] === "Paternalistic" ? "Theory X" : "Theory Y")),
       explanation: `The behaviour is **${b.style.toLowerCase()}**. ${b.style === "Autocratic" ? "Close control reflects **Theory X**: staff are not trusted." : "Trusting staff with decisions reflects **Theory Y**."}`,
       hints: [styleHints[0], mcgHints[1]],
       params: { diff, kind: "styleview", style: b.style, idx: b.idx },
@@ -379,7 +403,11 @@ function genLeadership(diff, rng) {
   for (const s of STYLES) for (const d of STYLES) for (const c of STYLES) cands.push([s, DECIDER[d], COMMS[c]]);
   return {
     prompt: `At ${firm}, ${name} ${b.text}. Describe this **leadership style**: its name, who decides, and how communication flows.`,
-    ...segChoice(["Style", "Who decides", "Communication"], [b.style, DECIDER[b.style], COMMS[b.style]], cands, rng, diff),
+    // Plausible: who decides and the communication each fit the named style or its look-alike.
+    ...segChoice(["Style", "Who decides", "Communication"], [b.style, DECIDER[b.style], COMMS[b.style]], cands, rng, diff, [], (t) => {
+      const ss = [t[0], LOOKALIKE[t[0]]];
+      return ss.some((s) => DECIDER[s] === t[1]) && ss.some((s) => COMMS[s] === t[2]);
+    }),
     explanation: `**${b.style}** leadership: decisions are made by ${WHO_TXT[b.style]}; communication is ${COMMS[b.style].toLowerCase()}.`,
     hints: [...styleHints, "Autocratic: orders flow down. Democratic: ideas flow both ways. Laissez-faire: the manager gives little direction. Paternalistic: orders flow down but are explained."],
     params: { diff, kind: "style3", style: b.style, idx: b.idx },
@@ -433,7 +461,8 @@ function genStructure(diff, rng) {
     const cands = [["Taller", "Narrower"], ["Taller", "Wider"], ["Flatter", "Narrower"], ["Flatter", "Wider"]];
     return {
       prompt: `${firm} has **${L1} levels** of hierarchy. A rival with the same number of staff has **${L2} levels**. Compared with the rival, ${firm}'s structure is…`,
-      ...segChoice(["Structure", "Spans of control"], correct, cands, rng, diff),
+      // Plausible: a tall structure goes with narrow spans, a flat one with wide spans.
+      ...segChoice(["Structure", "Spans of control"], correct, cands, rng, diff, [], (t) => (t[0] === "Taller") === (t[1] === "Narrower")),
       explanation: `More levels means a **taller** structure. With the same number of staff spread over ${taller ? "more" : "fewer"} levels, each manager has ${taller ? "fewer" : "more"} direct reports, so spans are **${taller ? "narrower" : "wider"}**.`,
       hints: ["More levels for the same number of people means a taller structure.", "Tall structures have narrow spans of control; flat structures have wide spans."],
       params: { diff, kind: "tallflat", L1, L2 },
@@ -478,7 +507,9 @@ function genStructure(diff, rng) {
     for (const a of ["Taller", "Flatter"]) for (const b of ["Narrower", "Wider"]) for (const c of ["Slower", "Faster"]) cands.push([a, b, c]);
     return {
       prompt: `${firm} has **${L1} levels** of hierarchy and managers with an average span of control of **${sA}**. A rival has **${L2} levels** and an average span of **${sB}**. Compared with the rival, describe ${firm}'s structure and how quickly messages pass from top to bottom.`,
-      ...segChoice(["Structure", "Spans of control", "Communication"], correct, cands, rng, diff),
+      // Plausible: structure and spans agree with each other (tall/narrow, flat/wide); the speed of
+      // communication is where a learner may still slip.
+      ...segChoice(["Structure", "Spans of control", "Communication"], correct, cands, rng, diff, [], (t) => (t[0] === "Taller") === (t[1] === "Narrower")),
       explanation: `${L1} levels against ${L2} makes ${firm} **${correct[0].toLowerCase()}**. A span of ${sA} against ${sB} is **${correct[1].toLowerCase()}**. ${taller ? "More" : "Fewer"} layers means messages pass through ${taller ? "more" : "fewer"} people, so vertical communication is **${correct[2].toLowerCase()}**.`,
       hints: ["Compare the number of levels first, then the spans.", "Each extra layer is another person a message has to pass through."],
       params: { diff, kind: "compare", L1, L2, sA, sB },
@@ -566,6 +597,12 @@ const STRATS = ["Cost leadership", "Differentiation", "Cost focus", "Differentia
 const SCOPES = ["Broad", "Narrow"];
 const ADVS = ["Lower cost", "Uniqueness"];
 // Strategy index = scope index * 2 + advantage index.
+// Plausible (scope | advantage | strategy): the strategy named fits at least one of the stated
+// attributes, i.e. it is at most one axis away from the (scope, advantage) pair.
+const strategyNear = (t) => {
+  const i = STRATS.indexOf(t[2]);
+  return i >= 0 && (SCOPES[i >> 1] === t[0] ? 0 : 1) + (ADVS[i & 1] === t[1] ? 0 : 1) <= 1;
+};
 const PORTER_FIRMS = {
   "Cost leadership": [
     "sells basic groceries to shoppers across the whole country at the lowest prices, using huge bulk orders",
@@ -669,7 +706,7 @@ function genPorter(diff, rng) {
     const correct = [SCOPES[si >> 1], ADVS[si & 1], strat];
     return {
       prompt: `${firm} ${PORTER_FIRMS[strat][idx]}. Analyse it with **Porter's generic strategies**: its market scope, its source of competitive advantage, and the strategy.`,
-      ...segChoice(cols, correct, cands, rng, diff),
+      ...segChoice(cols, correct, cands, rng, diff, [], strategyNear),
       explanation: `Scope: **${correct[0].toLowerCase()}**; advantage: **${correct[1].toLowerCase()}**; so the strategy is **${strat.toLowerCase()}**.`,
       hints: porterHints,
       params: { diff, kind: "pdesc3", strat, idx },
@@ -682,7 +719,7 @@ function genPorter(diff, rng) {
     const strat = STRATS[SCOPES.indexOf(r.scope) * 2 + ADVS.indexOf(r.adv)];
     return {
       prompt: `Industry data. ${porterText(d, firm)} ${RULE_TXT} Which of **Porter's generic strategies** fits?`,
-      ...segChoice(cols, [r.scope, r.adv, strat], cands, rng, diff, [["Strategy", "Stuck in the middle"]]),
+      ...segChoice(cols, [r.scope, r.adv, strat], cands, rng, diff, [["Strategy", "Stuck in the middle"]], strategyNear),
       explanation: `- Cost: $${d.cost} vs $${d.avgCost} is ${pct(d.cost, d.avgCost)}%\n- Price: $${d.price} vs $${d.avgPrice} is ${pct(d.price, d.avgPrice) > 0 ? "+" : ""}${pct(d.price, d.avgPrice)}%\n- So the advantage is **${r.adv.toLowerCase()}**, the scope is **${r.scope.toLowerCase()}**, and the strategy is **${strat.toLowerCase()}**.`,
       hints: ["Work out the cost and price as a % difference from the industry averages: (firm − average) ÷ average × 100.", porterHints[1]],
       given: [{ label: "_cost", value: d.cost }, { label: "_avgcost", value: d.avgCost }, { label: "_price", value: d.price }, { label: "_avgprice", value: d.avgPrice }],
