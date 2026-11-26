@@ -1,6 +1,6 @@
 # 021 — Future roles (noted for later)
 
-**Status:** open (parked by the user; build when asked)
+**Status:** resolved (all candidate roles built, 2026-11-26)
 **Raised:** 2026-11-26
 
 Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, then **Chemist**, **Electrical Engineer**, **Biologist**, then **Game Developer**, **Network Engineer**, **Music Theorist**, **Operations Manager** (which also covers Travel Planner and Logistics). Accountant now includes Budget variance.
@@ -17,3 +17,6 @@ Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, t
 
 ## Other candidates
 All the earlier candidates have been built. Still parked: **Teacher** and **Nutritionist** (above).
+
+## Done
+Teacher (Examiner, Tutor) and Nutritionist (Food Label Analyst, Sports Nutrition Analyst, with a start notice) are built.

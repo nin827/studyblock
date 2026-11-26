@@ -1,0 +1,16 @@
+{
+  "id": "role-nutritionist",
+  "title": "Applied scenarios",
+  "description": "Multi-step practice sums that join food-label energy, per-portion scaling, activity energy and fluid volumes. Made-up figures, calculation only.",
+  "icon": "apple",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "label-energy", "title": "Label energy", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "label-scale", "title": "Portions and recipes", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "activity-energy", "title": "Activity energy", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fluid-volume", "title": "Fluid volumes", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}
