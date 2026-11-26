@@ -74,3 +74,8 @@ Borderline cases, left as they are:
 - Keep the Medical domain.
 - Change all four judgement calls: make the gem-budget 'certain' case rarer; Probability Expert uses fractions; Geometry Expert bearings to whole degrees; Music adds half-diminished vii7 and double sharps/flats.
 - Nutrition grams-from-kcal: **make Hard harder**.
+
+**Built 2026-11-26:**
+- All four judgement calls are done (III+ naming kept), and Nutrition Hard now has a percentage step.
+- Fact-list cells now have 10+ rows.
+- "Hard easier than Medium" rows relabelled: Sputnik, Uruguay, paper, the Channel Tunnel, principal/principles, semi-, trans-.
