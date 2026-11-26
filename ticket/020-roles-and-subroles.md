@@ -30,3 +30,7 @@
   - Scenario tiers: Normal has 2 parts, Hard 3, Expert 3–4 (lighter than Expert+).
 - **Weighted score:** a mixed question is worth its number of parts. The score is Σ credit × parts out of Σ parts.
 - **Question count:** set per role, 5–50 (default 10; Expert+ default 5). The Mix builder minimum is now 5.
+- **Role level names** (user): Easy, Medium, Hard and Expert.
+  - Easy draws subject Medium, Medium draws Hard, and Hard draws Expert.
+  - Expert is the special role-only level (scenario tier "Expert+").
+  - The mixed-question tiers are medium, hard and expert, matching the subject level each role level draws.
