@@ -31,3 +31,6 @@ Top picks: SQL Queries order-limit, Algorithms sorting and data structures, Chor
   - Type is the default mode, remembered per module for the session.
   - New typed subtopics give the Blocks alternative: SQL "Write the query", Code Writing "Write the line", Code Reviewing "Rewrite the buggy line".
   - Algorithms sorting stays multi-part (blocks aren't a part type yet).
+- **Run the query (SQL "Write the query"):** a Run button runs the learner's query, typed or built from blocks, on the question's table and shows the output or an error. It's unlimited and never scored.
+  - *Default:* grading stays a text match against the answer plus a short list of accepted equivalents. The output is for testing only.
+  - *Alternative:* grade by output (any query that returns the right result counts). That's fairer to equivalent queries, but it rewards a hard-coded query such as `WHERE id IN (2, 5)`.
