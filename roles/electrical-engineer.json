@@ -1,0 +1,47 @@
+{
+  "id": "electrical-engineer",
+  "title": "Electrical Engineer",
+  "icon": "zap",
+  "description": "Circuits, power and batteries, binary registers and logic, and the data that sensors produce.",
+  "exclusive": "role-electrical-engineer",
+  "mix": {
+    "electricity": { "weight": 4 },
+    "number-bases": { "weight": 2 },
+    "boolean-logic": { "weight": 2 },
+    "data-representation": { "weight": 2 },
+    "exponents-logs": { "weight": 1 },
+    "unit-conversion": { "weight": 1 },
+    "forces-energy": { "weight": 1, "subtopics": ["work-power", "energy"] }
+  },
+  "subroles": [
+    {
+      "id": "embedded-engineer",
+      "title": "Embedded Engineer",
+      "icon": "cpu",
+      "description": "Hex registers, bit flags, logic gates, sensor sampling and the power budget of a small device.",
+      "mix": {
+        "number-bases": { "weight": 4 },
+        "boolean-logic": { "weight": 4 },
+        "data-representation": { "weight": 3 },
+        "electricity": { "weight": 2, "subtopics": ["ohms-law", "power"] },
+        "exponents-logs": { "weight": 1, "subtopics": ["index-laws", "logarithms"] },
+        "unit-conversion": { "weight": 1 }
+      },
+      "exclusiveSubtopics": ["register-flags", "sensor-data"]
+    },
+    {
+      "id": "power-engineer",
+      "title": "Power Engineer",
+      "icon": "plug-zap",
+      "description": "Networks of resistors, current and power, fuse and cable choice, batteries and the cost of energy.",
+      "mix": {
+        "electricity": { "weight": 5 },
+        "forces-energy": { "weight": 2, "subtopics": ["work-power", "energy"] },
+        "unit-conversion": { "weight": 2 },
+        "exponents-logs": { "weight": 2, "subtopics": ["growth-decay", "logarithms"] },
+        "number-bases": { "weight": 1 }
+      },
+      "exclusiveSubtopics": ["power-circuit", "battery-energy"]
+    }
+  ]
+}

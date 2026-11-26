@@ -11,7 +11,7 @@ Everything happens in your browser. There's no account and no server-side databa
 ## What you can do
 
 - **Pick a domain and drill down.** Start from a broad area (Math, Science, Computing, Geography, History, Business, Language), open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
-- **Practise for a role.** Roles such as Business Analyst, Software Engineer, Mathematician, Data Analyst, Physicist and Accountant mix the right subjects one level harder, and their Expert+ level has scenarios that combine several subjects.
+- **Practise for a role.** Roles such as Business Analyst, Software Engineer, Mathematician, Data Analyst, Physicist, Accountant, Chemist, Electrical Engineer and Biologist mix the right subjects one level harder, and their Expert+ level has scenarios that combine several subjects.
 - **Build answers from blocks.** Many questions let you drag or tap blocks instead of typing, from ordering events to building SQL queries.
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
 - **Read and write code.** Code Writing and Code Reviewing show short programs in Python, C#, C++, GDScript or Rust (your pick): fill the gaps, predict the output, find the bug and choose the fix.

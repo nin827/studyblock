@@ -1,0 +1,46 @@
+{
+  "id": "biologist",
+  "title": "Biologist",
+  "icon": "dna",
+  "description": "Genetic crosses, gene pools, field sampling, energy transfer, cells under the microscope and population growth.",
+  "exclusive": "role-biologist",
+  "mix": {
+    "genetics": { "weight": 3 },
+    "ecology": { "weight": 3 },
+    "cells-microscopy": { "weight": 2 },
+    "biology": { "weight": 1, "subtopics": ["cells", "genetics", "ecology"] },
+    "statistics": { "weight": 2 },
+    "probability": { "weight": 2 },
+    "exponents-logs": { "weight": 1, "subtopics": ["logarithms", "growth-decay"] }
+  },
+  "subroles": [
+    {
+      "id": "geneticist",
+      "title": "Geneticist",
+      "icon": "dna",
+      "description": "Crosses, probability and the genes of whole populations.",
+      "mix": {
+        "genetics": { "weight": 5 },
+        "probability": { "weight": 3 },
+        "statistics": { "weight": 2 },
+        "biology": { "weight": 1, "subtopics": ["genetics"] },
+        "cells-microscopy": { "weight": 1, "subtopics": ["division"] }
+      },
+      "exclusiveSubtopics": ["cross-counts", "hardy-weinberg"]
+    },
+    {
+      "id": "ecologist",
+      "title": "Ecologist",
+      "icon": "trees",
+      "description": "Sampling, energy transfer, growth and biodiversity in the field.",
+      "mix": {
+        "ecology": { "weight": 5 },
+        "statistics": { "weight": 2 },
+        "exponents-logs": { "weight": 2, "subtopics": ["logarithms", "growth-decay"] },
+        "cells-microscopy": { "weight": 2 },
+        "biology": { "weight": 1, "subtopics": ["ecology"] }
+      },
+      "exclusiveSubtopics": ["field-ecology", "growth-diversity"]
+    }
+  ]
+}
