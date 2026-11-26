@@ -650,6 +650,73 @@ function genBearings(d, rng) {
 // ======================================================================================
 // Time zones
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// The right tuple plus wrong ones from `cands` (rng.shuffle order) -> `want` options, shuffled; or null.
+function segPick(rng, correct, cands, want) {
+  const n = correct.length;
+  const seen = new Set([segKey(correct)]);
+  const out = [correct];
+  for (const c of rng.shuffle(cands.slice())) {
+    if (out.length >= want) break;
+    if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
+    const d = segDiff(c, correct);
+    if (d < 1 || d >= n || seen.has(segKey(c))) continue;
+    seen.add(segKey(c));
+    out.push(c);
+  }
+  return out.length === want ? rng.shuffle(out) : null;
+}
+// Build-mode decoys: the [column index, value] pairs no option already shows (max 14). Indexes, not
+// labels, because labels such as TT and Tt differ only in case.
+function segExtras(cols, options, pairs) {
+  const shown = cols.map((_, i) => new Set(options.map((t) => String(t[i]))));
+  const out = [];
+  for (const [i, v] of pairs) {
+    const s = String(v ?? "");
+    if (s && !shown[i].has(s)) { shown[i].add(s); out.push([i, s]); }
+  }
+  return out.slice(0, 14);
+}
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const CITIES = [
   ["London", 0], ["Reykjavik", 0], ["Lagos", 60], ["Paris", 60], ["Cairo", 120], ["Athens", 120], ["Nairobi", 180], ["Moscow", 180],
@@ -757,11 +824,17 @@ function genTimes(d, rng) {
     const sh = dayShift(out);
     const ans = `${dayName(day, sh)} ${hm(out)}`;
     const wrong = t + A[1] - B[1];
+    // Day | Time blocks: each wrong option changes one of them (fixed candidate order, so the only rng
+    // draw is the final shuffle). Build decoys: two more days and times.
+    const ansT = [dayName(day, sh), hm(out)];
+    const choices = segPick({ shuffle: (a) => a }, ansT, [[DAYS[day], hm(out)], [dayName(day, -sh), hm(out)], [ansT[0], hm(out + 60)], [ansT[0], hm(wrong)], [ansT[0], hm(out - 60)], [ansT[0], hm(t)]], SEG_OPTIONS.medium);
     return {
       prompt: `${TZ_NOTE}: ${A[0]} is ${offStr(A[1])} and ${B[0]} is ${offStr(B[1])}. It is ${hm(t)} on ${DAYS[day]} in ${A[0]}. What day and time is it in ${B[0]}?`,
-      answer: ans,
+      answer: ansT,
       answerType: "choice",
-      choices: timeChoices(ans, [`${DAYS[day]} ${hm(out)}`, `${dayName(day, dayShift(wrong))} ${hm(wrong)}`, `${dayName(day, -sh)} ${hm(out)}`, `${dayName(day, sh)} ${hm(out + 60)}`], rng),
+      choiceCols: ["Day", "Time"],
+      choices: rng.shuffle(choices),
+      extraSegs: segExtras(["Day", "Time"], choices, [[0, dayName(day, 2 * sh)], [1, hm(out + 120)]]),
       explanation: `Go through UTC, counting the days.\n\n- ${A[0]} → UTC: \`${hm(t)} - (${offStr(A[1])})\` gives ${hm(t - A[1])}${dayShift(t - A[1]) ? ` on ${dayName(day, dayShift(t - A[1]))}` : ` on ${DAYS[day]}`}.\n- UTC → ${B[0]}: add ${offStr(B[1])}, which gives **${ans}**.`,
       hints: [`Change ${A[0]} time to UTC first (take away ${offStr(A[1])}), keeping track of whether you pass midnight.`, `Then add ${offStr(B[1])}. Going past midnight moves to the next day; going below 00:00 moves to the day before.`],
       params: { kind: "tz-daytime", t, day, a: A[1], b: B[1] },
@@ -957,6 +1030,10 @@ export function verify(question, answer) {
       const truth = tzTruth(p);
       const want = p.kind === "tz-time" ? truth.time : `${truth.day} ${truth.time}`;
       if (p.kind === "tz-time" && localParts(BASE + (p.day * 1440 + p.t - p.a) * 60000, p.b).day !== DAYS[p.day]) return false; // must stay on the same day
+      if (question.answerType === "choice" && question.choiceCols) {
+        // Day | Time blocks: right only when both match the UTC round trip.
+        return p.kind === "tz-daytime" && segOk(question, answer, (t) => t.length === 2 && t[0] === truth.day && t[1] === truth.time, SEG_OPTIONS.medium);
+      }
       if (question.answerType === "choice") {
         const ch = question.choices;
         if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4 || ch.filter((c) => c === want).length !== 1) return false;

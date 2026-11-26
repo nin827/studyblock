@@ -3,6 +3,47 @@
 // answer independently with 32-bit integer / bitwise maths, bit-by-bit parsing, enumeration or
 // substitution. Dotted answers are text in canonical form (no leading zeros, no spaces).
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Formatting helpers
 
@@ -1404,10 +1445,20 @@ function xKth(rng) {
   };
 }
 
-const GW_OK = "Yes: it's a usable host in the same subnet";
-const GW_OTHER = "No: it's in a different subnet";
-const GW_NET = "No: it's the subnet's network address";
-const GW_BC = "No: it's the subnet's broadcast address";
+// Gateway check as Valid? | Reason blocks. The options are the answer plus every tuple that changes
+// exactly one column (5 in all, fixed order, no rng).
+const GW_COLS = ["Valid?", "Reason"];
+const GW_REASON = { ok: "Usable host in the same subnet", other: "In a different subnet", net: "The subnet's network address", bc: "The subnet's broadcast address" };
+const gwTuple = (kind) => [kind === "ok" ? "Yes" : "No", GW_REASON[kind]];
+function gwChoices(kind) {
+  const [v, r] = gwTuple(kind);
+  const out = [];
+  for (const k of ["ok", "other", "net", "bc"]) {
+    if (GW_REASON[k] === r) out.push(["Yes", r], ["No", r]);
+    else out.push([v, GW_REASON[k]]);
+  }
+  return out;
+}
 
 function xGateway(rng) {
   let n;
@@ -1425,17 +1476,17 @@ function xGateway(rng) {
     do off = rng.int(1, size - 2); while (dotted(addOct(net, off)) === dotted(ip));
     gw = addOct(net, off);
   }
-  const ans = { ok: GW_OK, other: GW_OTHER, net: GW_NET, bc: GW_BC }[kind];
+  const ans = gwTuple(kind);
   return {
     prompt: `A laptop is set up as \`${dotted(ip)}/${n}\` with default gateway \`${dotted(gw)}\`.`,
     answerType: "multi",
     parts: [
-      { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop?", answerType: "choice", answer: ans, choices: [GW_OK, GW_OTHER, GW_NET, GW_BC],
+      { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop, and why?", answerType: "choice", answer: ans, choiceCols: GW_COLS, choices: gwChoices(kind),
         hint: "Work out the laptop's network and broadcast addresses, then see where the gateway falls." },
       { id: "last", label: "Last host", ask: `A common choice of gateway is the subnet's last usable host. What is it? ${IP_NOTE}.`, answerType: "text", answer: dotted(addOct(bc, -1)),
         hint: "The last usable host is the broadcast address minus 1." },
     ],
-    explanation: `${nbExplanation(ip, n)}\n\nThe gateway \`${dotted(gw)}\` ${kind === "ok" ? "lies strictly between them" : kind === "net" ? "is the network address" : kind === "bc" ? "is the broadcast address" : "is outside that range"}, so: **${ans}**.\n\nLast usable host: **${dotted(addOct(bc, -1))}**.`,
+    explanation: `${nbExplanation(ip, n)}\n\nThe gateway \`${dotted(gw)}\` ${kind === "ok" ? "lies strictly between them" : kind === "net" ? "is the network address" : kind === "bc" ? "is the broadcast address" : "is outside that range"}, so: **${ans[0] === "Yes" ? "yes, it is" : "no, it is not"} a valid gateway** (${ans[1].toLowerCase()}).\n\nLast usable host: **${dotted(addOct(bc, -1))}**.`,
     params: { kind: "x-gateway", ip, n, gw },
     hints: nbHints(ip, n, "broadcast").slice(0, 3),
   };
@@ -1670,10 +1721,13 @@ function verifyExpert(p, q, answer) {
     const { v, net, bc } = subnetInts(p.ip, p.n);
     if (v === net || v === bc) return false;
     const g = octInt(p.gw);
-    const want = g === net ? GW_NET : g === bc ? GW_BC : g > net && g < bc ? GW_OK : GW_OTHER;
+    // Valid only strictly inside [network, broadcast]; the reason names where it falls.
+    const valid = g > net && g < bc ? "Yes" : "No";
+    const reason = g === net ? "network address" : g === bc ? "broadcast address" : valid === "Yes" ? "usable host" : "different subnet";
+    const isRight = (t) => t.length === 2 && t[0] === valid && t[1].toLowerCase().includes(reason);
     const part = (q.parts || []).find((x) => x.id === "gw");
-    if (!part || new Set(part.choices).size !== 4) return false;
-    return String(xa(answer, "gw")) === want && parseDotted(String(xa(answer, "last") ?? "")) === bc - 1;
+    if (!part || !segOk(part, xa(answer, "gw"), isRight, 5, false)) return false;
+    return parseDotted(String(xa(answer, "last") ?? "")) === bc - 1;
   }
   if (p.kind === "x-prefixback") {
     const v = octInt(p.ip), b = octInt(p.bc);

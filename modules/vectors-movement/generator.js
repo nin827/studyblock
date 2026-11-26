@@ -4,6 +4,47 @@
 // verify() never reuses the generating formula: it uses polar form (atan2 + cos/sin), simulation,
 // closed forms for loops, or substitution back into the question.
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 // ---------- number helpers ----------
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (2.525*100 = 252.4999...).
@@ -355,13 +396,13 @@ function genVectors(d, rng) {
     prompt: `${YUP} A guard at G = ${vec(gx, gy)} faces the direction f = ${vec(fx, fy)}. The player is at P = ${vec(px, py)}. Let d = P − G. Find f · d, then decide where the player is relative to the guard's facing.`,
     parts: [
       numPart("dot", "Dot product", "f · d", dot, false, `\`d = P − G = ${vec(dxp, dyp)}\`. Then \`f · d = ${par(fx)} × ${par(dxp)} + ${par(fy)} × ${par(dyp)}\` (in the calculator: \`_fx * (_px - _gx) + _fy * (_py - _gy)\`).`),
-      choicePart("rel", "Position", "Where is the player?", rel, REL, "Positive dot product: the angle between f and d is under 90°. Negative: over 90°. Zero: exactly 90°."),
+      { ...choicePart("rel", "Position", "Where is the player, and what is the sign of f · d?", segsOf(rel), oneOffChoices(segsOf(rel), REL_POS, REL_DOT), "Positive dot product: the angle between f and d is under 90°. Negative: over 90°. Zero: exactly 90°."), choiceCols: ["Position", "Dot"] },
     ],
     explanation:
       `The sign of the dot product tells you whether two directions point the same way.\n\n` +
       `- \`d = P − G = ${vec(dxp, dyp)}\`\n` +
       `- \`f · d = ${par(fx)} × ${par(dxp)} + ${par(fy)} × ${par(dyp)}\` ${res(dot, false)}\n` +
-      `- ${dot > 0 ? "Positive, so the angle is under 90°" : dot < 0 ? "Negative, so the angle is over 90°" : "Zero, so the angle is exactly 90°"}: **${rel}**.`,
+      `- ${dot > 0 ? "Positive, so the angle is under 90°" : dot < 0 ? "Negative, so the angle is over 90°" : "Zero, so the angle is exactly 90°"}: **${segsOf(rel)[0]}** (${segsOf(rel)[1]}).`,
     hints: ["Make the vector from the guard to the player first, d = P − G, then dot it with the facing direction."],
     given: giv({ gx, gy, fx, fy, px, py }),
     params: { kind: "facing", v: { gx, gy, fx, fy, px, py } },
@@ -369,7 +410,19 @@ function genVectors(d, rng) {
   });
 }
 
-const REL = ["In front (dot > 0)", "Behind (dot < 0)", "Exactly to the side (dot = 0)"];
+// Position | Dot blocks for the facing question; REL[i] is a joined option (stored form).
+const REL_POS = ["In front", "Behind", "Exactly to the side"];
+const REL_DOT = ["dot > 0", "dot < 0", "dot = 0"];
+const REL = REL_POS.map((x, i) => `${x} | ${REL_DOT[i]}`);
+// The right [a, b] pair plus every pair that changes exactly one of them, in a fixed order (no rng).
+function oneOffChoices(right, colA, colB) {
+  const out = [];
+  for (const a of colA) for (const b of colB) {
+    const d = (a !== right[0]) + (b !== right[1]);
+    if (d <= 1) out.push([a, b]);
+  }
+  return out;
+}
 
 // ======================= Movement =======================
 
@@ -930,7 +983,11 @@ function quadRule(x, y) {
 // Every template draws all of its rng values first; hints and explanations only use values
 // already drawn (no rng calls). Every params.kind starts with "x-" and has its own CHECK below.
 
-const LR = ["Left (counter-clockwise)", "Right (clockwise)"];
+// Turn | Rotation blocks for the turret question; LR[i] is a joined option (stored form). The third
+// values are decoys only (the turret always turns 10° to 170°).
+const LR_TURN = ["Left", "Right", "No turn"];
+const LR_ROT = ["Counter-clockwise", "Clockwise", "Neither"];
+const LR = [`${LR_TURN[0]} | ${LR_ROT[0]}`, `${LR_TURN[1]} | ${LR_ROT[1]}`];
 const YN = ["Yes", "No"];
 const dot2 = (ax, ay, bx, by) => ax * bx + ay * by;
 const cap1 = (s) => s[0].toUpperCase() + s.slice(1);
@@ -1360,7 +1417,7 @@ function xTurnRate(rng) {
   return multi({
     prompt: `${YUP} ${ANG} A tank turret faces ${facing}°. Its target is in the direction ${vec(dx, dy)}. The turret turns at ${rate}° per second and always takes the shorter way round. Which way does it turn, how long does it take to face the target, and what heading does it face ${num(t1)} s after it starts turning?${END}`,
     parts: [
-      choicePart("dir", "Direction", "Which way does it turn?", left ? LR[0] : LR[1], LR, "Wrap (target heading − facing) into −180 to 180: positive is a left turn, negative a right turn."),
+      { ...choicePart("dir", "Direction", "Which way does it turn?", segsOf(left ? LR[0] : LR[1]), oneOffChoices(segsOf(left ? LR[0] : LR[1]), LR_TURN, LR_ROT), "Wrap (target heading − facing) into −180 to 180: positive is a left turn, negative a right turn."), choiceCols: ["Turn", "Rotation"] },
       numPart("time", "Time", "Seconds to face the target", time, true, `Size of the turn (ignore its sign) ÷ ${rate}.${THEN}`),
       numPart("heading", `After ${num(t1)} s`, `Heading after ${num(t1)} s`, h1, true, `It has turned ${rate} × ${num(t1)} degrees from ${facing}° in its turning direction; wrap into 0 to 360.`),
     ],
@@ -1369,7 +1426,7 @@ function xTurnRate(rng) {
       `- Target heading: \`atan2(${dy}, ${dx})\` ≈ ${num(hdg)}°\n` +
       `- \`${num(hdg)} − ${facing}\` = ${num(hdg - facing)}°` +
       (Math.abs(hdg - facing - turn) > 1e-9 ? `, more than half a turn, so ${hdg - facing > 0 ? "subtract" : "add"} 360°` : "") +
-      `: turn ≈ ${num(turn)}°, so it turns **${left ? LR[0] : LR[1]}**\n` +
+      `: turn ≈ ${num(turn)}°, so it turns **${left ? "left (counter-clockwise)" : "right (clockwise)"}**\n` +
       `- Time: \`${num(Math.abs(turn))} / ${rate}\` ${res(time, true, "s")}\n` +
       `- After ${num(t1)} s: \`${facing} ${left ? "+" : "−"} ${rate} × ${num(t1)}\` = ${num(facing + (left ? 1 : -1) * rate * t1)}°, wrapped into 0 to 360 ${res(h1, true, "°")}`,
     hints: [
@@ -1515,7 +1572,7 @@ const CHECK = {
       return near(x, Math.round(t * 1e6) / 1e6, false);
     }
     const want = Math.abs(diff - 90) < 1e-7 ? REL[2] : diff < 90 ? REL[0] : REL[1];
-    return String(x) === want;
+    return segKey(x) === want;
   },
   // Simulation with many small steps instead of start + v·t.
   pos: (v, f, x, r) => {
@@ -1743,7 +1800,7 @@ const CHECK = {
     const fx = Math.cos(rad(v.facing)), fy = Math.sin(rad(v.facing));
     const L = polarLen(v.dx, v.dy);
     const left = fx * v.dy - fy * v.dx > 0;
-    if (f === "dir") return String(x) === (left ? LR[0] : LR[1]);
+    if (f === "dir") return segKey(x) === (left ? LR[0] : LR[1]);
     const ang = deg(Math.acos(Math.max(-1, Math.min(1, (fx * v.dx + fy * v.dy) / L))));
     if (f === "time") return near(x, ang / v.rate, true);
     const r = rad((left ? 1 : -1) * v.rate * v.t1);
@@ -1785,6 +1842,11 @@ export function verify(question, answer) {
     for (const part of parts) {
       if (!part || !Object.prototype.hasOwnProperty.call(answer, part.id)) return false;
       const val = answer[part.id];
+      if (part.answerType === "choice" && part.choiceCols) {
+        // Segmented part (Choose only): 5 options, one right, the others one column off.
+        if (!segOk(part, val, (t) => chk(p.v, part.id, t.join(" | "), rounded, answer) === true, 5, false)) return false;
+        continue;
+      }
       if (part.answerType === "choice") {
         const ch = part.choices;
         if (!Array.isArray(ch) || new Set(ch).size !== ch.length || !ch.includes(String(val))) return false;

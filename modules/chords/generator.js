@@ -20,6 +20,74 @@ import {
 } from '../../js/lib/music.js';
 
 const DIFFS = ['easy', 'medium', 'hard'];
+
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// The right tuple plus wrong ones from `cands` (rng.shuffle order) -> `want` options, shuffled; or null.
+function segPick(rng, correct, cands, want) {
+  const n = correct.length;
+  const seen = new Set([segKey(correct)]);
+  const out = [correct];
+  for (const c of rng.shuffle(cands.slice())) {
+    if (out.length >= want) break;
+    if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
+    const d = segDiff(c, correct);
+    if (d < 1 || d >= n || seen.has(segKey(c))) continue;
+    seen.add(segKey(c));
+    out.push(c);
+  }
+  return out.length === want ? rng.shuffle(out) : null;
+}
+// Build-mode decoys: the [column index, value] pairs no option already shows (max 14). Indexes, not
+// labels, because labels such as TT and Tt differ only in case.
+function segExtras(cols, options, pairs) {
+  const shown = cols.map((_, i) => new Set(options.map((t) => String(t[i]))));
+  const out = [];
+  for (const [i, v] of pairs) {
+    const s = String(v ?? "");
+    if (s && !shown[i].has(s)) { shown[i].add(s); out.push([i, s]); }
+  }
+  return out.slice(0, 14);
+}
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 const art = (w) => `${/^[aeiou]/i.test(w) ? 'an' : 'a'} ${w}`;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const NATURALS = [0, 1, 2, 3, 4, 5, 6].map((l) => note(l, 0));
@@ -226,20 +294,33 @@ function genIdentify(difficulty, rng) {
   }
 
   if (kind === 'full') {
+    // Root | Quality | Position blocks. The first candidates are the old option list (same root filter);
+    // the rest top it up to 5 options. Every option here differs from the answer in 1 or 2 columns.
     const ans = invName(root, q, inv);
+    const ansT = [fmt(root), q, INV[inv]];
+    const flip = q === 'major' ? 'minor' : q === 'minor' ? 'major' : 'minor';
     const cands = [
-      ...[0, 1, 2].filter((i) => i !== inv).map((i) => invName(root, q, i)),
-      ...(inv ? [`${triadName(voiced[0], q === 'major' ? 'minor' : 'major')}, root position`, `${triadName(voiced[0], q)}, root position`] : []),
-      invName(root, q === 'major' ? 'minor' : q === 'minor' ? 'major' : 'minor', inv),
-    ].filter((s) => plain(parseNote(s.split(' ')[0])));
-    const choices = fourChoices(rng, ans, cands);
+      ...[0, 1, 2].filter((i) => i !== inv).map((i) => [fmt(root), q, INV[i]]),
+      ...(inv ? [[fmt(voiced[0]), q === 'major' ? 'minor' : 'major', INV[0]], [fmt(voiced[0]), q, INV[0]]] : []),
+      [fmt(root), flip, INV[inv]],
+      ...[1, 2].map((i) => [fmt(chord[i]), q, INV[inv]]),
+      [fmt(root), q === 'diminished' ? 'augmented' : 'diminished', INV[inv]],
+      ...[0, 1, 2].filter((i) => i !== inv).map((i) => [fmt(root), flip, INV[i]]),
+    ].filter((t) => plain(parseNote(t[0]) || note(0, 9)));
+    const choices = segPick(rng, ansT, cands, SEG_OPTIONS[difficulty]);
     if (!choices) return genIdentify(difficulty, rng);
+    const extra = [
+      ...[...chord.slice(1), ...enharmonics(root)].filter(plain).map((m) => [0, fmt(m)]),
+      ...QUAL_WORDS.map((x) => [1, x]),
+      ...INV.map((x) => [2, x]),
+    ];
     return {
       prompt: `These notes are played from the lowest up: ${shown}. Name the triad and its position.`,
-      answer: ans, answerType: 'choice', choices,
+      answer: ansT, answerType: 'choice', choiceCols: ['Root', 'Quality', 'Position'], choices,
+      extraSegs: segExtras(['Root', 'Quality', 'Position'], choices, extra),
       explanation: `${stackLine}\n\n${qualLine}\n\n${invLine}\n\nSo it is **${ans}**.`,
       hints: [hintStack, hintQual, hintInv],
-      params: { check: { kind: 'identify', notes: shown, mode: 'full' } },
+      params: { check: { kind: 'identify', notes: shown, mode: 'full', diff: difficulty } },
     };
   }
 
@@ -623,24 +704,34 @@ function genIdentifyExpert(rng) {
     const inv = rng.int(1, 3);
     const voiced = [...chord.slice(inv), ...chord.slice(0, inv)];
     const shown = fmtList(voiced);
+    // Chord | Position blocks: the old candidates (one-column changes only) topped up to 5 options.
     const ans = `${sevName(root, t)}, ${INV[inv]}`;
+    const ansT = [sevName(root, t), INV[inv]];
     const cands = [
-      ...[0, 1, 2, 3].filter((i) => i !== inv).map((i) => `${sevName(root, t)}, ${INV[i]}`),
-      `${sevName(voiced[0], t)}, root position`,
-      ...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => `${sevName(root, x)}, ${INV[inv]}`),
-    ].filter(okName);
-    const choices = fourChoices(rng, ans, cands);
+      ...[0, 1, 2, 3].filter((i) => i !== inv).map((i) => [sevName(root, t), INV[i]]),
+      [sevName(voiced[0], t), INV[0]],
+      ...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => [sevName(root, x), INV[inv]]),
+      [sevName(voiced[0], t), INV[inv]],
+    ].filter((c) => plain((parseSevName(c[0]) || {}).root || note(0, 9)));
+    const choices = segPick(rng, ansT, cands, SEG_OPTIONS.expert);
     if (!choices) return genIdentifyExpert(rng);
+    const extra = [
+      ...[...chord.slice(1), ...enharmonics(root)].filter(plain).map((m) => [0, sevName(m, t)]),
+      ...Object.keys(SEV7).map((x) => [0, sevName(root, x)]),
+      [0, `${fmt(root)}dim7`],
+      ...INV.map((x) => [1, x]),
+    ];
     return {
       prompt: `These notes are played from the lowest up: ${shown}. Name the seventh chord and its position. ${SEV_HELP}`,
-      answer: ans, answerType: 'choice', choices,
+      answer: ansT, answerType: 'choice', choiceCols: ['Chord', 'Position'], choices,
+      extraSegs: segExtras(['Chord', 'Position'], choices, extra),
       explanation: `Rearrange into stacked thirds (every other letter): ${fmtList(chord)}. The root is ${fmt(root)}.\n\n${fmt(root)} to ${fmt(chord[1])} is a ${t === 'min7' ? 'minor' : 'major'} 3rd, to ${fmt(chord[2])} a perfect 5th and to ${fmt(chord[3])} a ${t === 'maj7' ? 'major' : 'minor'} 7th: ${SEV_RECIPE[t]}, so it is ${sevName(root, t)}.\n\nThe bass is ${fmt(voiced[0])}, the ${MEMBER[inv]}, so it is in ${INV[inv]}: **${ans}**.`,
       hints: [
         'Rearrange the four notes so the letters skip one each time (stacked thirds). The bottom note of that stack is the root.',
         'Measure from the root: major triad + minor 7th = 7, major triad + major 7th = maj7, minor triad + minor 7th = m7.',
         'Then the bass: root = root position, 3rd = 1st inversion, 5th = 2nd inversion, 7th = 3rd inversion.',
       ],
-      params: { check: { kind: 'sev-identify', notes: shown } },
+      params: { check: { kind: 'sev-identify', notes: shown, diff: 'expert' } },
     };
   }
 
@@ -1164,6 +1255,18 @@ function checkOne(c, type, value, choices) {
   return isRight(c, value);
 }
 
+// Segmented options: each tuple is turned back into the chord name isRight() reads
+// ("C major, 1st inversion" / "C7, 2nd inversion"), and every block combination is tried.
+const SEG_NAME = {
+  identify: (t) => (t.length === 3 ? `${t[0]} ${t[1]}, ${t[2]}` : ''),
+  'sev-identify': (t) => (t.length === 2 ? `${t[0]}, ${t[1]}` : ''),
+};
+function checkSeg(c, q, value) {
+  const name = SEG_NAME[c.kind];
+  if (!name || (c.kind === 'identify' && c.mode !== 'full')) return false;
+  return segOk(q, value, (t) => isRight(c, name(t)), SEG_OPTIONS[c.diff]);
+}
+
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
@@ -1172,5 +1275,6 @@ export function verify(question, answer) {
     return question.parts.every((part) => p.parts[part.id] && checkOne(p.parts[part.id], part.answerType, answer[part.id], part.choices));
   }
   if (question.answerType === 'tiles') return checkTiles(p.check, question, answer);
+  if (question.answerType === 'choice' && question.choiceCols) return checkSeg(p.check, question, answer);
   return checkOne(p.check, question.answerType, answer, question.choices);
 }

@@ -9,6 +9,48 @@
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
+
 const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
 
 function fmtAns(n, rounded) {
@@ -189,17 +231,23 @@ function genSD(diff, rng) {
       `Work out Qd = ${num(a)} − ${b} × ${Ps} and Qs at the same price (in the calculator: \`_a - _b * _p\` and \`_c + _d * _p\`), then compare them.`,
     ];
     if (kind === "excess") {
+      // Type | Units blocks: the answer, the other type, and three wrong unit counts (fixed order, so
+      // the only rng draw is the final shuffle).
       const X = Math.abs(ex), Y = b * Math.abs(k);
-      const opt = (t, n) => `${t} of ${n} units`;
-      const answer = opt(type === "shortage" ? "Shortage" : "Surplus", X);
+      const T = type === "shortage" ? "Shortage" : "Surplus", T2 = type === "shortage" ? "Surplus" : "Shortage";
+      const units = (n) => `${n} units`;
+      const wrongN = [...new Set([Y, d * Math.abs(k), qd, qs, 2 * X, X + b, X + d].filter((n) => Number.isInteger(n) && n > 0 && n !== X))].slice(0, 3);
+      const answerT = [T, units(X)];
+      const answer = `${T} of ${X} units`;
       return {
         prompt: `${marketTxt(good, a, b, c, d)} The price is fixed at $${Ps}. What happens in the market?`,
         explanation: `Compare the quantity demanded and supplied at $${Ps}.\n\n${steps}\n\nDemand is ${ex > 0 ? "bigger" : "smaller"} than supply, so there is a **${answer.toLowerCase()}**.`,
         hints,
         given: givenFrom({ a, b, c, d, p: Ps }),
         answerType: "choice",
-        answer,
-        choices: rng.shuffle([opt("Shortage", X), opt("Surplus", X), opt("Shortage", Y), opt("Surplus", Y)]),
+        answer: answerT,
+        choiceCols: ["Type", "Units"],
+        choices: rng.shuffle([answerT, [T2, units(X)], ...wrongN.map((n) => [T, units(n)])]),
         params: { kind: "excess", a, b, c, d, Ps },
       };
     }
@@ -1521,7 +1569,9 @@ function checkers(p) {
     case "excess":
       return {
         _: (x) => {
-          const mm = typeof x === "string" && x.match(/^(Shortage|Surplus) of (\d+) units$/);
+          // Type | Units blocks ("Shortage | 40 units" or ["Shortage", "40 units"]).
+          const t = segsOf(x);
+          const mm = t.length === 2 && /^(Shortage|Surplus)$/.test(t[0]) && t[1].match(/^(\d+) units$/) ? [null, t[0], t[1].match(/^(\d+) units$/)[1]] : null;
           if (!mm) return false;
           // Excess demand = (b + d) × (P* − set price), with P* found by bisection.
           const ex = (p.b + p.d) * (eqPrice(p) - p.Ps);
@@ -1637,6 +1687,7 @@ export function verify(question, answer) {
   }
   const f = chk._;
   if (!f) return false;
+  if (question.answerType === "choice" && question.choiceCols) return segOk(question, answer, f, SEG_OPTIONS[p.diff || "medium"]);
   if (question.answerType === "choice") {
     const ch = question.choices;
     if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;

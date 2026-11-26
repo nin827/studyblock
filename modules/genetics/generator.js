@@ -34,6 +34,102 @@ const ratioStr = (arr) => {
   return arr.map((x) => x / g).join(" : ");
 };
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
+// Ratio blocks: one whole number per class, columns labelled by genotype or phenotype. Two tuples
+// are the same ratio when proportional, so 2 : 2 : 0 would also be "1 : 1 : 0": options and decoys
+// are added one at a time and kept only while exactly one block combination is proportional to the answer.
+const propEq = (a, b) => a.length === b.length && a.some((x) => x > 0) && b.some((x) => x > 0) && a.every((x, i) => a.every((y, j) => x * b[j] === y * b[i]));
+function ratioCubeHits(pools, want) {
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === pools.length) { if (propEq(acc, want)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, Number(v)]);
+  };
+  walk(0, []);
+  return hits;
+}
+const RATIO_DECOYS = { easy: 2, medium: 5, hard: 9, expert: 14 };
+// `pool`: ratio strings in rng.shuffle order (drawn by the caller, as before). Wrong options come from
+// the pool, then from the answer with one class changed (0–4); then Build decoys up to the level's
+// maximum. -> { choiceCols, choices (shuffled: the only rng draw here), answer, extraSegs }.
+function ratioSeg(rng, cols, correct, pool, diff) {
+  const ans = correct.split(" : ");
+  const want = ans.map(Number);
+  const n = cols.length;
+  const opts = [ans];
+  const pools = () => cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  const consider = (c) => {
+    if (opts.length >= SEG_OPTIONS[diff] || c.length !== n || !c.map(Number).some((x) => x > 0)) return;
+    const d = segDiff(c, ans);
+    if (d < 1 || d >= n || opts.some((t) => segKey(t) === segKey(c))) return;
+    opts.push(c);
+    if (ratioCubeHits(pools(), want) !== 1) opts.pop();
+  };
+  pool.forEach((x) => consider(x.split(" : ")));
+  for (let v = 0; v <= 4; v++) for (let j = 0; j < n; j++) { const c = ans.slice(); c[j] = String(v); consider(c); }
+  if (opts.length !== SEG_OPTIONS[diff]) throw new Error("not enough ratio options");
+  const ps = pools();
+  const extraSegs = [];
+  let decoys = ps.reduce((a, p) => a + p.size - 1, 0);
+  for (let v = 0; v <= 9 && decoys < RATIO_DECOYS[diff]; v++) {
+    for (let j = 0; j < n && decoys < RATIO_DECOYS[diff]; j++) {
+      const x = String(v);
+      if (ps[j].has(x)) continue;
+      ps[j].add(x);
+      if (ratioCubeHits(ps, want) === 1) { extraSegs.push([j, x]); decoys++; } else ps[j].delete(x);
+    }
+  }
+  return { choiceCols: cols, choices: rng.shuffle(opts), answer: ans, ...(extraSegs.length ? { extraSegs } : {}) };
+}
+// A short phenotype label for a dihybrid class ("round, yellow"), at most 24 characters.
+const diLabel = (t, aDom, bDom) => `${aDom ? t.A.dom : t.A.rec}, ${bDom ? t.B.dom : t.B.rec}`;
+// Verify-side check of ratio blocks: proportional to the expected ratio, and the answer in lowest terms.
+function ratioSegOk(q, answer, expStr, want, build) {
+  const exp = expStr.split(" : ").map(Number);
+  return segOk(q, answer, (t) => t.every((x) => /^\d+$/.test(x)) && propEq(t.map(Number), exp), want, build) && segsOf(answer).join(" : ") === expStr;
+}
+
 const PCT_NOTE = " Give your answer as a percentage, without the % sign.";
 const FRAC_NOTE = " Give your answer as a fraction in simplest form, like 3/4.";
 
@@ -151,6 +247,8 @@ const diPhen = (t, aDom, bDom) => {
   const b = bDom ? t.B.dom : t.B.rec;
   return t.phen ? t.phen(a, b) : `${a} ${b} ${t.noun}`;
 };
+// Column labels for a dihybrid phenotype ratio, in the prompt's order (both dominant first).
+const diCols = (t) => [diLabel(t, true, true), diLabel(t, true, false), diLabel(t, false, true), diLabel(t, false, false)].map(cap);
 
 // Genotype text for one gene with k dominant alleles (2 = TT, 1 = Tt, 0 = tt).
 const g1 = (L, k) => (k === 2 ? L + L : k === 1 ? L + L.toLowerCase() : L.toLowerCase() + L.toLowerCase());
@@ -236,8 +334,7 @@ function genPunnett(difficulty, rng) {
       return {
         prompt: `${intro} ${crossLine(k1, k2)} What is the expected genotype ratio ${order} among the offspring?`,
         answerType: "choice",
-        answer: correct,
-        choices: strChoices(correct, pool, rng),
+        ...ratioSeg(rng, [g1(L, 2), g1(L, 1), g1(L, 0)], correct, pool, "medium"),
         explanation: `${solution(k1, k2)}\n\nCount each genotype in the four boxes and write them in the order ${order}: **${correct}** (simplified).`,
         hints: [gametesHint(k1, k2), squareHint(k1, k2) + `\n\nCount the boxes of each genotype, in the order ${order}, and simplify.`],
         params: { sub: "punnett", kind, k1, k2 },
@@ -251,8 +348,7 @@ function genPunnett(difficulty, rng) {
       return {
         prompt: `${intro} ${crossLine(k1, k2)} What is the expected phenotype ratio ${t.dom} : ${t.rec} among the offspring?`,
         answerType: "choice",
-        answer: correct,
-        choices: strChoices(correct, pool, rng),
+        ...ratioSeg(rng, [cap(t.dom), cap(t.rec)], correct, pool, "medium"),
         explanation: `${solution(k1, k2)}\n\nBoxes with at least one ${code(L)} show ${t.dom}; ${code(g1(L, 0))} boxes show ${t.rec}. In the order ${t.dom} : ${t.rec} that is **${correct}**.`,
         hints: [gametesHint(k1, k2), squareHint(k1, k2) + `\n\nSort the boxes into ${t.dom} (at least one ${code(L)}) and ${t.rec} (${code(g1(L, 0))}), in that order.`],
         params: { sub: "punnett", kind, k1, k2 },
@@ -317,25 +413,28 @@ function genPunnett(difficulty, rng) {
     let dom, rec, p2Dom, correct, pool;
     const pair = (a, b) => `${code(g1(L, a))} × ${code(g1(L, b))}`;
     const total = 4 * rng.int(10, 40);
+    // Parent 1 | Parent 2 blocks: the wrong options change one parent's genotype.
+    const tup = (a, b) => [g1(L, a), g1(L, b)];
     if (scen === "dd") {
       rec = total / 4 + rng.int(-3, 3);
       dom = total - rec;
       p2Dom = true;
       correct = pair(1, 1);
-      pool = rng.shuffle([pair(2, 1), pair(2, 2), pair(1, 0)]);
+      pool = rng.shuffle([tup(2, 1), tup(1, 2), tup(1, 0), tup(0, 1)]);
     } else if (scen === "dr") {
       rec = total / 2 + rng.int(-4, 4);
       dom = total - rec;
       p2Dom = false;
       correct = pair(1, 0);
-      pool = rng.shuffle([pair(2, 0), pair(1, 1), pair(0, 0)]);
+      pool = rng.shuffle([tup(2, 0), tup(0, 0), tup(1, 1), tup(1, 2)]);
     } else {
       rec = 0;
       dom = total;
       p2Dom = false;
       correct = pair(2, 0);
-      pool = rng.shuffle([pair(1, 0), pair(2, 1), pair(1, 1)]);
+      pool = rng.shuffle([tup(1, 0), tup(0, 0), tup(2, 1), tup(2, 2)]);
     }
+    const correctT = { dd: tup(1, 1), dr: tup(1, 0), drAll: tup(2, 0) }[scen];
     const parents = p2Dom ? `Two ${t.many} with ${t.dom} are crossed.` : `A ${t.one} with ${t.dom} is crossed with a ${t.one} with ${t.rec}.`;
     const result = rec === 0 ? `All ${dom} offspring have ${t.dom}.` : `They have ${dom} offspring with ${t.dom} and ${rec} with ${t.rec}.`;
     const why =
@@ -347,8 +446,9 @@ function genPunnett(difficulty, rng) {
     return {
       prompt: `${intro} ${parents} ${result} Which parent genotypes (in the order the parents are described) best explain these results?`,
       answerType: "choice",
-      answer: correct,
-      choices: strChoices(correct, pool, rng),
+      answer: correctT,
+      choiceCols: ["Parent 1", "Parent 2"],
+      choices: rng.shuffle([correctT, ...pool]),
       explanation: `${why}\n\nSo the parents are **${correct}**.`,
       hints: [
         `A ${t.rec} ${t.one} must be ${code(g1(L, 0))}. A ${t.one} with ${t.dom} could be ${code(g1(L, 2))} or ${code(g1(L, 1))}.`,
@@ -491,14 +591,14 @@ function genDihybrid(difficulty, rng) {
       };
     }
     const [p1, p2] = rng.pick(RATIO_CROSSES.slice(0, 2));
-    return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine);
+    return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, "easy");
   }
 
   if (difficulty === "medium") {
     const kind = rng.pick(["ratio", "boxes", "expected"]);
     if (kind === "ratio") {
       const [p1, p2] = rng.pick(RATIO_CROSSES);
-      return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine);
+      return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, "medium");
     }
     const [p1, p2] = rng.pick([...RATIO_CROSSES, [[2, 1], [0, 1]], [[1, 2], [1, 0]]]);
     const probs = diPhenoProbs(p1, p2);
@@ -613,7 +713,7 @@ function genDihybrid(difficulty, rng) {
     parts: [
       {
         id: "ratio", label: "Phenotype ratio", ask: `What is the expected phenotype ratio ${order}?`,
-        answerType: "choice", answer: ratio, choices: strChoices(ratio, pool, rng),
+        answerType: "choice", ...ratioSeg(rng, diCols(t), ratio, pool, "hard"),
         hint: `${splitHint(q1, q2)} Multiply the fractions for each of the four phenotypes, in the order given.`,
       },
       {
@@ -635,20 +735,19 @@ function genDihybrid(difficulty, rng) {
   };
 }
 
-function ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine) {
+function ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, difficulty) {
   const correct = ratioStr(diPhenoProbs(p1, p2).map((x) => x * 16));
   const pool = rng.shuffle(["9 : 3 : 3 : 1", "1 : 1 : 1 : 1", "3 : 1 : 3 : 1", "3 : 3 : 1 : 1", "1 : 3 : 3 : 9", "3 : 1"]);
   return {
     prompt: `${intro} ${cross(p1, p2)} What is the expected phenotype ratio ${order}?`,
     answerType: "choice",
-    answer: correct,
-    choices: strChoices(correct, pool, rng),
+    ...ratioSeg(rng, diCols(t), correct, pool, difficulty),
     explanation: `${geneLine(p1, p2)}\n\nMultiply the fractions for each phenotype, in the order ${order}, and simplify: **${correct}**.`,
     hints: [
       gamHint(p1, p2),
       `Quicker: treat each gene as its own one-gene cross, then multiply the fractions for each of the four phenotypes, in the order given.`,
     ],
-    params: { sub: "dihybrid", kind: "ratio", p1, p2 },
+    params: { sub: "dihybrid", kind: "ratio", p1, p2, diff: difficulty },
   };
 }
 
@@ -1491,6 +1590,8 @@ export function verify(question, answer) {
     if (!answer || typeof answer !== "object" || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => {
       let exp = expected(p, part.id);
+      // Ratio blocks (Choose only in a multi-part question).
+      if (part.choiceCols) return !!exp && exp.str !== undefined && ratioSegOk(part, answer[part.id], exp.str, SEG_OPTIONS.hard, false);
       if (p.sub === "sexlinked" && p.kind === "xlMulti" && part.id === "geno") {
         // The woman's father was affected and she is not: heterozygous. Check the shape of the choice.
         const s = String(answer[part.id] ?? "");
@@ -1499,6 +1600,11 @@ export function verify(question, answer) {
       }
       return matches(exp, answer[part.id], part);
     });
+  }
+  if (question.answerType === "choice" && question.choiceCols) {
+    if (p.sub === "punnett" && p.kind === "infer") return verifyInfer(p, answer, question);
+    const exp = expected(p);
+    return !!exp && exp.str !== undefined && ratioSegOk(question, answer, exp.str, SEG_OPTIONS[p.diff || "medium"], true);
   }
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -1511,13 +1617,7 @@ export function verify(question, answer) {
 // Parent genotypes that best explain the observed offspring: parents' phenotypes must match, every
 // observed phenotype must be possible, and the expected recessive share must be closest to the observed.
 function verifyInfer(p, answer, q) {
-  if (!q.choices.includes(String(answer))) return false;
-  const parse = (s) => {
-    const m = String(s).match(/^`([A-Za-z]{2})` × `([A-Za-z]{2})`$/);
-    if (!m) return null;
-    const k = (g) => [...g].filter((c) => c === c.toUpperCase()).length;
-    return [k(m[1]), k(m[2])];
-  };
+  const k = (g) => [...g].filter((c) => c === c.toUpperCase()).length;
   const score = (pair) => {
     if (!pair) return Infinity;
     const [a, b] = pair;
@@ -1526,6 +1626,23 @@ function verifyInfer(p, answer, q) {
     if (p.rec > 0 && box[0] === 0) return Infinity;
     if (p.dom > 0 && box[1] + box[2] === 0) return Infinity;
     return Math.abs(box[0] / 4 - p.rec / (p.rec + p.dom));
+  };
+  if (q.choiceCols) {
+    // Parent 1 | Parent 2 blocks ("Tt", "tt"): the best explanation over every block combination
+    // (options' genotypes plus extraSegs) must be unique, and it must be the answer.
+    const gOk = (g) => /^[A-Za-z]{2}$/.test(g) && g.toUpperCase() === p.L + p.L && !(g[0] === g[0].toLowerCase() && g[1] === g[1].toUpperCase());
+    const score1 = (t) => (t.length === 2 && t.every(gOk) ? score([k(t[0]), k(t[1])]) : Infinity);
+    const pools = [0, 1].map((i) => new Set(q.choices.map((c) => segsOf(c)[i])));
+    for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) if (Array.isArray(e) && (e[0] === 0 || e[0] === 1)) pools[e[0]].add(String(e[1]));
+    let best = Infinity;
+    for (const a of pools[0]) for (const b of pools[1]) best = Math.min(best, score1([a, b]));
+    return Number.isFinite(best) && segOk(q, answer, (t) => score1(t) <= best + 1e-12, SEG_OPTIONS.hard);
+  }
+  if (!q.choices.includes(String(answer))) return false;
+  const parse = (s) => {
+    const m = String(s).match(/^`([A-Za-z]{2})` × `([A-Za-z]{2})`$/);
+    if (!m) return null;
+    return [k(m[1]), k(m[2])];
   };
   const scores = q.choices.map((c) => score(parse(c)));
   const mine = score(parse(answer));
@@ -1567,8 +1684,8 @@ function xInt(id, label, ask, answer, hint, check) {
   if (!Number.isInteger(answer)) throw new XRetry();
   return { part: { id, label, ask, answerType: "number", answer, tolerance: 0, hint }, spec: { id, check, int: true } };
 }
-function xPick(id, label, ask, answer, choices, hint, check) {
-  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+function xPick(id, label, ask, answer, choices, hint, check, choiceCols) {
+  return { part: { id, label, ask, answerType: "choice", answer, ...(choiceCols ? { choiceCols } : {}), choices, hint }, spec: { id, check } };
 }
 function xMulti(prompt, list, steps, values, given, hints) {
   const q = {
@@ -1631,6 +1748,7 @@ function xVerify(question, answer) {
   const one = (spec, a, q) => {
     const fn = X_CHECKS[spec.check];
     if (!fn) return false;
+    if (q.answerType === "choice" && q.choiceCols) return segOk(q, a, (t) => fn(v, t.join(" | ")) === true, SEG_OPTIONS.expert, false);
     if (q.answerType === "choice") {
       if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
       if (!q.choices.includes(String(a))) return false;
@@ -1803,6 +1921,8 @@ function xPunnettSelfing(rng) {
 // ---------- Dihybrid crosses ----------
 
 const X_DI_OPTS = [[[1, 1], [1, 1]], [[1, 1], [0, 0]], [[1, 1], [1, 0]], [[1, 1], [0, 1]], [[1, 2], [1, 0]]];
+// One parent's genotypes for topping the Parent 1 | Parent 2 options up to 5.
+const X_DI_GENO = [[1, 1], [0, 0], [1, 0], [0, 1], [2, 1], [1, 2], [2, 2], [2, 0], [0, 2]];
 // Product rule: share of offspring in each class [AB, Ab, aB, ab].
 function xDiShares(p1, p2) {
   const domA = 1 - (1 - p1[0] / 2) * (1 - p2[0] / 2);
@@ -1834,13 +1954,25 @@ function xDihybridInfer(rng) {
   const gtxt = (p) => code(g1(A, p[0]) + g1(B, p[1]));
   const crossTxt = (o) => `${gtxt(o[0])} × ${gtxt(o[1])}`;
   const names = [diPhen(t, 1, 1), diPhen(t, 1, 0), diPhen(t, 0, 1), diPhen(t, 0, 0)];
-  const values = { counts, opts, M, cls };
+  // Parent 1 | Parent 2 blocks (Choose only): the answer plus 4 crosses that change one parent, each
+  // fitting the counts clearly worse (4×), from the drawn options first. Shuffled with the last draw.
+  const plainG = (p) => g1(A, p[0]) + g1(B, p[1]);
+  const same = (x, y) => x[0] === y[0] && x[1] === y[1];
+  const shown = [ans];
+  for (const o of [...opts, ...X_DI_OPTS, ...X_DI_GENO.map((g) => [ans[0], g]), ...X_DI_GENO.map((g) => [g, ans[1]])]) {
+    if (shown.length >= 5 || shown.some((x) => same(x[0], o[0]) && same(x[1], o[1]))) continue;
+    if (same(o[0], ans[0]) === same(o[1], ans[1])) continue; // exactly one parent differs
+    if (!(xDiFit(counts, xDiShares(o[0], o[1])) > best * 4 + 1e-6)) continue;
+    shown.push(o);
+  }
+  if (shown.length !== 5) throw new XRetry();
+  const values = { counts, opts: shown, M, cls };
   const ratio = sh.map((s) => s * 16);
   return xMulti(
     `In ${t.many}, ${t.A.dom} (\`${A}\`) is dominant to ${t.A.rec} (\`${A.toLowerCase()}\`) and ${t.B.dom} (\`${B}\`) is dominant to ${t.B.rec} (\`${B.toLowerCase()}\`); the genes are on different chromosomes. A cross gives ${counts.map((c, i) => `${c} ${names[i]}`).join(", ")}.`,
     [
-      xPick("cross", "Parents", "Which cross fits these results best?", crossTxt(ans), opts.map(crossTxt),
-        "Turn the counts into a rough ratio (divide by the smallest non-zero count), then look at each gene on its own: is it about 3 : 1, 1 : 1, or all dominant?", "di-cross"),
+      xPick("cross", "Parents", "Which cross fits these results best?", [plainG(ans[0]), plainG(ans[1])], rng.shuffle(shown.slice()).map((o) => [plainG(o[0]), plainG(o[1])]),
+        "Turn the counts into a rough ratio (divide by the smallest non-zero count), then look at each gene on its own: is it about 3 : 1, 1 : 1, or all dominant?", "di-cross", ["Parent 1", "Parent 2"]),
       xInt("expect", "Prediction", `The same cross is repeated and gives ${M} offspring. How many would you expect to be ${names[cls]}?`, expect,
         "Use the exact expected share for that class from the cross you chose (in sixteenths), not the observed counts.", "di-expect"),
     ],
@@ -2267,7 +2399,7 @@ const X_CHECKS = {
     const i = fits.indexOf(best);
     if (fits.filter((f) => f === best).length !== 1) return false;
     const o = v.opts[i];
-    const L = /`([A-Za-z]{4})` × `([A-Za-z]{4})`/.exec(a);
+    const L = /^`([A-Za-z]{4})` × `([A-Za-z]{4})`$/.exec(a) || /^([A-Za-z]{4}) \| ([A-Za-z]{4})$/.exec(a);
     if (!L) return false;
     const k = (s, j) => [s[j * 2], s[j * 2 + 1]].filter((c) => c === c.toUpperCase()).length;
     return k(L[1], 0) === o[0][0] && k(L[1], 1) === o[0][1] && k(L[2], 0) === o[1][0] && k(L[2], 1) === o[1][1];

@@ -27,6 +27,47 @@ const GATE_RULE = {
   NOT: "NOT flips its single input: 0 becomes 1 and 1 becomes 0.",
 };
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 const VARS = ["A", "B", "C", "D"];
 const fmtInputs = (names, vals) => names.map((n, i) => `${n} = ${vals[i]}`).join(", ");
 const fmtRow = (names, vals) => names.map((n, i) => `${n}=${vals[i]}`).join(", ");
@@ -40,6 +81,22 @@ function allRows(n) {
     out.push(row);
   }
   return out;
+}
+
+// For a which-row question: the variables that may vary (`vary[i]`) so that, with the others fixed at
+// the answer row's values, exactly one row in that cube hits the target. All variables first, then
+// (4 inputs) leaving one fixed. Easy needs 2 varying variables, Medium and Hard 3. -> { vary } or null.
+function rowCube(rows, n, good, target, difficulty) {
+  const need = difficulty === "easy" ? 2 : 3;
+  const tries = [names => names.map(() => true), ...Array.from({ length: n }, (_, j) => (names) => names.map((_, i) => i !== j))];
+  for (const mk of tries) {
+    const vary = mk(Array.from({ length: n }));
+    const k = vary.filter(Boolean).length;
+    if (k < need) continue;
+    const hits = rows.filter((x) => x.out === target && x.r.every((v, i) => vary[i] || v === good.r[i]));
+    if (hits.length === 1) return { vary };
+  }
+  return null;
 }
 
 // 4 unique numeric choices (as strings) within [lo, hi]: correct + 3 distractors.
@@ -109,9 +166,9 @@ function evalHints(tree, names, vals) {
   return hints.slice(0, 4);
 }
 
-function whichRowHints(tree, names, expr, target, answer, choices) {
-  const wrong = choices.find((c) => c !== answer);
-  const env = Object.fromEntries(wrong.split(", ").map((kv) => kv.split("=")).map(([k, x]) => [k, Number(x)]));
+function whichRowHints(tree, names, expr, target, answerRow, wrongRow) {
+  const wrong = fmtRow(names, wrongRow);
+  const env = Object.fromEntries(names.map((n, i) => [n, wrongRow[i]]));
   return [
     `Try each option: substitute its values into \`${expr}\` and work from the innermost brackets outwards. You want the one that gives ${target}.`,
     `The outer operation is ${tree.o}. ${GATE_RULE[tree.o]} Think about what its two sides must be for a result of ${target}.`,
@@ -314,9 +371,18 @@ function genExpressions(difficulty, rng) {
     let target = null;
     if (ones.length >= 1 && zeros.length >= 3) target = 1;
     else if (zeros.length >= 1 && ones.length >= 3) target = 0;
-    if (target !== null) {
-      const good = rng.pick(target === 1 ? ones : zeros);
-      const bad = rng.shuffle(target === 1 ? zeros : ones).slice(0, 3);
+    // Options are rows shown as one 0/1 block per variable. Build mode can make any row from the
+    // blocks on offer, so those rows (a "cube": the varying variables, the others fixed at the
+    // answer's values) must hit the target exactly once. Easy: 3 options; Medium and Hard: 5, so the
+    // cube needs 3+ varying variables. No such cube: an "evaluate" question instead.
+    const good = target === null ? null : rng.pick(target === 1 ? ones : zeros);
+    const pool = target === null ? [] : rng.shuffle(target === 1 ? zeros : ones);
+    const cube = good && rowCube(rows, names.length, good, target, difficulty);
+    if (cube) {
+      const want = SEG_OPTIONS[difficulty];
+      const inCube = (r) => r.every((v, i) => cube.vary[i] || v === good.r[i]);
+      const far = (r) => cube.vary.every((on, i) => !on || r[i] !== good.r[i]) && cube.vary.filter(Boolean).length === names.length;
+      const bad = pool.filter((x) => inCube(x.r) && !far(x.r)).slice(0, want - 1);
       const answer = fmtRow(names, good.r);
       const steps = [];
       evalSteps(tree, Object.fromEntries(names.map((n, i) => [n, good.r[i]])), steps);
@@ -325,15 +391,17 @@ function genExpressions(difficulty, rng) {
         `The other options give ${1 - target}: ${bad.map((b) => fmtRow(names, b.r)).join("; ")}.`,
         `So the answer is **${answer}**.`,
       ];
+      const bits = (r) => r.map(String);
       const q = {
         prompt: `Which input makes \`${expr}\` equal to ${target}?`,
-        answer,
+        answer: bits(good.r),
         answerType: "choice",
-        choices: rng.shuffle([answer, ...bad.map((b) => fmtRow(names, b.r))]),
+        choiceCols: names.slice(),
+        choices: rng.shuffle([bits(good.r), ...bad.map((b) => bits(b.r))]),
         explanation: lines.join("\n\n"),
-        params: { kind: "which-row", expr, names, target },
+        params: { kind: "which-row", expr, names, target, diff: difficulty },
       };
-      return { ...q, hints: whichRowHints(tree, names, expr, target, answer, q.choices) };
+      return { ...q, hints: whichRowHints(tree, names, expr, target, good.r, bad[0].r) };
     }
   }
 
@@ -560,7 +628,7 @@ export function verify(question, answer) {
   if (p.kind === "write") return verifyWrite(p, question, answer);
   if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
   const isChoice = question.answerType === "choice";
-  if (isChoice) {
+  if (isChoice && !question.choiceCols) {
     const ch = question.choices;
     if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
     if (!ch.includes(String(answer))) return false;
@@ -598,6 +666,13 @@ export function verify(question, answer) {
     const c = countByParse(f, p.names);
     if (isChoice && question.choices.filter((x) => Number(x) === c).length !== 1) return false;
     return String(answer).trim() !== "" && Number(answer) === c;
+  }
+
+  if (p.kind === "which-row" && question.choiceCols) {
+    // Blocks: one 0/1 per variable, columns named after the variables, every block combination tried.
+    if (!isChoice || question.choiceCols.join() !== p.names.join()) return false;
+    const right = (t) => t.length === p.names.length && t.every((b) => b === "0" || b === "1") && f(Object.fromEntries(p.names.map((n, i) => [n, Number(t[i])]))) === p.target;
+    return segOk(question, answer, right, SEG_OPTIONS[p.diff]);
   }
 
   if (p.kind === "which-row") {

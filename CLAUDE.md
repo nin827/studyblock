@@ -309,6 +309,7 @@ Options that combine several facts show as aligned blocks under column labels (t
   - Build decoys come from other options, then extras: Easy 1–2, Medium 3–5, Hard 6–9, Expert 9–14 (≤ 24 blocks). The bank is shuffled by a generator seeded from the question seed, so the question never changes.
   - Build keeps Filter blocks (above 10), Reset, keys and ✓/✗ per column after Check. It earns full credit.
   - **Choose:** pick an option. Credit × `chooseMultiplier` (module.json; default easy 1, medium 1, hard 0.85, expert 0.7), stored as `mode: "choose"` and `multiplier`. The note reads "Choose: up to 85% credit at Hard".
+- **Converted questions:** chords (root | quality | position), Accounting Terms equation rows, networking gateway, economics shortage/surplus, Boolean which-row, map-skills day | time, genetics ratios and parents, vectors position and turn, and biology photosynthesis. `extraSegs` should name columns by **index** when labels differ only in case (`TT`/`Tt`/`tt`), because label matching ignores case.
 - **Storage:** optional `choiceCols`/`partCols` on stored questions, validated on import, so review and History show chips. Answer chips in feedback, review and History show their column label as a caption ("Measurable: Yes"). The calculator's Use note reads "place the blocks" (Build) or "pick an option" (Choose).
 - **Case-sensitive notice:** any question or part with `caseSensitive: true` shows a warn box ("Case-sensitive: capital letters matter", `triangle-alert`), linked to the answer by `aria-describedby`.
 
