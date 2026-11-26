@@ -2045,7 +2045,11 @@ function wlLang(core, tplId, extra, seed, L) {
   const wrongTexts = core.wrongs.map(x => fillText(core.m, x, L)).filter(Boolean);
   const entry = wlEntry(tplId, core.m.p);
   const names = buildWith(core.m, bl()).fns.find(f => f.name === entry).params.map(q => vn(q.name, L));
-  const blocks = blocksFor(acc.answer, { distractors: [...wrongTexts, ...decoyTokens(acc.answer, L), ...names], count: extra, seed });
+  // The newer languages read their lines with codelang's extended lexer (as Code Reviewing does);
+  // the original five keep the default lexer, so their questions stay the same per seed.
+  const ext = !LEGACY_LANGS.includes(L);
+  const decoys = ext ? decoyTokens(acc.answer, L, { ext }) : decoyTokens(acc.answer, L);
+  const blocks = blocksFor(acc.answer, { distractors: [...wrongTexts, ...decoys, ...names], count: extra, seed, ...(ext ? { ext } : {}) });
   if (!blocks || solutionSize(blocks.solution) < 2 || blocks.tiles.length - solutionSize(blocks.solution) !== extra) return null;
   if (serialiseBlocks(blocks.tiles, blocks.solution) !== acc.answer) return null;
   // No wrong version may count as correct.

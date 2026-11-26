@@ -31,6 +31,7 @@ With only GDScript chosen, Software Engineer and Game Developer now use Python, 
 Batch 4 (Database Administrator, HR Manager, Aerospace Engineer, Ship Navigator) was built after this ticket was filed, so there are now 45 roles. Not yet built: Insurance Underwriter, Air Traffic Planner, Travel Agent, Philosopher, Journalist, Puzzle Designer.
 *Options:* build the rest, or stop at 45.
 
-## 6. Code Writing Blocks for the new languages
+## 6. Code Writing Blocks for the new languages (resolved, no decision needed)
 Some JS/TS/Java/Go lines have no Blocks alternative in Code Writing. The extended lexer that fixes this is used only in Code Reviewing, because turning it on in Code Writing changes those questions per seed.
 *Options:* turn it on, which changes only the new languages' questions (recommended), or keep as is.
+*Checked:* every new-language Write the line question already had a Blocks alternative. Code Writing now uses the extended lexer for the new languages too, for consistency, and no question changed.
