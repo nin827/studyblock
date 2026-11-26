@@ -1,0 +1,43 @@
+{
+  "id": "project-manager",
+  "title": "Project Manager",
+  "icon": "chart-gantt",
+  "flags": ["experience_heavy", "tool_heavy"],
+  "description": "Plans, delays and budgets: critical paths, working-day dates, crashing, earned value and team effort, worked from the figures.",
+  "exclusive": "role-project-manager",
+  "mix": {
+    "project-scheduling": { "weight": 5 },
+    "management": { "weight": 1, "subtopics": ["leadership", "structure"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "time-dates": { "weight": 2, "subtopics": ["calendar", "clock"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] }
+  },
+  "subroles": [
+    {
+      "id": "scheduler",
+      "title": "Scheduler",
+      "icon": "calendar-clock",
+      "description": "Critical paths, float, crashing and working-day finish dates.",
+      "mix": {
+        "project-scheduling": { "weight": 6, "subtopics": ["critical-path", "float", "gantt-dates"] },
+        "time-dates": { "weight": 2, "subtopics": ["calendar"] },
+        "management": { "weight": 1, "subtopics": ["structure"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": ["delay-finish", "crash-decision", "resource-plan"]
+    },
+    {
+      "id": "cost-controller",
+      "title": "Cost Controller",
+      "icon": "wallet",
+      "description": "Budgets, earned value, forecasts and the cost of recovering time.",
+      "mix": {
+        "project-scheduling": { "weight": 5, "subtopics": ["earned-value", "float"] },
+        "business-math": { "weight": 3, "subtopics": ["percentages", "margins", "interest"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] },
+        "management": { "weight": 1, "subtopics": ["leadership"] }
+      },
+      "exclusiveSubtopics": ["earned-value", "crash-decision", "resource-plan"]
+    }
+  ]
+}
