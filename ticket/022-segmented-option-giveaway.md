@@ -1,6 +1,6 @@
 # 022 — Segmented choices can give the answer away
 
-**Status:** open (found in review, 2026-11-26)
+**Status:** resolved (2026-11-26): option 1, mixed distances (to build)
 **Raised:** 2026-11-26
 
 ## The problem
@@ -22,3 +22,10 @@ Every generator with segmented choices: the converted subject questions (CLAUDE.
 - New generators already follow option 1 (mixed distances).
 - **Two columns:** option 1 needs a wrong option that differs in both columns, which breaks the spec's "differ in 1 to n−1 columns" rule. Linguist (Rule | Fix, Prefix | Suffix) does this. If option 1 is chosen, the spec should allow n columns when n = 2.
 - **Coherence giveaway:** separate from counting, an answer can be the only option whose columns make sense together (Linguist's old rule-specific fixes; Project Scheduling's float "slip", now a multi-part). Critical-path/medium still has a weaker form: the right option is often the only one whose duration matches its path's sum. Fixing that fully conflicts with the counting rule.
+
+## Decision (user, 2026-11-26)
+Option 1, **mixed distances**:
+- At least one wrong option differs from the answer in 2+ columns, and the answer's value is not the most common in at least one column.
+- With 2 columns, a wrong option may differ in both columns; the spec's "1 to n−1 columns" rule is relaxed for n = 2.
+- The engine checks this in `segChoiceSpec` (warning once per module) and generators redraw until it holds; questions change per seed where they didn't comply.
+- Also avoid the coherence giveaway: the answer must not be the only option whose columns make sense together.

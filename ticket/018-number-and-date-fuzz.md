@@ -1,6 +1,6 @@
 # 018 — Close whole numbers (per module) and date answers
 
-**Status:** open (being built with the defaults below)
+**Status:** resolved (2026-11-26): built; years-between keeps close credit
 **Raised:** 2026-11-26
 
 ## Request
@@ -35,3 +35,6 @@ The named profiles are replaced by a number. 0 means exact, 1 means normal (the 
 - **Numbers:** `"fuzzyNumber": n` scales the relative bands. For example, at 2: ≤ 0.2% → 90%, ≤ 2% → 75%, ≤ 4% → 50%.
 - **Years and dates:** `"fuzzyNumber": { "mode": "years", "level": n }`. Being up to n years (or months/days) off earns 50%.
 - **Smooth years and dates** (user): off by d earns 1 − d / (level + 1). At level 1: 1 off → 50%, 2 off → 0. At level 2: 1 off → 67%, 2 off → 33%, 3 off → 0.
+
+## Decision (user, 2026-11-26)
+Timelines "years between" keeps years-mode close credit (1 off → 50%), as built.

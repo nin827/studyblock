@@ -1,6 +1,6 @@
 # 023 — Audio previews for notes and chords
 
-**Status:** open (idea, 2026-11-26)
+**Status:** resolved (2026-11-26): Play after answering (to build)
 **Raised:** 2026-11-26
 
 ## Today
@@ -21,3 +21,6 @@ A small "Play" button on music questions to hear a note, interval, chord or scal
 1. Feedback/review only (suggested) vs also before answering.
 2. Pure tones (sine/triangle) vs a simple piano-like timbre (a few harmonics).
 3. Ear-training subtopics (identify an interval/chord by sound) as a later step.
+
+## Decision (user, 2026-11-26)
+Option 1: a **Play** button in feedback and review only (after the answer is checked), synthesised with Web Audio (no files, works offline), plus a Settings toggle for sound. No ear-training topics for now.

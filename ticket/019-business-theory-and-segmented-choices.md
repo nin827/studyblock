@@ -1,6 +1,6 @@
 # 019 — Business theory subjects and segmented (block-list) choices
 
-**Status:** open (being built with the defaults below)
+**Status:** resolved (2026-11-26): built as decided
 **Raised:** 2026-11-26
 
 ## What Business had
@@ -33,3 +33,6 @@ Options that combine several facts show as aligned blocks with column labels, e.
   - **Choose:** pick one listed option, scored ×1 / 1 / 0.85 / 0.7 (`chooseMultiplier`).
 - **Option count:** 3 at Easy, 5 at Medium, Hard and Expert. This applies only to block-list questions; other multiple choice is unchanged.
 - **Build decoys** grow with difficulty: 1–2 / 3–5 / 6–9 / 9–14. Filter blocks appears above 10. Each block shows its column, so `↑` under Assets and `↑` under Liabilities are different blocks.
+
+## Closed (user, 2026-11-26)
+Built as decided: Build | Choose (default Build), 3/5 options, decoys growing with difficulty.
