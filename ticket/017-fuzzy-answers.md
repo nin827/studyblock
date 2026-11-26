@@ -1,6 +1,6 @@
 # 017 — Close answers (typos and small numeric errors) get partial credit
 
-**Status:** open (proposal sent to the user; to be built after ticket 016)
+**Status:** resolved (being built)
 **Raised:** 2026-11-26
 
 ## Text: close spelling
@@ -44,3 +44,7 @@ Safeguards:
 
 - Should 2 typos give any credit?
 - Should the number bands be tighter (e.g. only ≤ 0.5%)?
+
+## Resolution (2026-11-26)
+
+Build it as proposed, except that **2 or more typos give no credit**. Text tiers are now: 1–3 chars exact only; 4–7 chars, 1 typo → 75%; 8–14, 1 typo → 85%; 15+, 1 typo → 90%. The number tiers are unchanged.

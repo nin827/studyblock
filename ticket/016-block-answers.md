@@ -1,6 +1,6 @@
 # 016 — Block (tiles) answers and the Blocks score multiplier
 
-**Status:** open (being built with the defaults below)
+**Status:** open (partly resolved; see Resolution)
 **Raised:** 2026-11-26
 
 ## What's built
@@ -22,3 +22,12 @@ A new answer type, `tiles`: the learner drags or taps blocks into an answer row.
 ## Candidates (from the module survey)
 
 Top picks: SQL Queries order-limit, Algorithms sorting and data structures, Chords (triads, in-key, sevenths), Intervals & Scales scales, Number Theory prime factorisation, Algorithms binary-search trace, an Ecology food chain. Stretch: putting code lines in order in Code Writing, building words in Word Roots (CSV needs a tiles column).
+
+## Resolution (2026-11-26)
+
+- Go ahead with the Type | Blocks switch and the multiplier (SQL Queries, Code Writing, Code Reviewing: 1 / 1 / 0.85 / 0.7), and with blocks in more modules (SQL row order, Algorithms data structures, Chords, Scales).
+- **Nested blocks** were added on request: a block can have a slot (e.g. `COUNT(…)`) that other blocks are dragged into.
+- Still open, built with defaults:
+  - Type is the default mode, remembered per module for the session.
+  - New typed subtopics give the Blocks alternative: SQL "Write the query", Code Writing "Write the line", Code Reviewing "Rewrite the buggy line".
+  - Algorithms sorting stays multi-part (blocks aren't a part type yet).
