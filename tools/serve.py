@@ -97,7 +97,12 @@ def main() -> None:
         return
 
     handler = functools.partial(Handler, directory=ROOT)
-    server = http.server.ThreadingHTTPServer((HOST, port), handler)
+    # The app loads ~30 modules at once on start-up; the default listen backlog (5) makes Windows
+    # refuse the extra connections, leaving the page stuck on "Loading…".
+    class Server(http.server.ThreadingHTTPServer):
+        request_queue_size = 128
+
+    server = Server((HOST, port), handler)
 
     print()
     print("  StudyBlock is running at", url)
