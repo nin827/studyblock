@@ -230,7 +230,7 @@ function genKpi(rng, tier) {
   ];
   const ex = {
     growth: `**Total change:** the totals are ${d.T0} and ${d.T1}, so (${d.T1} − ${d.T0}) ÷ ${d.T0} × 100 = **${growthTxt}**.`,
-    contrib: `**Contribution:** ${name} went from ${d.prev[d.i]} to ${d.curr[d.i]}, a change of ${d.delta[d.i]}. ${d.delta[d.i]} ÷ ${d.T0} × 100 = **${fix(d.contrib, 1)} points**. In the calculator: \`_chg / _t0 * 100\`.`,
+    contrib: `**Contribution:** ${name} went from ${d.prev[d.i]} to ${d.curr[d.i]}, a change of ${d.delta[d.i]}. ${d.delta[d.i]} ÷ ${d.T0} × 100 = **${fix(d.contrib, 1)} points**. In the calculator, put the segment's change in a row \`_chg\` and last quarter's total in a row \`_t0\`, then use \`_chg / _t0 * 100\`.`,
     driver: `**Biggest driver:** the changes are ${set.segs.map((s, k) => `${s} ${d.delta[k] > 0 ? "+" : ""}${d.delta[k]}`).join(", ")}, so **${set.segs[d.hi]}**.`,
     share: `**Share now:** ${d.curr[d.i]} ÷ ${d.T1} × 100 = **${fix(d.share, 1)}%**.`,
     met: `**Target:** ${growthTxt} is ${met ? "at least" : "below"} ${d.G}%, so **${met ? "Yes" : "No"}**.`,
@@ -238,7 +238,8 @@ function genKpi(rng, tier) {
     rank: `**Ranking:** largest ${rank[0]}, smallest ${rank[1]}. Growth ${growthTxt} vs target ${d.G}%: **${rank[2]}**.`,
   };
   const params = { kind: "kpi", tier, names: set.segs, prev: d.prev, curr: d.curr, i: d.i, G: d.G, g: d.g };
-  const given = [["_t0", d.T0], ["_t1", d.T1], ["_chg", d.delta[d.i]]];
+  // Only stated figures: the totals and the segment's change are worked out from the table, so they are not pre-filled.
+  const given = [];
   const hints = ["Add the segments to get totals before comparing anything.", "A percentage point difference compares two percentages; a percentage change compares two amounts."];
   if (tier === "medium") return build(`${intro}\n\nGive each answer to 1 decimal place.`, all, ["growth", "contrib"], ex, params, given, hints);
   if (tier === "hard") return build(`${intro}\n\nGive percentages to 1 decimal place.`, all, ["growth", "contrib", "driver"], ex, params, given, hints);

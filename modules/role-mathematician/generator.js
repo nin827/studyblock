@@ -151,7 +151,7 @@ function genQcBinomial(rng) {
       ],
       explanation,
       params: { kind: "qc-binom", counts, size, m, order },
-      given: givenRows([["_m", m], ["_order", order], ["_inspected", batches * size]]),
+      given: givenRows([["_m", m], ["_order", order]]),
       hints: [
         "First estimate p from the data, then use it as the probability in a binomial model.",
         "Binomial: P(X = k) = C(n, k) × p^k × (1 − p)^(n − k).",
@@ -669,7 +669,8 @@ function genQcTier(rng, tier) {
       prompt: `You are the statistician checking ${ctx.what}. Quality control inspected ${batches} batches of ${size}; the numbers ${ctx.fault} were:\n\n| Batch | ${counts.map((_, i) => i + 1).join(" | ")} |\n| ${["---", ...counts.map(() => "---")].join(" | ")} |\n| ${ctx.fault[0].toUpperCase() + ctx.fault.slice(1)} | ${counts.join(" | ")} |\n\nModel each item as ${ctx.fault} independently with probability p, estimated from all the items inspected.${tail}`,
       answerType: "multi", parts, explanation: ex.join("\n\n"),
       params: { kind: "qc-binom-t", tier, counts, size, m, order },
-      given: givenRows([["_m", m], ["_order", order], ["_inspected", N]]),
+      // Only figures the prompt states (box size at hard/expert, order size at medium/hard); the items inspected are worked out from the table.
+      given: givenRows([...(tier === "medium" ? [] : [["_m", m]]), ...(tier === "expert" ? [] : [["_order", order]])]),
     };
   }
 }
@@ -783,7 +784,8 @@ function genGrowthTier(rng, tier) {
           tier === "hard" ? `**Down to ${F}%:** t = ln(100 ÷ ${F}) ÷ k ≈ **${fmtFixed(tF, 1)} ${ctx.tunit}**.` : `**Rate of decay:** dA/dt = −kA, so it falls at k × A(${T}) ≈ **${fmtFixed(rate, 2)} ${ctx.unit}** per ${tu}.`,
         ].join("\n\n"),
         params: { kind: "grow-decay-t", tier, A0, h, T, F },
-        given: givenRows([["_A0", A0], ["_h", h], ["_t", T], ["_F", F / 100]]),
+        // F is stated only in the hard "time" part, so it is pre-filled only there.
+        given: givenRows([["_A0", A0], ["_h", h], ["_t", T], ...(tier === "hard" ? [["_F", F / 100]] : [])]),
       };
     }
   }

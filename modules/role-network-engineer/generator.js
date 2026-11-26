@@ -273,7 +273,7 @@ function genCaesar(rng, tier) {
       ], n);
       return finish(
         `A Caesar cipher shifts every letter forward by the same key. An intercepted message reads **${c1}**, and the analyst knows its first plaintext letter is **${w1[0]}**.${tier === "hard" ? ` A second message with the same key reads **${c2}**.` : ""}`,
-        parts, ex, "ne-caesar", { w1, w2, k, n, tier }, [["_firstcipher", letterNumber(c1[0])], ["_firstplain", letterNumber(w1[0])]],
+        parts, ex, "ne-caesar", { w1, w2, k, n, tier }, [],
         ["Convert the known pair of letters to numbers; their difference is the key.", "To decode, go back by the key; to encode, go forward."],
       );
     }
@@ -338,7 +338,7 @@ function genAffineBack(rng) {
     ].join("\n\n");
     return finish(
       `Messages use the affine cipher E(x) = (a·x + b) mod 26 with A = 0 … Z = 25, and a is one of the 12 values coprime to 26. A known-plaintext pair shows **${ALPHA[x1]} → ${ALPHA[y1]}** and a second shows **${ALPHA[x2]} → ${ALPHA[y2]}**. The next message reads **${cw}**.`,
-      parts, ex, "ne-affineback", { x1, y1, x2, y2, cw, Rk, T }, [["_x1", x1], ["_y1", y1], ["_x2", x2], ["_y2", y2]],
+      parts, ex, "ne-affineback", { x1, y1, x2, y2, cw, Rk, T }, [],
       ["Turn the letter pairs into numbers, then subtract the two equations to remove b.", "A valid a has an inverse mod 26, so you can divide by x1 − x2."],
     );
   }
@@ -443,7 +443,7 @@ function genFlags(rng) {
     const table = mdTable(["Bit", "0", "1", "2", "3", "4"], [["Flag", ...FLAG_NAMES], ["Weight", ...FLAG_WEIGHTS]]);
     return finish(
       `A login event carries the flag byte **0x${val.toString(16).toUpperCase().padStart(2, "0")}** (bits numbered from 0 at the right; bits 5 to 7 are unused):\n\n${table}\n\nThe base limit is **${T}** failures per minute. If the event's risk score is **${R0}** or more, the limit is halved.`,
-      parts, ex, "ne-flags", { val, R0, T, W, F }, [["_hexvalue", val], ["_baselimit", T], ["_window", W], ["_failures", F]],
+      parts, ex, "ne-flags", { val, R0, T, W, F }, [["_baselimit", T], ["_window", W], ["_failures", F]],
       ["Convert the hex byte to bits before reading any flag.", "The score decides which limit applies, and the limit sets how many failures the window can hold."],
     );
   }

@@ -355,7 +355,7 @@ function genStatus(rng, tier) {
     ].slice(0, n).join("\n\n");
     return finish(
       `A microcontroller's **${reg}** register reads **0x${hexOf(val)}**. Its bits are numbered from 0 at the right, and the flags are:\n\n${tableMd(names)}`,
-      parts.slice(0, n), ex, "ec-status", { val, names, a, b, tier, n }, [["_hexval", val]],
+      parts.slice(0, n), ex, "ec-status", { val, names, a, b, tier, n }, [],
       ["Convert the hex value to bits first; every later answer reads from the bits.", "Bits are numbered from 0 at the right-hand end."],
     );
   }

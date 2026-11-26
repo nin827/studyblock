@@ -212,7 +212,7 @@ function genKeyChords(rng, tier) {
         `${ctx[0].toUpperCase() + ctx.slice(1)} is in **${kn}**. Work out the key signature, then the triad built on the **${degTxt}** (degree ${n}), using only notes of the key.`,
         parts,
         `**Signature:** ${scTxt} has ${Math.abs(k)} ${k > 0 ? "sharp" : "flat"}${Math.abs(k) === 1 ? "" : "s"}, so the key signature has **${Math.abs(k)}**.\n\n**Chord:** degree ${n} is ${fmt(ch.root)}, and the triad is **${fmt(ch.root)} | ${ch.q}**.\n\n**Spelling:** root, third and fifth from the key: **${fmtList(ch.notes)}**.`,
-        "mk-hard", { t, n }, [["_degree", n], ["_accidentals", Math.abs(k)]],
+        "mk-hard", { t, n }, [["_degree", n]],
         ["Write the scale out; the signature is the number of sharps or flats in it.", "Take every other note of the scale from the chosen degree."],
       );
     }
@@ -331,7 +331,7 @@ function genProg(rng, tier) {
         `${ctx[0].toUpperCase() + ctx.slice(1)} in **${kn}** has the four chords **${names.join(DASH)}** (an m after a name means minor). Name them with Roman numerals (upper case = major, lower case = minor). ${CAD_RULE}`,
         parts,
         `**Scale:** ${fmtList(sc)}.\n\n**Numerals:** ${names.map((n, j) => `${n} = ${rn[j]}`).join(", ")}.\n\n**Cadence:** ${rn[2]} then ${rn[3]} is **${cad}**.\n\n**Distance:** ${fmt(sc[degs[0] - 1])} up to ${fmt(sc[degs[3] - 1])} is **${span}** semitone${span === 1 ? "" : "s"}.`,
-        "pg-hard", { t, names, degs: undefined }, [["_chords", 4]],
+        "pg-hard", { t, names, degs: undefined }, [],
         ["Match each chord root to a note of the scale to get its degree.", "Count semitones on a keyboard (one per key, black keys included)."],
       );
     }
@@ -366,7 +366,7 @@ function genProg(rng, tier) {
       `${ctx[0].toUpperCase() + ctx.slice(1)} uses the progression **${rn.join(DASH)}** in a major key (upper case = major, lower case = minor). Its **${ordinal(pos + 1)}** chord is **${names[pos]}**. ${CAD_RULE}`,
       parts,
       `**Key:** the ${ordinal(pos + 1)} chord is ${rn[pos]} (degree ${degs[pos]}) and equals ${names[pos]}, so the tonic is **${fmt(t)}** (${fmtList(sc)}).\n\n**Chords:** **${names.join(DASH)}**.\n\n**Cadence:** ${rn[2]} then ${rn[3]} is **${cad}**.\n\n**Signature:** **${Math.abs(k)}** ${k > 0 ? "sharp" : "flat"}${Math.abs(k) === 1 ? "" : "s"}.`,
-      "pg-back", { rn, pos, known: names[pos] }, [["_position", pos + 1], ["_chords", 4]],
+      "pg-back", { rn, pos, known: names[pos] }, [["_position", pos + 1]],
       ["The numeral at that position gives the degree; the chord name gives the note on that degree.", "Once the tonic is known, every other chord follows from the scale."],
     );
   }
@@ -552,7 +552,7 @@ function genTranspose(rng, tier) {
         `${cap(ctx)} is in **${keyName(t)}**. The whole piece is moved **up ${ivWord(num, q)}**, including the melody note **${fmt(mel)}**.`,
         parts,
         `**Tonic:** ${fmt(t)} up ${ivWord(num, q)} is **${fmt(nt)}**.\n\n**Signature:** ${keyName(nt)} has ${sigPhrase(nk)}: **${Math.abs(nk)} | ${kindOfK(nk)}**.\n\n**Melody:** ${fmt(mel)} up the same interval is **${fmt(moved)}**.`,
-        "tr-hard", { t, num, q, d }, [["_number", num], ["_degree", d]],
+        "tr-hard", { t, num, q, d }, [["_number", num]],
         ["Transpose the tonic like any other note.", "Once you know the new key, write its scale to count the accidentals."],
       );
     }
@@ -579,7 +579,7 @@ function genTranspose(rng, tier) {
         `${cap(ctx)} has a part for **${inst.name}**, written in **${keyName(t)}**, which opens on the written note **${fmt(mel)}**. This instrument sounds **${inst.word} lower** than written. Find what actually sounds.`,
         parts,
         `**Concert tonic:** ${fmt(t)} down ${inst.word} is **${fmt(ct)}**.\n\n**Signature:** ${keyName(ct)} has ${sigPhrase(ck)}: **${Math.abs(ck)} | ${kindOfK(ck)}**.\n\n**Sounding note:** written ${fmt(mel)} sounds **${fmt(snd)}**.\n\n**Compare:** written ${Math.abs(k)}, concert ${Math.abs(ck)}: **${cmp}**.`,
-        "tr-exp", { t, num: inst.num, q: inst.q, d }, [["_number", inst.num], ["_degree", d]],
+        "tr-exp", { t, num: inst.num, q: inst.q, d }, [["_number", inst.num]],
         ["Going down an interval: count the letter names down, then fix the accidental.", "Use the scale of the concert key for the signature."],
       );
     }
@@ -602,7 +602,7 @@ function genTranspose(rng, tier) {
       `${cap(ctx)} in **${keyName(t)}** is moved up to the major key with **${sigPhrase(k2)}** (the nearest such key above, less than an octave). Its melody includes the note **${fmt(mel)}**.`,
       parts,
       `**New key:** ${sigPhrase(k2)} in major is **${keyName(nt)}**.\n\n**Interval:** ${fmt(t)} up to ${fmt(nt)} is **${intervalName(c.num, c.quality)}**.\n\n**Semitones:** **${semi}**.\n\n**Melody:** ${fmt(mel)} up the same interval is **${fmt(moved)}**.`,
-      "tr-plus", { t, nc: Math.abs(k2), nk: kindOfK(k2), d }, [["_accidentals", Math.abs(k2)], ["_degree", d]],
+      "tr-plus", { t, nc: Math.abs(k2), nk: kindOfK(k2), d }, [["_accidentals", Math.abs(k2)]],
       ["First find the new tonic from the signature.", "The interval and its size come from the two tonics; then reuse it for the melody."],
     );
   }

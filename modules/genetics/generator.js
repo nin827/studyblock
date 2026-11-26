@@ -2309,7 +2309,7 @@ function xHWSelection(rng) {
       "Selection against a recessive allele gets slower and slower, because most copies hide in carriers, who aren't removed.",
     ],
     values,
-    [xG("_q0", q0), xG("_n", n), xG("_target", target)],
+    [xG("_n", n), xG("_target", target)],
     [
       "Start with q: the recessive phenotype share is q².",
       "Apply the rule `q ÷ (1 + q)` repeatedly. It is quicker to notice what happens to 1/q each generation.",

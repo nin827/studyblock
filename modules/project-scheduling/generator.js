@@ -668,7 +668,8 @@ function drawPercent(rng) {
   }
   throw new Error("no percent draw");
 }
-const GIVEN_EV = (d) => [{ label: "_pv", value: d.pv }, { label: "_ev", value: d.ev }, { label: "_ac", value: d.ac }, { label: "_bac", value: d.bac }];
+// Only the figures a question actually states (keys), never an unstated or derived one.
+const GIVEN_EV = (d, keys = ["pv", "ev", "ac", "bac"]) => keys.map((k) => ({ label: `_${k}`, value: d[k] }));
 const scheduleWord = (sv) => (sv > 0 ? "Ahead of schedule" : sv < 0 ? "Behind schedule" : "On schedule");
 const costWord = (cv) => (cv > 0 ? "Under budget" : cv < 0 ? "Over budget" : "On budget");
 const factsLine = (d) => `PV = ${money(d.pv)}, EV = ${money(d.ev)}, AC = ${money(d.ac)}`;
@@ -687,7 +688,7 @@ function genEarned(difficulty, rng) {
   if (difficulty === "easy") {
     const kind = rng.pick(["cv", "sv", "overunder"]);
     const d = drawEV(rng);
-    const base = { given: GIVEN_EV(d), params: { kind, d, diff: difficulty } };
+    const base = { given: GIVEN_EV(d, kind === "sv" ? ["pv", "ev"] : ["ev", "ac"]), params: { kind, d, diff: difficulty } };
     if (kind === "cv") {
       return {
         prompt: `${EV_TERMS} A project has EV = **${money(d.ev)}** and AC = **${money(d.ac)}**. Cost variance is **CV = EV − AC**. What is the CV, in dollars? (A negative answer means over budget.)`,
@@ -716,7 +717,7 @@ function genEarned(difficulty, rng) {
   if (difficulty === "medium") {
     const kind = rng.pick(["cpi", "spi", "eac"]);
     const d = drawEV(rng);
-    const base = { given: GIVEN_EV(d), params: { kind, d, diff: difficulty } };
+    const base = { given: GIVEN_EV(d, kind === "spi" ? ["pv", "ev"] : kind === "eac" ? ["ev", "ac", "bac"] : ["ev", "ac"]), params: { kind, d, diff: difficulty } };
     if (kind === "cpi") {
       return {
         prompt: `${EV_TERMS} A project has EV = **${money(d.ev)}** and AC = **${money(d.ac)}**. The cost performance index is **CPI = EV ÷ AC**. What is the CPI? (It works out exactly to 2 decimal places.)`,
@@ -744,7 +745,7 @@ function genEarned(difficulty, rng) {
   if (difficulty === "hard") {
     const kind = rng.pick(["four", "forecast"]);
     const d = drawEV(rng);
-    const base = { given: GIVEN_EV(d), params: { kind, d, diff: difficulty } };
+    const base = { given: GIVEN_EV(d, kind === "four" ? ["pv", "ev", "ac"] : ["ev", "ac", "bac"]), params: { kind, d, diff: difficulty } };
     if (kind === "four") {
       const parts = [
         { id: "cv", label: "CV", ask: "Cost variance CV = EV − AC ($)", answerType: "number", answer: d.ev - d.ac, tolerance: 0, hint: "Earned value minus actual cost." },

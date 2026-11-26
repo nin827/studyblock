@@ -1219,7 +1219,7 @@ function genTwoPoints(rng) {
       `${y3} is ${e} year${e === 1 ? "" : "s"} after ${y2}: \`${N2} × g${e === 1 ? "" : sup(e)}\` ≈ ${num(pred)}, so about **${P}** ${unit}.`,
     ].join("\n\n"),
     hints: ["Growth by the same percentage each year means `N = N₀ × gᵗ`, where g is the yearly multiplier. Find g first."],
-    given: [{ label: "_N1", value: N1 }, { label: "_N2", value: N2 }, { label: "_d", value: d }, { label: "_e", value: e }],
+    given: [{ label: "_N1", value: N1 }, { label: "_N2", value: N2 }],
     params: { sub: "growth-decay", kind: "x-gTwoPoints", N1, N2, d, e },
   };
 }
