@@ -19,17 +19,34 @@ const diffCount = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
 // every value seen in the candidates (plus `extra`) that no option already shows in that column.
 const OPTION_COUNT = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const MIN_DECOYS = { easy: 1, medium: 3, hard: 6, expert: 9 };
+// Mixed distances (ticket 022): some wrong option differs in 2+ columns, and the answer is not the
+// strictly most common value in every column.
+function mixOk(tuples, correct) {
+  const wrong = tuples.filter((t) => keyOf(t) !== keyOf(correct));
+  if (!wrong.some((t) => diffCount(t, correct) >= 2)) return false;
+  const major = (j) => {
+    const cnt = (v) => tuples.filter((t) => t[j] === v).length;
+    return tuples.every((t) => t[j] === correct[j] || cnt(t[j]) < cnt(correct[j]));
+  };
+  return !correct.every((_, j) => major(j));
+}
 function segChoice(cols, correct, candidates, rng, diff, extra = []) {
   const n = cols.length;
   const want = OPTION_COUNT[diff];
+  const ok = [];
   const seen = new Set([keyOf(correct)]);
-  const wrong = [];
-  for (const c of rng.shuffle(candidates)) {
-    if (wrong.length >= want - 1) break;
+  for (const c of candidates) {
     const d = c.length === n ? diffCount(c, correct) : 0;
-    if (d < 1 || d >= n || seen.has(keyOf(c))) continue;
+    if (d < 1 || (n > 2 && d >= n) || seen.has(keyOf(c))) continue;
     seen.add(keyOf(c));
-    wrong.push(c);
+    ok.push(c);
+  }
+  // Redraw (same rng) until the option set cannot be solved by counting.
+  let wrong = [];
+  for (let tries = 0; tries < 300; tries++) {
+    wrong = rng.shuffle(ok).slice(0, want - 1);
+    if (wrong.length === want - 1 && mixOk([correct, ...wrong], correct)) break;
+    wrong = [];
   }
   if (wrong.length !== want - 1) throw new Error("not enough segmented options");
   const shown = cols.map((_, i) => new Set([correct, ...wrong].map((t) => t[i])));
@@ -57,7 +74,7 @@ function choiceOk(q, answer, isRight) {
   if (new Set(tuples.map((t) => t.join(" | "))).size !== tuples.length) return false;
   const right = tuples.filter((t) => isRight(t));
   if (right.length !== 1) return false;
-  if (n > 1 && tuples.some((t) => diffCount(t, right[0]) === n)) return false;
+  if (n > 2 && tuples.some((t) => diffCount(t, right[0]) === n)) return false;
   const a = segsOf(answer);
   if (a.length !== n || diffCount(a, right[0]) !== 0) return false;
   if (!q.choiceCols) return true;

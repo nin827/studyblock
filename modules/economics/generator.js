@@ -32,7 +32,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || (n > 2 && segDiff(t, right[0]) >= n)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -237,7 +237,8 @@ function genSD(diff, rng) {
         answerType: "choice",
         answer: answerT,
         choiceCols: ["Type", "Units"],
-        choices: rng.shuffle([answerT, [T2, units(X)], ...wrongN.map((n) => [T, units(n)])]),
+        // Mixed distances (ticket 022): Type has 3 × the other type, two options differ in both columns.
+        choices: rng.shuffle([answerT, [T2, units(X)], [T2, units(wrongN[0])], [T, units(wrongN[1])], [T2, units(wrongN[2])]]),
         params: { kind: "excess", a, b, c, d, Ps },
       };
     }

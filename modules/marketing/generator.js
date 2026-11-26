@@ -33,31 +33,46 @@ const fill = (t, vars) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
 
 // The answer plus up to n − 1 distractors, each differing from it in 1–2 segments (never all).
 // `prefer` candidates are tried first (the likeliest mistakes), then random single/double swaps.
+// Mixed distances (ticket 022): some distractor differs in 2+ columns and the answer is not the
+// strictly most common value in every column; redrawn (same rng) until that holds.
+function mixOk(set, answer) {
+  const d = (c) => c.filter((v, i) => v !== answer[i]).length;
+  if (!set.some((c) => c !== answer && d(c) >= 2)) return false;
+  const cnt = (j, v) => set.filter((c) => c[j] === v).length;
+  const major = (j) => set.every((c) => c[j] === answer[j] || cnt(j, c[j]) < cnt(j, answer[j]));
+  return !answer.every((_, j) => major(j));
+}
 function segChoices(rng, answer, opts, prefer = [], n = 4) {
   const cols = answer.length;
-  const seen = new Set([answer.join(SEP)]);
-  const out = [answer];
-  const add = (c) => {
-    if (out.length >= n) return;
-    const d = c.filter((v, i) => v !== answer[i]).length;
-    if (d < 1 || d >= cols || d > 2) return;
-    const k = c.join(SEP);
-    if (seen.has(k)) return;
-    seen.add(k);
-    out.push(c);
-  };
-  prefer.forEach(add);
-  for (let g = 0; out.length < n && g < 400; g++) {
-    const k = cols > 2 && rng.next() < 0.5 ? 2 : 1;
-    const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
-    const c = answer.slice();
-    for (const i of idx) {
-      const alt = opts[i].filter((v) => v !== answer[i]);
-      if (alt.length) c[i] = rng.pick(alt);
+  let best = null;
+  for (let attempt = 0; attempt < 300; attempt++) {
+    const seen = new Set([answer.join(SEP)]);
+    const out = [answer];
+    const add = (c) => {
+      if (out.length >= n) return;
+      const d = c.filter((v, i) => v !== answer[i]).length;
+      if (d < 1 || (cols > 2 && d >= cols) || d > 2) return;
+      const k = c.join(SEP);
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push(c);
+    };
+    // First try the likeliest mistakes in order; on redraws mix in some random swaps.
+    (attempt === 0 ? prefer : rng.shuffle(prefer.slice()).slice(0, rng.int(0, Math.max(0, n - 2)))).forEach(add);
+    for (let g = 0; out.length < n && g < 400; g++) {
+      const k = cols > 2 ? (rng.next() < 0.5 ? 2 : 1) : (rng.next() < 0.5 ? 2 : 1);
+      const idx = rng.shuffle([...Array(cols).keys()]).slice(0, k);
+      const c = answer.slice();
+      for (const i of idx) {
+        const alt = opts[i].filter((v) => v !== answer[i]);
+        if (alt.length) c[i] = rng.pick(alt);
+      }
+      add(c);
     }
-    add(c);
+    best = out;
+    if (out.length === n && mixOk(out, answer)) break;
   }
-  return rng.shuffle(out);
+  return rng.shuffle(best);
 }
 
 // The answer plus n − 1 other names from the pool.
@@ -938,7 +953,7 @@ function checkSegChoice(q, p, want, answer) {
     const s = segsOf(c);
     if (s.length !== want.length || s.some((x) => !x || x.length > 40)) return false;
     const d = s.filter((x, i) => x !== want[i]).length;
-    if (d === want.length) return false; // a distractor must share at least one segment
+    if (d === want.length && want.length > 2) return false; // a distractor must share at least one segment
   }
   return checkPlainChoice(ch, want.join(SEP), answer);
 }
