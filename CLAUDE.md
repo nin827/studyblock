@@ -63,7 +63,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings`
 
 ## Registry — `modules/index.json`
 
@@ -199,7 +199,9 @@ The engine seeds `rng` per question and stores the seed, so any question can be 
 Header: `subtopic,difficulty,prompt,answer,choices,explanation`
 - `choices` is `|`-separated; empty means free-text answer.
 - `difficulty` may be empty (applies to all).
-- Optional `type` column: empty = as above, `date` = a date answer (see Date answers).
+- Optional `type` column: empty = as above, `date` = a date answer (see Date answers), `tiles` = a pure blocks question.
+- Optional `hints` column: 1–4 `|`-separated hint steps (same rules as generator hints); empty = the explanation-split fallback.
+- Optional `tiles` (`|`-separated; label = value, no nesting) and `joiner` columns. An empty joiner means `" "`, and `(none)` means no joiner (`bio` + `logy`). With `type` empty and a free-text answer, `tiles` makes a dual Type | Blocks row that uses the module's `tilesMultiplier`. `useAll` is set only when the answer needs every tile. A row whose answer the tiles can't build, or that has tiles together with choices or a date, is skipped with one warning per module.
 The engine samples rows with the seeded rng and shuffles choices.
 
 ### Answer checking
@@ -257,6 +259,14 @@ A near miss earns part credit; `correct` stays false. This applies to single que
 - **UI:** a text field with a placeholder that fits the precision. A live "Read as: …" line (aria-live) shows the parsed date, or "Not a date yet". Check needs a value that parses. Feedback repeats "Your answer read as: …". Use is disabled.
 - **CSV:** an optional `type` column. `date` makes the row a date answer, with its precision taken from the answer's format. Bad rows are skipped with one warning per module. Date rows are in World History and Inventions.
 
+### Grading hook and case
+
+- **`grade()`:** a generator may export `grade(question, answerString) → { correct, note? } | null`. For text questions with `gradeByOutput: true`, in Type or Blocks mode, the engine calls it only when the text/accepts check fails.
+  - Its verdict is final: correct earns credit (with the Blocks multiplier) and stores `gradedBy: "output"`; false earns 0 with no close credit; `null` means no opinion.
+  - The `note` (≤ 300 chars, escaped) shows in feedback, guided and review.
+  - Used by SQL *Write the query* (same output by running the query, no hard-coded literals or unasked-for LIMIT, and re-run on reshuffled and shifted copies of the tables to catch chance matches) and Boolean Logic *Write the expression* (same truth table).
+- **`caseSensitive: true`** (text/tiles questions and parts): no lowercasing when checking, and no close credit. Used by Genetics *Write gametes & genotypes*.
+
 ### Run (test the output)
 
 - **Module export:** `run(question, answerString) → { columns, rows } | { error }`. It must be pure and synchronous, use no eval, never throw, and return ≤ 200 rows. A question opts in with `runnable: true`, and keeps the data `run` needs in `meta`, which is in memory only and not stored.
@@ -299,9 +309,14 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 
 - Module page: a **Practice | Guided** switch (sessionStorage `studyblock:quizMode`; opening `#/q` or `#/g` sets it). In Guided mode grid links go to `#/g/…` and cells show "Guided" instead of scores.
 - Guided runs reuse `runQuiz` with `opts.guided`: a "Guided · not scored" pill, hints in an aria-live list (**Hint n of N** or the H key), unlimited tries (a wrong choice is disabled; correct multi-part parts lock), and **Show solution** always available.
-- They never call `saveAttempt` and never touch stats, History or best scores; only the last-module/difficulty cookies update. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
+- **Saved but never scored (ticket 011):**
+  - A guided run is saved as an attempt with `guided: true`. Its `score` is the number solved first try, and each question has `outcome: "first" | "after" | "solution"`.
+  - Guided attempts are excluded from every stat, best score, summary row and Home's continue card.
+  - History and Home Recent show them with a Guided tag (`compass` icon + text). On import, `guided` must be a boolean.
+- **Guided mixes:** the Mix builder has a Practice | Guided switch (the shared `studyblock:quizMode`, never stored in the draft or presets). Guided mode opens `#/mix/guided`, where each question shows its own module's guide card.
+- **Show solution** stays `aria-disabled` ("Try once first") until the first checked wrong or close answer, or until every hint is shown. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
 - **Generator hints (optional):** `hints: [markdown]` (1–4 progressive steps that never state the final answer) and/or `parts[i].hint` on multi-part questions. The engine keeps non-empty strings ≤ 600 chars, max 4, dropping others with one console.warn per module. Never stored.
-- **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
+- **CSV hints** come from the `hints` column. **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
 - **`modules/<id>/guide.md` (optional):** `## General` plus `## <Subtopic title>` sections (case-insensitive; text before the first `##` ignored). Loaded with `loadGuide` and shown as a collapsible "How to solve" card for the current question's subtopic. Every module has one. Keep tables and sub-lists after a numbered list, not inside it: markdown.js can't nest them.
 - **Every generator returns `hints`** (multi-part: a `hint` on each part), built only from values already drawn: no rng calls in hint code, so adding or editing hints never changes a question. When changing hints, fingerprint each cell's questions (hints stripped) before and after, and check that no hint states the answer.
 - Open choices are in ticket 011.
@@ -554,7 +569,9 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
 - **Music Theory:** written notation, no audio or staff images. Single spelled notes, intervals and chord names are choice questions (text checks can't equate `#` with ♯). Spelling a whole chord or scale is built from note blocks (from the root/tonic up, wrong spellings as distractors); multi-part questions keep choice parts. Double sharps/flats (𝄪/𝄫) appear only where theory needs them (Hard/Expert diminished and augmented triads, G♯ and D♯ harmonic minor); Easy, Medium and major keys stay single-accidental. Expert diatonic sevenths include viiø7 (m7♭5). 𝄪/𝄫 rely on the OS symbol font. `js/lib/music.js` has separate build and check toolkits so verify stays independent.
 - **SQL Queries:** *ORDER BY and LIMIT* row-order questions are built from blocks (same seeds). *Write the query* is typed or built from blocks (`SELECT …`, aggregate and `IN (…)` slot tiles), with `accepts`, Run, and the Blocks multiplier.
-- **Algorithms:** final stack or queue contents are built from blocks (same seeds).
+- **Algorithms:** final stack or queue contents are built from blocks (same seeds). *Write the trace* is typed (`4, 9, 2`) with Blocks: binary-search comparisons, the list after a sort pass, stack/queue values.
+- **Boolean Logic:** *Write the expression* is typed with Blocks (letters, AND/OR/XOR/NOT, a bracket slot). Any expression with the same truth table counts (`grade()`); operators may not be mixed at one bracket level without brackets.
+- **Genetics:** *Write gametes & genotypes* is typed with Blocks, case-sensitive, in the order stated in the prompt (capital first, then alphabetical).
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.

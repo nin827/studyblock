@@ -124,8 +124,8 @@ export async function runQuiz(root, ctx, opts) {
   let results = [];
   // ---- guided mode state ----
   const guided = !!opts.guided;
-  let gs = null;          // current question: { tries, hintsShown, partHints, hints, source }
-  let gResults = [];      // [{ q, outcome: 'first'|'assisted'|'solution', tries, hints }]
+  let gs = null;          // current question: { tries, hintsShown, partHints, hints, source, lastValue }
+  let gResults = [];      // [{ q, outcome: 'first'|'after'|'solution', tries, hints, userAnswer }]
   let guideOpen = false;  // "How to solve" card stays open/closed across questions
 
   // ---- calculator panel (desktop side panel ≥900px, bottom sheet below) ----
@@ -1207,11 +1207,35 @@ export async function runQuiz(root, ctx, opts) {
       ? `<button type="button" class="btn btn-soft" id="hint-btn" aria-controls="hint-list">${icon('lightbulb')}<span class="hint-btn-label">${esc(hintLabel())}</span></button>`
       : '';
     const keyHint = gs.hints.length ? '<span class="guided-key desktop-only">Press <kbd>H</kbd> for a hint</span>' : '';
+    // Show solution needs one try first (or every hint shown): aria-disabled, so it stays focusable
+    // and its reason stays readable.
     return `<div class="guided-tools" id="guided-tools">
         ${hintBtn}
-        <button type="button" class="btn" id="show-solution">${icon('eye')}<span>Show solution</span></button>
+        <button type="button" class="btn" id="show-solution" aria-disabled="true" aria-describedby="solution-gate">${icon('eye')}<span>Show solution</span></button>
+        <span class="solution-gate" id="solution-gate">${icon('lock')}<span>Try once first</span></span>
         ${keyHint}
       </div>`;
+  }
+
+  // Show solution unlocks after the first checked wrong answer, or once every hint has been shown.
+  function hintTotal(q) {
+    const partHints = isMulti(q) ? (q.parts || []).filter(p => typeof p.hint === 'string' && p.hint).length : 0;
+    return (gs?.hints.length || 0) + partHints;
+  }
+  const solutionAllowed = () => {
+    if (!gs) return false;
+    const total = hintTotal(questions[idx]);
+    return gs.tries > 0 || (total > 0 && hintsUsed() >= total);
+  };
+  function syncSolutionGate() {
+    const btn = root.querySelector('#show-solution');
+    if (!btn) return;
+    const ok = solutionAllowed();
+    btn.setAttribute('aria-disabled', ok ? 'false' : 'true');
+    btn.classList.toggle('is-gated', !ok);
+    const gate = root.querySelector('#solution-gate');
+    if (gate) gate.hidden = ok;
+    if (ok) btn.removeAttribute('aria-describedby'); else btn.setAttribute('aria-describedby', 'solution-gate');
   }
 
   const hintsUsed = () => (gs ? gs.hintsShown + gs.partHints : 0);
@@ -1235,6 +1259,7 @@ export async function runQuiz(root, ctx, opts) {
         btn.disabled = true;
       }
     }
+    syncSolutionGate();
     icons();
     return true;
   }
@@ -1248,6 +1273,7 @@ export async function runQuiz(root, ctx, opts) {
     if (!p || !box || !btn || btn.disabled || !p.hint) return false;
     box.innerHTML = `<p class="hint-head">${icon('lightbulb')}<span>Hint · ${esc(p.label)}</span></p><div class="prose hint-body">${renderMarkdown(p.hint)}</div>`;
     gs.partHints++;
+    syncSolutionGate();
     btn.disabled = true;
     btn.closest('.part-hint-row')?.setAttribute('hidden', '');
     icons();
@@ -1266,9 +1292,10 @@ export async function runQuiz(root, ctx, opts) {
   }
 
   function bindGuided(q) {
-    gs = { tries: 0, hintsShown: 0, partHints: 0, ...hintsFor(q) };
+    gs = { tries: 0, hintsShown: 0, partHints: 0, lastValue: undefined, ...hintsFor(q) };
     const tools = root.querySelector('#guided-tools-slot');
     if (tools) tools.outerHTML = guidedToolsHtml();
+    syncSolutionGate();
     root.querySelector('#hint-btn')?.addEventListener('click', () => revealHint());
     root.querySelector('#show-solution')?.addEventListener('click', showSolution);
     root.querySelectorAll('.part-hint-btn').forEach(b => b.addEventListener('click', () => revealPartHint(b.dataset.partHint)));
@@ -1403,6 +1430,7 @@ export async function runQuiz(root, ctx, opts) {
       return;
     }
     const res = gradeAnswer(q, value, modeFor(q));
+    gs.lastValue = value;
     let firstWrong = null;
     let nClose = 0;
     if (multi) {
@@ -1415,7 +1443,7 @@ export async function runQuiz(root, ctx, opts) {
       }
       if (res.correct) { solvedGuided(q, value, choiceIndex); return; }
     } else if (res.correct) {
-      solvedGuided(q, value, choiceIndex);
+      solvedGuided(q, value, choiceIndex, res);
       return;
     } else if (q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
@@ -1429,6 +1457,7 @@ export async function runQuiz(root, ctx, opts) {
       root.querySelector('#answer')?.classList.add('is-wrong');
     }
     gs.tries++;
+    syncSolutionGate();
     const nRight = multi ? res.parts.filter(p => p.correct).length : 0;
     // A close answer counts as "almost": still a try, with a nudge to check spelling or rounding.
     const almost = !multi && !!res.fuzzy;
@@ -1437,6 +1466,7 @@ export async function runQuiz(root, ctx, opts) {
       : res.fuzzy.kind === 'number' ? 'very close, check your rounding' : 'very close, check the spelling';
     root.querySelector('#feedback').innerHTML = `<div class="feedback ${almost ? 'partial' : 'bad'} guided-retry">
         <p class="feedback-title">${icon(almost ? 'circle-dot' : 'circle-x')}<span>${almost ? `Almost · ${esc(nudge)}` : 'Not quite, try again'}</span></p>
+        ${res.note ? `<p class="grade-note">${icon('info')}<span>${esc(res.note)}</span></p>` : ''}
         <p class="feedback-sub">${multi ? `${nRight} of ${res.parts.length} parts right${nClose ? ` · ${nClose} almost` : ''} · ` : ''}Tries: ${gs.tries}</p>
       </div>`;
     icons();
@@ -1454,7 +1484,7 @@ export async function runQuiz(root, ctx, opts) {
     }
   }
 
-  function solvedGuided(q, value, choiceIndex) {
+  function solvedGuided(q, value, choiceIndex, res = null) {
     const multi = isMulti(q);
     if (!multi && q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
@@ -1469,11 +1499,17 @@ export async function runQuiz(root, ctx, opts) {
       root.querySelector('#answer')?.classList.remove('is-wrong');
       root.querySelector('#answer')?.classList.add('is-correct');
     }
-    endGuidedQuestion(q, gs.tries === 0 && hintsUsed() === 0 ? 'first' : 'assisted');
+    endGuidedQuestion(q, gs.tries === 0 && hintsUsed() === 0 ? 'first' : 'after', value, res);
   }
 
   function showSolution() {
     if (!guided || phase !== 'answer' || !gs) return;
+    if (!solutionAllowed()) {
+      // Gated: point at the reason instead of revealing anything.
+      const gate = root.querySelector('#solution-gate');
+      if (gate) { gate.classList.remove('is-flash'); void gate.offsetWidth; gate.classList.add('is-flash'); }
+      return;
+    }
     const q = questions[idx];
     if (isMulti(q)) {
       // Reveal each unsolved part's answer in place.
@@ -1510,13 +1546,16 @@ export async function runQuiz(root, ctx, opts) {
         }
       });
     }
-    endGuidedQuestion(q, 'solution');
+    endGuidedQuestion(q, 'solution', gs.lastValue);
   }
 
-  function endGuidedQuestion(q, outcome) {
+  // `value`: the answer that solved it (or the last try, for the solution); `res`: its grade.
+  function endGuidedQuestion(q, outcome, value, res = null) {
     phase = 'feedback';
     const multi = isMulti(q);
-    gResults.push({ q, outcome, tries: gs.tries, hints: hintsUsed() });
+    const userAnswer = value === undefined ? (multi ? {} : '')
+      : multi ? Object.fromEntries((q.parts || []).map(p => [p.id, String(value?.[p.id] ?? '')])) : String(value ?? '');
+    gResults.push({ q, outcome, tries: gs.tries, hints: hintsUsed(), userAnswer, ...(res?.gradedBy ? { gradedBy: res.gradedBy } : {}) });
     applyCalc(q);
     root.querySelectorAll('.answer-form input, .choice, #check, #run-btn, .part-hint-btn, .answer-mode-btn').forEach(el => { el.disabled = true; });
     if (ts) lockTiles();
@@ -1550,6 +1589,7 @@ export async function runQuiz(root, ctx, opts) {
         <p class="feedback-title">${icon('circle-check')}<span>Correct</span>${outcome === 'first'
           ? '<span class="feedback-sub">· first try</span>'
           : `<span class="feedback-sub">· after ${esc(bits.join(', '))}</span>`}</p>
+        ${res?.note ? `<p class="grade-note">${icon('info')}<span>${esc(res.note)}</span></p>` : ''}
         ${expected}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
@@ -1603,6 +1643,8 @@ export async function runQuiz(root, ctx, opts) {
       ...(work ? { work } : {}),
       ...(g.mode === 'blocks' ? { mode: 'blocks', multiplier: g.multiplier } : {}),
       ...(g.fuzzy ? { fuzzy: g.fuzzy } : {}),
+      ...(g.gradedBy ? { gradedBy: g.gradedBy } : {}),
+      ...(g.note ? { note: g.note } : {}),
     });
     applyCalc(q);
 
@@ -1663,6 +1705,7 @@ export async function runQuiz(root, ctx, opts) {
     root.querySelector('#feedback').innerHTML = `
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${feedbackTitle(g, state, partsSub)}</p>
+        ${g.note ? `<p class="grade-note">${icon('info')}<span>${esc(g.note)}</span></p>` : ''}
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
           : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
         ${q.runnable ? '<div class="expected-output" id="expected-output"></div>' : ''}
@@ -1685,24 +1728,34 @@ export async function runQuiz(root, ctx, opts) {
     else finish();
   }
 
-  // Guided end screen: no score, nothing saved (no saveAttempt, no history, no stats).
+  // Guided end screen: saved in History as a guided attempt (score = solved first try, display
+  // only), never counted in stats or best scores.
   function finishGuided() {
     phase = 'done';
     teardownCalc();
     const count = k => gResults.filter(r => r.outcome === k).length;
-    const counts = ['first', 'assisted', 'solution'].map(k =>
+    if (opts.toAttempt && gResults.length) {
+      const att = opts.toAttempt(gResults.map(r => ({
+        q: r.q, userAnswer: r.userAnswer, correct: r.outcome !== 'solution', credit: r.outcome === 'first' ? 1 : 0,
+        ...(r.gradedBy ? { gradedBy: r.gradedBy } : {}),
+      })));
+      att.questions = (att.questions || []).map((sq, i) => ({ ...sq, outcome: gResults[i]?.outcome ?? 'solution' }));
+      saveAttempt({ ...att, guided: true, score: count('first'), total: gResults.length });
+    }
+    const counts = ['first', 'after', 'solution'].map(k =>
       `<li class="guided-count is-${OUTCOMES[k].cls}">${icon(OUTCOMES[k].icon)}<strong>${count(k)}</strong><span>${esc(OUTCOMES[k].label)}</span></li>`).join('');
     root.innerHTML = `<div class="page-narrow">
       ${opts.crumbs}
       <section class="card result-summary guided-summary">
         <p class="eyebrow">${icon('compass')} Guided set complete</p>
         <h1 class="quiz-title">${opts.title}</h1>
-        <p class="muted guided-note">Not scored: nothing was added to your history or stats.</p>
+        <p class="muted guided-note">Saved in History as guided practice. Not scored: stats and best scores don't change.</p>
         <ul class="guided-counts">${counts}</ul>
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Another guided set</button>
           ${opts.practiceHref ? `<a class="btn" href="${opts.practiceHref}">${icon('play')} Practice for real</a>` : ''}
           <a class="btn" href="${opts.backHref}">${icon(opts.backIcon || 'layout-grid')} ${esc(opts.backLabel)}</a>
+          <a class="btn" href="#/results">${icon('history')} History</a>
         </div>
       </section>
       <section class="card">
@@ -1714,24 +1767,10 @@ export async function runQuiz(root, ctx, opts) {
   }
 
   function guidedReviewItem(r) {
-    const q = r.q;
-    const o = OUTCOMES[r.outcome] || OUTCOMES.solution;
     const extra = [];
     if (r.tries) extra.push(`${r.tries} wrong ${r.tries === 1 ? 'try' : 'tries'}`);
     if (r.hints) extra.push(`${r.hints} ${r.hints === 1 ? 'hint' : 'hints'}`);
-    const answers = isMulti(q)
-      ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts')
-      : `<p class="review-answers">Answer: <strong>${renderInline(String(q.answer ?? ''))}</strong></p>`;
-    return `<li class="review-item guided-item is-${o.cls}">
-      <div class="review-mark">${icon(o.icon)}</div>
-      <div class="review-body">
-        ${opts.tagsFor ? opts.tagsFor(q) : langRow(q)}
-        <p class="guided-outcome">${esc(o.label)}${extra.length ? ` <span class="muted">· ${esc(extra.join(', '))}</span>` : ''}</p>
-        <div class="prose">${renderPrompt(q.prompt)}</div>
-        ${answers}
-        ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
-      </div>
-    </li>`;
+    return guidedItemHtml(r.q, r.outcome, opts.tagsFor ? opts.tagsFor(r.q) : opts.showTags ? questionTag(r.q) : langRow(r.q), extra);
   }
 
   function finish() {
@@ -1853,12 +1892,37 @@ export function storedQuestion(r, withOrigin) {
     ...(r.mode === 'blocks' ? { mode: 'blocks', multiplier: r.multiplier } : {}),
     // Close answer: { kind, typos | relErr, factor }.
     ...(r.fuzzy ? { fuzzy: r.fuzzy } : {}),
+    // Accepted by the module's own grader (e.g. SQL output), not by the text match.
+    ...(r.correct && r.gradedBy === 'output' ? { gradedBy: 'output' } : {}),
     ...(r.q.explanation ? { explanation: r.q.explanation } : {}),
     ...(withOrigin ? { module: r.q.module, subtopic: r.q.subtopic, difficulty: r.q.difficulty } : {}),
     // Code language (language-aware modules), stored on every quiz kind so the seed regenerates it.
     ...(isLang(r.q.lang) ? { lang: r.q.lang } : {}),
     ...(r.work && r.work.length ? { work: r.work.slice(0, 30) } : {}),
   };
+}
+
+/*
+ * One guided question (live end screen or a stored guided attempt in History): its outcome
+ * (icon + label, never colour alone), the prompt and the answer. `tagHtml` is already escaped;
+ * `extra` = plain-text details ("1 wrong try"). Stored data is escaped / rendered safely.
+ */
+export function guidedItemHtml(q, outcome, tagHtml = '', extra = []) {
+  const o = OUTCOMES[outcome] || OUTCOMES.solution;
+  const multi = isPlainObj(q.answer);
+  const answers = multi
+    ? partListHtml(q.parts, (Array.isArray(q.parts) ? q.parts : Object.keys(q.answer).map(id => ({ id, label: id }))).map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts')
+    : `<p class="review-answers">Answer: <strong>${renderInline(String(q.answer ?? ''))}</strong></p>`;
+  return `<li class="review-item guided-item is-${o.cls}">
+      <div class="review-mark">${icon(o.icon)}<span class="sr-only">${esc(o.label)}</span></div>
+      <div class="review-body">
+        ${tagHtml}
+        <p class="guided-outcome">${esc(o.label)}${extra.length ? ` <span class="muted">· ${esc(extra.join(', '))}</span>` : ''}</p>
+        <div class="prose">${renderPrompt(q.prompt)}</div>
+        ${answers}
+        ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
+      </div>
+    </li>`;
 }
 
 // Per-module score/total table for mixed quizzes. `qs` = [{ module, moduleTitle?, domainTitle?, correct, credit? }].
@@ -1949,6 +2013,8 @@ export function reviewItem(r, showTag = false) {
       ${typeof showTag === 'function' ? showTag(q) : showTag ? questionTag(q) : langRow(q)}
       ${state === 'partial' ? `<p class="review-partial">${icon('circle-dot')}<span>${esc(partialText)}</span></p>` : ''}
       ${blocksText ? `<p class="review-mode">${icon('blocks')}<span>${state === 'correct' ? 'Correct · ' : ''}${esc(blocksText)}</span></p>` : ''}
+      ${r.note ? `<p class="grade-note">${icon('info')}<span>${esc(r.note)}</span></p>`
+        : correctFlag === true && (r.gradedBy ?? q.gradedBy) === 'output' ? `<p class="grade-note">${icon('info')}<span>Accepted: the output matches the expected result</span></p>` : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>
       ${answers}
       ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}

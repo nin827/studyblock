@@ -1,5 +1,5 @@
 import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup } from '../lib/engine.js';
-import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, MIX_MODULE } from '../lib/storage.js';
+import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
 import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 
@@ -81,7 +81,7 @@ export async function render(root, params, ctx) {
   let continueCard = '';
   if (last) {
     const d = domainOfModule.get(last.id);
-    const a = attempts.find(x => x.module === last.id);
+    const a = attempts.find(x => x.module === last.id && !isGuided(x)); // guided runs have no score
     const title = a ? `${modTitle(last.id)} · ${subTitle(last.id, a.subtopic)}` : modTitle(last.id);
     const meta = a ? `${difficultyLabel(a.difficulty)} · last score ${fmtScore(a.score)} / ${a.total}` : (last.description || 'Not started yet');
     continueCard = `<a class="continue-card" href="#/m/${hashPart(last.id)}">
@@ -179,9 +179,12 @@ export async function render(root, params, ctx) {
       chip = tag(d ? d.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(d?.id));
       title = `${modTitle(a.module)} · ${subTitle(a.module, a.subtopic)} · ${difficultyLabel(a.difficulty)}`;
     }
+    // Guided runs show a "Guided" tag instead of a score (they are never scored).
     return `<li>${chip}<span class="recent-title">${esc(title)}</span>
       <span class="recent-when">${esc(fmtDate(a.ts))}</span>
-      <span class="recent-score">${fmtScore(a.score)} / ${a.total}</span></li>`;
+      ${isGuided(a)
+        ? `<span class="recent-score tag tag-guided">${icon('compass')}<span>Guided</span></span>`
+        : `<span class="recent-score">${fmtScore(a.score)} / ${a.total}</span>`}</li>`;
   }).join('');
 
   root.innerHTML = `<div class="stack">

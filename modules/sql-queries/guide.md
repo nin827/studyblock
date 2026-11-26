@@ -65,6 +65,7 @@ Example: species Cat, Dog, Cat with `GROUP BY species` gives 2 rows: Cat (2) and
 3. Add the clauses you need, always in this order: `JOIN … ON`, `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`.
 4. Turn the words into signs: "more than" is `>`, "less than" is `<`, "at least" is `>=`, "at most" is `<=`, "is not" is `<>`. Text goes in single quotes; numbers don't.
 5. Press **Run** to see what your query returns, and compare it with what the task wants.
+6. Use only the values the task gives. A query that picks rows by name or id, or adds a `LIMIT` the task doesn't ask for, is marked wrong even if its output matches, and so is a condition that only works on this table by chance.
 
 Example: "the name of every pet whose age is at least 5, oldest first" is `SELECT name FROM pets WHERE age >= 5 ORDER BY age DESC`.
 

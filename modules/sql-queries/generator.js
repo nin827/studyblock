@@ -1949,6 +1949,7 @@ function genWriteQuery(difficulty, rng) {
       accepts,
       blocks,
       runnable: true,
+      gradeByOutput: true,
       meta: { tables: raw },
       explanation: `${wqExplain(q)}\n\nAnswer: \`${answer}\`\n\nIt returns ${want.length} row${want.length === 1 ? "" : "s"}${ordered ? ", in this order" : ""}:\n\n${shown.map((x) => `- ${x}`).join("\n")}${want.length > 8 ? "\n- …" : ""}`,
       hints,
@@ -2701,5 +2702,136 @@ export function run(question, answerString) {
     return { columns: r.columns.map(String), rows: r.rows.slice(0, 200).map((row) => row.map((v) => (v === undefined ? null : fix(v)))) };
   } catch (e) {
     return { error: e instanceof SqlError ? e.message.charAt(0).toUpperCase() + e.message.slice(1) : "Couldn't run that query." };
+  }
+}
+
+// =============================================================================================
+// grade(): output grading for write-query (engine hook; called only when the text and accepts
+// check fails and the question has gradeByOutput). A query counts when it runs to the intended
+// result (in order only when the task asks for an order), uses no literal value that the task
+// didn't state (the literals in the expected answer), and still matches the expected query on
+// reshuffled copies of the tables, so a query that only fits this table by coincidence fails.
+// Returns { correct, note } or null (not a write-query question). Never throws.
+
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const litText = (v) => (typeof v === "number" ? String(v) : `'${v}'`);
+
+// Literal values used in a parsed query (rParse tree), with what they're for.
+function queryLiterals(q) {
+  const out = [];
+  const opd = (o) => { if (o && "lit" in o) out.push({ v: o.lit }); };
+  const cond = (c) => {
+    if (!c) return;
+    if (c.not) return cond(c.not);
+    if (c.and || c.or) return (c.and || c.or).forEach(cond);
+    opd(c.left);
+    opd(c.right);
+    (c.between || []).forEach(opd);
+    (c.inVals || []).forEach((v) => out.push({ v }));
+    if (c.like !== undefined) out.push({ v: c.like, like: true });
+  };
+  cond(q.where);
+  cond(q.having);
+  if (q.limit !== undefined) out.push({ v: q.limit, limit: true });
+  if (q.offset !== undefined && q.offset !== 0) out.push({ v: q.offset });
+  return out;
+}
+
+// Deterministic table variants: rows reversed; non-key columns rotated against each other (each
+// alone, and all together by different steps), so columns stop lining up as they did; and each
+// number column shifted so that each number the task gives sits at its quarter marks, so a
+// condition on the wrong column or with the wrong sign stops matching. Rotations keep each
+// column's values and shifts keep their spacing, so no new ties appear. Join key columns (*_id)
+// are never shifted.
+function tableVariants(tables, givenNums) {
+  const names = Object.keys(tables);
+  const longest = Math.max(...names.map((n) => tables[n].rows.length));
+  const make = (shiftOf, rev, add = () => 0) => Object.fromEntries(names.map((n) => {
+    const src = rev ? tables[n].rows.slice().reverse() : tables[n].rows;
+    const len = src.length;
+    return [n, { cols: tables[n].cols.slice(), rows: src.map((r, i) => r.map((v, j) => {
+      const x = j === 0 || !len ? v : src[(i + shiftOf(j)) % len][j];
+      return typeof x === "number" ? x + add(n, j) : x;
+    })) }];
+  }));
+  const out = [make(() => 0, true)];
+  for (let k = 1; k < longest; k++) {
+    out.push(make((j) => j * k, false), make((j) => j * k, true));
+    for (let c = 1; c < 4; c++) out.push(make((j) => (j === c ? k : 0), false));
+  }
+  for (const n of names) {
+    const t = tables[n];
+    t.cols.forEach((col, j) => {
+      if (j === 0 || /_id$/i.test(col) || !t.rows.length || !t.rows.every((r) => typeof r[j] === "number")) return;
+      const vals = t.rows.map((r) => r[j]).sort((a, b) => a - b);
+      const marks = [...new Set([1, 2, 3].map((q) => vals[Math.floor((vals.length * q) / 4)]))];
+      for (const L of givenNums) for (const m of marks) {
+        const add = (tn, jj) => (tn === n && jj === j ? L - m : 0);
+        out.push(make(() => 0, false, add), make((jj) => jj, false, add));
+      }
+    });
+  }
+  return out;
+}
+
+function mismatchNote(got, want, ordered) {
+  const head = "Your query runs, but its result isn't what the task asks for:";
+  const gc = got[0] ? got[0].length : 0, wc = want[0] ? want[0].length : 0;
+  if (got.length && want.length && gc !== wc) return `${head} it shows ${plural(gc, "column")}, and the task asks for ${wc}.`;
+  if (got.length !== want.length) return `${head} it returns ${plural(got.length, "row")}, and the task's result has ${want.length}.`;
+  if (ordered && sameRows(got, want, false)) return `${head} the rows are right, but not in the order the task asks for.`;
+  return `${head} some of the values are different.`;
+}
+
+export function grade(question, answerString) {
+  try {
+    if (!question || question.answerType !== "text" || question.runnable !== true || typeof question.answer !== "string") return null;
+    const p = question.params;
+    if (p && p.kind !== undefined && p.kind !== "wq") return null;
+    const tables = (question.meta && question.meta.tables) || (p && p.tables);
+    if (!tables || typeof tables !== "object") return null;
+    const src = typeof answerString === "string" ? answerString : "";
+    if (!src.trim()) return { correct: false, note: "Type a query first." };
+    if (src.length > 2000) return { correct: false, note: "That query is too long (2000 characters at most)." };
+    const ordered = p && typeof p.ordered === "boolean" ? p.ordered : /\bORDER\s+BY\b/i.test(question.answer);
+    let parsed, got;
+    try {
+      parsed = rParse(src);
+      got = rExec(src, tables).rows;
+    } catch (e) {
+      const m = e instanceof SqlError ? e.message : "it couldn't be read";
+      return { correct: false, note: `Your query didn't run: ${m}.` };
+    }
+    const want = p && Array.isArray(p.want) ? p.want : rExec(question.answer, tables).rows;
+    if (!sameRows(got, want, ordered)) return { correct: false, note: mismatchNote(got, want, ordered) };
+    // Hard-coded values: every literal must be one the task states (those in the expected answer).
+    const given = rTokenize(question.answer).filter((x) => x.k === "num" || x.k === "str").map((x) => x.v);
+    const givenLimit = rParse(question.answer).limit;
+    const isGiven = (l) => (l.limit ? l.v === givenLimit : given.some((g) => (typeof g === "number"
+      ? typeof l.v === "number" && Math.abs(g - l.v) < 1e-9
+      : typeof l.v === "string" && (l.like ? g.toLowerCase() === l.v.toLowerCase() : g === l.v))));
+    const extra = [];
+    for (const l of queryLiterals(parsed)) if (!isGiven(l) && !extra.some((x) => x.v === l.v && !x.limit === !l.limit)) extra.push(l);
+    if (extra.length) {
+      const vals = extra.filter((l) => !l.limit).map((l) => litText(l.v));
+      const list = vals.length === 1 ? vals[0] : `${vals.slice(0, -1).join(", ")} or ${vals[vals.length - 1]}`;
+      const lim = extra.find((l) => l.limit);
+      const parts = [];
+      if (vals.length) parts.push(`the task didn't give ${list}, so write the condition it describes instead`);
+      if (lim) parts.push(`the task doesn't ask for a limit, so leave out LIMIT ${lim.v}`);
+      return { correct: false, note: `Hard-coded values: ${parts.join("; and ")}. The output matches this table, but not because the query does what the task asks.` };
+    }
+    // Coincidence check: same result as the expected query on reshuffled tables.
+    for (const v of tableVariants(tables, given.filter((x) => typeof x === "number"))) {
+      const ref = rExec(question.answer, v).rows;
+      let mine = null;
+      try { mine = rExec(src, v).rows; } catch { mine = null; }
+      if (!mine || !sameRows(mine, ref, ordered)) {
+        return { correct: false, note: "The output matches this table only by coincidence: with the same values reshuffled between rows it gives a different result. Check that each condition uses the column and comparison the task describes." };
+      }
+    }
+    return { correct: true, note: "Output matches the expected result." };
+  } catch {
+    return null;
   }
 }

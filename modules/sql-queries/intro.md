@@ -31,7 +31,15 @@ SQL is how programs ask databases questions. Most questions here show one or two
 
 ## Write the query
 
-Each task says which columns to show, in which order, and what to filter, sort or count. The prompt pins the exact form, so the answer is checked as text: keywords in capitals, columns in the order given, text in single quotes (`'Dog'`), one space each side of `=`, `>` and friends, and no spaces inside brackets (`COUNT(*)`). A semicolon at the end is optional, and genuinely equivalent forms (such as `5 < age` for `age > 5`, or leaving out `ASC`) count too.
+Each task says which columns to show, in which order, and what to filter, sort or count. The prompt asks for one tidy form (keywords in capitals, columns in the order given, text in single quotes like `'Dog'`, one space each side of `=` and `>`, no spaces inside brackets such as `COUNT(*)`, and an optional semicolon at the end), but any query that does the same job counts too.
+
+A query that isn't in that exact form is run against the table and marked by its **output**:
+
+- It must return the same rows and columns, in the order given. Row order only matters when the task asks for sorting.
+- It may only use the values the task gives. Picking the right rows by hand, for example `WHERE name IN ('Luna', 'Max')`, or adding a `LIMIT` the task didn't ask for, is marked wrong with a note, even when the output happens to match.
+- It must give the same answer when the table's values are reshuffled. A different condition that matches this table only by chance is marked wrong.
+
+The feedback tells you which of these your query missed.
 
 | Level | You write |
 | --- | --- |

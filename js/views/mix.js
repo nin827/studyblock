@@ -2,7 +2,7 @@
 
 import {
   loadDomains, loadModulesOf, normalizeMixConfig, mixShares, sanitizeWeight, sanitizeCount,
-  buildMixQuiz, loadOfficialPresets, DIFFICULTY_ORDER, MIX_MAX_COUNT, isValidId, OFFICIAL_PREFIX,
+  buildMixQuiz, loadOfficialPresets, loadGuide, DIFFICULTY_ORDER, MIX_MAX_COUNT, isValidId, OFFICIAL_PREFIX,
 } from '../lib/engine.js';
 import {
   loadMixDraft, saveMixDraft, getPresets, createPreset, updatePreset, renamePreset, deletePreset,
@@ -10,6 +10,7 @@ import {
 } from '../lib/storage.js';
 import { esc, icon, icons, cap, errorBox, domClass, domVars, domStyle } from './ui.js';
 import { runQuiz, storedQuestion, crumbsHtml } from './quiz.js';
+import { getQuizMode, setQuizMode, parseGuide, guideHtml, GUIDED, PRACTICE } from './guided.js';
 
 // Domains with only their loadable modules: [{ ...domain, modules: [ids], loaded: [module objects] }].
 async function loadAvailable() {
@@ -61,6 +62,8 @@ function draw(root, available, official, only, flash) {
     presetId: stored?.presetId && allPresets.some(p => p.id === stored.presetId) ? stored.presetId : null,
   };
   const cfg = draft.config;
+  // Practice | Guided (per tab, shared with the module page's switch).
+  let mode = getQuizMode();
 
   // UI state keeps a remembered weight separately from the ticked state; the stored config
   // (CLAUDE.md shape) has no "enabled" flag, so an unticked item is saved as weight 0.
@@ -177,6 +180,14 @@ function draw(root, available, official, only, flash) {
         <div class="mix-sheet" id="mix-sheet" hidden>
           <ul class="mix-sheet-list" id="mix-sheet-list"></ul>
           <div class="mix-options">
+            <div class="field-row mix-mode-row">
+              <span class="field-label" id="mix-mode-label">Mode</span>
+              <div class="segmented seg-mode" role="radiogroup" aria-labelledby="mix-mode-label">
+                <label class="seg"><input type="radio" name="mix-mode" value="${PRACTICE}" ${mode === GUIDED ? '' : 'checked'}><span>${icon('target')}Practice</span></label>
+                <label class="seg"><input type="radio" name="mix-mode" value="${GUIDED}" ${mode === GUIDED ? 'checked' : ''}><span>${icon('compass')}Guided</span></label>
+              </div>
+            </div>
+            <p class="muted small mode-note" id="mix-mode-note" ${mode === GUIDED ? '' : 'hidden'}>${icon('lightbulb')}Guided: hints, unlimited tries, not scored.</p>
             <label class="field-row"><span class="field-label">Difficulty</span>
               <select id="mix-diff">${['any', ...DIFFICULTY_ORDER].map(d =>
                 `<option value="${d}" ${d === cfg.difficulty ? 'selected' : ''}>${esc(cap(d))}</option>`).join('')}</select>
@@ -338,7 +349,7 @@ function draw(root, available, official, only, flash) {
         <ul>${shares.filter(r => r.domain === id).map(r =>
           `<li class="sheet-row"><span></span><span>${esc(titleOfModule.get(r.module) ?? r.module)}</span><span>${esc(fmtShare(r.share))}</span></li>`).join('')}</ul>
       </li>`).join('') || '<li class="muted">No subdomains selected.</li>';
-    startLabel.textContent = `Start · ${config.count} question${config.count === 1 ? '' : 's'}`;
+    startLabel.textContent = `${mode === GUIDED ? 'Start guided' : 'Start'} · ${config.count} question${config.count === 1 ? '' : 's'}`;
 
     const ok = shares.length > 0;
     startBtn.disabled = !ok;
@@ -357,14 +368,23 @@ function draw(root, available, official, only, flash) {
     const next = list[list.indexOf(inp) + 1];
     if (next) next.focus();
   }));
-  form.addEventListener('input', () => update(true));
-  form.addEventListener('change', () => update(true));
+  // The mode is a per-tab preference, not part of the mix config (never in presets or the draft).
+  root.querySelectorAll('input[name="mix-mode"]').forEach(r => r.addEventListener('change', e => {
+    e.stopPropagation();
+    if (!r.checked) return;
+    mode = r.value === GUIDED ? GUIDED : PRACTICE;
+    setQuizMode(mode);
+    root.querySelector('#mix-mode-note').hidden = mode !== GUIDED;
+    update(false);
+  }));
+  form.addEventListener('input', e => { if (e.target?.name !== 'mix-mode') update(true); });
+  form.addEventListener('change', e => { if (e.target?.name !== 'mix-mode') update(true); });
   countInput.addEventListener('blur', () => { countInput.value = String(sanitizeCount(countInput.value, 10)); update(true); });
   form.addEventListener('submit', e => {
     e.preventDefault();
     countInput.value = String(sanitizeCount(countInput.value, 10));
     const { ok } = update(true);
-    if (ok) location.hash = '#/mix/play';
+    if (ok) location.hash = mode === GUIDED ? '#/mix/guided' : '#/mix/play';
   });
 
   const askName = (title, current) => window.prompt(`${title} (1–${PRESET_NAME_MAX} characters)`, current ?? '');
@@ -435,7 +455,17 @@ function draw(root, available, official, only, flash) {
 
 // params.preset: optional preset id (home quick-start chips; "official:<id>" for repo presets);
 // otherwise the current draft. Quick-starting a preset does not touch the draft.
-export async function renderPlay(root, params, ctx) {
+export function renderPlay(root, params, ctx) {
+  return playMix(root, params, ctx, false);
+}
+
+// #/mix/guided: the same mix as a guided run (hints, unlimited tries, never scored; saved in
+// History as a guided attempt).
+export function renderGuidedPlay(root, params, ctx) {
+  return playMix(root, params, ctx, true);
+}
+
+async function playMix(root, params, ctx, guided) {
   let config = loadMixDraft()?.config ?? null;
   let label = 'Mixed quiz';
   if (params.preset) {
@@ -450,11 +480,27 @@ export async function renderPlay(root, params, ctx) {
     label = p.name;
   }
   const difficulty = ['any', ...DIFFICULTY_ORDER].includes(config?.difficulty) ? config.difficulty : 'any';
-  const crumbs = crumbsHtml([{ href: '#/', label: 'Home' }, { href: '#/mix', label: 'Mixed quiz' }, { label: params.preset ? label : 'Play' }]);
+  const crumbs = crumbsHtml([{ href: '#/', label: 'Home' }, { href: '#/mix', label: 'Mixed quiz' }, { label: params.preset ? label : guided ? 'Guided' : 'Play' }]);
+  setQuizMode(guided ? GUIDED : PRACTICE);
+  const query = params.preset ? `?preset=${encodeURIComponent(params.preset)}` : '';
+  // Guided: each question's module "How to solve" notes, loaded once per module after building.
+  const guides = new Map();
+  const build = async () => {
+    const qs = await buildMixQuiz(config); // fresh seed each time (Retry = same config, new quiz)
+    if (guided) {
+      const ids = [...new Set(qs.map(q => q.module))].filter(id => isValidId(id) && !guides.has(id));
+      await Promise.all(ids.map(async id => { guides.set(id, parseGuide(await loadGuide(id).catch(() => null))); }));
+    }
+    return qs;
+  };
 
   await runQuiz(root, ctx, {
-    build: () => buildMixQuiz(config), // fresh seed each time (Retry = same config, new quiz)
+    build,
     title: `${esc(label)} · ${esc(difficulty === 'any' ? 'Any difficulty' : cap(difficulty))}`,
+    ...(guided ? {
+      guided: { guideFor: q => guideHtml(guides.get(q.module), q.subtopicTitle, q.subtopic) },
+      practiceHref: `#/mix/play${query}`,
+    } : {}),
     crumbs,
     backHref: '#/mix',
     backLabel: 'Edit mix',

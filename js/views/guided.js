@@ -114,10 +114,10 @@ export function guideHtml(guide, subtopicTitle, subtopicId) {
     ${own ? `<div class="guide-section">${general && title ? `<h3>${esc(title)}</h3>` : ''}${renderMarkdown(own)}</div>` : ''}`;
 }
 
-// ---- outcomes (end-of-set summary) ----
+// ---- outcomes (end-of-set summary, stored per question on guided attempts) ----
 
 export const OUTCOMES = {
   first: { icon: 'circle-check', label: 'Solved first try', cls: 'good' },
-  assisted: { icon: 'lightbulb', label: 'Solved after hints/tries', cls: 'assisted' },
+  after: { icon: 'lightbulb', label: 'Solved after hints/tries', cls: 'assisted' },
   solution: { icon: 'eye', label: 'Used the solution', cls: 'info' },
 };

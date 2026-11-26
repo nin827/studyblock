@@ -36,10 +36,11 @@ function match(hash) {
     const only = query.get('only');
     return { view: mix, nav: 'mix', params: only && ID_RE.test(only) ? { only } : {} };
   }
-  if (parts[0] === 'mix' && parts.length === 2 && parts[1] === 'play') {
+  if (parts[0] === 'mix' && parts.length === 2 && (parts[1] === 'play' || parts[1] === 'guided')) {
     // ?preset=<id> (quick-start chip). Only used to look up a preset by id, never in a path.
+    // #/mix/guided runs the same mix in guided mode.
     const preset = query.get('preset');
-    return { view: { render: mix.renderPlay }, nav: 'mix', params: preset && preset.length <= 120 ? { preset } : {} };
+    return { view: { render: parts[1] === 'guided' ? mix.renderGuidedPlay : mix.renderPlay }, nav: 'mix', params: preset && preset.length <= 120 ? { preset } : {} };
   }
   if (parts[0] === 'm' && parts.length === 2 && ID_RE.test(parts[1])) {
     return { view: moduleView, nav: 'home', params: { moduleId: parts[1] } };
@@ -198,7 +199,7 @@ function showUpdateToast(applyUpdate) {
     if (!b) return;
     if (b.dataset.act === 'reload') {
       // A quiz in progress would be lost on reload: ask first.
-      const inQuiz = /^#\/(q\/|g\/|mix\/play)/.test(location.hash);
+      const inQuiz = /^#\/(q\/|g\/|mix\/(play|guided))/.test(location.hash);
       if (inQuiz && !confirm('Reload now? The quiz in progress will be lost.')) return;
       applyUpdate();
     } else el.remove();

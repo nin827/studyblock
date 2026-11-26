@@ -318,6 +318,8 @@ export async function loadGuide(id) {
 }
 
 const generators = new Map();
+// Generators that have finished loading (id -> module), so grading can call grade() synchronously.
+const loadedGenerators = new Map();
 async function loadGenerator(id) {
   await assertListed(id);
   if (!generators.has(id)) {
@@ -327,20 +329,31 @@ async function loadGenerator(id) {
   }
   const mod = await generators.get(id);
   if (typeof mod.generate !== 'function') throw new Error(`Module ${id}: generator.js has no generate()`);
+  loadedGenerators.set(id, mod);
   return mod;
 }
 
 const csvWarned = new Set();
+// One warn key object per CSV module, so bad `hints` cells warn once per module (sanitizeHints).
+const csvHintKeys = new Map();
+const csvHintKey = id => { if (!csvHintKeys.has(id)) csvHintKeys.set(id, { csv: id }); return csvHintKeys.get(id); };
 async function loadCsvRows(id) {
   await assertListed(id);
   const text = await loadText(`modules/${id}/questions.csv`);
-  // Optional `type` column: empty = text/choice (as before), "date" = a date answer whose
-  // precision comes from the answer's own format. Bad rows are skipped, one warning per module.
+  // Optional columns:
+  //   type    empty = text/choice (as before), "date" = a date answer whose precision comes from
+  //           the answer's own format, "tiles" = a pure blocks question (needs `tiles`).
+  //   hints   guided-mode steps separated by "|" (1-4, each <= 600 chars; empty = explanation split).
+  //   tiles   "|"-separated blocks (label = value). With an empty type and a free-text answer the
+  //           row becomes a dual Type | Blocks question; the answer must be buildable from them.
+  //   joiner  placed between blocks (default " "; "(none)" = nothing). At most 5 characters.
+  // Bad rows are skipped, one warning per module.
   const bad = [];
-  const rows = parseCSV(text).filter((r, i) => {
-    const ok = csvRowOk(r);
-    if (!ok) bad.push(i + 2);
-    return ok;
+  const warnKey = csvHintKey(id);
+  const rows = [];
+  parseCSV(text).forEach((r, i) => {
+    const row = csvRowPrepare(r, warnKey);
+    if (row) rows.push(row); else bad.push(i + 2);
   });
   if (bad.length && !csvWarned.has(id)) {
     csvWarned.add(id);
@@ -350,12 +363,44 @@ async function loadCsvRows(id) {
 }
 
 const csvType = r => String(r?.type ?? '').trim().toLowerCase();
-function csvRowOk(r) {
+const CSV_TYPES = ['', 'date', 'tiles'];
+
+// A CSV row's blocks spec ({ tiles, joiner, useAll }, tiles shuffled later per seed), undefined when
+// it has no `tiles`, or null when the tiles or joiner are malformed or can't spell the answer.
+function csvBlocks(r) {
+  const raw = String(r?.tiles ?? '');
+  if (!raw.trim()) return undefined;
+  const tiles = raw.split('|').map(t => t.trim()).filter(Boolean);
+  const j = String(r?.joiner ?? '');
+  const joiner = j === '' ? ' ' : j.trim().toLowerCase() === '(none)' ? '' : j;
+  const spec = sanitizeTiles({ tiles, joiner });
+  if (!spec || spec.tiles.length !== tiles.length) return null;
+  const answer = String(r.answer ?? '').trim();
+  // "Use every block" only when the answer really needs all of them (no distractors listed).
+  const useAll = tilesReachable(spec.tiles, spec.joiner, answer, true);
+  if (!useAll && !tilesReachable(spec.tiles, spec.joiner, answer, false)) return null;
+  return { tiles: spec.tiles, joiner: spec.joiner, useAll };
+}
+
+// Validates one row and attaches its parsed extras (`_hints`, `_blocks`); null = skip the row.
+function csvRowPrepare(r, warnKey) {
   const type = csvType(r);
-  if (!type) return true;
-  if (type !== 'date') return false;
-  if (String(r.choices ?? '').trim()) return false;
-  return dateAnswerOk(String(r.answer ?? '').trim());
+  if (!CSV_TYPES.includes(type)) return null;
+  const choices = String(r.choices ?? '').trim();
+  const answer = String(r.answer ?? '').trim();
+  const blocks = csvBlocks(r);
+  if (blocks === null) return null;
+  if (type === 'date') {
+    if (choices || blocks) return null;
+    if (!dateAnswerOk(answer)) return null;
+  } else if (type === 'tiles') {
+    if (choices || !blocks) return null;
+  } else if (blocks && choices) {
+    return null; // blocks only go with a free-text answer
+  }
+  const hintsRaw = String(r.hints ?? '').trim();
+  const hints = hintsRaw ? sanitizeHints(hintsRaw.split('|'), warnKey) : undefined;
+  return { ...r, ...(hints ? { _hints: hints } : {}), ...(blocks ? { _blocks: blocks } : {}) };
 }
 
 // A canonical date answer: parses, and BC only at year precision. -> its precision, or null.
@@ -381,6 +426,7 @@ function csvAnswers(rows, subtopic) {
 }
 
 // `near` (optional): the subtopic's answers; the other ones become the question's `nearMisses`.
+// Rows with blocks draw their tile order last, so rows without them keep the same question per seed.
 function csvQuestion(pool, seed, near = null) {
   const rng = createRng(seed);
   const row = rng.pick(pool);
@@ -388,16 +434,21 @@ function csvQuestion(pool, seed, near = null) {
   const choices = choicesRaw ? rng.shuffle(choicesRaw.split('|').map(s => s.trim()).filter(Boolean)) : undefined;
   const answer = (row.answer ?? '').trim();
   const isDate = !choices && csvType(row) === 'date';
-  const nearMisses = !choices && !isDate && near ? near.filter(a => normText(a) !== normText(answer)) : [];
+  const isTiles = !choices && csvType(row) === 'tiles' && !!row._blocks;
+  const blocks = !choices && !isDate && row._blocks
+    ? { ...row._blocks, tiles: rng.shuffle(row._blocks.tiles.map(t => ({ ...t }))) } : null;
+  const nearMisses = !choices && !isDate && !isTiles && near ? near.filter(a => normText(a) !== normText(answer)) : [];
   return {
     seed,
     prompt: row.prompt ?? '',
     answer,
-    answerType: choices ? 'choice' : isDate ? 'date' : 'text',
+    answerType: choices ? 'choice' : isDate ? 'date' : isTiles ? 'tiles' : 'text',
     ...(isDate ? { precision: datePrecisionOf(answer) } : {}),
+    ...(isTiles ? { tiles: blocks.tiles, joiner: blocks.joiner, useAll: blocks.useAll } : blocks ? { blocks } : {}),
     choices,
     tolerance: undefined,
     explanation: row.explanation || '',
+    ...(row._hints ? { hints: row._hints.slice() } : {}),
     ...(nearMisses.length ? { nearMisses } : {}),
   };
 }
@@ -445,7 +496,10 @@ function closeExtras(q, answerType) {
   const nearMisses = answerType === 'text' || answerType === 'number' ? cleanStrList(q?.nearMisses, NEAR_MISSES_MAX) : undefined;
   const level = q?.fuzzy === false ? false : parseLevel(q?.fuzzy);
   const num = parseFuzzyNumber(q?.fuzzyNumber);
+  // `caseSensitive: true` (text / tiles): letter case counts when checking; no close credit.
+  const cs = (answerType === 'text' || answerType === 'tiles') && q?.caseSensitive === true;
   return {
+    ...(cs ? { caseSensitive: true } : {}),
     ...(accepts ? { accepts } : {}), ...(nearMisses ? { nearMisses } : {}),
     ...(level !== undefined ? { fuzzy: level } : {}), ...(num ? { fuzzyNumber: num } : {}),
   };
@@ -688,6 +742,8 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
     ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
     // `runnable`: the module's run(question, answer) can show the answer's output (Run button).
     ...(q?.runnable === true ? { runnable: true } : {}),
+    // `gradeByOutput`: a text answer that fails the text check is offered to the module's grade().
+    ...(q?.gradeByOutput === true ? { gradeByOutput: true } : {}),
     // Generator-private data (e.g. what run() needs); kept in memory only, never stored.
     ...(q?.meta && typeof q.meta === 'object' ? { meta: q.meta } : {}),
   };
@@ -1179,7 +1235,10 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 }
 
 // Spaces around ":" don't matter, so "2 : 7" matches the ratio "2:7".
-const normText = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
+const normCase = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ');
+const normText = s => normCase(s).toLowerCase();
+// The text rules for one question: `caseSensitive: true` keeps letter case (e.g. genotypes Tt vs tt).
+const normFor = q => (q?.caseSensitive === true ? normCase : normText);
 
 // ---- close answers (partial credit for near misses) ----
 
@@ -1345,7 +1404,7 @@ function closeDate(q, userAnswer, owner) {
  * (question and module leniency, `calculator`). Never for choice or tiles answers.
  */
 export function closeOf(q, userAnswer, owner = q) {
-  if (!q) return null;
+  if (!q || q.caseSensitive === true) return null;
   if (q.answerType === 'text') return closeText(q, userAnswer, owner);
   if (q.answerType === 'number') return closeNumber(q, userAnswer, owner);
   if (q.answerType === 'date') return closeDate(q, userAnswer, owner);
@@ -1388,14 +1447,45 @@ export function gradeAnswer(q, userAnswer, mode = 'type') {
     return { correct: r.correct, credit: r.credit, parts: r.parts };
   }
   if (mode === 'blocks' && q.blocks) {
-    const correct = checkSingle({ answerType: 'text', answer: q.answer, accepts: q.accepts }, userAnswer);
+    let correct = checkSingle({ answerType: 'text', answer: q.answer, accepts: q.accepts, ...(q.caseSensitive === true ? { caseSensitive: true } : {}) }, userAnswer);
     const m = typeof q.blocks.multiplier === 'number' ? Math.min(1, Math.max(0, q.blocks.multiplier)) : 1;
-    return { correct, credit: correct ? m : 0, mode: 'blocks', multiplier: m };
+    const g = correct ? null : gradeByModule(q, userAnswer);
+    if (g) correct = g.correct;
+    return { correct, credit: correct ? m : 0, mode: 'blocks', multiplier: m, ...gradeExtras(g) };
   }
   const correct = checkSingle(q, userAnswer);
   if (correct) return { correct: true, credit: 1 };
+  // The module's own grader (e.g. SQL: same output, no hard-coded values) has the last word.
+  const g = gradeByModule(q, userAnswer);
+  if (g) return { correct: g.correct, credit: g.correct ? 1 : 0, ...gradeExtras(g) };
   const close = closeOf(q, userAnswer);
   return close ? { correct: false, credit: close.factor, fuzzy: close } : { correct: false, credit: 0 };
+}
+
+const GRADE_NOTE_MAX = 300;
+// { gradedBy: 'output', note? } for a module grader's verdict (only when it accepted), plus its note.
+const gradeExtras = g => (g ? { ...(g.correct ? { gradedBy: 'output' } : {}), ...(g.note ? { note: g.note } : {}) } : {});
+
+/*
+ * Module grading hook: a generator may export grade(question, answerString) ->
+ * { correct: boolean, note?: string } | null. Called only for text questions with
+ * `gradeByOutput: true` whose plain text/accepts check failed. Returns { correct, note? } or null
+ * (no opinion, or the generator isn't loaded / has no grade() / threw / returned a bad shape).
+ */
+export function gradeByModule(q, userAnswer) {
+  if (!q || q.gradeByOutput !== true || q.answerType !== 'text') return null;
+  const id = q.srcModule ?? q.module;
+  const gen = isValidId(id) ? loadedGenerators.get(id) : null;
+  if (!gen || typeof gen.grade !== 'function') return null;
+  try {
+    const r = gen.grade(q, String(userAnswer ?? ''));
+    if (!r || typeof r !== 'object' || typeof r.correct !== 'boolean') return null;
+    const note = typeof r.note === 'string' ? r.note.trim().slice(0, GRADE_NOTE_MAX) : '';
+    return { correct: r.correct, ...(note ? { note } : {}) };
+  } catch (e) {
+    console.warn('StudyBlock: grade() failed', e);
+    return null;
+  }
 }
 
 // A date answer: same value at the answer's precision (extra detail ignored; less detail is wrong).
@@ -1421,8 +1511,9 @@ function checkSingle(question, userAnswer, owner = question) {
     case 'choice':
       return String(userAnswer) === String(question.answer);
     default: {
-      const u = normText(userAnswer);
-      if (u === normText(question.answer) || (Array.isArray(question.accepts) && question.accepts.some(a => normText(a) === u))) return true;
+      const norm = normFor(question);
+      const u = norm(userAnswer);
+      if (u === norm(question.answer) || (Array.isArray(question.accepts) && question.accepts.some(a => norm(a) === u))) return true;
       // Years mode: a year answer also matches the same year written another way ("AD 1066").
       if (question.answerType === 'text' && yearsMode(question, owner)) {
         const a = parseYear(question.answer);

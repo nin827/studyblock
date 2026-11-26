@@ -85,6 +85,7 @@ function validateAttempt(a, idx) {
   if (!isNum(a.score) || !isNum(a.total) || a.total < 0 || a.score < 0 || a.score > a.total + 1e-9) {
     throw new Error(`${where} has an invalid "score" or "total".`);
   }
+  if (a.guided !== undefined && typeof a.guided !== 'boolean') throw new Error(`${where} has an invalid "guided" flag.`);
   if (!Array.isArray(a.questions)) throw new Error(`${where} has no "questions" list.`);
   a.questions.forEach((q, j) => {
     if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error(`${where}, question ${j + 1} is not an object.`);
@@ -196,6 +197,14 @@ function dropBadLang(q) {
   if (q && typeof q === 'object' && 'lang' in q && !isLang(q.lang)) delete q.lang;
   return q;
 }
+
+// ---- guided attempts (saved in History, never scored) ----
+
+// Per-question outcome of a guided run: solved first try, solved after hints/tries, used the solution.
+export const GUIDED_OUTCOMES = ['first', 'after', 'solution'];
+export const isGuided = a => !!a && a.guided === true;
+// Attempts that count for stats, best scores and "Recent" scores (guided runs never do).
+const scoredOnly = list => list.filter(a => !isGuided(a));
 
 // ---- credit (partial credit for multi-part questions) ----
 
@@ -309,7 +318,7 @@ function recordsFor(attempts, filter) {
 // With a real module id, mixed-quiz questions for that module are included (see rule above).
 // With no module (or module "mix"), attempts are aggregated as stored.
 export function getStats({ module, subtopic, difficulty } = {}) {
-  const attempts = load().attempts;
+  const attempts = scoredOnly(load().attempts);
   if (module === undefined || module === MIX_MODULE) {
     return summarize(attempts.filter(a => matches({ module, subtopic, difficulty }, a)));
   }
@@ -320,7 +329,7 @@ export function getStats({ module, subtopic, difficulty } = {}) {
 // for each mixed attempt, one slice with its questions from those modules.
 export function getStatsForModules(ids) {
   const set = new Set(ids);
-  const attempts = load().attempts;
+  const attempts = scoredOnly(load().attempts);
   const single = attempts.filter(a => a.module !== MIX_MODULE && set.has(a.module));
   const slices = mixSlices(attempts, q => set.has(q.module)).map(s => ({ ...s, module: 'set' }));
   return summarize(single.concat(mergeSlices(slices)));
@@ -328,14 +337,14 @@ export function getStatsForModules(ids) {
 
 // Attempt-like records (newest first) for one module, including mixed slices.
 export function getModuleRecords(module) {
-  return recordsFor(load().attempts, { module }).sort((a, b) => b.ts - a.ts);
+  return recordsFor(scoredOnly(load().attempts), { module }).sort((a, b) => b.ts - a.ts);
 }
 
 // Map "subtopic|difficulty" -> stats for one module (mixed questions included).
 // Whole-module attempts count under their own key ("all|easy", "addition|all", "all|all") and
 // their questions are also attributed to the real cells they came from.
 export function getModuleCellStats(module) {
-  const attempts = load().attempts;
+  const attempts = scoredOnly(load().attempts);
   const groups = {};
   for (const a of attempts) {
     if (a.module !== module) continue;
@@ -656,6 +665,8 @@ function importObject(incoming, mode) {
   const clean = incoming.attempts.map(a => ({
     id: a.id, ts: a.ts, module: a.module, subtopic: a.subtopic, difficulty: a.difficulty,
     score: a.score, total: a.total,
+    // Optional: a guided run (shown in History, never scored).
+    ...(a.guided === true ? { guided: true } : {}),
     questions: a.questions.map(q => ({
       seed: isNum(q.seed) ? q.seed : null,
       prompt: q.prompt,
@@ -669,6 +680,9 @@ function importObject(incoming, mode) {
       // Optional answer mode (Blocks + multiplier) and close-answer credit; validated, 0-1.
       ...cleanMode(q),
       ...(!q.correct && cleanClose(q.fuzzy) ? { fuzzy: cleanClose(q.fuzzy) } : {}),
+      // Optional: accepted by the module's grader (e.g. SQL output), and a guided run's outcome.
+      ...(q.correct && q.gradedBy === 'output' ? { gradedBy: 'output' } : {}),
+      ...(a.guided === true && GUIDED_OUTCOMES.includes(q.outcome) ? { outcome: q.outcome } : {}),
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),
       // Optional per-question attribution (mixed quizzes); older data has none.
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),

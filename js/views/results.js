@@ -1,7 +1,7 @@
 import { loadAllModules, loadDomains, loadArchived, titleLookup } from '../lib/engine.js';
-import { getAttempts, getModuleRecords, percent, MIX_MODULE } from '../lib/storage.js';
+import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
-import { reviewItem, moduleBreakdown, cellTag } from './quiz.js';
+import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml } from './quiz.js';
 
 export async function render(root, params, ctx) {
   const attempts = getAttempts(); // newest first
@@ -29,6 +29,7 @@ export async function render(root, params, ctx) {
   // Every module that appears in a single attempt or in a mixed question.
   const seenModules = new Set();
   for (const a of attempts) {
+    if (isGuided(a)) continue; // guided runs never count in the summary
     if (a.module !== MIX_MODULE) seenModules.add(a.module);
     else for (const q of a.questions) if (typeof q.module === 'string') seenModules.add(q.module);
   }
@@ -64,13 +65,15 @@ export async function render(root, params, ctx) {
   if (archivedRows) summaryRows += groupHead('Archived') + archivedRows;
   const others = unlisted.filter(mid => !archived.has(mid)).map(moduleRow).join('');
   if (others) summaryRows += groupHead('Other') + others;
-  const mixed = attempts.filter(a => a.module === MIX_MODULE);
+  const mixed = attempts.filter(a => a.module === MIX_MODULE && !isGuided(a));
   if (mixed.length) summaryRows += groupHead('Mixed') + statRow('<a href="#/mix">Mixed quizzes</a>', mixed);
 
   // ---- attempt list ----
   const titlesFor = mid => ({ module: modTitle(mid), domain: domainOfId.get(mid)?.title });
+  const guidedTag = `<span class="tag tag-guided">${icon('compass')}<span>Guided</span></span>`;
   const items = attempts.map(a => {
     const p = percent(a);
+    const guided = isGuided(a);
     const isMix = a.module === MIX_MODULE;
     const isAll = !isMix && (a.subtopic === 'all' || a.difficulty === 'all');
     const dom = isMix ? null : domainOfId.get(a.module);
@@ -87,12 +90,17 @@ export async function render(root, params, ctx) {
     return `<li class="card attempt">
       <details>
         <summary>
-          <span class="attempt-title">${chip}<span>${title}</span></span>
+          <span class="attempt-title">${chip}${guided ? guidedTag : ''}<span>${title}</span></span>
           <span class="attempt-meta"><span class="muted">${esc(fmtDate(a.ts))}</span>
-          <span class="score ${scoreClass(p)}">${fmtScore(a.score)}/${a.total} (${p}%)</span>${icon('chevron-down', 'chev')}</span>
+          ${guided
+            ? `<span class="guided-score">${fmtScore(a.score)}/${a.total} first try</span>`
+            : `<span class="score ${scoreClass(p)}">${fmtScore(a.score)}/${a.total} (${p}%)</span>`}${icon('chevron-down', 'chev')}</span>
         </summary>
-        ${isMix ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}
-        <ol class="review">${qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct, ...(typeof q.credit === 'number' ? { credit: q.credit } : {}), ...(Array.isArray(q.parts) ? { parts: q.parts } : {}) }, isMix || (isAll ? cellTag : false))).join('')}</ol>
+        ${guided ? '<p class="muted small attempt-note">Guided practice: not scored, never counted in stats or best scores.</p>' : ''}
+        ${isMix && !guided ? `<div class="attempt-breakdown">${moduleBreakdown(qs, titlesFor)}</div>` : ''}
+        <ol class="review">${guided
+          ? qs.map(q => guidedItemHtml(q, q.outcome, isMix ? questionTag(q) : isAll ? cellTag(q) : '')).join('')
+          : qs.map(q => reviewItem({ q, userAnswer: q.userAnswer ?? '', correct: q.correct, ...(typeof q.credit === 'number' ? { credit: q.credit } : {}), ...(Array.isArray(q.parts) ? { parts: q.parts } : {}) }, isMix || (isAll ? cellTag : false))).join('')}</ol>
       </details>
     </li>`;
   }).join('');
