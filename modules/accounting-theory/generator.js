@@ -2,7 +2,8 @@
 // Subtopics: double-entry (transaction → Debit | Credit; Expert balances a ledger account), concepts
 // (accruals/matching, prudence, consistency, going concern, business entity, materiality),
 // classification (statement and category, the 12-month rule) and equation (effect on Assets |
-// Liabilities | Equity; Expert runs three transactions). Conventions: goods bought go to Inventory,
+// Liabilities | Equity; Expert runs three transactions) and journal (write the whole entry, Account |
+// Debit | Credit; Hard and Expert are compound entries). Conventions: goods bought go to Inventory,
 // sales record revenue only (cost of sales is ignored), depreciation uses Accumulated depreciation.
 // verify() never trusts the generator's dr/cr or effect tables: it derives them from each account's
 // type and normal side (V_ACC) and the increase/decrease list on the transaction.
@@ -447,6 +448,193 @@ function genEquation(diff, rng) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Journal entries (answerType "journal"): the learner writes the whole entry, Account | Debit |
+// Credit, typed or built from account and amount blocks. Easy and Medium reuse the two-line TX
+// transactions (Medium shows a spare row, so the learner judges how many lines). Hard and Expert
+// are compound entries from JX. `lines` is the generator's own entry; verify() rebuilds it from
+// `eff` (account, up/down, amount) and the account types in V_ACC, so the two tables check each other.
+// Goods for resale bought on credit go to Trade payables, anything else bought on credit to Other
+// payables; the two are never offered together, so only one entry is ever right.
+
+const J_ROWS = { easy: 2, medium: 3, hard: 4, expert: 5 };
+const J_DECOYS = { easy: 2, medium: 4, hard: 4, expert: 4 };
+const J_AMOUNT_DECOYS = { easy: 2, medium: 3, hard: 3, expert: 3 };
+// Never offered together: a question whose entry uses one never lists the other.
+const J_EXCLUSIVE = [["Trade payables", "Other payables"]];
+// Other names a typed answer may use for an account (case-insensitive). Only aliases of accounts in
+// the question are kept, and never one that names another listed account.
+const J_ALIASES = {
+  Cash: ["Bank", "Cash at bank", "Bank account"],
+  "Sales revenue": ["Sales", "Revenue"],
+  "Trade receivables": ["Receivables", "Debtors", "Accounts receivable"],
+  "Trade payables": ["Creditors", "Accounts payable"],
+  "Wages expense": ["Wages", "Salaries"],
+  "Rent expense": ["Rent"],
+  "Electricity expense": ["Electricity"],
+  "Interest expense": ["Interest paid", "Loan interest"],
+  "Interest income": ["Interest received"],
+  "Bank charges": ["Bank fees"],
+  Capital: ["Owner's capital", "Capital account"],
+  Inventory: ["Stock", "Inventories"],
+  Vehicles: ["Motor vehicles", "Vans"],
+  "Bank loan": ["Loan"],
+  "Irrecoverable debts": ["Bad debts"],
+  "Depreciation expense": ["Depreciation"],
+};
+
+// Compound entries. v = the amounts drawn (named); `lines` lists [account, "dr"|"cr", amount];
+// `eff` lists [account, +1 up / −1 down, amount] for verify().
+const JX = [
+  // hard: three lines
+  { id: "equipsplit", lvl: 2, draw: (rng) => { const t = rng.int(12, 90) * 100; return { t, a: rng.int(2, t / 100 - 2) * 100 }; },
+    text: (v) => `bought equipment costing ${money(v.t)}, paying ${money(v.a)} from its bank account now and owing the rest to the equipment supplier`,
+    lines: (v) => [["Equipment", "dr", v.t], ["Cash", "cr", v.a], ["Other payables", "cr", v.t - v.a]],
+    eff: [["Equipment", 1, (v) => v.t], ["Cash", -1, (v) => v.a], ["Other payables", 1, (v) => v.t - v.a]],
+    decoys: ["Inventory", "Capital", "Trade receivables", "Bank loan", "Sales revenue"],
+    hint: "The part paid now and the part still owed add up to the full price." },
+  { id: "vansplit", lvl: 2, draw: (rng) => { const t = rng.int(80, 300) * 100; return { t, a: rng.int(10, t / 100 - 10) * 100 }; },
+    text: (v) => `bought a delivery van costing ${money(v.t)}, paying ${money(v.a)} from its bank account and owing the rest to the car dealer`,
+    lines: (v) => [["Vehicles", "dr", v.t], ["Cash", "cr", v.a], ["Other payables", "cr", v.t - v.a]],
+    eff: [["Vehicles", 1, (v) => v.t], ["Cash", -1, (v) => v.a], ["Other payables", 1, (v) => v.t - v.a]],
+    decoys: ["Inventory", "Bank loan", "Capital", "Trade receivables", "Wages expense"],
+    hint: "The part paid now and the part still owed add up to the full price." },
+  { id: "invsplit", lvl: 2, draw: (rng) => { const t = rng.int(8, 80) * 100; return { t, a: rng.int(1, t / 100 - 1) * 100 }; },
+    text: (v) => `bought goods for resale costing ${money(v.t)}, paying ${money(v.a)} in cash and owing the rest to the supplier`,
+    lines: (v) => [["Inventory", "dr", v.t], ["Cash", "cr", v.a], ["Trade payables", "cr", v.t - v.a]],
+    eff: [["Inventory", 1, (v) => v.t], ["Cash", -1, (v) => v.a], ["Trade payables", 1, (v) => v.t - v.a]],
+    decoys: ["Sales revenue", "Trade receivables", "Equipment", "Capital", "Wages expense"],
+    hint: "The part paid now and the part still owed add up to the full cost." },
+  { id: "salesplit", lvl: 2, draw: (rng) => { const t = rng.int(8, 80) * 100; return { t, a: rng.int(1, t / 100 - 1) * 100 }; },
+    text: (v) => `sold goods for ${money(v.t)} (ignore the cost of the goods sold): the customer paid ${money(v.a)} in cash and owes the rest`,
+    lines: (v) => [["Cash", "dr", v.a], ["Trade receivables", "dr", v.t - v.a], ["Sales revenue", "cr", v.t]],
+    eff: [["Cash", 1, (v) => v.a], ["Trade receivables", 1, (v) => v.t - v.a], ["Sales revenue", 1, (v) => v.t]],
+    decoys: ["Inventory", "Trade payables", "Capital", "Interest income", "Sales returns"],
+    hint: "The revenue is the full selling price, however the customer pays." },
+  { id: "repayint", lvl: 2, draw: (rng) => { const p = rng.int(5, 60) * 100; return { p, i: rng.int(4, 40) * 10 }; },
+    text: (v) => `paid the bank ${money(v.p + v.i)} from its bank account: ${money(v.i)} of it is interest on the bank loan, and the rest repays part of the loan`,
+    lines: (v) => [["Bank loan", "dr", v.p], ["Interest expense", "dr", v.i], ["Cash", "cr", v.p + v.i]],
+    eff: [["Bank loan", -1, (v) => v.p], ["Interest expense", 1, (v) => v.i], ["Cash", -1, (v) => v.p + v.i]],
+    decoys: ["Interest income", "Trade payables", "Capital", "Drawings", "Rent expense"],
+    hint: "Interest is an expense; repaying the loan itself makes the liability smaller." },
+  { id: "ownerinv", lvl: 2, draw: (rng) => ({ a: rng.int(10, 90) * 100, b: rng.int(4, 40) * 100 }),
+    text: (v) => `received ${money(v.a)} of the owner's personal savings into the business bank account, and equipment worth ${money(v.b)} that the owner gave to the business`,
+    lines: (v) => [["Cash", "dr", v.a], ["Equipment", "dr", v.b], ["Capital", "cr", v.a + v.b]],
+    eff: [["Cash", 1, (v) => v.a], ["Equipment", 1, (v) => v.b], ["Capital", 1, (v) => v.a + v.b]],
+    decoys: ["Bank loan", "Sales revenue", "Drawings", "Other payables", "Inventory"],
+    hint: "Everything the owner puts in, cash or not, adds to one equity account." },
+  { id: "wagesrent", lvl: 2, draw: (rng) => ({ w: rng.int(10, 80) * 100, r: rng.int(5, 30) * 100 }),
+    text: (v) => `paid staff wages of ${money(v.w)} and this month's rent of ${money(v.r)} from its bank account`,
+    lines: (v) => [["Wages expense", "dr", v.w], ["Rent expense", "dr", v.r], ["Cash", "cr", v.w + v.r]],
+    eff: [["Wages expense", 1, (v) => v.w], ["Rent expense", 1, (v) => v.r], ["Cash", -1, (v) => v.w + v.r]],
+    decoys: ["Trade payables", "Drawings", "Capital", "Electricity expense", "Prepaid insurance"],
+    hint: "Each expense gets its own line; one payment covers them both." },
+  // expert: three or four lines, linked transactions recorded as one compound entry
+  { id: "startup", lvl: 3, draw: (rng) => ({ a: rng.int(20, 150) * 100, b: rng.int(5, 50) * 100, c: rng.int(40, 200) * 100 }),
+    text: (v) => `started trading. On the first day the owner paid ${money(v.a)} of personal savings into the business bank account, and gave the business office equipment worth ${money(v.b)} and a delivery van worth ${money(v.c)}`,
+    lines: (v) => [["Cash", "dr", v.a], ["Equipment", "dr", v.b], ["Vehicles", "dr", v.c], ["Capital", "cr", v.a + v.b + v.c]],
+    eff: [["Cash", 1, (v) => v.a], ["Equipment", 1, (v) => v.b], ["Vehicles", 1, (v) => v.c], ["Capital", 1, (v) => v.a + v.b + v.c]],
+    decoys: ["Bank loan", "Other payables", "Sales revenue", "Drawings", "Inventory"],
+    hint: "Each asset the owner brings in gets its own debit line." },
+  { id: "bankpay", lvl: 3, draw: (rng) => ({ p: rng.int(10, 80) * 100, i: rng.int(4, 50) * 10, f: rng.int(2, 9) * 5 }),
+    text: (v) => `paid the bank ${money(v.p + v.i + v.f)} from its bank account: ${money(v.i)} of loan interest, a bank charge of ${money(v.f)}, and the rest repays part of the bank loan`,
+    lines: (v) => [["Bank loan", "dr", v.p], ["Interest expense", "dr", v.i], ["Bank charges", "dr", v.f], ["Cash", "cr", v.p + v.i + v.f]],
+    eff: [["Bank loan", -1, (v) => v.p], ["Interest expense", 1, (v) => v.i], ["Bank charges", 1, (v) => v.f], ["Cash", -1, (v) => v.p + v.i + v.f]],
+    decoys: ["Interest income", "Trade payables", "Capital", "Drawings", "Rent expense"],
+    hint: "Work out the loan repayment first: the total less the interest and the charge." },
+  { id: "paysmix", lvl: 3, draw: (rng) => ({ w: rng.int(10, 80) * 100, r: rng.int(5, 30) * 100, d: rng.int(2, 20) * 100 }),
+    text: (v) => `paid staff wages of ${money(v.w)} and the month's rent of ${money(v.r)} from its bank account. On the same day the owner took ${money(v.d)} from the business bank account for personal use`,
+    lines: (v) => [["Wages expense", "dr", v.w], ["Rent expense", "dr", v.r], ["Drawings", "dr", v.d], ["Cash", "cr", v.w + v.r + v.d]],
+    eff: [["Wages expense", 1, (v) => v.w], ["Rent expense", 1, (v) => v.r], ["Drawings", 1, (v) => v.d], ["Cash", -1, (v) => v.w + v.r + v.d]],
+    decoys: ["Capital", "Trade payables", "Electricity expense", "Sales revenue", "Bank loan"],
+    hint: "Money the owner takes out is not a business expense." },
+  { id: "vanloan", lvl: 3, draw: (rng) => { const v = rng.int(100, 400) * 100; return { v, l: rng.int(5, v / 100 - 10) * 100 }; },
+    text: (x) => `bought a delivery van costing ${money(x.v)}. On the same day it took out a bank loan of ${money(x.l)}, which the bank paid straight to the car dealer, and it paid the rest of the price from its own bank account`,
+    lines: (x) => [["Vehicles", "dr", x.v], ["Bank loan", "cr", x.l], ["Cash", "cr", x.v - x.l]],
+    eff: [["Vehicles", 1, (x) => x.v], ["Bank loan", 1, (x) => x.l], ["Cash", -1, (x) => x.v - x.l]],
+    decoys: ["Other payables", "Capital", "Interest expense", "Inventory", "Trade receivables"],
+    hint: "The loan money never reaches the business bank account: it goes straight to the dealer." },
+  { id: "settle", lvl: 3, draw: (rng) => ({ s: rng.int(5, 60) * 100, l: rng.int(10, 80) * 100, i: rng.int(4, 40) * 10 }),
+    text: (v) => `paid, from its bank account, ${money(v.s)} to a supplier for goods bought on credit last month, ${money(v.l)} off its bank loan, and ${money(v.i)} of interest on that loan`,
+    lines: (v) => [["Trade payables", "dr", v.s], ["Bank loan", "dr", v.l], ["Interest expense", "dr", v.i], ["Cash", "cr", v.s + v.l + v.i]],
+    eff: [["Trade payables", -1, (v) => v.s], ["Bank loan", -1, (v) => v.l], ["Interest expense", 1, (v) => v.i], ["Cash", -1, (v) => v.s + v.l + v.i]],
+    decoys: ["Inventory", "Interest income", "Capital", "Drawings", "Sales revenue"],
+    hint: "Paying back what is owed makes each liability smaller; the interest is a cost." },
+];
+const JX_BY = Object.fromEntries(JX.map((j) => [j.id, j]));
+
+const J_HINTS = [
+  "List every account that changes, and whether it goes up or down.",
+  "Assets, expenses and drawings go up on the **debit** side; liabilities, capital and income go up on the **credit** side. A decrease goes on the opposite side.",
+  "Check your entry: the debit column and the credit column must add up to the same total.",
+];
+
+// Wrong amounts that look plausible: sums and differences of the entry's amounts, a double, a near miss.
+function jAmountDecoys(amts, rng, n) {
+  const have = new Set(amts);
+  const cands = [];
+  for (const x of amts) { cands.push(2 * x, x + 100, x - 100); for (const y of amts) if (x !== y) cands.push(x + y, Math.abs(x - y)); }
+  const pool = [...new Set(cands)].filter((c) => c > 0 && !have.has(c));
+  return rng.shuffle(pool).slice(0, n);
+}
+
+function jAccepts(accounts) {
+  const keys = new Set(accounts.map((a) => a.toLowerCase()));
+  const out = {};
+  for (const acc of accounts) {
+    for (const al of J_ALIASES[acc] || []) {
+      if (keys.has(al.toLowerCase()) || Object.keys(out).length >= 20) continue;
+      out[al] = acc;
+    }
+  }
+  return out;
+}
+
+function genJournal(diff, rng) {
+  const firm = rng.pick(FIRMS);
+  let text, lines, decoyPool, hints, params, effText;
+  if (diff === "easy" || diff === "medium") {
+    const pool = TX.filter((t) => (diff === "easy" ? t.lvl === 0 : t.lvl === 1 || t.lvl === 2));
+    const t = rng.pick(pool);
+    const a = amountFor(rng);
+    text = t.text(a);
+    lines = [[t.dr, "dr", a], [t.cr, "cr", a]];
+    decoyPool = [...t.altDr, ...t.altCr];
+    hints = J_HINTS;
+    effText = t.eff.map(([acc, s]) => `${acc} ${s > 0 ? "goes up" : "goes down"} by ${money(a)}`).join("; ");
+    params = { diff, kind: "journal", tx: t.id, amount: a };
+  } else {
+    const j = rng.pick(JX.filter((x) => x.lvl === (diff === "hard" ? 2 : 3)));
+    const v = j.draw(rng);
+    text = j.text(v);
+    lines = j.lines(v);
+    decoyPool = j.decoys;
+    hints = [J_HINTS[0], J_HINTS[1], j.hint, J_HINTS[2]];
+    effText = j.eff.map(([acc, s, f]) => `${acc} ${s > 0 ? "goes up" : "goes down"} by ${money(f(v))}`).join("; ");
+    params = { diff, kind: "jx", jx: j.id, v };
+  }
+  const used = lines.map((l) => l[0]);
+  const banned = new Set(used);
+  for (const pair of J_EXCLUSIVE) if (pair.some((p) => banned.has(p))) pair.forEach((p) => banned.add(p));
+  const decoys = rng.shuffle([...new Set(decoyPool)].filter((d) => !banned.has(d))).slice(0, J_DECOYS[diff]);
+  const accounts = rng.shuffle([...used, ...decoys]);
+  const amts = [...new Set(lines.map((l) => l[2]))];
+  const amounts = rng.shuffle([...amts, ...jAmountDecoys(amts, rng, J_AMOUNT_DECOYS[diff])]);
+  const compound = lines.length > 2;
+  return {
+    prompt: `${firm} ${text}.\n\nWrite the **journal entry**${diff === "expert" ? " as one compound entry" : ""}: one line per account, with its amount in the **Debit** or the **Credit** column.${diff === "medium" ? " You may not need every row." : ""}`,
+    answerType: "journal",
+    accounts,
+    amounts,
+    rows: Math.max(J_ROWS[diff], lines.length),
+    answer: lines.map(([account, side, amount]) => ({ account, side, amount })),
+    accepts: jAccepts(accounts),
+    explanation: `${effText}.${compound ?"\n\nA compound entry: the debits together equal the credits together." : ""}`,
+    hints,
+    params,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
   checkDifficulty(difficulty);
@@ -455,6 +643,7 @@ export function generate({ subtopic, difficulty, rng }) {
     case "concepts": if (difficulty === "expert") break; return genConcepts(difficulty, rng);
     case "classification": if (difficulty === "expert") break; return genClassify(difficulty, rng);
     case "equation": return genEquation(difficulty, rng);
+    case "journal": return genJournal(difficulty, rng);
   }
   throw new Error(`unknown subtopic/difficulty ${subtopic}/${difficulty}`);
 }
@@ -470,6 +659,7 @@ const V_ACC = {
   Capital: ["C", "E", 1], "Sales revenue": ["C", "E", 1], "Interest income": ["C", "E", 1],
   Drawings: ["D", "E", -1], "Sales returns": ["D", "E", -1], "Rent expense": ["D", "E", -1], "Wages expense": ["D", "E", -1], "Electricity expense": ["D", "E", -1],
   "Interest expense": ["D", "E", -1], "Irrecoverable debts": ["D", "E", -1], "Depreciation expense": ["D", "E", -1],
+  "Bank charges": ["D", "E", -1],
 };
 
 function vEntry(tx) {
@@ -563,9 +753,75 @@ function multiExpected(p) {
   return null;
 }
 
+// Journal entries: the expected lines from the account types (never the generator's `lines`).
+// TX entries come from vEntry(); compound JX entries put each changed account on its increase or
+// decrease side. Returns [{ account, side, amount }] or null when the entry doesn't balance.
+function journalExpected(p) {
+  let out;
+  if (p.kind === "journal") {
+    const e = vEntry(p.tx);
+    if (!e || !(p.amount > 0)) return null;
+    out = [{ account: e.dr, side: "dr", amount: p.amount }, { account: e.cr, side: "cr", amount: p.amount }];
+  } else if (p.kind === "jx") {
+    const j = JX_BY[p.jx];
+    if (!j || !p.v) return null;
+    out = [];
+    for (const [acc, s, f] of j.eff) {
+      const info = V_ACC[acc];
+      const amount = f(p.v);
+      if (!info || !Number.isInteger(amount) || amount <= 0) return null;
+      out.push({ account: acc, side: (info[0] === "D") === (s > 0) ? "dr" : "cr", amount });
+    }
+  } else return null;
+  const keys = new Set(out.map((l) => `${l.side}|${l.account}`));
+  const dr = out.filter((l) => l.side === "dr").reduce((t, l) => t + l.amount, 0);
+  const cr = out.filter((l) => l.side === "cr").reduce((t, l) => t + l.amount, 0);
+  return keys.size === out.length && dr === cr ? out : null;
+}
+
+// A candidate entry as lines: an array of { account, side, amount }, or the canonical string
+// "Dr Inventory 500; Cr Cash 500".
+function jLinesOf(c) {
+  if (Array.isArray(c)) return c.map((l) => ({ account: String(l && l.account), side: l && l.side, amount: Number(l && l.amount) }));
+  if (typeof c !== "string") return null;
+  const out = [];
+  for (const part of c.split(";")) {
+    const m = /^\s*(Dr|Cr)\s+(.+?)\s+(\d+(?:\.\d+)?)\s*$/i.exec(part);
+    if (!m) return null;
+    out.push({ account: m[2], side: m[1].toLowerCase(), amount: Number(m[3]) });
+  }
+  return out;
+}
+const jKey = (l) => `${l.side}|${String(l.account).trim().replace(/\s+/g, " ").toLowerCase()}|${Math.round(l.amount * 100)}`;
+function sameEntry(cand, want) {
+  const lines = jLinesOf(cand);
+  if (!lines || lines.length !== want.length) return false;
+  const a = lines.map(jKey).sort(), b = want.map(jKey).sort();
+  return a.every((k, i) => k === b[i]);
+}
+
+function journalOk(q, answer, want) {
+  const accs = Array.isArray(q.accounts) ? q.accounts.map((a) => String(a).toLowerCase()) : [];
+  if (new Set(accs).size !== accs.length) return false;
+  if (!want.every((l) => accs.includes(l.account.toLowerCase()))) return false;
+  // Never two names that could both be right (e.g. Trade payables and Other payables).
+  for (const pair of J_EXCLUSIVE) if (pair.filter((x) => accs.includes(x.toLowerCase())).length > 1) return false;
+  // Every amount of the entry is offered as a block.
+  if (!Array.isArray(q.amounts) || !want.every((l) => q.amounts.includes(l.amount))) return false;
+  // No alias names a listed account, and every alias points at a listed account.
+  for (const [al, acc] of Object.entries(q.accepts || {})) {
+    if (accs.includes(al.toLowerCase()) || !accs.includes(String(acc).toLowerCase())) return false;
+  }
+  return sameEntry(q.answer, want) && sameEntry(answer, want);
+}
+
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (question.answerType === "journal") {
+    const want = journalExpected(p);
+    return !!want && journalOk(question, answer, want);
+  }
   if (question.answerType === "multi") {
     const exp = multiExpected(p);
     const parts = question.parts;

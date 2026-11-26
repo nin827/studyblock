@@ -22,6 +22,25 @@ Example: paid rent of $500 → rent expense ↑ (debit), cash ↓ (credit).
 
 **Expert.** List only the transactions that touch the account asked about, put each amount on its side, add any opening balance, and take the difference. The balance sits on the bigger side.
 
+## Journal entries
+
+1. List every account that changes, with ↑ or ↓.
+2. Use the table above to put each one in the **Debit** or the **Credit** column: one line per account, one amount per line.
+3. Split payments: the part paid now and the part still owed add up to the full price. A sale's revenue is always the full price.
+4. Check: the Debit column and the Credit column add up to the same total (the footer under the table shows both).
+
+Example: bought equipment for $1,200, paying $500 now and owing the rest to the supplier.
+
+| Account | Debit | Credit |
+| --- | --- | --- |
+| Equipment | $1,200 | |
+| Cash | | $500 |
+| Other payables | | $700 |
+
+**Watch out:** goods for resale bought on credit go to **Trade payables**; equipment and vans bought on credit go to **Other payables**. Money the owner takes out is **Drawings**, never an expense. Interest is an expense; repaying the loan itself reduces **Bank loan**.
+
+**Expert.** Linked transactions on one date go into one compound entry. Follow the money: a loan the bank pays straight to a dealer never passes through Cash.
+
 ## Accounting concepts
 
 - **Accruals (matching):** record income and expenses in the period they are earned or used, not when cash moves; spread a long-lived asset's cost over the years it helps earn revenue.

@@ -2,6 +2,7 @@
 
 import { requestPersistentStorage } from './pwa.js';
 import { isLang, DEFAULT_LANG } from './languages.js';
+import { parseJournal } from './journal.js';
 
 const KEY = 'studyblock:data';
 const VERSION = 1;
@@ -791,6 +792,8 @@ function importObject(incoming, mode) {
       // Optional segmented-choice column labels (single question / per multi-part part).
       ...(cleanChoiceCols(q.choiceCols) ? { choiceCols: cleanChoiceCols(q.choiceCols) } : {}),
       ...(cleanPartCols(q.partCols) ? { partCols: cleanPartCols(q.partCols) } : {}),
+      // Optional: a journal entry (answer / userAnswer are canonical "Dr … ; Cr …" strings).
+      ...(q.journal === true && isStr(q.answer) && parseJournal(q.answer) && (!isStr(q.userAnswer) || parseJournal(q.userAnswer)) ? { journal: true } : {}),
       // Optional answer mode (Blocks + multiplier) and close-answer credit; validated, 0-1.
       ...cleanMode(q),
       ...(!q.correct && cleanClose(q.fuzzy) ? { fuzzy: cleanClose(q.fuzzy) } : {}),

@@ -9,6 +9,8 @@ import { compileGraph } from './staticgraph.js'; // also defines <sb-graph> (sta
 import { isLang, langTitle } from '../lib/languages.js';
 import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates.js';
 import { playButtonHtml, bindPlay, addReviewPlay, stopPlayback } from './playbtn.js';
+import { journalHtml, mountJournal, journalTableHtml, journalReviewHtml } from './journal.js';
+import { parseJournal } from '../lib/journal.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
 // address it was opened on, may restore it from sessionStorage. Every other run starts empty.
@@ -215,6 +217,7 @@ export async function runQuiz(root, ctx, opts) {
 
   function focusAnswer() {
     if (phase === 'answer' && isMulti(questions[idx]) && focusPart(lastPart)) return;
+    if (phase === 'answer' && jr) { jr.focusFirst(); return; }
     const q = questions[idx];
     const blockTile = phase === 'answer' && (inBlocks(q) || inBuild(q)) ? root.querySelector('.tiles-form .tile:not(:disabled):not([hidden])') : null;
     const target = blockTile || root.querySelector('#answer:not(:disabled)') || root.querySelector('#next') || root.querySelector('.choice:not(:disabled)')
@@ -245,6 +248,11 @@ export async function runQuiz(root, ctx, opts) {
       owner: location.hash,
       onUse: value => {
         const q = questions[idx];
+        // Journal entries: Use fills the Debit/Credit cell that last had focus.
+        if (isJournal(q)) {
+          if (phase === 'answer' && jr?.useValue(value)) setSheet(false);
+          return;
+        }
         const input = isMulti(q)
           ? (lastPart ? partEl(lastPart)?.querySelector('.part-input') : null)
           : root.querySelector('#answer');
@@ -277,9 +285,11 @@ export async function runQuiz(root, ctx, opts) {
     // Multi-part: Use follows the part that last had focus (disabled on a choice group).
     const kind = isMulti(q) ? partOf(q)(lastPart)?.answerType : q.answerType;
     const isDate = kind === 'date';
-    const typed = isMulti(q) ? kind !== 'choice' && !isDate : q.answerType !== 'choice' && !isDate && !inBlocks(q);
+    const typed = isJournal(q) ? !!jr?.canUse()
+      : isMulti(q) ? kind !== 'choice' && !isDate : q.answerType !== 'choice' && !isDate && !inBlocks(q);
     calc.setUseEnabled(on && typed && phase === 'answer',
-      inBlocks(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+      isJournal(q) && phase === 'answer' ? 'Use fills amounts. Click a Debit or Credit cell first.'
+        : inBlocks(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
         : inBuild(q) ? 'Use fills typed answers. For this question, place the blocks.'
         : isSegQ(q) ? 'Use fills typed answers. For this question, pick an option.'
         : isDate ? 'Use fills number answers. For this question, type a date.'
@@ -365,6 +375,31 @@ export async function runQuiz(root, ctx, opts) {
           aria-valuemin="0" aria-valuemax="${n}" aria-valuenow="${idx}" aria-valuetext="${esc(progressText())}">${segs}</div>
       </div>`;
   }
+
+  // ---- journal entries (answerType "journal"; the table lives in js/views/journal.js) ----
+  const isJournal = q => q?.answerType === 'journal';
+  let jr = null; // the journal controller of the current question
+  function syncJournalCheck() {
+    const btn = root.querySelector('#check');
+    if (btn && phase === 'answer') btn.disabled = !jr?.ready();
+  }
+  function bindJournal(q) {
+    const form = root.querySelector('#answer-form');
+    if (!form) return;
+    jr = mountJournal(form, q, {
+      onChange: () => { syncJournalCheck(); applyCalc(q); },
+      onFocusCell: () => applyCalc(q),
+      onSubmit: () => { if (jr?.ready()) submit(jr.value()); },
+    });
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (jr?.ready()) submit(jr.value());
+    });
+    syncJournalCheck();
+    jr.focusFirst();
+  }
+  // "n of m lines right" for a graded journal answer ('' otherwise).
+  const journalSub = g => (g?.journal ? ` <span class="feedback-sub">${g.journal.matched} of ${g.journal.total} lines right</span>` : '');
 
   // ---- multi-part questions (answerType "multi") ----
   // One stacked field per part: a text/number input, or a choice button group that only selects.
@@ -1506,6 +1541,7 @@ export async function runQuiz(root, ctx, opts) {
         ${(q.parts || []).map((p, i) => partHtml(p, i, n)).join('')}
       </form>`;
     }
+    if (isJournal(q)) return journalHtml(q);
     if (isTiles(q)) return tilesHtml(q);
     if (isDual(q)) return dualHtml(q);
     if (isSegQ(q)) return segDualHtml(q);
@@ -1540,6 +1576,10 @@ export async function runQuiz(root, ctx, opts) {
   function actionBar(q) {
     if (isMulti(q)) {
       return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> for the next part</span></p>
+        ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
+    }
+    if (isJournal(q)) {
+      return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> for the next cell</span></p>
         ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
     }
     if (isTiles(q) || isDual(q)) {
@@ -1717,6 +1757,8 @@ export async function runQuiz(root, ctx, opts) {
     ts = null;
     cancelSegDrag();
     sb = null;
+    jr?.destroy();
+    jr = null;
     if (guided) bindGuided(q);
     // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
     calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
@@ -1725,6 +1767,7 @@ export async function runQuiz(root, ctx, opts) {
     applyCalc(q);
     icons();
     if (isMulti(q)) { bindMulti(q); return; }
+    if (isJournal(q)) { bindJournal(q); applyCalc(q); return; }
     root.querySelector('#run-btn')?.addEventListener('click', runCurrent);
     if (isTiles(q)) { bindTiles(q); return; }
     if (isDual(q)) { bindDual(q); return; }
@@ -1802,6 +1845,8 @@ export async function runQuiz(root, ctx, opts) {
     const blocks = inBlocks(q);
     if (multi) {
       if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
+    } else if (isJournal(q)) {
+      if (!jr?.ready()) return;
     } else if (inBuild(q)) {
       if (!segReady()) return;
     } else if (q.answerType === 'choice') {
@@ -1829,6 +1874,8 @@ export async function runQuiz(root, ctx, opts) {
     } else if (res.correct) {
       solvedGuided(q, value, choiceIndex, res);
       return;
+    } else if (isJournal(q)) {
+      jr?.markResult({ guided: true }); // right lines lock; wrong ones stay editable
     } else if (inBuild(q)) {
       root.querySelector('#segb-slots')?.classList.add('is-wrong'); // cleared on the next change
     } else if (q.answerType === 'choice') {
@@ -1853,12 +1900,15 @@ export async function runQuiz(root, ctx, opts) {
     root.querySelector('#feedback').innerHTML = `<div class="feedback ${almost ? 'partial' : 'bad'} guided-retry">
         <p class="feedback-title">${icon(almost ? 'circle-dot' : 'circle-x')}<span>${almost ? `Almost · ${esc(nudge)}` : 'Not quite, try again'}</span></p>
         ${res.note ? `<p class="grade-note">${icon('info')}<span>${esc(res.note)}</span></p>` : ''}
-        <p class="feedback-sub">${multi ? `${nRight} of ${res.parts.length} parts right${nClose ? ` · ${nClose} almost` : ''} · ` : ''}Tries: ${gs.tries}</p>
+        <p class="feedback-sub">${multi ? `${nRight} of ${res.parts.length} parts right${nClose ? ` · ${nClose} almost` : ''} · ` : ''}${res.journal ? `${res.journal.matched} of ${res.journal.total} lines right · ` : ''}Tries: ${gs.tries}</p>
       </div>`;
     icons();
     if (multi) {
       updateCheck(q);
       focusPart(firstWrong, true);
+    } else if (isJournal(q)) {
+      syncJournalCheck();
+      jr?.focusFirst();
     } else if (inBuild(q)) {
       root.querySelector('#segb-slots .tile')?.focus();
     } else if (q.answerType === 'choice') {
@@ -1874,7 +1924,9 @@ export async function runQuiz(root, ctx, opts) {
 
   function solvedGuided(q, value, choiceIndex, res = null) {
     const multi = isMulti(q);
-    if (inBuild(q)) {
+    if (isJournal(q)) {
+      jr?.markResult();
+    } else if (inBuild(q)) {
       root.querySelector('#segb-slots')?.classList.add('is-correct');
     } else if (!multi && q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
@@ -1919,6 +1971,8 @@ export async function runQuiz(root, ctx, opts) {
           });
         }
       }
+    } else if (isJournal(q)) {
+      jr?.showSolution(); // the correct lines, filled in and locked
     } else if (inBuild(q)) {
       // Place the answer's blocks, one per column.
       const sol = segSolution();
@@ -1957,6 +2011,7 @@ export async function runQuiz(root, ctx, opts) {
     root.querySelectorAll('.answer-form input, .choice, #check, #run-btn, .part-hint-btn, .answer-mode-btn').forEach(el => { el.disabled = true; });
     if (ts) lockTiles();
     if (sb) lockSeg();
+    jr?.lock();
     const tools = root.querySelector('#guided-tools');
     if (tools) tools.hidden = true;
 
@@ -1975,6 +2030,7 @@ export async function runQuiz(root, ctx, opts) {
       const mine = multi ? Object.fromEntries(Object.entries(readParts(q)).filter(([id]) => locked(id))) : null;
       const answers = multi
         ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: locked(p.id) ? true : null })), mine, q.answer, 'feedback-parts', partColsOf(q))
+        : isJournal(q) ? `<p>Answer:</p>${journalTableHtml(q.lines, { label: 'Correct entry' })}`
         : `<p>Answer: <strong>${answerInline(q.answer, q.choiceCols)}</strong></p>`;
       box = `<div class="feedback info">
         <p class="feedback-title">${icon('eye')}<span>Solved with solution</span></p>
@@ -2023,6 +2079,8 @@ export async function runQuiz(root, ctx, opts) {
     const multi = isMulti(q);
     if (multi) {
       if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
+    } else if (isJournal(q) && !jr?.ready()) {
+      return;
     } else if (inBuild(q) && !segReady()) {
       return;
     } else if (q.answerType !== 'choice' && (!String(value ?? '').trim() || (q.answerType === 'date' && !parseDate(value)))) {
@@ -2052,12 +2110,14 @@ export async function runQuiz(root, ctx, opts) {
       ...(g.fuzzy ? { fuzzy: g.fuzzy } : {}),
       ...(g.gradedBy ? { gradedBy: g.gradedBy } : {}),
       ...(g.note ? { note: g.note } : {}),
+      ...(g.journal ? { journal: { matched: g.journal.matched, total: g.journal.total } } : {}),
     });
     applyCalc(q);
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice, .answer-mode-btn').forEach(el => { el.disabled = true; });
     if (ts) lockTiles();
     if (sb) { lockSeg(); if (segMode === 'build') markSegSlots(); }
+    if (jr) { jr.lock(); jr.markResult(); }
     if (blocks) root.querySelector('#tiles-answer')?.classList.add(correct ? 'is-correct' : 'is-wrong');
     if (multi) {
       for (const pr of partResults) {
@@ -2108,13 +2168,14 @@ export async function runQuiz(root, ctx, opts) {
 
     const last = idx === questions.length - 1;
     const nRight = multi ? partResults.filter(p => p.correct).length : 0;
-    const partsSub = multi ? ` <span class="feedback-sub">${nRight} of ${partResults.length} parts right</span>` : '';
+    const partsSub = multi ? ` <span class="feedback-sub">${nRight} of ${partResults.length} parts right</span>` : journalSub(g);
     const spec = isTiles(q) ? q : isDual(q) ? q.blocks : null;
     root.querySelector('#feedback').innerHTML = `
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${feedbackTitle(g, state, partsSub)}</p>
         ${g.note ? `<p class="grade-note">${icon('info')}<span>${esc(g.note)}</span></p>` : ''}
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts', partColsOf(q))
+          : isJournal(q) ? (correct ? '' : `<p>Correct entry:</p>${journalTableHtml(q.lines, { label: 'Correct entry' })}`)
           : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${answerInline(q.answer, q.choiceCols)}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
         ${playButtonHtml(q)}
         ${q.runnable ? '<div class="expected-output" id="expected-output"></div>' : ''}
@@ -2259,6 +2320,11 @@ export async function runQuiz(root, ctx, opts) {
         e.preventDefault();
         if (btn && btn.classList.contains('part-choice') && !btn.disabled) btn.click(); // Enter picks this choice
         enterMulti(questions[idx], t?.closest?.('[data-part]')?.dataset.part || lastPart);
+      } else if (phase === 'answer' && isJournal(questions[idx])) {
+        // Buttons (blocks, + Row, Reset, Check) keep their native Enter; in a cell Enter moves on.
+        if (e.target?.closest?.('button')) return;
+        e.preventDefault();
+        jr?.enter(e.target);
       } else if (phase === 'answer' && isDual(questions[idx]) && e.target?.closest?.('.answer-mode, #run-btn')) {
         // The Type | Blocks switch and Run keep their native Enter.
       } else if (phase === 'answer' && isSegQ(questions[idx])) {
@@ -2300,6 +2366,7 @@ export async function runQuiz(root, ctx, opts) {
   ctx.onCleanup(() => document.removeEventListener('keydown', onKey));
   ctx.onCleanup(stopPlayback); // a preview never outlives the quiz
   ctx.onCleanup(() => cancelDrag()); // a drag ghost never outlives the quiz
+  ctx.onCleanup(() => jr?.destroy());
 
   await start();
 }
@@ -2355,6 +2422,8 @@ export function storedQuestion(r, withOrigin) {
     // Segmented choices: the column labels, so review and History can show the stored string as chips.
     ...(cleanChoiceCols(r.q.choiceCols) ? { choiceCols: cleanChoiceCols(r.q.choiceCols) } : {}),
     ...(partColsOf(r.q) ? { partCols: partColsOf(r.q) } : {}),
+    // Journal entries: answer / userAnswer are canonical strings; review and History draw tables.
+    ...(r.q.answerType === 'journal' || r.q.journal === true ? { journal: true } : {}),
     // Dual questions answered with blocks: the mode and the credit multiplier applied.
     ...(r.mode === 'blocks' || r.mode === 'choose' ? { mode: r.mode, multiplier: r.multiplier } : {}),
     // Close answer: { kind, typos | relErr, factor }.
@@ -2378,8 +2447,10 @@ export function storedQuestion(r, withOrigin) {
 export function guidedItemHtml(q, outcome, tagHtml = '', extra = []) {
   const o = OUTCOMES[outcome] || OUTCOMES.solution;
   const multi = isPlainObj(q.answer);
+  const journalLines = isJournalQ(q) ? (Array.isArray(q.lines) && q.lines.length ? q.lines : parseJournal(String(q.answer ?? ''))) : null;
   const answers = multi
     ? partListHtml(q.parts, (Array.isArray(q.parts) ? q.parts : Object.keys(q.answer).map(id => ({ id, label: id }))).map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts', partColsOf(q))
+    : journalLines && journalLines.length ? `<div class="review-answers journal-review"><p class="journal-review-title">Answer</p>${journalTableHtml(journalLines, { label: 'Correct entry' })}</div>`
     : `<p class="review-answers">Answer: <strong>${answerInline(q.answer ?? '', q.choiceCols)}</strong></p>`;
   return `<li class="review-item guided-item is-${o.cls}">
       <div class="review-mark">${icon(o.icon)}<span class="sr-only">${esc(o.label)}</span></div>
@@ -2425,6 +2496,8 @@ export function moduleBreakdown(qs, titleFor) {
 }
 
 const isPlainObj = v => !!v && typeof v === 'object' && !Array.isArray(v);
+// A journal-entry question: live (answerType) or stored (`journal: true`).
+const isJournalQ = q => q?.answerType === 'journal' || q?.journal === true;
 const ownVal = (o, k) => (isPlainObj(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined);
 
 // Part-by-part results: ✓/✗ with icon + label, the user's value, and the correct value when wrong.
@@ -2473,9 +2546,12 @@ export function reviewItem(r, showTag = false) {
   const multi = isPlainObj(answer) || isPlainObj(r.userAnswer);
   const answers = multi
     ? partListHtml(q.parts, r.parts ?? q.parts, r.userAnswer, answer, 'review-parts', partColsOf(q))
+    : isJournalQ(q) ? journalReviewHtml(r.userAnswer, answer, r.correct === true)
     : `<p class="review-answers">Your answer: <strong>${segsOf(r.userAnswer, q.choiceCols) ? answerInline(r.userAnswer, q.choiceCols) : esc(r.userAnswer === '' ? '(blank)' : String(r.userAnswer ?? ''))}</strong>
         ${r.correct ? '' : ` · Correct: <strong>${answerInline(answer ?? '', q.choiceCols)}</strong>`}</p>`;
-  const partialText = closeText || (nParts ? `Partly correct · ${nRight} of ${nParts} parts right` : 'Partly correct');
+  const jl = r.journal && typeof r.journal.matched === 'number' ? r.journal : null;
+  const partialText = closeText || (nParts ? `Partly correct · ${nRight} of ${nParts} parts right`
+    : jl ? `Partly correct · ${jl.matched} of ${jl.total} lines right` : 'Partly correct');
   const markIcon = state === 'correct' ? 'circle-check' : state === 'partial' ? 'circle-dot' : 'circle-x';
   const markText = (state === 'correct' ? 'Correct' : state === 'partial' ? partialText : 'Incorrect') + (blocksText ? ` · ${blocksText}` : '');
   return `<li class="review-item ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">

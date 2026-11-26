@@ -949,6 +949,95 @@ body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-s
 .tiles-solution .tile-slot { min-height: 0; min-width: 0; border-style: solid; background: transparent; }
 .tiles-form.is-locked .tile-slot.is-empty::before { content: none; }
 
+/* journal entries (answerType "journal"): Account | Debit | Credit table + account/amount blocks.
+   Phones (< 640px): each line is a small card (account on top, debit and credit side by side). */
+.journal-form { gap: 10px; }
+.journal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.journal-head .field-label { margin: 0; }
+.journal-tools { display: flex; gap: 8px; }
+.journal-tools .btn { min-height: 44px; gap: 6px; }
+.journal-tools .icon { width: 16px; height: 16px; }
+.journal-wrap { min-width: 0; }
+.journal-table { width: 100%; border-collapse: separate; border-spacing: 0 8px; margin: -8px 0; table-layout: fixed; }
+.journal-table th {
+  padding: 0 4px; text-align: left; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+}
+.journal-table th:nth-child(2), .journal-table th:nth-child(3) { width: 26%; }
+.journal-table th:last-child { width: 96px; }
+.j-cell { padding: 0 4px; vertical-align: middle; border-radius: var(--r-control); }
+.j-cap { display: none; }
+.j-input {
+  width: 100%; min-width: 0; min-height: 48px; padding: 0 12px; font: inherit; font-size: 16px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface);
+  transition: border-color 0.12s, background-color 0.12s, box-shadow 0.12s;
+}
+.j-amt .j-input { font-family: var(--mono); text-align: right; }
+.j-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.j-input[aria-invalid="true"] { border-color: var(--warn); background: var(--warn-bg); }
+.j-input:disabled { opacity: 1; -webkit-text-fill-color: var(--ink); background: var(--paper); }
+.j-cell.is-active .j-input { border-color: var(--accent); outline: 2px solid var(--accent); outline-offset: 1px; }
+.j-cell.is-over .j-input { border-color: var(--accent); background: var(--accent-soft); outline: 2px dashed var(--accent); outline-offset: 1px; }
+.journal-form.is-armed-account .j-acc:not(:has(:disabled)) .j-input,
+.journal-form.is-armed-amount .j-amt:not(:has(:disabled)) .j-input { border-style: dashed; border-color: var(--accent); }
+.j-end { padding: 0 4px; vertical-align: middle; }
+.j-remove { min-height: 44px; min-width: 44px; padding: 0; justify-content: center; }
+.j-remove .icon { width: 18px; height: 18px; }
+.j-mark { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.j-mark .icon { width: 18px; height: 18px; flex-shrink: 0; }
+.j-mark.is-right { color: var(--correct-fg); }
+.j-mark.is-wrong { color: var(--wrong-fg); }
+.j-row.is-right .j-input { border-color: var(--correct); background: var(--correct-bg); }
+.j-row.is-wrong .j-input { border-color: var(--wrong); background: var(--wrong-bg); }
+.journal-form.is-revealed .j-input { border-color: var(--accent); }
+.journal-totals {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 0; padding: 8px 12px;
+  font-size: 14px; color: var(--text-2); background: var(--sunken); border-radius: var(--r-control);
+}
+.journal-totals strong { font-family: var(--mono); color: var(--ink); }
+.j-tot-sep { color: var(--faint); }
+.j-bal { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-weight: 700; }
+.j-bal .icon { width: 16px; height: 16px; }
+.journal-totals.is-balanced .j-bal { color: var(--correct-fg); }
+.journal-totals.is-unbalanced .j-bal { color: var(--warn-fg); }
+.journal-bank { display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 14px; background: var(--sunken); }
+.journal-bank-label { margin: 2px 4px 0; font-size: 13px; }
+.journal-bank-row { min-height: 44px; }
+.j-block.is-armed, .j-block[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-ink); outline: 2px solid var(--accent); outline-offset: 1px; }
+.j-block-amt { font-family: var(--mono); border-style: solid; border-left: 4px solid var(--accent); }
+.journal-form.is-locked .journal-bank { opacity: 0.6; }
+.journal-form.is-locked .j-block { cursor: default; }
+@media (max-width: 639px) {
+  .journal-table, .journal-table tbody { display: block; margin: 0; }
+  .journal-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .j-row {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px; gap: 6px; align-items: end;
+    padding: 8px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper);
+  }
+  .j-row.is-right { border-color: var(--correct); }
+  .j-row.is-wrong { border-color: var(--wrong); }
+  .j-cell, .j-end { display: block; padding: 0; }
+  .j-acc { grid-column: 1 / 3; }
+  .j-end { grid-column: 3; grid-row: 1 / 3; align-self: center; justify-self: center; }
+  .j-cap { display: block; margin: 0 2px 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+  .j-mark { flex-direction: column; gap: 2px; font-size: 12px; }
+  .j-bal { margin-left: 0; }
+}
+/* a static journal table (feedback, review, History) */
+.journal-static { font-size: 14px; background: var(--surface); border-radius: 10px; overflow: hidden; }
+.journal-static th, .journal-static td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--line); color: var(--ink); }
+.journal-static thead th { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.journal-static .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.journal-static .j-cr-acc { padding-left: 26px; }
+.journal-static tfoot th, .journal-static tfoot td { font-weight: 700; border-bottom: 0; }
+.journal-static .j-static-mark { white-space: nowrap; font-weight: 700; }
+.journal-static .j-static-mark .icon { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; }
+.journal-static tr.is-right .j-static-mark { color: var(--correct-fg); }
+.journal-static tr.is-wrong .j-static-mark { color: var(--wrong-fg); }
+.journal-static-wrap { margin: 2px 0; }
+.journal-review { display: flex; flex-direction: column; gap: 8px; }
+.journal-review-part { min-width: 0; }
+.journal-review-title { margin: 0 0 4px; font-size: 13px; font-weight: 700; color: var(--text-2); }
+
 /* dual questions: Type | Blocks switch */
 .dual-form { gap: 10px; }
 .dual-type, .dual-blocks { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

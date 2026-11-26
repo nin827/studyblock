@@ -8,6 +8,7 @@ import { getCodeLang, ROLE_MODULE, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitS
 import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
 import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
 import { validView, clampView } from './graph.js';
+import { cleanJournalSpec, serialiseJournal, gradeJournal } from './journal.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -991,6 +992,8 @@ export function tilesReachable(tiles, joiner, answer, useAll) {
   return dfs('', 0);
 }
 
+const JOURNAL_ROWS_DEFAULT = 2;
+
 function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
   const graph = sanitizeGraphFns(q?.graphFns, q?.graphView, warnKey);
@@ -1013,6 +1016,27 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
       answer: multiAnswer(parts),
       answerType: 'multi',
       parts,
+      choices: undefined,
+      tolerance: undefined,
+      explanation: q.explanation ? String(q.explanation) : '',
+      ...extra,
+    };
+  }
+  if (q.answerType === 'journal') {
+    // Journal entry (js/lib/journal.js). The answer is stored as the canonical string; the lines,
+    // account and amount blocks and aliases stay on the live question. An invalid shape keeps
+    // answerType "journal" with no lines; generateVerified rejects it.
+    const j = cleanJournalSpec(q);
+    return {
+      seed,
+      prompt: String(q.prompt ?? ''),
+      answer: j ? serialiseJournal(j.lines) : '',
+      answerType: 'journal',
+      lines: j ? j.lines : [],
+      accounts: j ? j.accounts : [],
+      amounts: j ? j.amounts : [],
+      rows: j ? j.rows : JOURNAL_ROWS_DEFAULT,
+      accepts: j ? j.accepts : {},
       choices: undefined,
       tolerance: undefined,
       explanation: q.explanation ? String(q.explanation) : '',
@@ -1075,6 +1099,9 @@ function generateVerified(gen, subtopic, difficulty, seed, lang = null, maxTries
       if (raw.answerType === 'multi') {
         shapeOk = multiShapeOk(raw);
         own = shapeOk ? multiAnswer(raw.parts) : null;
+      } else if (raw.answerType === 'journal') {
+        shapeOk = q.lines.length > 0;
+        own = raw.answer;
       } else if (raw.answerType === 'tiles') {
         shapeOk = blocksSpecOk(q.tiles.length ? q : null, q.answer, raw.solution !== undefined);
         own = raw.answer;
@@ -2064,6 +2091,12 @@ export function gradeAnswer(q, userAnswer, mode = 'type') {
     const r = checkAnswer(q, userAnswer);
     return { correct: r.correct, credit: r.credit, parts: r.parts };
   }
+  // Journal entries: lines matched in any order; credit = matched lines / max(answer, user lines).
+  // `journal` = { matched, total, lines: per user line true/false/null (blank) }. No close credit.
+  if (q.answerType === 'journal') {
+    const r = gradeJournal(q, userAnswer);
+    return { correct: r.correct, credit: r.credit, journal: { matched: r.matched, total: r.total, lines: r.lines } };
+  }
   if (mode === 'blocks' && q.blocks) {
     let correct = checkSingle({ answerType: 'text', answer: q.answer, accepts: q.accepts, ...(q.caseSensitive === true ? { caseSensitive: true } : {}) }, userAnswer);
     const m = typeof q.blocks.multiplier === 'number' ? Math.min(1, Math.max(0, q.blocks.multiplier)) : 1;
@@ -2134,6 +2167,8 @@ function checkSingle(question, userAnswer, owner = question) {
     }
     case 'choice':
       return String(userAnswer) === String(question.answer);
+    case 'journal':
+      return gradeJournal(question, userAnswer).correct;
     default: {
       const norm = normFor(question);
       const u = norm(userAnswer);
