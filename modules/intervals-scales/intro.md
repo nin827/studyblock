@@ -12,7 +12,7 @@ Music theory on paper: no audio, just note names. You'll count semitones on a pi
 ## Answer formats
 
 - Counts (semitones, sharps or flats) are typed as whole numbers.
-- Notes, interval names, keys and scales are **multiple choice**, so spelling never depends on how you type ♯ or ♭.
+- Notes, interval names and keys are **multiple choice**, and whole scales are built from **note blocks**, so spelling never depends on how you type ♯ or ♭.
 - No question needs a double sharp or a double flat.
 
 | Level | What to expect |

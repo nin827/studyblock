@@ -6,6 +6,7 @@
   "type": "generator",
   "questionsPerQuiz": 10,
   "calculator": false,
+  "fuzzy": false,
   "subtopics": [
     { "id": "notes", "title": "Notes", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "intervals", "title": "Intervals", "difficulties": ["easy", "medium", "hard", "expert"] },

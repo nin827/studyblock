@@ -2,7 +2,9 @@
 //
 // Notes are spelled (letter + accidental), never just semitone numbers, so a major 3rd above D
 // is F♯ and not G♭. Spelled-note answers are always multiple choice (the app's text check can't
-// tell "F#" from "F♯"); counts are typed numbers. No double sharps or flats appear anywhere.
+// tell "F#" from "F♯"); spelling a whole scale is built from note blocks instead (one block per
+// note, plus wrong spellings as distractors); counts are typed numbers. No double sharps or flats
+// appear anywhere.
 //
 // generate() builds answers with pitch-class arithmetic and key-signature tables (BUILD side of
 // js/lib/music.js). verify() re-derives them from each question's params.check with the CHECK
@@ -410,15 +412,32 @@ function genScales(difficulty, rng) {
   // 4) harmonic/natural swap or a different wrong note
   const s4 = scale.slice(); const i4 = (i1 % 6) + 1; s4[i4] = note(scale[i4].l, scale[i4].a + (scale[i4].a > 0 ? -1 : 1)); cands.push(s4);
   if (mode === 'harmonic') { const s5 = scale.slice(); s5[6] = note(scale[6].l, scale[6].a - 1); cands.push(s5); }
-  const choices = fourChoices(rng, ans, cands.filter((s) => s.every(plain)).map(fmtList));
+  const candLists = cands.filter((s) => s.every(plain)).map(fmtList);
+  const choices = fourChoices(rng, ans, candLists);
   if (!choices) return genScales(difficulty, rng);
+  // Built from note blocks: the scale's notes plus distractor notes from the wrong options
+  // fourChoices drew (it still runs, so every seed keeps its scale), topped up from the other
+  // candidates, then other spellings of the scale's notes, when those give too few. The block
+  // order is the one extra rng call, made last.
+  const right = scale.map(fmt);
+  const notesOf = (lists, skip) => {
+    const out = [];
+    for (const l of lists) for (const n of l.split(', ')) if (!right.includes(n) && !skip.includes(n) && !out.includes(n)) out.push(n);
+    return out;
+  };
+  const [min, max] = { easy: [1, 1], medium: [3, 3], hard: [4, 6] }[difficulty];
+  let extra = notesOf(choices.filter((c) => c !== ans), []).slice(0, max);
+  if (extra.length < min) {
+    const respelt = scale.slice(1).flatMap((m) => [...enharmonics(m), note(m.l, m.a + 1), note(m.l, m.a - 1)]).filter(plain).map(fmt);
+    extra = [...extra, ...notesOf([...candLists, respelt.join(', ')], extra)].slice(0, min);
+  }
   return {
-    prompt: `Which of these is the ${kname} scale?`,
-    answer: ans, answerType: 'choice', choices,
+    prompt: `Spell the ${kname} scale ascending from the tonic, one block per note.`,
+    answer: ans, answerType: 'tiles', tiles: rng.shuffle([...right, ...extra]), joiner: ', ', useAll: false,
     explanation: `${sigLine}\n\nUsing each letter once from ${fmt(tonic)} gives **${ans}**. Its steps are ${patternWords}.`,
     hints: [
-      `A scale uses each letter name exactly once. Rule out any option that repeats or skips a letter.`,
-      `The ${mode === 'major' ? 'major' : mode === 'natural' ? 'natural minor' : 'harmonic minor'} pattern is ${patternWords}. Check the steps of each remaining option from ${fmt(tonic)}.`,
+      `A scale uses each letter name exactly once: start on ${fmt(tonic)} and place one block for each letter in order. Leave out any block that would repeat a letter.`,
+      `The ${mode === 'major' ? 'major' : mode === 'natural' ? 'natural minor' : 'harmonic minor'} pattern is ${patternWords}. On each letter, pick the block whose sharp, flat or natural gives the right step from the note before.`,
     ],
     params: { check: { kind: 'scale-list', tonic: fmt(tonic), mode } },
   };
@@ -1141,6 +1160,17 @@ function isRight(c, v) {
   }
 }
 
+// Note blocks: distinct note tiles, the answer built from them (each used once, in order), and
+// the scale re-derived by the CHECK side. Distractors are other spellings, so they never pass.
+function checkTiles(c, q, value) {
+  const vals = Array.isArray(q.tiles) ? q.tiles.map((t) => String(typeof t === 'string' ? t : t && t.value)) : [];
+  if (vals.length < 2 || vals.length > 24 || new Set(vals).size !== vals.length || !vals.every((v) => parseNote(v))) return false;
+  if (q.joiner !== ', ') return false;
+  const used = String(value ?? '').split(', ');
+  if (new Set(used).size !== used.length || !used.every((u) => vals.includes(u))) return false;
+  return isRight(c, used.join(', '));
+}
+
 function checkOne(c, type, value, choices) {
   if (type === 'choice') {
     if (!Array.isArray(choices) || choices.length !== 4 || new Set(choices).size !== 4) return false;
@@ -1159,5 +1189,6 @@ export function verify(question, answer) {
     if (!answer || typeof answer !== 'object' || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => p.parts[part.id] && checkOne(p.parts[part.id], part.answerType, answer[part.id], part.choices));
   }
+  if (question.answerType === 'tiles') return checkTiles(p.check, question, answer);
   return checkOne(p.check, question.answerType, answer, question.choices);
 }

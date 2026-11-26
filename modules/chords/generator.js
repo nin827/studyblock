@@ -2,7 +2,8 @@
 //
 // Chords are spelled from letter names (stacked thirds), so the D major triad is D, F♯, A and
 // never D, G♭, A. Spelled notes are always multiple choice (the app's text check can't tell
-// "F#" from "F♯"). No double sharps or flats appear anywhere.
+// "F#" from "F♯"); "which notes make this chord?" questions are built from note blocks instead
+// (one block per note, plus wrong spellings as distractors). No double sharps or flats appear anywhere.
 //
 // generate() builds chords with pitch-class arithmetic and key-signature tables (BUILD side of
 // js/lib/music.js). verify() re-derives every answer from params.check with the CHECK side:
@@ -61,6 +62,28 @@ function spellingDistractors(chord) {
   return out.filter((c) => c.every(plain));
 }
 
+// Spell-the-chord questions are built from note blocks: the chord's notes plus distractor notes
+// taken from the wrong options the old multiple-choice builder drew (enharmonic respellings, wrong
+// 3rds/5ths/7ths), topped up from its other candidates when those give too few. fourChoices still
+// runs first, so every seed keeps its chord and answer; the one extra rng call (the block order)
+// comes last.
+const EXTRA_NOTES = { easy: [1, 1], medium: [3, 3], hard: [4, 6] };
+const ORDER_WORDS = { 3: 'root, 3rd, 5th', 4: 'root, 3rd, 5th, 7th' };
+const blocksAsk = (n) => `Place the notes from the root up (${ORDER_WORDS[n]}).`;
+function noteTiles(rng, difficulty, chord, choices, cands) {
+  const right = chord.map(fmt);
+  const ans = fmtList(chord);
+  const notesOf = (lists, skip) => {
+    const out = [];
+    for (const s of lists) for (const n of s.split(', ')) if (!right.includes(n) && !skip.includes(n) && !out.includes(n)) out.push(n);
+    return out;
+  };
+  const [min, max] = EXTRA_NOTES[difficulty];
+  let extra = notesOf(choices.filter((c) => c !== ans), []).slice(0, max);
+  if (extra.length < min) extra = [...extra, ...notesOf(cands, extra)].slice(0, min);
+  return { answer: ans, answerType: 'tiles', tiles: rng.shuffle([...right, ...extra]), joiner: ', ', useAll: false };
+}
+
 // ---------------------------------------------------------------- Triads
 
 function genTriads(difficulty, rng) {
@@ -81,8 +104,8 @@ function genTriads(difficulty, rng) {
     const choices = fourChoices(rng, fmtList(chord), cands);
     if (!choices) return genTriads(difficulty, rng);
     return {
-      prompt: `Which notes make the ${name} triad?`,
-      answer: fmtList(chord), answerType: 'choice', choices,
+      prompt: `Which notes make the ${name} triad? ${blocksAsk(3)}`,
+      ...noteTiles(rng, difficulty, chord, choices, cands),
       explanation: explain,
       hints: [letterHint, sizeHint],
       params: { check: { kind: 'triad-notes', root: fmt(root), quality: q } },
@@ -307,8 +330,8 @@ function genInKey(difficulty, rng) {
   if (!notesC) return genInKey(difficulty, rng);
   if (what === 'notes') {
     return {
-      prompt: `Which notes make chord ${numeral} in ${kname}?`,
-      answer: fmtList(chord), answerType: 'choice', choices: notesC,
+      prompt: `Which notes make chord ${numeral} in ${kname}? ${blocksAsk(3)}`,
+      ...noteTiles(rng, difficulty, chord, notesC, others),
       explanation: `${scaleLine}\n\n${chordLine}\n\nSo the notes are **${fmtList(chord)}**.`,
       hints: [
         `Write out the ${kname} scale with its key signature.`,
@@ -349,14 +372,15 @@ function genSevenths(difficulty, rng) {
     if (!chord.every(plain)) return genSevenths(difficulty, rng);
     const kname = `${fmt(tonic)} major`;
     const expl = `The ${kname} scale is ${fmtList(scale)}. Its 5th note is ${fmt(root)}.\n\nV7 is the dominant 7th on that note: ${SEV_RECIPE.dom7}. Taking notes 5, 7, 2 and 4 of the scale gives **${fmtList(chord)}** (${sevName(root, 'dom7')}).`;
-    const listC = fourChoices(rng, fmtList(chord), [
+    const listCands = [
       buildChord(root, SEVENTH.maj7), buildChord(root, SEVENTH.min7), buildChord(tonic, SEVENTH.dom7), buildChord(scale[3], SEVENTH.dom7), ...spellingDistractors(chord),
-    ].filter((c) => c.every(plain)).map(fmtList));
+    ].filter((c) => c.every(plain)).map(fmtList);
+    const listC = fourChoices(rng, fmtList(chord), listCands);
     if (!listC) return genSevenths(difficulty, rng);
     if (kind === 'v7') {
       return {
-        prompt: `Which notes make the V7 chord in ${kname}?`,
-        answer: fmtList(chord), answerType: 'choice', choices: listC,
+        prompt: `Which notes make the V7 chord in ${kname}? ${blocksAsk(4)}`,
+        ...noteTiles(rng, difficulty, chord, listC, listCands),
         explanation: expl,
         hints: [
           `V is built on the 5th note of the ${kname} scale. Find that note first.`,
@@ -396,8 +420,8 @@ function genSevenths(difficulty, rng) {
     const choices = fourChoices(rng, fmtList(chord), cands);
     if (!choices) return genSevenths(difficulty, rng);
     return {
-      prompt: `Which notes make ${sym} (${fmt(root)} ${SEV_WORDS[t]})?`,
-      answer: fmtList(chord), answerType: 'choice', choices,
+      prompt: `Which notes make ${sym} (${fmt(root)} ${SEV_WORDS[t]})? ${blocksAsk(4)}`,
+      ...noteTiles(rng, difficulty, chord, choices, cands),
       explanation: expl,
       hints: [
         `A seventh chord stacks three thirds: use every other letter from ${LETTERS[root.l]}, four notes in all.`,
@@ -1095,6 +1119,17 @@ function isRight(c, v) {
   }
 }
 
+// Note blocks: distinct note tiles, the answer built from them (each used once, in order), and
+// the notes re-derived by the CHECK side. Distractors are other spellings, so they never pass.
+function checkTiles(c, q, value) {
+  const vals = Array.isArray(q.tiles) ? q.tiles.map((t) => String(typeof t === 'string' ? t : t && t.value)) : [];
+  if (vals.length < 2 || vals.length > 24 || new Set(vals).size !== vals.length || !vals.every((v) => parseNote(v))) return false;
+  if (q.joiner !== ', ') return false;
+  const used = String(value ?? '').split(', ');
+  if (new Set(used).size !== used.length || !used.every((u) => vals.includes(u))) return false;
+  return isRight(c, used.join(', '));
+}
+
 function checkOne(c, type, value, choices) {
   if (type === 'choice') {
     if (!Array.isArray(choices) || choices.length !== 4 || new Set(choices).size !== 4) return false;
@@ -1113,5 +1148,6 @@ export function verify(question, answer) {
     if (!answer || typeof answer !== 'object' || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => p.parts[part.id] && checkOne(p.parts[part.id], part.answerType, answer[part.id], part.choices));
   }
+  if (question.answerType === 'tiles') return checkTiles(p.check, question, answer);
   return checkOne(p.check, question.answerType, answer, question.choices);
 }

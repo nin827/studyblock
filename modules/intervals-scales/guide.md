@@ -44,6 +44,8 @@ Example: G major is G, A, B, C, D, E, F♯. Its 7th note is **F♯**.
 
 **Watch out:** a minor scale uses the key signature of its relative major (a minor 3rd higher): E minor has one sharp, like G major.
 
+**Blocks:** to spell a whole scale, place one block per letter name, ascending from the tonic. Some blocks are wrong spellings (A♯ where the scale needs B♭, or a missing sharp or flat): leave those in the bank.
+
 **Expert: working backwards and the raised 7th.** To find which scale a note belongs to, count the letters down to the tonic (the note is degree n, so go down n − 1 letters), then pick the accidental that gives the right interval from the tonic. The parallel minor (same tonic) lowers the 3rd, 6th and 7th of the major. In harmonic minor the raised 7th makes an augmented 2nd from the 6th, and diminished intervals from the 7th up to the 3rd, 4th and 6th above it.
 
 | Scale | Step pattern (T = tone, S = semitone) |

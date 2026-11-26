@@ -18,6 +18,8 @@ Example: D major needs a major 3rd above D. D to F is only 3 semitones, so raise
 
 **Watch out:** a diminished triad has a minor 3rd **and** a diminished 5th: B, D, F.
 
+**Blocks:** "Which notes make…" questions are answered with note blocks. Place them from the root up (root, 3rd, 5th, then 7th for seventh chords). Some blocks are wrong spellings, such as G♭ instead of F♯ or a 3rd with the wrong accidental: leave those in the bank.
+
 **Expert: working backwards and altering.** If a note is the 3rd of a triad, the root is 3 letters below it; if it is the 5th, 5 letters below. Then choose the accidental that gives the right size (G♯ as the 3rd of a major triad: E). When one note moves a semitone with the same letter, the letters still stack in thirds, so remeasure from the bottom letter: raising the root of C major gives C♯, E, G, which is C♯ diminished.
 
 ## Identify

@@ -32,4 +32,4 @@ The triads on each note of a major scale are **I ii iii IV V vi vii°**: capital
 
 ## Answer formats
 
-Every answer is multiple choice: notes are listed lowest first, like `D, F♯, A`. No chord needs a double sharp or flat. There's no calculator here.
+Answers are multiple choice, or built from note blocks when you spell a whole chord: notes go lowest first (from the root up), like `D, F♯, A`, and some blocks are wrong spellings to leave out. No chord needs a double sharp or flat. There's no calculator here.
