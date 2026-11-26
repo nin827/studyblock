@@ -110,6 +110,7 @@ On phones the menu sits at the bottom of the screen.
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
    - **Text answers:** capital letters and extra spaces don't matter, including spaces around `:` and `,` (so `2,4` matches `2, 4`). A typed `−` counts the same as `-`.
    - **Multiple choice:** tap an option, or press keys **1–9**.
+   - **Blocks:** build the answer by tapping blocks in turn, or dragging them into the "Your answer" row. Tap a placed block (or drag it back) to remove it, drag to reorder, and use **Reset** to start again. On a keyboard, Enter places a block and Alt+←/→ moves it. When there are many blocks, type in **Filter blocks** to find one. Timelines → Ordering uses blocks.
    - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
    - **Ratios:** type them like `3:4`.
    - **Percentages:** type the number without the `%` sign, with a minus for a decrease.

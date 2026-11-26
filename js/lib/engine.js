@@ -379,6 +379,62 @@ export function sanitizeHints(raw, warnKey, shown = raw) {
   return out.length ? out : undefined;
 }
 
+// ---- drag-the-blocks answers (answerType "tiles") ----
+// tiles: 2-24 entries (room for distractor blocks), each a string (shorthand for { value: s, label: s }) or { value, label }.
+// joiner: placed between the placed tiles' values (string, at most 5 chars, default " ").
+// useAll: true = every tile must be placed before Check (no distractors); default false.
+// The answer is the correct tiles' values joined by `joiner`; checking uses the text rules.
+export const TILES_MIN = 2;
+export const TILES_MAX = 24;
+const TILE_VALUE_MAX = 200;
+const TILE_LABEL_MAX = 300;
+const TILE_JOINER_MAX = 5;
+
+// { tiles: [{ value, label }], joiner, useAll } or null when the shape is invalid.
+// Bad tile entries are dropped; fewer than 2 (or more than 24) left = invalid.
+export function sanitizeTiles(q) {
+  if (!q || !Array.isArray(q.tiles)) return null;
+  const tiles = [];
+  for (const t of q.tiles) {
+    const raw = typeof t === 'string' || typeof t === 'number' ? { value: t, label: t } : (t && typeof t === 'object' ? t : null);
+    if (!raw) continue;
+    const value = typeof raw.value === 'string' || (typeof raw.value === 'number' && Number.isFinite(raw.value)) ? String(raw.value).trim() : '';
+    const lab = raw.label === undefined || raw.label === null ? value : raw.label;
+    const label = typeof lab === 'string' || (typeof lab === 'number' && Number.isFinite(lab)) ? String(lab).trim() : '';
+    if (!value || !label || value.length > TILE_VALUE_MAX || label.length > TILE_LABEL_MAX) continue;
+    tiles.push({ value, label });
+  }
+  if (tiles.length < TILES_MIN || tiles.length > TILES_MAX) return null;
+  if (q.joiner !== undefined && (typeof q.joiner !== 'string' || q.joiner.length > TILE_JOINER_MAX)) return null;
+  if (q.useAll !== undefined && typeof q.useAll !== 'boolean') return null;
+  return { tiles, joiner: q.joiner === undefined ? ' ' : q.joiner, useAll: q.useAll === true };
+}
+
+// True if some arrangement of distinct tiles (all of them when useAll) joined by `joiner` gives
+// exactly `answer`. Depth-first with prefix pruning; equal values are tried once per depth.
+export function tilesReachable(tiles, joiner, answer, useAll) {
+  const target = String(answer ?? '');
+  if (!target.trim()) return false;
+  const used = new Array(tiles.length).fill(false);
+  const dfs = (prefix, count) => {
+    if (count > 0 && prefix === target && (!useAll || count === tiles.length)) return true;
+    if (count === tiles.length) return false;
+    const tried = new Set();
+    for (let i = 0; i < tiles.length; i++) {
+      const v = tiles[i].value;
+      if (used[i] || tried.has(v)) continue;
+      tried.add(v);
+      const next = count ? prefix + joiner + v : v;
+      if (!target.startsWith(next)) continue;
+      used[i] = true;
+      if (dfs(next, count + 1)) return true;
+      used[i] = false;
+    }
+    return false;
+  };
+  return dfs('', 0);
+}
+
 function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
   const hints = sanitizeHints(q?.hints, warnKey);
@@ -392,6 +448,23 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
       answer: multiAnswer(parts),
       answerType: 'multi',
       parts,
+      choices: undefined,
+      tolerance: undefined,
+      explanation: q.explanation ? String(q.explanation) : '',
+      ...extra,
+    };
+  }
+  if (q.answerType === 'tiles') {
+    // An invalid shape keeps answerType "tiles" with no tiles; generateVerified rejects it.
+    const t = sanitizeTiles(q);
+    return {
+      seed,
+      prompt: String(q.prompt ?? ''),
+      answer: q.answer === undefined || q.answer === null ? '' : String(q.answer),
+      answerType: 'tiles',
+      tiles: t ? t.tiles : [],
+      joiner: t ? t.joiner : ' ',
+      useAll: t ? t.useAll : false,
       choices: undefined,
       tolerance: undefined,
       explanation: q.explanation ? String(q.explanation) : '',
@@ -428,6 +501,9 @@ function generateVerified(gen, subtopic, difficulty, seed, lang = null, maxTries
       if (raw.answerType === 'multi') {
         shapeOk = multiShapeOk(raw);
         own = shapeOk ? multiAnswer(raw.parts) : null;
+      } else if (raw.answerType === 'tiles') {
+        shapeOk = q.tiles.length >= TILES_MIN && tilesReachable(q.tiles, q.joiner, q.answer, q.useAll);
+        own = raw.answer;
       } else {
         shapeOk = q.answerType !== 'choice' || (q.choices && q.choices.includes(String(q.answer)));
         own = raw.answer;
@@ -835,7 +911,8 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 const normText = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
 
 /*
- * Single questions: returns a boolean (unchanged).
+ * Single questions: returns a boolean (unchanged). Tiles questions ("tiles") are checked by the
+ * text rules: `userAnswer` is the placed tiles' values joined by the question's joiner.
  * Multi-part questions (answerType "multi"): `userAnswer` is { [partId]: value } and the result is
  * { correct, credit, parts: [{ id, label, correct }] }; `correct` only if every part is correct,
  * `credit` = parts right / parts total (partial credit, 0–1).

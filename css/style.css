@@ -793,6 +793,84 @@ a.chip-main { text-decoration: none; }
 .choice.is-wrong .choice-mark { color: var(--wrong-fg); }
 @media (hover: hover) { .choice:hover:not(:disabled) { border-color: var(--accent); } }
 
+/* drag-the-blocks questions (answerType "tiles"): an answer row above a bank of blocks */
+.tiles-form { gap: 10px; }
+.tiles-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tiles-head .field-label { margin: 0; }
+.tiles-reset { min-height: 44px; gap: 6px; }
+.tiles-reset .icon { width: 16px; height: 16px; }
+.tiles-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0;
+  list-style: none; margin: 0; padding: 0;
+}
+.tiles-answer {
+  min-height: 72px; padding: 10px; position: relative;
+  border: 2px dashed var(--line); border-radius: 14px; background: var(--paper);
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.tiles-answer.is-empty::before {
+  content: attr(data-placeholder); color: var(--muted); font-size: 15px; padding: 0 6px;
+}
+.tiles-answer.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.tiles-answer.is-correct { border-style: solid; border-color: var(--correct); background: var(--correct-bg); }
+.tiles-answer.is-wrong { border-style: solid; border-color: var(--wrong); background: var(--wrong-bg); }
+.tiles-answer.is-revealed { border-style: solid; border-color: var(--accent); }
+.tiles-bank-label { margin: 6px 0 0; }
+.tiles-bank {
+  min-height: 60px; padding: 8px; border-radius: 14px; background: var(--sunken);
+  border: 2px solid transparent;
+}
+.tiles-bank.is-over { border-color: var(--accent); }
+.tiles-bank.is-empty::before { content: "All blocks placed"; color: var(--muted); font-size: 14px; padding: 0 6px; }
+.tiles-bank.is-filtered-empty::before { content: "No blocks match the filter"; color: var(--muted); font-size: 14px; padding: 0 6px; }
+.tiles-filter { position: relative; display: flex; align-items: center; }
+.tiles-filter[hidden] { display: none; }
+.tiles-filter .icon { position: absolute; left: 12px; width: 16px; height: 16px; color: var(--muted); pointer-events: none; }
+.tiles-filter-input {
+  width: 100%; min-width: 0; min-height: 44px; padding: 0 12px 0 36px; font: inherit; font-size: 16px; color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface);
+}
+.tiles-filter-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.tile[hidden] { display: none; }
+.tiles-help { margin: 0; font-size: 13px; }
+.tiles-help kbd {
+  font: inherit; font-size: 12px; padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--line); border-bottom-width: 2px; background: var(--paper);
+}
+
+.tile {
+  display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; min-height: 44px;
+  padding: 8px 14px; font: inherit; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: left;
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-control);
+  box-shadow: var(--shadow-card); cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.tile-label { min-width: 0; overflow-wrap: anywhere; }
+.tile-key {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  min-width: 24px; height: 24px; padding: 0 5px; border-radius: 6px; font-size: 13px; font-weight: 700;
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.tiles-answer .tile { border-color: var(--accent); }
+@media (hover: hover) { .tile:hover:not(:disabled):not(.is-static) { border-color: var(--accent); } }
+.tile:disabled { cursor: default; opacity: 1; color: var(--ink); }
+.tiles-bank .tile:disabled { color: var(--muted); }
+.tile.is-static { cursor: default; touch-action: auto; box-shadow: none; }
+.tile.is-drag-source { opacity: 0.35; }
+.tile-ghost {
+  position: fixed; top: 0; left: 0; z-index: 1000; margin: 0; pointer-events: none;
+  cursor: grabbing; border-color: var(--accent); box-shadow: var(--shadow-raised), 0 12px 28px rgba(0, 0, 0, 0.18);
+  rotate: -2deg; scale: 1.04;
+}
+.tile-marker {
+  align-self: stretch; width: 3px; min-height: 40px; margin: 0 -2px; border-radius: 2px; background: var(--accent);
+}
+body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-select: none; -webkit-user-select: none; }
+.tiles-solution { margin: 2px 0; }
+.tiles-solution .tile { background: var(--surface); }
+.feedback .tiles-solution .tile { color: var(--ink); }
+
 /* multi-part questions: one stacked field per part */
 .multi-form { gap: 12px; }
 .part {

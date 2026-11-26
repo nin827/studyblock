@@ -169,7 +169,8 @@ export async function runQuiz(root, ctx, opts) {
 
   function focusAnswer() {
     if (phase === 'answer' && isMulti(questions[idx]) && focusPart(lastPart)) return;
-    const target = root.querySelector('#answer:not(:disabled)') || root.querySelector('#next') || root.querySelector('.choice:not(:disabled)');
+    const target = root.querySelector('#answer:not(:disabled)') || root.querySelector('#next') || root.querySelector('.choice:not(:disabled)')
+      || root.querySelector('.tiles-form .tile:not(:disabled)');
     target?.focus();
   }
 
@@ -226,9 +227,10 @@ export async function runQuiz(root, ctx, opts) {
     calc.setVisible(on);
     if (!on) setSheet(false);
     // Multi-part: Use follows the part that last had focus (disabled on a choice group).
-    const typed = isMulti(q) ? partOf(q)(lastPart)?.answerType !== 'choice' : q.answerType !== 'choice';
+    const typed = isMulti(q) ? partOf(q)(lastPart)?.answerType !== 'choice' : q.answerType !== 'choice' && !isTiles(q);
     calc.setUseEnabled(on && typed && phase === 'answer',
-      !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
+      isTiles(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+        : !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
         : phase !== 'answer' ? 'Use fills the answer on the next question.' : '');
   }
 
@@ -426,6 +428,358 @@ export async function runQuiz(root, ctx, opts) {
     focusPart(lastPart);
   }
 
+  // ---- drag-the-blocks questions (answerType "tiles") ----
+  // A bank of tile buttons and an answer row. Tap (or Enter/Space) moves a tile between them;
+  // Pointer Events drag places, reorders and returns tiles (mouse and touch, no HTML5 DnD);
+  // Alt/Shift+←/→ moves a placed tile. The answer is the placed values joined by `q.joiner`.
+  const isTiles = q => q?.answerType === 'tiles';
+  const DRAG_THRESHOLD = 6;
+  const TILES_FILTER_MIN = 10; // more blocks than this in the bank shows "Filter blocks"
+  let ts = null; // { q, placed: [tile index], locked, drag }
+
+  const tileText = t => (t.value !== t.label ? `${t.value}: ${t.label}` : t.label);
+  function tileInner(t) {
+    const badge = t.value !== t.label ? `<span class="tile-key">${esc(t.value)}</span>` : '';
+    return `${badge}<span class="tile-label">${renderInline(t.label)}</span>`;
+  }
+  const tilesReady = () => !!ts && !ts.locked && phase === 'answer'
+    && (ts.q.useAll ? ts.placed.length === ts.q.tiles.length : ts.placed.length >= 1);
+  const tilesValue = () => ts.placed.map(i => ts.q.tiles[i].value).join(ts.q.joiner);
+
+  function tilesHtml(q) {
+    const rule = q.useAll ? 'Use every block.' : 'You may not need every block.';
+    return `<form class="answer-form tiles-form" id="answer-form" autocomplete="off" novalidate>
+        <div class="tiles-head">
+          <p class="field-label" id="tiles-answer-label">Your answer</p>
+          <button type="button" class="btn btn-small tiles-reset" id="tiles-reset" disabled>${icon('rotate-ccw')}<span>Reset</span></button>
+        </div>
+        <div class="tiles-row tiles-answer" id="tiles-answer" role="group" aria-labelledby="tiles-answer-label" aria-describedby="tiles-help"
+          data-placeholder="Drag or tap blocks here"></div>
+        <p class="field-label tiles-bank-label" id="tiles-bank-label">Blocks</p>
+        ${q.tiles.length > TILES_FILTER_MIN ? `<div class="tiles-filter" id="tiles-filter-wrap" hidden>${icon('search')}
+          <input type="text" class="tiles-filter-input" id="tiles-filter" placeholder="Filter blocks" aria-label="Filter blocks"
+            aria-controls="tiles-bank" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>` : ''}
+        <div class="tiles-row tiles-bank" id="tiles-bank" role="group" aria-labelledby="tiles-bank-label" aria-describedby="tiles-help"></div>
+        <p class="tiles-help muted" id="tiles-help">${esc(rule)} Tap a block to place it, tap it again to send it back.<span class="desktop-only"> <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> moves a placed block.</span></p>
+        <p class="sr-only" id="tiles-status" aria-live="polite"></p>
+      </form>`;
+  }
+
+  function tileButton(i, pos, n) {
+    const t = ts.q.tiles[i];
+    const where = pos === null ? '' : `<span class="sr-only">, position ${pos + 1} of ${n}</span>`;
+    return `<button type="button" class="tile" data-t="${i}"${ts.locked ? ' disabled' : ''}>${tileInner(t)}${where}</button>`;
+  }
+
+  // Redraw both rows from `ts.placed`. `focus`: { t, where: 'answer'|'bank' } or a fallback slot.
+  function renderTiles(focus) {
+    const ans = root.querySelector('#tiles-answer');
+    const bank = root.querySelector('#tiles-bank');
+    if (!ts || !ans || !bank) return;
+    const n = ts.placed.length;
+    ans.innerHTML = ts.placed.map((i, k) => tileButton(i, k, n)).join('');
+    const unplaced = ts.q.tiles.map((_, i) => i).filter(i => !ts.placed.includes(i));
+    bank.innerHTML = unplaced.map(i => tileButton(i, null, 0)).join('');
+    ans.classList.toggle('is-empty', n === 0);
+    bank.classList.toggle('is-empty', unplaced.length === 0);
+    applyTileFilter(unplaced.length);
+    const reset = root.querySelector('#tiles-reset');
+    if (reset) {
+      if (reset === document.activeElement && (n === 0 || ts.locked)) bank.querySelector('.tile')?.focus();
+      reset.disabled = n === 0 || ts.locked;
+    }
+    const check = root.querySelector('#check');
+    if (check) check.disabled = !tilesReady();
+    if (focus) {
+      const row = focus.where === 'answer' ? ans : bank;
+      const vis = [...row.querySelectorAll('.tile:not([hidden])')];
+      const el = row.querySelector(`.tile[data-t="${focus.t}"]:not([hidden])`)
+        || vis[Math.min(focus.slot ?? 0, vis.length - 1)]
+        || ans.querySelector('.tile:last-child') || bank.querySelector('.tile:not([hidden])');
+      el?.focus({ preventScroll: true });
+    }
+  }
+
+  // "Filter blocks": shown while the bank holds more than TILES_FILTER_MIN blocks. Case-insensitive
+  // substring match on label and value; hides non-matching bank blocks only (never placed ones).
+  function applyTileFilter(bankCount = root.querySelectorAll('#tiles-bank .tile').length) {
+    const wrap = root.querySelector('#tiles-filter-wrap');
+    const input = root.querySelector('#tiles-filter');
+    if (!wrap || !input || !ts) return;
+    const show = bankCount > TILES_FILTER_MIN && !ts.locked;
+    if (!show && input.value) input.value = '';
+    if (!show && document.activeElement === input) root.querySelector('#tiles-bank .tile')?.focus();
+    wrap.hidden = !show;
+    const needle = input.value.trim().toLowerCase();
+    let shown = 0;
+    root.querySelectorAll('#tiles-bank .tile').forEach(b => {
+      const t = ts.q.tiles[+b.dataset.t];
+      const hit = !needle || t.label.toLowerCase().includes(needle) || t.value.toLowerCase().includes(needle);
+      b.hidden = !hit;
+      if (hit) shown++;
+    });
+    root.querySelector('#tiles-bank')?.classList.toggle('is-filtered-empty', !!needle && shown === 0);
+  }
+
+  function tilesAnnounce(msg) {
+    const s = root.querySelector('#tiles-status');
+    if (s) s.textContent = msg;
+  }
+
+  // Any change clears a guided "wrong" mark.
+  function tilesChanged() {
+    root.querySelector('#tiles-answer')?.classList.remove('is-wrong');
+  }
+
+  function placeTile(i, at = ts.placed.length, focusWhere = null) {
+    if (!ts || ts.locked || phase !== 'answer') return;
+    const from = ts.placed.indexOf(i);
+    const bankSlot = from < 0 ? ts.q.tiles.map((_, k) => k).filter(k => !ts.placed.includes(k)).indexOf(i) : 0;
+    if (from >= 0) ts.placed.splice(from, 1); // `at` counts positions without this tile
+    at = Math.max(0, Math.min(at, ts.placed.length));
+    ts.placed.splice(at, 0, i);
+    tilesChanged();
+    // Tapping from the bank keeps focus in the bank (next block), so blocks can be placed in turn.
+    const stayInBank = focusWhere === 'bank' && ts.placed.length < ts.q.tiles.length;
+    renderTiles(stayInBank ? { where: 'bank', slot: bankSlot } : (focusWhere ? { t: i, where: 'answer' } : null));
+    tilesAnnounce(`Placed ${tileText(ts.q.tiles[i])}, position ${at + 1} of ${ts.placed.length}`);
+  }
+
+  function returnTile(i, focusWhere = null) {
+    if (!ts || ts.locked || phase !== 'answer') return;
+    const from = ts.placed.indexOf(i);
+    if (from < 0) return;
+    ts.placed.splice(from, 1);
+    tilesChanged();
+    renderTiles(focusWhere ? (ts.placed.length ? { where: 'answer', slot: from } : { t: i, where: 'bank' }) : null);
+    tilesAnnounce(`Returned ${tileText(ts.q.tiles[i])}`);
+  }
+
+  function resetTiles() {
+    if (!ts || ts.locked || phase !== 'answer' || !ts.placed.length) return;
+    ts.placed = [];
+    tilesChanged();
+    renderTiles({ where: 'bank', slot: 0 });
+    tilesAnnounce('All blocks returned');
+  }
+
+  function lockTiles() {
+    if (!ts) return;
+    ts.locked = true;
+    cancelDrag();
+    root.querySelectorAll('.tiles-form .tile, #tiles-reset').forEach(el => { el.disabled = true; });
+    root.querySelector('.tiles-form')?.classList.add('is-locked');
+    applyTileFilter();
+  }
+
+  // Tile indices that spell the answer (values joined by the joiner, longest value first at each
+  // step), or null when the answer can't be mapped onto the tiles.
+  function solutionOrder(q) {
+    const used = new Set();
+    const out = [];
+    let rest = String(q.answer ?? '');
+    while (rest.length) {
+      let hit = -1;
+      q.tiles.forEach((t, i) => {
+        if (!used.has(i) && (rest === t.value || rest.startsWith(t.value + q.joiner))
+          && (hit < 0 || t.value.length > q.tiles[hit].value.length)) hit = i;
+      });
+      if (hit < 0) return null;
+      used.add(hit);
+      out.push(hit);
+      rest = rest === q.tiles[hit].value ? '' : rest.slice(q.tiles[hit].value.length + q.joiner.length);
+    }
+    return out.length ? out : null;
+  }
+
+  // Static (non-interactive) chips for the correct order, or '' if the answer can't be mapped.
+  function tilesOrderHtml(q) {
+    const order = solutionOrder(q);
+    if (!order) return '';
+    return `<ol class="tiles-row tiles-solution" aria-label="Correct order">${order.map(i =>
+      `<li class="tile is-static">${tileInner(q.tiles[i])}</li>`).join('')}</ol>`;
+  }
+
+  // Shows the correct order in the answer row itself (guided Show solution).
+  function placeSolution(q) {
+    const order = solutionOrder(q);
+    if (!order) return false;
+    ts.placed = order;
+    renderTiles();
+    return true;
+  }
+
+  // ---- pointer dragging ----
+  function cancelDrag() {
+    const d = ts?.drag;
+    if (!d) return;
+    d.ghost?.remove();
+    d.marker?.remove();
+    d.src?.classList.remove('is-drag-source');
+    root.querySelectorAll('.tiles-row.is-over').forEach(r => r.classList.remove('is-over'));
+    document.body.classList.remove('tiles-dragging');
+    ts.drag = null;
+  }
+
+  // Index in the answer row where a tile dropped at (x, y) would go, ignoring the dragged tile.
+  function dropIndex(ans, x, y, skip) {
+    const tiles = [...ans.querySelectorAll('.tile')].filter(el => el !== skip);
+    for (let k = 0; k < tiles.length; k++) {
+      const r = tiles[k].getBoundingClientRect();
+      if (y < r.top) return k;
+      if (y <= r.bottom && x < r.left + r.width / 2) return k;
+    }
+    return tiles.length;
+  }
+
+  function zoneAt(x, y) {
+    const pad = 12; // a little slack around each row
+    for (const id of ['tiles-answer', 'tiles-bank']) {
+      const el = root.querySelector(`#${id}`);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad) return id === 'tiles-answer' ? 'answer' : 'bank';
+    }
+    return null;
+  }
+
+  function onTilePointerDown(e) {
+    const b = e.target.closest?.('.tile');
+    if (!b || b.disabled || !ts || ts.locked || phase !== 'answer') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelDrag();
+    ts.drag = { id: e.pointerId, src: b, t: +b.dataset.t, x0: e.clientX, y0: e.clientY, active: false, ghost: null, marker: null };
+    try { b.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+
+  function onTilePointerMove(e) {
+    const d = ts?.drag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_THRESHOLD) return;
+      d.active = true;
+      const r = d.src.getBoundingClientRect();
+      d.dx = d.x0 - r.left;
+      d.dy = d.y0 - r.top;
+      const g = d.src.cloneNode(true);
+      g.removeAttribute('data-t');
+      g.classList.add('tile-ghost');
+      g.setAttribute('aria-hidden', 'true');
+      g.tabIndex = -1;
+      g.style.width = `${r.width}px`;
+      g.style.height = `${r.height}px`;
+      document.body.appendChild(g);
+      d.ghost = g;
+      d.src.classList.add('is-drag-source');
+      d.marker = document.createElement('span');
+      d.marker.className = 'tile-marker';
+      d.marker.setAttribute('aria-hidden', 'true');
+      document.body.classList.add('tiles-dragging');
+    }
+    e.preventDefault();
+    d.ghost.style.transform = `translate(${Math.round(e.clientX - d.dx)}px, ${Math.round(e.clientY - d.dy)}px)`;
+    const zone = zoneAt(e.clientX, e.clientY);
+    const ans = root.querySelector('#tiles-answer');
+    const bank = root.querySelector('#tiles-bank');
+    ans?.classList.toggle('is-over', zone === 'answer');
+    bank?.classList.toggle('is-over', zone === 'bank' && ts.placed.includes(d.t));
+    if (zone === 'answer' && ans) {
+      const k = dropIndex(ans, e.clientX, e.clientY, d.src);
+      const others = [...ans.querySelectorAll('.tile')].filter(el => el !== d.src);
+      if (k < others.length) ans.insertBefore(d.marker, others[k]); else ans.appendChild(d.marker);
+    } else {
+      d.marker.remove();
+    }
+  }
+
+  function onTilePointerUp(e) {
+    const d = ts?.drag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.active) {
+      // A tap. Handled here rather than in `click`: after a touch drag, Chrome's gesture detector
+      // can swallow the next tap's click. The click that may still follow is ignored (onTileClick).
+      ts.drag = null;
+      ts.pointerAt = performance.now();
+      activateTile(d.src);
+      return;
+    }
+    // Work the drop out from the release point: pointermoves are coalesced per frame, so the last
+    // one may not be where the pointer ended up.
+    const zone = zoneAt(e.clientX, e.clientY);
+    const ans = root.querySelector('#tiles-answer');
+    const at = zone === 'answer' && ans ? dropIndex(ans, e.clientX, e.clientY, d.src) : null;
+    const t = d.t;
+    cancelDrag();
+    ts.pointerAt = performance.now();
+    if (zone === 'answer' && at !== null) placeTile(t, at);
+    else if (zone === 'bank' && ts.placed.includes(t)) returnTile(t);
+  }
+
+  // Pointer taps and drops are handled on pointerup; a pointer click (detail > 0) right after one is
+  // that same gesture. Keyboard and assistive-tech clicks (detail 0) always count.
+  function onTileClick(e) {
+    const b = e.target.closest?.('.tile');
+    if (!b || b.disabled || !ts) return;
+    if (e.detail > 0 && performance.now() - ts.pointerAt < 1000) { e.preventDefault(); return; }
+    activateTile(b);
+  }
+
+  function activateTile(b) {
+    if (!b || b.disabled || !ts || !b.isConnected) return;
+    const t = +b.dataset.t;
+    if (b.closest('#tiles-answer')) returnTile(t, 'answer');
+    else placeTile(t, ts.placed.length, 'bank');
+  }
+
+  function onTileKey(e) {
+    const b = e.target.closest?.('.tile');
+    if (!b || b.disabled || !ts) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const dir = e.key === 'ArrowLeft' ? -1 : 1;
+    const inAnswer = !!b.closest('#tiles-answer');
+    const t = +b.dataset.t;
+    if ((e.altKey || e.shiftKey) && inAnswer) {
+      e.preventDefault();
+      const from = ts.placed.indexOf(t);
+      const to = from + dir;
+      if (from < 0 || to < 0 || to >= ts.placed.length) return;
+      ts.placed.splice(from, 1);
+      ts.placed.splice(to, 0, t);
+      tilesChanged();
+      renderTiles({ t, where: 'answer' });
+      tilesAnnounce(`Moved ${tileText(ts.q.tiles[t])}, position ${to + 1} of ${ts.placed.length}`);
+    } else if (!e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      // Plain arrows move focus along the row.
+      const row = [...b.parentElement.querySelectorAll('.tile:not([hidden])')];
+      const next = row[row.indexOf(b) + dir];
+      if (next) { e.preventDefault(); next.focus(); }
+    }
+  }
+
+  function bindTiles(q) {
+    ts = { q, placed: [], locked: false, drag: null, pointerAt: -Infinity };
+    const form = root.querySelector('#answer-form');
+    if (!form) return;
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (tilesReady()) submit(tilesValue());
+    });
+    form.addEventListener('click', onTileClick);
+    form.addEventListener('keydown', onTileKey);
+    form.addEventListener('pointerdown', onTilePointerDown);
+    form.addEventListener('pointermove', onTilePointerMove);
+    form.addEventListener('pointerup', onTilePointerUp);
+    form.addEventListener('pointercancel', () => cancelDrag());
+    form.addEventListener('lostpointercapture', e => { if (ts?.drag && ts.drag.id === e.pointerId && ts.drag.active) cancelDrag(); });
+    root.querySelector('#tiles-reset')?.addEventListener('click', resetTiles);
+    const filter = root.querySelector('#tiles-filter');
+    filter?.addEventListener('input', () => applyTileFilter());
+    filter?.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && filter.value) { e.preventDefault(); e.stopPropagation(); filter.value = ''; applyTileFilter(); }
+    });
+    renderTiles({ where: 'bank', slot: 0 });
+  }
+
   function inputHtml(q) {
     if (isMulti(q)) {
       const n = (q.parts || []).length;
@@ -433,6 +787,7 @@ export async function runQuiz(root, ctx, opts) {
         ${(q.parts || []).map((p, i) => partHtml(p, i, n)).join('')}
       </form>`;
     }
+    if (isTiles(q)) return tilesHtml(q);
     if (q.answerType === 'choice') {
       return `<div class="choices">${(q.choices || []).map((c, i) =>
         `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
@@ -450,6 +805,10 @@ export async function runQuiz(root, ctx, opts) {
   function actionBar(q) {
     if (isMulti(q)) {
       return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> for the next part</span></p>
+        ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
+    }
+    if (isTiles(q)) {
+      return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> on a block to place it</span></p>
         ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
     }
     if (q.answerType === 'choice') {
@@ -577,12 +936,15 @@ export async function runQuiz(root, ctx, opts) {
         <div class="action-bar" id="action-bar">${actionBar(q)}</div>
       </section>`;
     if (isMulti(q)) lastPart = q.parts?.[0]?.id ?? null;
+    cancelDrag();
+    ts = null;
     if (guided) bindGuided(q);
     // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
     calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
     applyCalc(q);
     icons();
     if (isMulti(q)) { bindMulti(q); return; }
+    if (isTiles(q)) { bindTiles(q); return; }
     const form = root.querySelector('.answer-form');
     if (form) {
       form.addEventListener('submit', e => { e.preventDefault(); submit(root.querySelector('#answer').value); });
@@ -646,6 +1008,8 @@ export async function runQuiz(root, ctx, opts) {
     } else if (q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
       if (!b || b.disabled) return;
+    } else if (isTiles(q)) {
+      if (!tilesReady()) return;
     } else if (!String(value ?? '').trim()) {
       root.querySelector('#answer')?.focus();
       return;
@@ -670,6 +1034,8 @@ export async function runQuiz(root, ctx, opts) {
       const m = b.querySelector('.choice-mark');
       if (m) m.innerHTML = markHtml(false);
       b.disabled = true;
+    } else if (isTiles(q)) {
+      root.querySelector('#tiles-answer')?.classList.add('is-wrong'); // cleared on the next change
     } else {
       root.querySelector('#answer')?.classList.add('is-wrong');
     }
@@ -685,6 +1051,8 @@ export async function runQuiz(root, ctx, opts) {
       focusPart(firstWrong, true);
     } else if (q.answerType === 'choice') {
       root.querySelector('.choices .choice:not(:disabled)')?.focus();
+    } else if (isTiles(q)) {
+      root.querySelector('#tiles-answer .tile')?.focus();
     } else {
       const input = root.querySelector('#answer');
       input?.focus();
@@ -701,6 +1069,8 @@ export async function runQuiz(root, ctx, opts) {
         const m = b.querySelector('.choice-mark');
         if (m) m.innerHTML = markHtml(true);
       }
+    } else if (isTiles(q)) {
+      root.querySelector('#tiles-answer')?.classList.add('is-correct');
     } else if (!multi) {
       root.querySelector('#answer')?.classList.remove('is-wrong');
       root.querySelector('#answer')?.classList.add('is-correct');
@@ -729,6 +1099,13 @@ export async function runQuiz(root, ctx, opts) {
           });
         }
       }
+    } else if (isTiles(q)) {
+      // Lay the correct blocks out in the answer row.
+      if (placeSolution(q)) {
+        const ans = root.querySelector('#tiles-answer');
+        ans?.classList.remove('is-wrong');
+        ans?.classList.add('is-revealed');
+      }
     } else if (q.answerType === 'choice') {
       root.querySelector('.choices')?.classList.add('is-answered');
       root.querySelectorAll('.choices .choice').forEach(b => {
@@ -748,6 +1125,7 @@ export async function runQuiz(root, ctx, opts) {
     gResults.push({ q, outcome, tries: gs.tries, hints: hintsUsed() });
     applyCalc(q);
     root.querySelectorAll('.answer-form input, .choice, #check, .part-hint-btn').forEach(el => { el.disabled = true; });
+    if (isTiles(q)) lockTiles();
     const tools = root.querySelector('#guided-tools');
     if (tools) tools.hidden = true;
 
@@ -815,6 +1193,10 @@ export async function runQuiz(root, ctx, opts) {
     applyCalc(q);
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice').forEach(el => { el.disabled = true; });
+    if (isTiles(q)) {
+      lockTiles();
+      root.querySelector('#tiles-answer')?.classList.add(correct ? 'is-correct' : 'is-wrong');
+    }
     if (multi) {
       for (const pr of partResults) {
         const p = partOf(q)(pr.id);
@@ -874,7 +1256,7 @@ export async function runQuiz(root, ctx, opts) {
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${title}</p>
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
-          : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`}
+          : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>${isTiles(q) ? tilesOrderHtml(q) : ''}`}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
     root.querySelector('#action-bar').innerHTML =
@@ -991,6 +1373,13 @@ export async function runQuiz(root, ctx, opts) {
         e.preventDefault();
         if (btn && btn.classList.contains('part-choice') && !btn.disabled) btn.click(); // Enter picks this choice
         enterMulti(questions[idx], t?.closest?.('[data-part]')?.dataset.part || lastPart);
+      } else if (phase === 'answer' && isTiles(questions[idx])) {
+        // Blocks, Reset, Check and other buttons keep their native Enter; elsewhere Enter checks
+        // only once Check is enabled.
+        if (e.target?.closest?.('button')) return;
+        e.preventDefault();
+        if (e.target?.id === 'tiles-filter') return; // Enter in "Filter blocks" never checks
+        if (tilesReady()) submit(tilesValue());
       } else if (phase === 'answer' && questions[idx]?.answerType !== 'choice') {
         e.preventDefault();
         submit(root.querySelector('#answer')?.value);
@@ -1014,6 +1403,7 @@ export async function runQuiz(root, ctx, opts) {
   // Registered once per render (not per start) so Retry doesn't stack listeners.
   document.addEventListener('keydown', onKey);
   ctx.onCleanup(() => document.removeEventListener('keydown', onKey));
+  ctx.onCleanup(() => cancelDrag()); // a drag ghost never outlives the quiz
 
   await start();
 }

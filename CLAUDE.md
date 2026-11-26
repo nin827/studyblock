@@ -203,6 +203,17 @@ The engine samples rows with the seeded rng and shuffles choices.
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
 - text: `−` read as `-`, trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
 - choice: exact match of the chosen string.
+- tiles: the placed tiles' values joined by `joiner`, then the text rules.
+
+### Block answers (`answerType: "tiles"`)
+
+The learner builds the answer from blocks (ticket 016). Generator-only, top-level only (not a multi-part part type).
+```js
+{ answerType: "tiles", tiles: [{ value: "A", label: "Moon landing (1969)" }, "B"], joiner: ", ", useAll: true, answer: "B, A" }
+```
+- **Contract:** 2–24 tiles; a string is shorthand for `{ value: s, label: s }`. `joiner` is a string of at most 5 characters (default `" "`). `useAll: true` means every tile must be placed (no distractors); otherwise distractors are allowed and Check needs at least one placed tile. The engine rejects (and regenerates) a question whose `answer` can't be built from distinct tiles joined by `joiner`.
+- **UI:** a "Your answer" row above a "Blocks" bank. Tap places or returns a block; Pointer Events drag places, reorders and returns (6px threshold, `touch-action: none` on tiles only). Keys: Enter/Space toggle, arrows move focus, Alt/Shift+←/→ move a placed block; placements are announced politely. Reset returns all. A "Filter blocks" box appears when the bank holds more than 10. Number keys don't answer, and the calculator's Use is disabled. A wrong answer shows the correct blocks. Guided: a wrong try stays editable; Show solution lays out the answer.
+- **Storage:** `userAnswer` is the joined string, so review and History need nothing special.
 
 ### Multi-part questions (`answerType: "multi"`)
 
@@ -494,7 +505,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
 - **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
-- **Timelines:** a fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
+- **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.
 - Open choices for these are in tickets 012–014.
 
