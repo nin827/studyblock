@@ -1,0 +1,16 @@
+{
+  "id": "role-travel-agent",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join itineraries across time zones, package prices, currency and fees, and commission, deposits and cancellation charges, as a travel agent meets them (made-up places, airlines, rates and exercise rules).",
+  "icon": "luggage",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "itinerary", "title": "Itineraries and time zones", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "packages", "title": "Package prices", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "currency", "title": "Currency and fees", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "booking", "title": "Commission and booking dates", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

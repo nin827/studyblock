@@ -1,0 +1,16 @@
+{
+  "id": "philosopher",
+  "title": "Philosopher",
+  "icon": "scale",
+  "flags": ["theory_heavy"],
+  "description": "Argument forms and fallacies, truth tables, choices under risk and the arithmetic of ranked ballots: reasoning that can be settled by checking every case, with made-up statements and no opinions.",
+  "exclusive": "role-philosopher",
+  "mix": {
+    "syllogisms": { "weight": 3, "subtopics": ["categorical", "conditionals"] },
+    "boolean-logic": { "weight": 2, "subtopics": ["expressions", "truth-tables"] },
+    "logic-puzzles": { "weight": 2, "subtopics": ["knights-knaves", "ordering"] },
+    "probability": { "weight": 2, "subtopics": ["basic", "expected-value"] },
+    "number-patterns": { "weight": 1 }
+  },
+  "subroles": []
+}

@@ -1,0 +1,17 @@
+{
+  "id": "travel-agent",
+  "title": "Travel Agent",
+  "icon": "luggage",
+  "flags": ["experience_heavy"],
+  "description": "Itineraries across time zones with layovers, package and bundle price comparisons, currency exchange and card fees, and commission, deposits and cancellation dates: the arithmetic of selling trips, with every rule stated.",
+  "exclusive": "role-travel-agent",
+  "mix": {
+    "travel": { "weight": 3, "subtopics": ["journeys", "timetables"] },
+    "time-dates": { "weight": 3, "subtopics": ["clock", "calendar", "time-zones"] },
+    "shopping-money": { "weight": 3, "subtopics": ["currency", "discounts", "budgets"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "ratios-percentages": { "weight": 1, "subtopics": ["percentages", "proportion"] },
+    "map-skills": { "weight": 1, "subtopics": ["time-zones", "scale-distance"] }
+  },
+  "subroles": []
+}

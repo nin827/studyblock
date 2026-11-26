@@ -22,7 +22,8 @@ The Roles page is "all over the place". Group it as **Industry → Role → Subr
 - **Batch 2 (2026-11-27):** Cloud Engineer (Technology), Marketing Manager (Business), Environmental Scientist (Science), Mechanical Engineer (Engineering).
 - **Batch 3 (2026-11-27):** Frontend Engineer (Technology; ticket 027 phase 3 as a role, since new roles have no subroles), Astronomer (Science), Event Planner (Service), Farmer (Miscellaneous).
 - **Batch 4 (2026-11-27):** Database Administrator (Technology), HR Manager (Business), Aerospace Engineer (Engineering), Ship Navigator (Operations).
-- **Not yet built (pick any):** Insurance Underwriter, Air Traffic Planner, Travel Agent, Philosopher, Journalist, Puzzle Designer.
+- **Batch 5 (2026-11-27):** Insurance Underwriter (Business), Air Traffic Planner (Operations), Travel Agent (Service), Philosopher and Journalist (Humanities), Puzzle Designer (Miscellaneous). The whole plan is built: 51 roles.
+- *Open:* more roles beyond this plan (Health stays out).
 
 ## Plan: more roles (user: no more subroles needed)
 New roles are **role-only**: a mix of existing subjects plus a role-only module with 4 scenario types (like today's roles), but **no subroles**. Health stays out (Medical rules: no doses or diagnosis). Recommended first in **bold**, one or two per thin industry.

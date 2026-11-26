@@ -1,0 +1,17 @@
+{
+  "id": "insurance-underwriter",
+  "title": "Insurance Underwriter",
+  "icon": "shield-check",
+  "flags": ["experience_heavy", "region_specific"],
+  "description": "Premiums from a rating table, expected losses and combined ratios, excesses and limits, and accept, refer or decline scorecards, with every rule stated as an exercise rule.",
+  "exclusive": "role-insurance-underwriter",
+  "mix": {
+    "probability": { "weight": 3, "subtopics": ["basic", "combined", "expected-value"] },
+    "business-math": { "weight": 3, "subtopics": ["percentages", "margins"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "finance": { "weight": 1, "subtopics": ["loans"] },
+    "business-theory": { "weight": 1, "subtopics": ["stakeholders", "objectives"] }
+  },
+  "subroles": []
+}

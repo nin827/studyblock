@@ -1,0 +1,17 @@
+{
+  "id": "puzzle-designer",
+  "title": "Puzzle Designer",
+  "icon": "puzzle",
+  "flags": ["creative_oriented"],
+  "description": "Checking a puzzle rather than just solving it: how many solutions a grid has, magic squares, how many codes a design allows, and what playtests say.",
+  "exclusive": "role-puzzle-designer",
+  "mix": {
+    "logic-puzzles": { "weight": 3 },
+    "number-patterns": { "weight": 2 },
+    "syllogisms": { "weight": 1 },
+    "probability": { "weight": 2, "subtopics": ["counting", "basic"] },
+    "number-theory": { "weight": 1, "subtopics": ["divisibility", "primes-factors"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+  },
+  "subroles": []
+}

@@ -1,0 +1,23 @@
+{
+  "id": "air-traffic-planner",
+  "title": "Air Traffic Planner",
+  "icon": "tower-control",
+  "flags": ["safety_critical", "license_oriented", "experience_heavy"],
+  "startNotice": {
+    "title": "For learning only",
+    "text": "This role is **planning arithmetic only**. All airports, flights and figures are made up, and the separation tables and rules are set for the exercise. It is **not real air traffic control**, which needs a licence, approved procedures, surveillance and proper training."
+  },
+  "description": "Runway arrival spacing, departure slot delays, in-trail separation on a route, and holding and diversion fuel: planning arithmetic worked from the figures, with every rule stated.",
+  "exclusive": "role-air-traffic-planner",
+  "mix": {
+    "time-dates": { "weight": 3, "subtopics": ["clock", "time-zones"] },
+    "kinematics": { "weight": 3, "subtopics": ["speed", "acceleration"] },
+    "travel": { "weight": 2, "subtopics": ["journeys", "timetables"] },
+    "unit-conversion": { "weight": 2, "subtopics": ["time-speed", "length"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "vectors-movement": { "weight": 1, "subtopics": ["vectors", "angles"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] },
+    "project-scheduling": { "weight": 1, "subtopics": ["critical-path", "float"] }
+  },
+  "subroles": []
+}

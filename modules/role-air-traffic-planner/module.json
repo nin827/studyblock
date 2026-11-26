@@ -1,0 +1,16 @@
+{
+  "id": "role-air-traffic-planner",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join runway arrival spacing, departure slot delays, in-trail separation and holding fuel, as an air traffic planner meets them (practice figures only).",
+  "icon": "tower-control",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "arrival-spacing", "title": "Runway arrival spacing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "slot-allocation", "title": "Departure slots and delays", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "in-trail", "title": "In-trail separation on a route", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "holding-fuel", "title": "Holding and diversion fuel", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

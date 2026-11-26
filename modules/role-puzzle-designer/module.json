@@ -1,0 +1,16 @@
+{
+  "id": "role-puzzle-designer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems on checking a puzzle rather than just solving it: how many solutions a grid has, magic squares and typos, how many codes a design allows, and what playtests say (made-up figures and stated rules).",
+  "icon": "puzzle",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "latin-grid", "title": "Grid puzzles", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "magic-square", "title": "Magic squares", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "code-count", "title": "Counting designs", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "playtest", "title": "Playtest results", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

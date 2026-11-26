@@ -1,0 +1,17 @@
+{
+  "id": "role-philosopher",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems on argument forms, truth tables, decisions under risk and ranked ballots, as a philosopher meets them (made-up statements and exercise rules, settled by checking every case).",
+  "icon": "scale",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzy": false,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "argument-forms", "title": "Argument forms", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "truth-tables", "title": "Truth tables", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "decision-theory", "title": "Decisions under risk", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "ballots", "title": "Ballots and voting", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

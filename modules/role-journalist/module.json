@@ -1,0 +1,16 @@
+{
+  "id": "role-journalist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join checking a claim, reading a poll, fitting a story to a page and a deadline, and spotting a misleading average, as a journalist meets them (made-up figures and exercise rules).",
+  "icon": "newspaper",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "claim-check", "title": "Checking a claim", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "poll-margin", "title": "Polls and margins of error", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "page-budget", "title": "Page space and deadlines", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "misleading-average", "title": "Averages that mislead", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "journalist",
+  "title": "Journalist",
+  "icon": "newspaper",
+  "flags": ["experience_heavy", "creative_oriented"],
+  "description": "Checking numbers in a claim, reading polls and their margins of error, fitting a story to a page and a deadline, and spotting averages that mislead, with every rule stated as an exercise rule.",
+  "exclusive": "role-journalist",
+  "mix": {
+    "ratios-percentages": { "weight": 3, "subtopics": ["percentages", "proportion"] },
+    "statistics": { "weight": 3, "subtopics": ["mean-median-mode", "weighted-average", "probability"] },
+    "grammar": { "weight": 2, "subtopics": ["punctuation", "agreement"] },
+    "vocabulary": { "weight": 2, "subtopics": ["commonly-confused", "context"] },
+    "time-dates": { "weight": 1, "subtopics": ["time-zones"] }
+  },
+  "subroles": []
+}

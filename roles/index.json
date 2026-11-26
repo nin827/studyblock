@@ -44,7 +44,13 @@
     "database-administrator",
     "hr-manager",
     "aerospace-engineer",
-    "ship-navigator"
+    "ship-navigator",
+    "insurance-underwriter",
+    "air-traffic-planner",
+    "travel-agent",
+    "philosopher",
+    "journalist",
+    "puzzle-designer"
   ],
   "industries": [
     {
@@ -72,7 +78,8 @@
         "economist",
         "project-manager",
         "marketing-manager",
-        "hr-manager"
+        "hr-manager",
+        "insurance-underwriter"
       ]
     },
     {
@@ -110,7 +117,8 @@
         "operations-manager",
         "pilot",
         "logistics-manager",
-        "ship-navigator"
+        "ship-navigator",
+        "air-traffic-planner"
       ]
     },
     {
@@ -122,7 +130,8 @@
         "chef",
         "nutritionist",
         "hotel-manager",
-        "event-planner"
+        "event-planner",
+        "travel-agent"
       ]
     },
     {
@@ -134,7 +143,9 @@
         "historian",
         "geographer",
         "linguist",
-        "archaeologist"
+        "archaeologist",
+        "philosopher",
+        "journalist"
       ]
     },
     {
@@ -145,7 +156,8 @@
         "music-theorist",
         "investigator",
         "sports-analyst",
-        "farmer"
+        "farmer",
+        "puzzle-designer"
       ]
     }
   ]

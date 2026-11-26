@@ -1,0 +1,16 @@
+{
+  "id": "role-insurance-underwriter",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join premium rating, loss and combined ratios, excess and limits, and risk scorecards, as an insurance underwriter meets them (made-up figures and exercise rules, not real insurance products or law).",
+  "icon": "shield-check",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "premium", "title": "Premium rating", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "loss-ratio", "title": "Loss and combined ratio", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "excess-limit", "title": "Excess, limits and claims", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "risk-scorecard", "title": "Risk scorecard and exposure", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}
