@@ -1,0 +1,16 @@
+{
+  "id": "role-logistics-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join order quantities, safety stock, landed cost and pallet and dock planning, as a logistics manager meets them (made-up figures and exercise rules).",
+  "icon": "warehouse",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "order-quantity", "title": "Order quantity and inventory cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "safety-stock", "title": "Safety stock and reorder points", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "landed-cost", "title": "Landed cost and suppliers", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "pallet-dock", "title": "Pallets, trailers and dock throughput", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

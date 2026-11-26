@@ -225,6 +225,13 @@ export async function render(root, params, ctx) {
     </div>` : '<div class="card"><p class="muted">No roles yet.</p></div>'}`;
   icons();
   if (roles.length) setupRolesNav(root, ctx);
+  // #/roles?industry=<id> (role page breadcrumb): scroll to that industry's section.
+  const sec = params?.industry && root.querySelector(`.role-section[data-section="${CSS.escape(params.industry)}"]`);
+  if (sec) {
+    ctx.scrollTarget = sec; // the router scrolls here instead of to the top
+    const h = sec.querySelector('.role-section-title');
+    if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); }
+  }
 }
 
 // TOC + "Jump to role" + filter + scroll-spy for #/roles. No #anchor hrefs (the hash is the router's).
@@ -386,8 +393,12 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
       }).join('')}</div>
     </section>` : '';
 
+  let industry = null;
+  try { industry = (await loadRoleIndustries()).find(g => g.roles.includes(role.id) && g.title) || null; } catch { /* no industries */ }
+  if (!ctx.alive()) return;
   root.innerHTML = `
     ${crumbsHtml([{ href: '#/', label: 'Home' }, { href: '#/roles', label: 'Roles' },
+      ...(industry ? [{ href: `#/roles?industry=${encodeURIComponent(industry.id)}`, label: industry.title }] : []),
       ...(subrole ? [{ href: roleHref(role.id), label: role.title }] : []), { label: me.title }])}
     <section class="page-head">
       <div class="page-head-row">

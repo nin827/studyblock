@@ -1,0 +1,16 @@
+{
+  "id": "role-archaeologist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that date samples by half-lives, put site contexts in order from coin finds, work out trench volumes and densities, and count pottery, all from the made-up figures stated in each question.",
+  "icon": "shovel",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "radiocarbon", "title": "Radiocarbon dating", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "stratigraphy", "title": "Stratigraphy and coins", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "trench-finds", "title": "Trench finds", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "pottery-counts", "title": "Pottery counts", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

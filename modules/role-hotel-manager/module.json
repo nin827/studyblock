@@ -1,0 +1,16 @@
+{
+  "id": "role-hotel-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join occupancy, ADR and RevPAR, overbooking and walk costs, housekeeping staffing and event quotes, as a hotel manager meets them (arithmetic practice with made-up figures).",
+  "icon": "hotel",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "occupancy-revpar", "title": "Occupancy, ADR and RevPAR", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "overbooking", "title": "Overbooking and walk costs", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "housekeeping", "title": "Housekeeping staffing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "event-quote", "title": "Event quotes", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

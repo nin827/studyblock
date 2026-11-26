@@ -1,0 +1,16 @@
+{
+  "id": "role-sports-analyst",
+  "title": "Sports Analyst scenarios",
+  "description": "Multi-part cases that join race pacing, league tables, player statistics and match chances, as a sports analyst meets them (made-up teams, players and figures).",
+  "icon": "trophy",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "race-pace", "title": "Race pace and splits", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "league-table", "title": "League table and run-in", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "player-stats", "title": "Player statistics and ratings", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "win-chances", "title": "Expected points and chances", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

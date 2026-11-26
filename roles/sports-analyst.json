@@ -1,0 +1,17 @@
+{
+  "id": "sports-analyst",
+  "title": "Sports Analyst",
+  "icon": "trophy",
+  "flags": ["experience_heavy"],
+  "description": "Pace and splits, league tables and run-ins, per-90 player statistics and ratings, and expected points from stated match chances, with every rule stated.",
+  "exclusive": "role-sports-analyst",
+  "mix": {
+    "statistics": { "weight": 3 },
+    "probability": { "weight": 3, "subtopics": ["basic", "combined", "expected-value"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "kinematics": { "weight": 2, "subtopics": ["speed"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] },
+    "time-dates": { "weight": 1, "subtopics": ["clock"] }
+  },
+  "subroles": []
+}

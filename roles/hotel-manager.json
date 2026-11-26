@@ -1,0 +1,17 @@
+{
+  "id": "hotel-manager",
+  "title": "Hotel Manager",
+  "icon": "hotel",
+  "flags": ["experience_heavy"],
+  "description": "Occupancy, ADR and RevPAR from a night's figures, overbooking against no-shows and walk costs, housekeeping staffing and event quotes: the arithmetic of running a hotel, with every rule stated.",
+  "exclusive": "role-hotel-manager",
+  "mix": {
+    "business-math": { "weight": 3, "subtopics": ["percentages", "margins"] },
+    "ratios-percentages": { "weight": 3, "subtopics": ["percentages", "proportion"] },
+    "shopping-money": { "weight": 2, "subtopics": ["budgets", "discounts", "currency"] },
+    "time-dates": { "weight": 2, "subtopics": ["clock", "calendar"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average", "probability"] },
+    "accounting-terms": { "weight": 1, "subtopics": ["terms", "statements"] }
+  },
+  "subroles": []
+}

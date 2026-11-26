@@ -58,7 +58,10 @@ function match(hash) {
   }
   if (parts[0] === 'domains' && parts.length === 1) return { view: domainsView, nav: 'domains', params: {} };
   // Roles: #/roles, #/roles/<role>, #/roles/<role>/<subrole>.
-  if (parts[0] === 'roles' && parts.length === 1) return { view: roles, nav: 'roles', params: {} };
+  if (parts[0] === 'roles' && parts.length === 1) {
+    const ind = query.get('industry');
+    return { view: roles, nav: 'roles', params: ind && ID_RE.test(ind) ? { industry: ind } : {} };
+  }
   if (parts[0] === 'roles' && (parts.length === 2 || parts.length === 3) && parts.slice(1).every(p => ID_RE.test(p))) {
     return { view: { render: roles.renderRole }, nav: 'roles', params: { roleId: parts[1], subroleId: parts[2] ?? null } };
   }
@@ -119,7 +122,9 @@ async function route() {
   if (pageTitle) pageTitle.textContent = title;
   document.title = title ? `${title} · StudyBlock` : 'StudyBlock';
   icons();
-  window.scrollTo(0, 0);
+  // A view may set ctx.scrollTarget (an element) to open scrolled to it instead of the top.
+  if (ctx.scrollTarget?.isConnected) ctx.scrollTarget.scrollIntoView({ block: 'start' });
+  else window.scrollTo(0, 0);
 }
 
 // ---- data folder banner (outside #app, so routing never wipes it) ----

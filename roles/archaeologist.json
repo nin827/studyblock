@@ -1,0 +1,18 @@
+{
+  "id": "archaeologist",
+  "title": "Archaeologist",
+  "icon": "shovel",
+  "flags": ["experience_heavy"],
+  "description": "Dating finds by half-lives and coins, putting site layers in order, and working out trench volumes, find densities and pottery counts, all from the figures in front of you.",
+  "exclusive": "role-archaeologist",
+  "mix": {
+    "radioactivity": { "weight": 3, "subtopics": ["half-life"] },
+    "timelines": { "weight": 3, "subtopics": ["years-between", "centuries", "spans"] },
+    "world-history": { "weight": 2, "subtopics": ["ancient"] },
+    "geometry": { "weight": 2, "subtopics": ["perimeter-area", "volume"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] },
+    "map-skills": { "weight": 1, "subtopics": ["grid-references", "scale-distance"] }
+  },
+  "subroles": []
+}

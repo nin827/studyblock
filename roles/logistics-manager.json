@@ -1,0 +1,18 @@
+{
+  "id": "logistics-manager",
+  "title": "Logistics Manager",
+  "icon": "warehouse",
+  "flags": ["experience_heavy"],
+  "description": "Order quantities and inventory cost, safety stock and reorder points, landed cost across suppliers, and pallets, trailers and dock throughput, with every rule and rate stated.",
+  "exclusive": "role-logistics-manager",
+  "mix": {
+    "business-case": { "weight": 3, "subtopics": ["inventory", "unit-economics", "pricing-decision"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "shopping-money": { "weight": 2, "subtopics": ["unit-price", "budgets", "currency"] },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "ratios-percentages": { "weight": 1, "subtopics": ["proportion", "percentages"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "mass-volume"] },
+    "project-scheduling": { "weight": 1, "subtopics": ["critical-path", "gantt-dates"] }
+  },
+  "subroles": []
+}
