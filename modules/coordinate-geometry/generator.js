@@ -107,6 +107,16 @@ function pickChoices(answer, cands, rng) {
   const seen = new Set([answer]);
   const out = [];
   for (const c of cands) if (out.length < 3 && c && !seen.has(c)) { seen.add(c); out.push(c); }
+  // Degenerate draws (e.g. a coordinate of 0 makes the swapped/negated candidates collapse onto the answer):
+  // top up with neighbouring lattice points of a "(x, y)" answer. No rng, so other seeds are unchanged.
+  const m = out.length < 3 && /^\((-?\d+(?:\.\d+)?), (-?\d+(?:\.\d+)?)\)$/.exec(answer);
+  if (m) {
+    const x = Number(m[1]), y = Number(m[2]);
+    for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2]]) {
+      const c = pt([x + dx, y + dy]);
+      if (out.length < 3 && !seen.has(c)) { seen.add(c); out.push(c); }
+    }
+  }
   if (out.length < 3) throw new Error("not enough distractors");
   return rng.shuffle([answer, ...out]);
 }

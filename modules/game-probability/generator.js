@@ -1317,7 +1317,9 @@ function collectChain(pA, pB, pAB, n) {
       s[3] + s[0] * pAB + s[1] * pB + s[2] * pA,
     ];
     if (t === n) atN = s[3];
-    if (t >= n && 1 - s[3] < 1e-14) break;
+    // Stop on the mass still in the unfinished states: 1 − s[3] can stall near 1e-14 from rounding and never
+    // cross the cut-off (which ran this loop to 1e6 tries), while this sum decays geometrically.
+    if (t >= n && s[0] + s[1] + s[2] < 1e-14) break;
   }
   return { e, atN };
 }

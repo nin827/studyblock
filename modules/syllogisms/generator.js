@@ -56,11 +56,19 @@ function stTest(s, T) {
 function catModels(T, premises) {
   const termMasks = [...Array(T).keys()].map((t) => regionMask(T, (r) => inT(r, t)));
   const tests = premises.map((p) => stTest(p, T));
+  // "All" and "No" premises only empty regions, so enumerate just the sub-masks of the regions they leave
+  // open. Sub-masks are visited in ascending order, so the result is the same list the full scan gives.
+  let allowed = (1 << (1 << T)) - 1;
+  for (const s of premises) {
+    if (s.f === "A") allowed &= ~regionMask(T, (r) => inT(r, s.x) && !inT(r, s.y));
+    else if (s.f === "E") allowed &= ~regionMask(T, (r) => inT(r, s.x) && inT(r, s.y));
+  }
   const out = [];
-  const total = 2 ** (1 << T);
-  for (let M = 0; M < total; M++) {
-    if (!termMasks.every((tm) => (M & tm) !== 0)) continue;
-    if (tests.every((f) => f(M))) out.push(M);
+  let M = 0;
+  for (;;) {
+    if (termMasks.every((tm) => (M & tm) !== 0) && tests.every((f) => f(M))) out.push(M);
+    if (M === allowed) break;
+    M = (M - allowed) & allowed;
   }
   return out;
 }

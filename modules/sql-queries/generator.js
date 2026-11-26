@@ -267,7 +267,7 @@ function genSelectWhere(difficulty, rng) {
         const col = rng.pick([N1, N2]);
         const vals = t.rows.map((r) => r[col]).sort((a, b) => a - b);
         const i = rng.int(0, vals.length - 2), j = rng.int(i + 1, vals.length - 1);
-        where = { t: "between", col, lo: rng.next() < 0.6 ? vals[i] : vals[i] - 1, hi: rng.next() < 0.6 ? vals[j] : vals[j] + 1 };
+        where = { t: "between", col, lo: rng.next() < 0.6 ? vals[i] : Math.max(0, vals[i] - 1) /* no negative literals: the taught grammar has none */, hi: rng.next() < 0.6 ? vals[j] : vals[j] + 1 };
       } else {
         const a = randCmp(rng, t, ["num", "cat"]);
         let b;
