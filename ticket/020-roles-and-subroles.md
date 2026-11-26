@@ -24,3 +24,9 @@
   - The desktop nav gets a "Roles" link. On phones, Roles is a Home card, so the tab bar stays at 4 tabs.
 - **Scores:** one attempt per run with `module: "role"`, `subtopic: <role or subrole id>`. Each question carries its own module, subtopic and difficulty, as in mixes. History shows the role name.
 - **Registry:** `roles/index.json` lists the roles in order. `roles/<id>.json` holds `{ id, title, icon, description, mix, subroles: [{ id, title, description, mix }], exclusive: "<module id>" }`, and ids follow the usual rule. The role-only generator modules (`modules/role-*/`) set `"roleOnly": true`. They're never shown on domain pages or sampled by mixes, and they're the only modules with the `expert-plus` difficulty.
+
+## Addendum (user, 2026-11-26)
+- **Mixed questions at easier levels:** Normal, Hard and Expert role runs put mixed scenarios in the last ⌈20%⌉ of questions (10 → 2, 20 → 4, 5 → 1). Expert+ stays all mixed.
+  - Scenario tiers: Normal has 2 parts, Hard 3, Expert 3–4 (lighter than Expert+).
+- **Weighted score:** a mixed question is worth its number of parts. The score is Σ credit × parts out of Σ parts.
+- **Question count:** set per role, 5–50 (default 10; Expert+ default 5). The Mix builder minimum is now 5.
