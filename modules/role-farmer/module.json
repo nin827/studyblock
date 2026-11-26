@@ -1,0 +1,16 @@
+{
+  "id": "role-farmer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join field area and yield, seed and fertiliser rates, livestock feed and grazing, and crop gross margins, as a farmer meets them (made-up figures and exercise rules).",
+  "icon": "tractor",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "field-yield", "title": "Field area and yield", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "inputs", "title": "Seed, fertiliser and spraying", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "livestock", "title": "Livestock feed and grazing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "gross-margin", "title": "Crop gross margin", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

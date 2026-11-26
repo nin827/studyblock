@@ -1,6 +1,6 @@
 # 027 — Several code languages per run, and four new languages
 
-**Status:** phase 1 and the shared picker built (2026-11-27); phase 2 in progress; phase 3 open
+**Status:** phase 1 and the shared picker built (2026-11-27); phase 2 in progress; phase 3 built as a Frontend Engineer role (no subroles, ticket 028)
 **Raised:** 2026-11-27
 
 ## Request

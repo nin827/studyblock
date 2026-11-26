@@ -1,0 +1,18 @@
+{
+  "id": "event-planner",
+  "title": "Event Planner",
+  "icon": "party-popper",
+  "flags": ["experience_heavy"],
+  "description": "Seating and floor space, a run-of-show timed to the curfew, the event budget and break-even ticket price, and shuttles and coaches, with every rule stated.",
+  "exclusive": "role-event-planner",
+  "mix": {
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "shopping-money": { "weight": 2, "subtopics": ["budgets", "unit-price", "discounts"] },
+    "time-dates": { "weight": 3, "subtopics": ["clock", "calendar"] },
+    "geometry": { "weight": 2, "subtopics": ["perimeter-area"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "travel": { "weight": 2, "subtopics": ["journeys", "timetables"] },
+    "project-scheduling": { "weight": 1, "subtopics": ["critical-path", "gantt-dates"] }
+  },
+  "subroles": []
+}

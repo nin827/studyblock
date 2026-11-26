@@ -1,0 +1,16 @@
+{
+  "id": "role-frontend-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join responsive layout maths, page weight and load time, frame budgets for long lists and colour contrast, as a frontend engineer meets them (made-up figures and exercise rules).",
+  "icon": "layout-template",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "responsive-layout", "title": "Responsive layout maths", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "page-weight", "title": "Page weight and load time", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "frame-budget", "title": "Frame budget and long lists", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "colour-contrast", "title": "Colour contrast", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

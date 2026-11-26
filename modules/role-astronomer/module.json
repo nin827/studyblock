@@ -1,0 +1,16 @@
+{
+  "id": "role-astronomer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join parallax distances, magnitudes and brightness, telescope optics and the rising times of stars, as an astronomer meets them (made-up stars and stated rules).",
+  "icon": "telescope",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "parallax-distance", "title": "Parallax and star distances", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "magnitudes", "title": "Magnitudes and brightness", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "telescope-optics", "title": "Telescope optics", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "observing-night", "title": "Observing schedules", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

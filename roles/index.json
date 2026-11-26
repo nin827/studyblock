@@ -36,7 +36,11 @@
     "cloud-engineer",
     "marketing-manager",
     "environmental-scientist",
-    "mechanical-engineer"
+    "mechanical-engineer",
+    "frontend-engineer",
+    "astronomer",
+    "event-planner",
+    "farmer"
   ],
   "industries": [
     {
@@ -49,7 +53,8 @@
         "data-scientist",
         "network-engineer",
         "game-developer",
-        "cloud-engineer"
+        "cloud-engineer",
+        "frontend-engineer"
       ]
     },
     {
@@ -73,7 +78,8 @@
         "physicist",
         "chemist",
         "biologist",
-        "environmental-scientist"
+        "environmental-scientist",
+        "astronomer"
       ]
     },
     {
@@ -107,7 +113,8 @@
         "retail-manager",
         "chef",
         "nutritionist",
-        "hotel-manager"
+        "hotel-manager",
+        "event-planner"
       ]
     },
     {
@@ -129,7 +136,8 @@
       "roles": [
         "music-theorist",
         "investigator",
-        "sports-analyst"
+        "sports-analyst",
+        "farmer"
       ]
     }
   ]

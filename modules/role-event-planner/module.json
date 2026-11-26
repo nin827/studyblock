@@ -1,0 +1,16 @@
+{
+  "id": "role-event-planner",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join seating and floor space, a timed run-of-show, the event budget and ticket price, and shuttles and coaches, as an event planner meets them (made-up figures and exercise rules).",
+  "icon": "party-popper",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "seating", "title": "Seating and floor plan", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "run-of-show", "title": "The run-of-show", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "event-budget", "title": "Budget and ticket price", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "transport", "title": "Shuttles and coaches", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

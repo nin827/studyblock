@@ -1,0 +1,18 @@
+{
+  "id": "frontend-engineer",
+  "title": "Frontend Engineer",
+  "icon": "layout-template",
+  "flags": ["experience_heavy", "tool_heavy", "tool_specific"],
+  "description": "Writes and reviews the code behind a web page, and works out responsive layouts, page weight and load time, frame budgets for long lists, and colour contrast, with every rule stated.",
+  "exclusive": "role-frontend-engineer",
+  "mix": {
+    "code-writing": { "weight": 3 },
+    "code-reviewing": { "weight": 3 },
+    "algorithms": { "weight": 2, "subtopics": ["searching", "sorting", "complexity", "data-structures"] },
+    "data-representation": { "weight": 2, "subtopics": ["images", "characters", "compression"] },
+    "networking": { "weight": 1, "subtopics": ["data-transfer"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] }
+  },
+  "subroles": []
+}

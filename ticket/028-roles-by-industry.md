@@ -20,7 +20,8 @@ The Roles page is "all over the place". Group it as **Industry → Role → Subr
 ## New roles built
 - **Batch 1 (2026-11-27):** Logistics Manager (Operations), Hotel Manager (Service), Archaeologist (Humanities), Sports Analyst (Miscellaneous). No subroles.
 - **Batch 2 (2026-11-27):** Cloud Engineer (Technology), Marketing Manager (Business), Environmental Scientist (Science), Mechanical Engineer (Engineering).
-- **Not yet built (pick any):** Database Administrator, Frontend Engineer (needs ticket 027 phase 3), HR Manager, Insurance Underwriter, Astronomer, Aerospace Engineer, Ship Navigator, Air Traffic Planner, Event Planner, Travel Agent, Philosopher, Journalist, Farmer / Agronomist, Puzzle Designer.
+- **Batch 3 (2026-11-27):** Frontend Engineer (Technology; ticket 027 phase 3 as a role, since new roles have no subroles), Astronomer (Science), Event Planner (Service), Farmer (Miscellaneous).
+- **Not yet built (pick any):** Database Administrator, HR Manager, Insurance Underwriter, Aerospace Engineer, Ship Navigator, Air Traffic Planner, Travel Agent, Philosopher, Journalist, Puzzle Designer.
 
 ## Plan: more roles (user: no more subroles needed)
 New roles are **role-only**: a mix of existing subjects plus a role-only module with 4 scenario types (like today's roles), but **no subroles**. Health stays out (Medical rules: no doses or diagnosis). Recommended first in **bold**, one or two per thin industry.

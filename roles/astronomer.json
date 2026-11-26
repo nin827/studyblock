@@ -1,0 +1,16 @@
+{
+  "id": "astronomer",
+  "title": "Astronomer",
+  "icon": "telescope",
+  "flags": ["theory_heavy"],
+  "description": "Star distances from parallax, magnitudes and brightness, telescope optics and the rising times of stars, with every constant and rule stated.",
+  "exclusive": "role-astronomer",
+  "mix": {
+    "astronomy": { "weight": 4 },
+    "waves": { "weight": 2, "subtopics": ["lenses", "wave-equation"] },
+    "exponents-logs": { "weight": 3, "subtopics": ["index-laws", "logarithms", "growth-decay"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "time-speed"] },
+    "trigonometry": { "weight": 1, "subtopics": ["right-angles"] }
+  },
+  "subroles": []
+}

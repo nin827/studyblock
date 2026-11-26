@@ -1,0 +1,18 @@
+{
+  "id": "farmer",
+  "title": "Farmer",
+  "icon": "tractor",
+  "flags": ["experience_heavy"],
+  "description": "Field area and harvest, seed and fertiliser rates, feed and grazing for livestock, and the gross margin of a crop, with every rate and rule stated.",
+  "exclusive": "role-farmer",
+  "mix": {
+    "geometry": { "weight": 2, "subtopics": ["perimeter-area"] },
+    "unit-conversion": { "weight": 2, "subtopics": ["length", "mass-volume"] },
+    "ratios-percentages": { "weight": 3, "subtopics": ["proportion", "percentages"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "ecology": { "weight": 1, "subtopics": ["energy", "growth"] },
+    "physical-geography": { "weight": 1, "subtopics": ["climate-biomes"] }
+  },
+  "subroles": []
+}
