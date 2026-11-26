@@ -1897,3 +1897,13 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
 .callout-body > :last-child { margin-bottom: 0; }
 .callout-body > :first-child { margin-top: 0; }
 .callout-body p { margin: 0 0 0.6em; }
+
+/* Role start notice (confirmation before a run) */
+.start-gate { display: grid; gap: 12px; max-width: 640px; margin-inline: auto; }
+.start-gate h1 { margin: 0; font-size: 1.4rem; line-height: 1.25; overflow-wrap: anywhere; }
+.start-gate h1:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.start-gate .prose > :first-child { margin-top: 0; }
+.start-gate .prose > :last-child { margin-bottom: 0; }
+.start-gate-actions { display: flex; flex-direction: column; gap: 10px; }
+.start-gate-actions .btn { justify-content: center; min-height: 44px; }
+@media (min-width: 640px) { .start-gate-actions { flex-direction: row; flex-wrap: wrap; } }

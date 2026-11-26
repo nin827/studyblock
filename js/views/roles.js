@@ -101,6 +101,40 @@ async function roleFlagData(roleId) {
   }
   return { role: parseFlags(raw, roleId), sub };
 }
+// startNotice: { title (1-60 chars), text (1-600 chars) } of a raw role/subrole object, or null (invalid warns once per role).
+const warnedNotice = new Set();
+function parseNotice(obj, roleId) {
+  const n = obj && typeof obj === 'object' ? obj.startNotice : undefined;
+  if (n === undefined) return null;
+  const ok = n && typeof n === 'object' && !Array.isArray(n)
+    && typeof n.title === 'string' && n.title.trim() && n.title.length <= 60
+    && typeof n.text === 'string' && n.text.trim() && n.text.length <= 600;
+  if (ok) return { title: n.title.trim(), text: n.text.trim() };
+  if (!warnedNotice.has(roleId)) {
+    warnedNotice.add(roleId);
+    console.warn(`StudyBlock: role ${roleId}: ignoring invalid startNotice (needs title <= 60 and text <= 600 characters, strings)`);
+  }
+  return null;
+}
+// The notice that applies: the subrole's own, else the role's.
+async function roleNotice(roleId, subroleId) {
+  const raw = await rawRole(roleId);
+  if (!raw) return null;
+  const own = subroleId ? parseNotice((Array.isArray(raw.subroles) ? raw.subroles : []).find(s => s && s.id === subroleId), roleId) : null;
+  return own || parseNotice(raw, roleId);
+}
+const noticeMd = (n, title = n.title) => `> [!WARNING] ${title.replace(/\s+/g, ' ')}\n${n.text.split(/\r?\n/).map(l => `> ${l}`).join('\n')}`;
+
+// Per-session confirmation (sessionStorage studyblock:roleAck: { roleId: true }).
+const ACK_KEY = 'studyblock:roleAck';
+function readAck() {
+  try { const o = JSON.parse(sessionStorage.getItem(ACK_KEY) || '{}'); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch { return {}; }
+}
+const isAcked = roleId => readAck()[roleId] === true;
+function setAcked(roleId) {
+  try { sessionStorage.setItem(ACK_KEY, JSON.stringify({ ...readAck(), [roleId]: true })); } catch { /* memory only */ }
+}
+
 const combine = (...lists) => [...new Set(lists.flat())];
 
 function tagsHtml(flags) {
@@ -110,13 +144,13 @@ function tagsHtml(flags) {
 }
 
 // "About this role": callouts for the flags (fixed order), then the exclusive module's intro.md.
-async function aboutHtml(role, flags) {
+async function aboutHtml(role, flags, notice) {
   let intro = null;
   if (role.exclusive && isValidId(role.exclusive)) {
     try { intro = await loadText(`modules/${role.exclusive}/intro.md`); } catch { /* no intro */ }
   }
-  const notes = CALLOUT_ORDER.filter(f => flags.includes(f))
-    .map(f => `> [!${FLAGS[f].kind}] ${FLAGS[f].title}\n> ${FLAGS[f].text}`);
+  const notes = (notice ? [noticeMd(notice)] : []).concat(CALLOUT_ORDER.filter(f => flags.includes(f))
+    .map(f => `> [!${FLAGS[f].kind}] ${FLAGS[f].title}\n> ${FLAGS[f].text}`));
   if (!notes.length && !intro) return '';
   const md = notes.join('\n\n') + (notes.length && intro ? '\n\n' : '') + (intro || '');
   return `<section class="card prose" aria-label="About this role">${renderMarkdown(md)}</section>`;
@@ -206,7 +240,7 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
   });
   const fd = await roleFlagData(role.id);
   const flags = combine(fd.role, subrole ? (fd.sub.get(subrole.id) || []) : []);
-  const about = await aboutHtml(role, flags);
+  const about = await aboutHtml(role, flags, await roleNotice(role.id, subrole?.id ?? null));
   if (!ctx.alive()) return;
   const label = `Subjects: ${shares.map(p => `${p.title} ${fmtShare(p.share)}`).join(', ')}`;
 
@@ -369,6 +403,28 @@ async function playRole(root, { roleId, subroleId, level: rawLevel, count: rawCo
   const key = roleKey(role.id, subrole?.id);
   const pageHref = roleHref(role.id, subrole?.id);
   setQuizMode(guided ? GUIDED : PRACTICE);
+  const notice = await roleNotice(role.id, subrole?.id ?? null);
+  if (!ctx.alive()) return;
+  if (notice && !isAcked(role.id)) {
+    root.innerHTML = `${crumbsHtml([{ href: '#/', label: 'Home' }, { href: '#/roles', label: 'Roles' },
+      ...(subrole ? [{ href: roleHref(role.id), label: role.title }] : []), { href: pageHref, label: me.title }])}
+      <section class="card start-gate" aria-labelledby="gate-h">
+        <p class="eyebrow">Before you start · ${esc(me.title)}</p>
+        <h1 id="gate-h" tabindex="-1">${esc(notice.title)}</h1>
+        <div class="prose">${renderMarkdown(noticeMd(notice, 'Please read before you start'))}</div>
+        <div class="start-gate-actions">
+          <button type="button" class="btn btn-primary" data-gate-ok>I understand · Start</button>
+          <a class="btn" href="${pageHref}">${icon('arrow-left')} Back to role</a>
+        </div>
+      </section>`;
+    icons();
+    root.querySelector('#gate-h')?.focus({ preventScroll: false });
+    root.querySelector('[data-gate-ok]')?.addEventListener('click', () => {
+      setAcked(role.id);
+      if (ctx.alive()) playRole(root, { roleId, subroleId, level: rawLevel, count: rawCount }, ctx, guided);
+    });
+    return;
+  }
   const crumbs = crumbsHtml([{ href: '#/', label: 'Home' }, { href: '#/roles', label: 'Roles' },
     ...(subrole ? [{ href: roleHref(role.id), label: role.title }] : []), { href: pageHref, label: me.title }]);
   // Guided: each question's module "How to solve" notes, loaded once per module after building.
