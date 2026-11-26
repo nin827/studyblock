@@ -1,0 +1,16 @@
+{
+  "id": "role-mathematician",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join statistics, probability, logarithms, calculus and finance, as a working mathematician meets them.",
+  "icon": "sigma",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "quality-control", "title": "Quality-control report", "difficulties": ["expert-plus"] },
+    { "id": "claims-pricing", "title": "Pricing insurance risk", "difficulties": ["expert-plus"] },
+    { "id": "growth-model", "title": "Growth and decay model", "difficulties": ["expert-plus"] },
+    { "id": "check-derivation", "title": "Checking a derivation", "difficulties": ["expert-plus"] }
+  ]
+}

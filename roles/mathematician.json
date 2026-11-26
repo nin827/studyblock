@@ -1,0 +1,145 @@
+{
+  "id": "mathematician",
+  "title": "Mathematician",
+  "icon": "pi",
+  "description": "Pure and applied maths across algebra, calculus, number theory, sequences and chance.",
+  "exclusive": "role-mathematician",
+  "mix": {
+    "calculus": {
+      "weight": 3
+    },
+    "algebra": {
+      "weight": 2
+    },
+    "number-theory": {
+      "weight": 2
+    },
+    "sequences": {
+      "weight": 2
+    },
+    "exponents-logs": {
+      "weight": 2
+    },
+    "probability": {
+      "weight": 2
+    },
+    "statistics": {
+      "weight": 2
+    },
+    "trigonometry": {
+      "weight": 1
+    },
+    "coordinate-geometry": {
+      "weight": 1
+    },
+    "geometry": {
+      "weight": 1
+    },
+    "syllogisms": {
+      "weight": 1
+    }
+  },
+  "subroles": [
+    {
+      "id": "statistician",
+      "title": "Statistician",
+      "icon": "chart-column",
+      "description": "Summaries, spread, probability and estimates from data.",
+      "mix": {
+        "statistics": {
+          "weight": 4
+        },
+        "probability": {
+          "weight": 3
+        },
+        "sql-queries": {
+          "weight": 1,
+          "subtopics": [
+            "aggregates",
+            "group-join"
+          ]
+        },
+        "ecology": {
+          "weight": 1,
+          "subtopics": [
+            "estimates"
+          ]
+        },
+        "calculus": {
+          "weight": 1,
+          "subtopics": [
+            "integration"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "logarithms"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "quality-control",
+        "growth-model"
+      ]
+    },
+    {
+      "id": "actuary",
+      "title": "Actuary",
+      "icon": "shield-check",
+      "description": "Risk and money over time: probability, expected values, growth and annuities.",
+      "mix": {
+        "probability": {
+          "weight": 3,
+          "subtopics": [
+            "basic",
+            "combined",
+            "counting",
+            "expected-value"
+          ]
+        },
+        "statistics": {
+          "weight": 3
+        },
+        "finance": {
+          "weight": 3,
+          "subtopics": [
+            "annuities-savings",
+            "loans"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 2,
+          "subtopics": [
+            "growth-decay",
+            "logarithms",
+            "solving"
+          ]
+        },
+        "sequences": {
+          "weight": 2,
+          "subtopics": [
+            "geometric",
+            "series"
+          ]
+        },
+        "business-math": {
+          "weight": 1,
+          "subtopics": [
+            "interest"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "claims-pricing",
+        "growth-model"
+      ]
+    }
+  ]
+}

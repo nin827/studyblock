@@ -4,7 +4,7 @@ import { createRng, randomSeed } from './rng.js';
 import { parseCSV } from './csv.js';
 import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
 import { LANG_IDS, isLang } from './languages.js';
-import { getCodeLang, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitSegs } from './storage.js';
+import { getCodeLang, ROLE_MODULE, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitSegs } from './storage.js';
 import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
 import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
 import { validView, clampView } from './graph.js';
@@ -114,24 +114,43 @@ export async function loadModulesOf(domain) {
   return results.filter(Boolean);
 }
 
-async function assertListed(id) {
+// `roleOnly`: also accept a role-only module (the `exclusive` of a listed role).
+async function assertListed(id, roleOnly = false) {
   if (!isValidId(id)) throw new Error('Invalid module id.');
   const ids = await loadIndex();
-  if (!ids.includes(id)) throw new Error('Unknown module.');
+  if (ids.includes(id)) return;
+  if (roleOnly && (await roleOnlyIds()).has(id)) return;
+  throw new Error('Unknown module.');
 }
 
+// Domain modules only: a module.json with "roleOnly": true is never loaded here, even if listed,
+// so it never shows on domain pages, Home, mixes or #/m/….
 export async function loadModule(id) {
   await assertListed(id);
   const m = await loadJSON(`modules/${id}/module.json`);
+  if (m && typeof m === 'object' && m.roleOnly === true) throw new Error(`Module ${id} is role-only.`);
+  return parseModule(m, id, false);
+}
+
+// A role-only module (modules/role-*/, "roleOnly": true), reachable only through roles.
+export async function loadRoleOnlyModule(id) {
+  await assertListed(id, true);
+  const m = await loadJSON(`modules/${id}/module.json`);
+  if (!m || typeof m !== 'object' || m.roleOnly !== true) throw new Error(`Module ${id} is not role-only.`);
+  return parseModule(m, id, true);
+}
+
+function parseModule(m, id, roleOnly) {
   if (!m || typeof m !== 'object') throw new Error(`Bad module.json for ${id}`);
   // "all" is reserved for whole-module quizzes (#/q/<module>/all/<difficulty>).
   const subtopics = (Array.isArray(m.subtopics) ? m.subtopics : []).filter(s => {
     if (s && s.id === ALL) { console.warn(`StudyBlock: module ${id} has a subtopic called "${ALL}", which is reserved; skipping it`); return false; }
     return true;
-  }).map(s => cleanDifficulties(s, id)).filter(Boolean);
+  }).map(s => cleanDifficulties(s, id, roleOnly)).filter(Boolean);
   return {
     ...m,
     id,
+    roleOnly,
     questionsPerQuiz: Number.isInteger(m.questionsPerQuiz) && m.questionsPerQuiz > 0 ? m.questionsPerQuiz : 10,
     subtopics,
     // Quiz calculator panel; a module opts out with "calculator": false.
@@ -239,23 +258,28 @@ const segCountWarned = new Set();
 // Every difficulty, easiest first. Modules list the ones each subtopic offers.
 export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard', 'expert'];
 export const isDifficulty = d => DIFFICULTY_ORDER.includes(d);
+// Role-only questions (modules with "roleOnly": true). Valid only inside those modules.
+export const EXPERT_PLUS = 'expert-plus';
 
 const diffWarned = new Set();
 
 // A subtopic with its "difficulties" list cleaned: unknown values and duplicates dropped (one
 // console.warn per module), kept in the module's own order. A subtopic without a list is unchanged
 // (it counts as "medium"); one whose list has nothing valid left is skipped. Never mutates `s`.
-function cleanDifficulties(s, moduleId) {
-  if (!s || typeof s !== 'object' || s.difficulties === undefined) return s;
+// Role-only modules: only "expert-plus" is valid (and every subtopic needs a list).
+function cleanDifficulties(s, moduleId, roleOnly = false) {
+  if (!s || typeof s !== 'object') return s;
+  if (s.difficulties === undefined && !roleOnly) return s;
+  const known = roleOnly ? [EXPERT_PLUS] : DIFFICULTY_ORDER;
   const raw = Array.isArray(s.difficulties) ? s.difficulties : [];
   const list = [];
   const bad = [];
   for (const d of raw) {
-    if (isDifficulty(d)) { if (!list.includes(d)) list.push(d); } else bad.push(d);
+    if (known.includes(d)) { if (!list.includes(d)) list.push(d); } else bad.push(d);
   }
   if ((bad.length || !Array.isArray(s.difficulties)) && !diffWarned.has(moduleId)) {
     diffWarned.add(moduleId);
-    console.warn(`StudyBlock: module ${moduleId}: ignoring unknown difficulty value(s) ${JSON.stringify(Array.isArray(s.difficulties) ? bad : s.difficulties)} (known: ${DIFFICULTY_ORDER.join(', ')})`);
+    console.warn(`StudyBlock: module ${moduleId}: ignoring unknown difficulty value(s) ${JSON.stringify(Array.isArray(s.difficulties) ? bad : s.difficulties)} (known: ${known.join(', ')})`);
   }
   if (!list.length) {
     const key = `${moduleId}|${String(s.id)}`;
@@ -326,7 +350,7 @@ export async function loadIntro(id) {
 
 // Guided-mode "How to solve" notes (modules/<id>/guide.md), or null if missing.
 export async function loadGuide(id) {
-  await assertListed(id);
+  await assertListed(id, true);
   try {
     return await loadText(`modules/${id}/guide.md`);
   } catch {
@@ -338,7 +362,7 @@ const generators = new Map();
 // Generators that have finished loading (id -> module), so grading can call grade() synchronously.
 const loadedGenerators = new Map();
 async function loadGenerator(id) {
-  await assertListed(id);
+  await assertListed(id, true);
   if (!generators.has(id)) {
     const p = loadSourceModule(`modules/${id}/generator.js`);
     p.catch(() => generators.delete(id));
@@ -1153,7 +1177,7 @@ export async function buildQuiz(moduleId, subtopic, difficulty) {
 // Rebuild a stored question from its seed. `lang` is the stored question's language: for a
 // language-aware module it is used if the module still lists it, else the effective language.
 export async function regenerate(moduleId, subtopic, difficulty, seed, lang) {
-  const mod = await loadModule(moduleId);
+  const mod = await loadModule(moduleId).catch(() => loadRoleOnlyModule(moduleId));
   if (mod.type === 'csv') {
     const rows = await loadCsvRows(moduleId);
     const pool = csvPool(rows, subtopic, difficulty);
@@ -1407,6 +1431,294 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
     });
   }
   if (!questions.length) throw new Error('The mixed quiz could not generate any questions.');
+  return questions;
+}
+
+
+// ---- roles (roles/index.json + roles/<id>.json) ----
+//
+// A role is a hand-made weighted mix of subjects (modules, optionally narrowed to subtopics), with
+// subroles (narrower mixes) and one role-only module (`exclusive`, "roleOnly": true) for Expert+.
+// Role levels shift the subject difficulty up: Normal -> Medium, Hard -> Hard, Expert -> Expert
+// (closest level the subtopic has, as in mixes); Expert+ draws only role-only questions.
+
+export { ROLE_MODULE };
+// Separates role and subrole in quiz routes and the stored attempt subtopic: "<role>~<subrole>".
+export const ROLE_SEP = '~';
+export const ROLE_LEVELS = ['normal', 'hard', 'expert', EXPERT_PLUS];
+export const isRoleLevel = l => ROLE_LEVELS.includes(l);
+const ROLE_SHIFT = { normal: 'medium', hard: 'hard', expert: 'expert' };
+export const roleSubjectLevel = level => ROLE_SHIFT[level] ?? null;
+export const ROLE_COUNT = 10;
+export const ROLE_COUNT_EXPERT_PLUS = 5;
+export const roleQuestionCount = level => (level === EXPERT_PLUS ? ROLE_COUNT_EXPERT_PLUS : ROLE_COUNT);
+
+// "<role>" or "<role>~<subrole>" -> { roleId, subroleId|null } or null when malformed.
+export function parseRoleKey(key) {
+  const parts = String(key ?? '').split(ROLE_SEP);
+  if (parts.length > 2 || !parts.every(isValidId)) return null;
+  return { roleId: parts[0], subroleId: parts[1] ?? null };
+}
+export const roleKey = (roleId, subroleId) => (subroleId ? `${roleId}${ROLE_SEP}${subroleId}` : roleId);
+
+const roleWarned = new Set();
+function warnRole(key, msg) {
+  if (roleWarned.has(key)) return;
+  roleWarned.add(key);
+  console.warn(`StudyBlock: ${msg}`);
+}
+
+// Listed role ids (valid, deduped). A missing roles/index.json yields [].
+async function roleIds() {
+  let idx;
+  try { idx = await loadJSON('roles/index.json'); } catch { return []; }
+  const out = [];
+  for (const id of Array.isArray(idx?.roles) ? idx.roles : []) {
+    if (!isValidId(id)) { warnRole(`id|${JSON.stringify(id)}`, `ignoring invalid role id ${JSON.stringify(id)}`); continue; }
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
+}
+
+async function rawRole(id) {
+  const r = await loadJSON(`roles/${id}.json`);
+  if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error(`Bad roles/${id}.json`);
+  return r;
+}
+
+// Ids of role-only modules (the `exclusive` of every listed role). Used to allow loading them.
+async function roleOnlyIds() {
+  const out = new Set();
+  for (const id of await roleIds()) {
+    try {
+      const r = await rawRole(id);
+      if (isValidId(r.exclusive)) out.add(r.exclusive);
+    } catch { /* reported by loadRoles */ }
+  }
+  return out;
+}
+
+// Mix entries { moduleId: { weight, subtopics? } } checked against loaded modules (Map id -> mod).
+// Unknown modules/subtopics and bad weights are dropped with one console.warn per role.
+function parseRoleMix(raw, mods, where) {
+  const out = [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  const bad = [];
+  for (const [mid, e] of Object.entries(raw)) {
+    const mod = mods.get(mid);
+    const w = e && typeof e === 'object' ? e.weight : undefined;
+    if (!mod || !mod.subtopics.length) { bad.push(mid); continue; }
+    if (typeof w !== 'number' || !Number.isFinite(w) || w <= 0) { bad.push(`${mid} (weight)`); continue; }
+    let subtopics = mod.subtopics;
+    if (Array.isArray(e.subtopics)) {
+      const wanted = e.subtopics.filter(x => typeof x === 'string');
+      for (const x of e.subtopics) if (!mod.subtopics.some(s => s.id === x)) bad.push(`${mid}/${x}`);
+      subtopics = mod.subtopics.filter(s => wanted.includes(s.id));
+      if (!subtopics.length) continue;
+    }
+    out.push({ module: mid, weight: Math.min(w, MAX_WEIGHT), subtopics: subtopics.map(s => s.id) });
+  }
+  if (bad.length) warnRole(`mix|${where}`, `${where}: ignoring unknown or invalid mix entries ${JSON.stringify(bad)}`);
+  return out;
+}
+
+const strField = (v, max, d = '') => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : d);
+
+/*
+ * -> [{ id, title, icon, description, exclusive|null, exclusiveModule|null, mix, subroles }]
+ *   mix      = [{ module, weight, subtopics: [id] }] (validated)
+ *   subroles = [{ id, title, icon, description, mix, exclusiveSubtopics: [id] }]
+ *     A subrole without its own mix uses the role's. Empty exclusiveSubtopics = all of the
+ *     role-only module's subtopics.
+ * `exclusiveModule` is the loaded role-only module (null when missing or invalid: no Expert+).
+ * A broken role file is skipped with a warning.
+ */
+export async function loadRoles() {
+  const ids = await roleIds();
+  const raws = (await Promise.all(ids.map(id => rawRole(id).catch(e => {
+    console.warn(`StudyBlock: could not load role ${id}`, e);
+    return null;
+  })))).map((r, i) => (r ? { ...r, id: ids[i] } : null)).filter(Boolean);
+  // Every module referenced by any mix, loaded once (domain modules only; role-only ones never mix).
+  const wanted = new Set();
+  for (const r of raws) {
+    for (const m of [r.mix, ...(Array.isArray(r.subroles) ? r.subroles.map(s => s?.mix) : [])]) {
+      if (m && typeof m === 'object') Object.keys(m).filter(isValidId).forEach(x => wanted.add(x));
+    }
+  }
+  const mods = new Map();
+  await Promise.all([...wanted].map(async mid => {
+    try { mods.set(mid, await loadModule(mid)); } catch { /* unknown: dropped with a warning */ }
+  }));
+  const roles = [];
+  for (const r of raws) {
+    let exclusiveModule = null;
+    if (r.exclusive !== undefined) {
+      if (!isValidId(r.exclusive)) warnRole(`ex|${r.id}`, `role ${r.id}: invalid "exclusive" id`);
+      else {
+        try { exclusiveModule = await loadRoleOnlyModule(r.exclusive); } catch (e) {
+          warnRole(`ex|${r.id}`, `role ${r.id}: role-only module ${r.exclusive} unavailable (${e.message || e}); Expert+ is off`);
+        }
+      }
+    }
+    if (exclusiveModule && !exclusiveModule.subtopics.length) exclusiveModule = null;
+    const mix = parseRoleMix(r.mix, mods, `role ${r.id}`);
+    const subroles = [];
+    for (const s of Array.isArray(r.subroles) ? r.subroles : []) {
+      if (!s || typeof s !== 'object' || !isValidId(s.id)) { warnRole(`sub|${r.id}|${JSON.stringify(s?.id)}`, `role ${r.id}: ignoring a subrole with an invalid id`); continue; }
+      if (subroles.some(x => x.id === s.id)) { warnRole(`sub|${r.id}|${s.id}`, `role ${r.id}: duplicate subrole ${s.id}`); continue; }
+      const own = s.mix !== undefined ? parseRoleMix(s.mix, mods, `role ${r.id} / ${s.id}`) : null;
+      let exSubs = [];
+      if (exclusiveModule && Array.isArray(s.exclusiveSubtopics)) {
+        exSubs = s.exclusiveSubtopics.filter(x => exclusiveModule.subtopics.some(st => st.id === x));
+        if (exSubs.length !== s.exclusiveSubtopics.length) warnRole(`exs|${r.id}|${s.id}`, `role ${r.id} / ${s.id}: ignoring unknown exclusiveSubtopics`);
+      }
+      subroles.push({
+        id: s.id,
+        title: strField(s.title, 80, s.id),
+        icon: strField(s.icon, 60, ''),
+        description: strField(s.description, 400),
+        mix: own && own.length ? own : mix,
+        exclusiveSubtopics: exSubs,
+      });
+    }
+    roles.push({
+      id: r.id,
+      title: strField(r.title, 80, r.id),
+      icon: strField(r.icon, 60, 'briefcase-business'),
+      description: strField(r.description, 400),
+      exclusive: exclusiveModule ? exclusiveModule.id : null,
+      exclusiveModule,
+      mix,
+      subroles,
+    });
+  }
+  return roles;
+}
+
+// { role, subrole|null } for "<role>" / "<role>~<subrole>", or null when unknown.
+export async function findRole(roleId, subroleId = null) {
+  const role = (await loadRoles()).find(r => r.id === roleId);
+  if (!role) return null;
+  if (!subroleId) return { role, subrole: null };
+  const subrole = role.subroles.find(s => s.id === subroleId);
+  return subrole ? { role, subrole } : null;
+}
+
+// Levels a role (or subrole) offers: Expert+ only when its role-only module is available.
+export function roleLevels(role) {
+  return role?.exclusiveModule ? ROLE_LEVELS.slice() : ROLE_LEVELS.filter(l => l !== EXPERT_PLUS);
+}
+
+// Share of each subject in a role mix: [{ module, share }] (share 0-1, ∝ weight).
+export function roleShares(mix) {
+  const total = mix.reduce((s, e) => s + e.weight, 0);
+  return total > 0 ? mix.map(e => ({ module: e.module, share: e.weight / total })) : [];
+}
+
+// Role-only subtopics an Expert+ run of (role, subrole) draws from.
+function expertPlusSubtopics(role, subrole) {
+  const mod = role.exclusiveModule;
+  if (!mod) return [];
+  const has = st => Array.isArray(st.difficulties) && st.difficulties.includes(EXPERT_PLUS);
+  const pick = subrole && subrole.exclusiveSubtopics.length ? subrole.exclusiveSubtopics : null;
+  return mod.subtopics.filter(st => has(st) && (!pick || pick.includes(st.id)));
+}
+
+/*
+ * Builds a role quiz (seeded). Normal/Hard/Expert: per question a subject ∝ weight, a subtopic
+ * uniformly from its allowed ones (those offering the shifted level; if none does, all of them,
+ * at the closest level), then the shifted difficulty (closest available). Expert+: only the
+ * role-only module (subrole: its exclusiveSubtopics), stored difficulty "expert-plus".
+ * Every question carries module/subtopic/difficulty (+ titles), as in mixes.
+ */
+export async function buildRoleQuiz(roleId, subroleId, level, seed = randomSeed()) {
+  if (!isRoleLevel(level)) throw new Error('Unknown role level.');
+  const found = await findRole(roleId, subroleId);
+  if (!found) throw new Error('Unknown role.');
+  const { role, subrole } = found;
+  const rng = createRng(seed);
+  const nextSeed = () => Math.floor(rng.next() * 0x100000000) >>> 0;
+  const n = roleQuestionCount(level);
+  const questions = [];
+  const seen = new Set();
+
+  if (level === EXPERT_PLUS) {
+    const subs = expertPlusSubtopics(role, subrole);
+    if (!subs.length) throw new Error('Expert+ questions for this role are not available yet.');
+    const mod = role.exclusiveModule;
+    const gen = await loadGenerator(mod.id);
+    const lang = effectiveLang(mod);
+    let failures = 0, dupTries = 0;
+    while (questions.length < n && failures < n * 2) {
+      const st = rng.pick(subs);
+      const q = decorate(generateVerified(gen, st.id, EXPERT_PLUS, nextSeed(), lang), mod, EXPERT_PLUS);
+      if (!q) { failures++; continue; }
+      if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
+      seen.add(q.prompt);
+      questions.push({ ...annotate(q, mod, st, EXPERT_PLUS), domainTitle: role.title });
+    }
+    if (!questions.length) throw new Error('This quiz could not generate any valid questions.');
+    return questions;
+  }
+
+  const target = roleSubjectLevel(level);
+  const mix = (subrole ? subrole.mix : role.mix);
+  const domains = await loadDomains();
+  const domainOfId = new Map(domains.flatMap(d => d.modules.map(mid => [mid, d])));
+  const sources = new Map();
+  await Promise.all(mix.map(async e => {
+    try {
+      const mod = await loadModule(e.module);
+      const subs = mod.subtopics.filter(s => e.subtopics.includes(s.id));
+      if (!subs.length) return;
+      const withLevel = subs.filter(s => !Array.isArray(s.difficulties) || s.difficulties.includes(target));
+      const src = { mod, subs: withLevel.length ? withLevel : subs };
+      if (mod.type === 'csv') src.rows = await loadCsvRows(mod.id);
+      else { src.gen = await loadGenerator(mod.id); src.lang = effectiveLang(mod); }
+      sources.set(e.module, src);
+    } catch (err) {
+      console.warn(`StudyBlock: skipping module ${e.module} in role ${role.id}`, err);
+    }
+  }));
+  let pool = mix.filter(e => sources.has(e.module));
+  if (!pool.length) throw new Error('None of this role\'s subjects are available.');
+  const failures = new Map();
+  let tries = 0;
+  const maxTries = n * 40;
+  while (questions.length < n && tries < maxTries && pool.length) {
+    tries++;
+    const e = weightedPick(rng, pool, x => x.weight);
+    if (!e) break;
+    const { mod, subs, gen, rows, lang } = sources.get(e.module);
+    const st = rng.pick(subs);
+    const difficulty = resolveDifficulty(rng, st, target);
+    const qSeed = nextSeed();
+    let q = null;
+    if (rows) {
+      const p = csvPool(rows, st.id, difficulty);
+      if (p.length) q = csvQuestion(p, qSeed, csvAnswers(rows, st.id));
+    } else {
+      q = generateVerified(gen, st.id, difficulty, qSeed, lang);
+    }
+    q = decorate(q, mod, difficulty);
+    if (!q) {
+      const f = (failures.get(mod.id) || 0) + 1;
+      failures.set(mod.id, f);
+      if (f >= 25) {
+        console.error(`StudyBlock: dropping module ${mod.id} from role ${role.id} after repeated failures`);
+        pool = pool.filter(x => x.module !== mod.id);
+      }
+      continue;
+    }
+    failures.set(mod.id, 0);
+    const key = `${mod.id}|${q.prompt}`;
+    if (seen.has(key) && tries < maxTries * 0.75) continue;
+    seen.add(key);
+    const d = domainOfId.get(mod.id);
+    questions.push({ ...annotate(q, mod, st, difficulty), ...(d ? { domain: d.id, domainTitle: d.title } : {}) });
+  }
+  if (!questions.length) throw new Error('The role quiz could not generate any questions.');
   return questions;
 }
 

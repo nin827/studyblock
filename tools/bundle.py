@@ -8,9 +8,10 @@ How it works
 - Every js/**/*.js and modules/**/*.js becomes a data: URL in an import map, keyed by the
   specifier "sb:/<path>". Relative import specifiers ("./x.js", "../lib/y.js") in those files are
   rewritten to "sb:/<resolved path>", since relative URLs can't resolve inside data: modules.
-- Only module folders listed in a domain of modules/index.json are bundled; archived or unlisted
-  folders are skipped (and named in the summary line).
-- Non-JS data (modules/**/*.json|csv|md, presets/**/*.json) is embedded as text in
+- Only module folders listed in a domain of modules/index.json, plus the role-only modules named
+  as "exclusive" by a role listed in roles/index.json, are bundled; archived or unlisted folders
+  are skipped (and named in the summary line).
+- Non-JS data (modules/**/*.json|csv|md, presets/**/*.json, roles/**/*.json) is embedded as text in
   window.__SB_BUNDLE__ = { files: { "<path>": "<text>" } }, read by js/lib/source.js.
 - The app's module script tag is replaced by an inline `import "sb:/js/app.js";`.
 - Lucide is inlined only if vendor/lucide.min.js exists; otherwise the CDN tag stays
@@ -80,6 +81,26 @@ def listed_modules():
     return ids
 
 
+def role_modules():
+    """Role-only module ids: the "exclusive" of each role listed in roles/index.json."""
+    try:
+        idx = json.loads(read_text(ROOT / "roles" / "index.json"))
+    except (OSError, ValueError):
+        return set()
+    ids = set()
+    for rid in idx.get("roles", []) if isinstance(idx, dict) and isinstance(idx.get("roles"), list) else []:
+        if not (isinstance(rid, str) and ID_RE.match(rid)):
+            continue
+        try:
+            role = json.loads(read_text(ROOT / "roles" / f"{rid}.json"))
+        except (OSError, ValueError):
+            continue
+        ex = role.get("exclusive") if isinstance(role, dict) else None
+        if isinstance(ex, str) and ID_RE.match(ex) and (ROOT / "modules" / ex).is_dir():
+            ids.add(ex)
+    return ids
+
+
 def collect():
     """Returns (js_paths, data_paths, skipped_dirs): sorted root-relative posix paths, and the
     module folders left out because no domain lists them (e.g. archived modules)."""
@@ -87,7 +108,7 @@ def collect():
     for p in (ROOT / "js").rglob("*.js"):
         if p.is_file():
             js.add(rel(p))
-    listed = listed_modules()
+    listed = listed_modules() | role_modules()
     skipped = set()
     for p in (ROOT / "modules").rglob("*"):
         if p.is_file() and p.suffix.lower() in MODULE_EXTS:
@@ -97,9 +118,10 @@ def collect():
                 skipped.add(parts[0])
                 continue
             (js if p.suffix.lower() == ".js" else data).add(rel(p))
-    for p in (ROOT / "presets").rglob("*.json"):
-        if p.is_file():
-            data.add(rel(p))
+    for folder in ("presets", "roles"):
+        for p in (ROOT / folder).rglob("*.json"):
+            if p.is_file():
+                data.add(rel(p))
     for path in js | data:
         if not PATH_RE.match(path) or ".." in path:
             fail(f"unsupported file name: {path}")

@@ -1,0 +1,156 @@
+{
+  "id": "software-engineer",
+  "title": "Software Engineer",
+  "icon": "code-xml",
+  "description": "Reads, writes and reviews code, picks the right algorithm and talks to databases and networks.",
+  "exclusive": "role-software-engineer",
+  "mix": {
+    "code-writing": {
+      "weight": 3
+    },
+    "code-reviewing": {
+      "weight": 3
+    },
+    "algorithms": {
+      "weight": 3
+    },
+    "sql-queries": {
+      "weight": 2
+    },
+    "boolean-logic": {
+      "weight": 1
+    },
+    "number-bases": {
+      "weight": 1
+    },
+    "networking": {
+      "weight": 1
+    },
+    "data-representation": {
+      "weight": 1
+    },
+    "computing-terms": {
+      "weight": 1
+    }
+  },
+  "subroles": [
+    {
+      "id": "backend-engineer",
+      "title": "Backend Engineer",
+      "icon": "server",
+      "description": "Databases, data structures, networks and efficient code behind the scenes.",
+      "mix": {
+        "sql-queries": {
+          "weight": 3
+        },
+        "algorithms": {
+          "weight": 2,
+          "subtopics": [
+            "complexity",
+            "data-structures",
+            "searching",
+            "sorting"
+          ]
+        },
+        "networking": {
+          "weight": 2
+        },
+        "code-reviewing": {
+          "weight": 2
+        },
+        "code-writing": {
+          "weight": 2,
+          "subtopics": [
+            "functions",
+            "loops",
+            "lists-strings"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "characters",
+            "compression"
+          ]
+        },
+        "computing-terms": {
+          "weight": 1,
+          "subtopics": [
+            "networks",
+            "security"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "api-endpoint",
+        "hot-loop"
+      ]
+    },
+    {
+      "id": "fintech-engineer",
+      "title": "Fintech Engineer",
+      "icon": "credit-card",
+      "description": "Code that handles money: interest, loans, transactions and keeping them secure.",
+      "mix": {
+        "code-writing": {
+          "weight": 2
+        },
+        "code-reviewing": {
+          "weight": 2,
+          "subtopics": [
+            "predict-output",
+            "find-the-bug",
+            "fix-the-bug"
+          ]
+        },
+        "sql-queries": {
+          "weight": 2,
+          "subtopics": [
+            "aggregates",
+            "group-join",
+            "write-query"
+          ]
+        },
+        "finance": {
+          "weight": 2,
+          "subtopics": [
+            "loans",
+            "annuities-savings"
+          ]
+        },
+        "business-math": {
+          "weight": 1,
+          "subtopics": [
+            "interest",
+            "percentages"
+          ]
+        },
+        "number-theory": {
+          "weight": 1,
+          "subtopics": [
+            "modular",
+            "ciphers",
+            "keys-rsa"
+          ]
+        },
+        "algorithms": {
+          "weight": 1,
+          "subtopics": [
+            "complexity"
+          ]
+        },
+        "computing-terms": {
+          "weight": 1,
+          "subtopics": [
+            "security"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "ledger-check",
+        "hot-loop",
+        "fx-payout"
+      ]
+    }
+  ]
+}

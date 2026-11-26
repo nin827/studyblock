@@ -1,5 +1,5 @@
-import { loadAllModules, loadDomains, loadArchived, titleLookup } from '../lib/engine.js';
-import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE } from '../lib/storage.js';
+import { loadAllModules, loadDomains, loadArchived, titleLookup, loadRoles, parseRoleKey } from '../lib/engine.js';
+import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
 import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml } from './quiz.js';
 
@@ -12,11 +12,31 @@ export async function render(root, params, ctx) {
   // Archived modules are never loaded; their stored attempts show the archived title (no link).
   let archived = new Map();
   try { archived = await loadArchived(); } catch { /* titles fall back to ids */ }
+  // Roles: titles for role attempts and their role-only (Expert+) modules.
+  let roles = [];
+  try { roles = await loadRoles(); } catch { /* titles fall back to ids */ }
   if (!ctx.alive()) return;
-  const byId = Object.fromEntries(modules.map(m => [m.id, m]));
+  const roleOnly = roles.map(r => r.exclusiveModule).filter(Boolean);
+  const byId = Object.fromEntries(modules.concat(roleOnly).map(m => [m.id, m]));
   const domainOfId = new Map();
   for (const d of domains) for (const mid of d.modules) domainOfId.set(mid, d);
-  const modTitle = titleLookup(modules, archived);
+  const modTitle = titleLookup(modules.concat(roleOnly), archived);
+  // Role-only modules count only under their role, never in the per-module summary.
+  const roleOnlyIds = new Set(roles.map(r => r.exclusive).filter(Boolean));
+  const isRoleOnly = mid => roleOnlyIds.has(mid) || (!domainOfId.has(mid) && !archived.has(mid) && String(mid).startsWith('role-'));
+  const roleOfOnly = new Map(roles.filter(r => r.exclusive).map(r => [r.exclusive, r]));
+  // "<role>" / "<role>~<subrole>" -> { title (plain text), icon, href|null }.
+  const roleInfo = key => {
+    const k = parseRoleKey(key);
+    const r = k && roles.find(x => x.id === k.roleId);
+    const sr = r && k.subroleId ? r.subroles.find(x => x.id === k.subroleId) : null;
+    if (!r || (k.subroleId && !sr)) return { title: String(key ?? 'Role'), icon: 'briefcase-business', href: null };
+    return {
+      title: sr ? `${r.title} › ${sr.title}` : r.title,
+      icon: (sr && sr.icon) || r.icon,
+      href: `#/roles/${hashPart(r.id)}${sr ? `/${hashPart(sr.id)}` : ''}`,
+    };
+  };
   const subTitle = (mid, sid) => subtopicLabel(sid, byId[mid]?.subtopics.find(s => s.id === sid)?.title);
 
   if (!attempts.length) {
@@ -30,8 +50,8 @@ export async function render(root, params, ctx) {
   const seenModules = new Set();
   for (const a of attempts) {
     if (isGuided(a)) continue; // guided runs never count in the summary
-    if (a.module !== MIX_MODULE) seenModules.add(a.module);
-    else for (const q of a.questions) if (typeof q.module === 'string') seenModules.add(q.module);
+    if (a.module !== MIX_MODULE && a.module !== ROLE_MODULE) seenModules.add(a.module);
+    else for (const q of a.questions) if (typeof q.module === 'string' && !isRoleOnly(q.module)) seenModules.add(q.module);
   }
 
   const statRow = (label, list) => {
@@ -67,23 +87,45 @@ export async function render(root, params, ctx) {
   if (others) summaryRows += groupHead('Other') + others;
   const mixed = attempts.filter(a => a.module === MIX_MODULE && !isGuided(a));
   if (mixed.length) summaryRows += groupHead('Mixed') + statRow('<a href="#/mix">Mixed quizzes</a>', mixed);
+  // Roles: one row per role / subrole (all levels together).
+  const roleAttempts = attempts.filter(a => a.module === ROLE_MODULE && !isGuided(a));
+  if (roleAttempts.length) {
+    const keys = [...new Set(roleAttempts.map(a => a.subtopic))].sort();
+    summaryRows += groupHead('Roles', '#/roles') + keys.map(k => {
+      const info = roleInfo(k);
+      return statRow(info.href ? `<a href="${info.href}">${esc(info.title)}</a>` : esc(info.title), roleAttempts.filter(a => a.subtopic === k));
+    }).join('');
+  }
 
   // ---- attempt list ----
-  const titlesFor = mid => ({ module: modTitle(mid), domain: domainOfId.get(mid)?.title });
+  const titlesFor = mid => ({ module: modTitle(mid), domain: domainOfId.get(mid)?.title ?? roleOfOnly.get(mid)?.title });
   const guidedTag = `<span class="tag tag-guided">${icon('compass')}<span>Guided</span></span>`;
   const items = attempts.map(a => {
     const p = percent(a);
     const guided = isGuided(a);
-    const isMix = a.module === MIX_MODULE;
+    const isRole = a.module === ROLE_MODULE;
+    // Role attempts behave like mixes (each question carries its own origin).
+    const isMix = a.module === MIX_MODULE || isRole;
     const isAll = !isMix && (a.subtopic === 'all' || a.difficulty === 'all');
     const dom = isMix ? null : domainOfId.get(a.module);
-    const chip = isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(dom?.id));
-    const title = isMix
+    const rInfo = isRole ? roleInfo(a.subtopic) : null;
+    const chip = isRole ? `<span class="tag tag-role">${icon(rInfo.icon)}<span>Role</span></span>`
+      : isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(dom?.id));
+    const title = isRole
+      ? `<strong>${esc(rInfo.title)}</strong> · ${difficultyHtml(a.difficulty)}`
+      : isMix
       ? `<strong>Mixed quiz</strong> · ${a.difficulty === 'any' ? 'Any difficulty' : difficultyHtml(a.difficulty)}`
       : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${difficultyHtml(a.difficulty)}`;
+    // Where a question came from: its domain, or (role-only questions) the role.
+    const originOf = mid => {
+      const d = domainOfId.get(mid);
+      if (d) return { domain: d.id, domainTitle: d.title };
+      const r = roleOfOnly.get(mid);
+      return r ? { domainTitle: r.title } : {};
+    };
     const qs = isMix
       ? a.questions.map(q => (typeof q.module === 'string'
-        ? { ...q, moduleTitle: modTitle(q.module), domain: domainOfId.get(q.module)?.id, domainTitle: domainOfId.get(q.module)?.title, subtopicTitle: subTitle(q.module, q.subtopic) }
+        ? { ...q, moduleTitle: modTitle(q.module), ...originOf(q.module), subtopicTitle: subTitle(q.module, q.subtopic) }
         : q))
       : isAll ? a.questions.map(q => (typeof q.subtopic === 'string' ? { ...q, subtopicTitle: subTitle(a.module, q.subtopic) } : q))
       : a.questions;
@@ -109,7 +151,7 @@ export async function render(root, params, ctx) {
     <section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
     <section class="card">
       <h2>By module</h2>
-      <p class="muted small">Module stats include questions answered inside mixed quizzes.</p>
+      <p class="muted small">Module stats include questions answered inside mixed and role quizzes.</p>
       <div class="table-wrap"><table class="summary">
         <thead><tr><th scope="col">Module</th><th scope="col">Attempts</th><th scope="col">Best</th><th scope="col">Last</th><th scope="col">Overall</th></tr></thead>
         <tbody>${summaryRows}</tbody>

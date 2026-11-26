@@ -320,15 +320,21 @@ function summarize(list) {
 }
 
 export const MIX_MODULE = 'mix';
+// Role quizzes: module "role", subtopic "<role>" or "<role>~<subrole>", difficulty = role level.
+// Like mixes, every question carries its own module/subtopic/difficulty.
+export const ROLE_MODULE = 'role';
 export const ALL_ID = 'all';
+// Attempts whose questions come from several modules (mixes and roles).
+export const isComposite = a => !!a && (a.module === MIX_MODULE || a.module === ROLE_MODULE);
+const isCompositeId = m => m === MIX_MODULE || m === ROLE_MODULE;
 
 // A whole-module attempt: subtopic and/or difficulty "all"; its questions carry their own origin.
-const isAllAttempt = a => a.module !== MIX_MODULE && (a.subtopic === ALL_ID || a.difficulty === ALL_ID);
+const isAllAttempt = a => !isComposite(a) && (a.subtopic === ALL_ID || a.difficulty === ALL_ID);
 
 /*
  * Per-module attribution rule (kept deliberately simple):
  * - A single-module attempt counts for its module as-is.
- * - A mixed attempt (module "mix") is split into one "slice" per module (optionally narrowed
+ * - A mixed or role attempt (module "mix" / "role") is split into one "slice" per module (optionally narrowed
  *   further to a subtopic/difficulty) using each question's own module/subtopic/difficulty.
  *   A slice behaves like a small attempt: { ts, score = sum of question credits, total = questions }.
  *   So it adds 1 to that module's attempt count and its percentage feeds Best/Last/Overall
@@ -340,7 +346,7 @@ const isAllAttempt = a => a.module !== MIX_MODULE && (a.subtopic === ALL_ID || a
 function slicesOf(a, match) {
   const groups = new Map();
   for (const q of a.questions) {
-    const mod = typeof q.module === 'string' ? q.module : (a.module !== MIX_MODULE ? a.module : null);
+    const mod = typeof q.module === 'string' ? q.module : (!isComposite(a) ? a.module : null);
     if (!mod) continue;
     const qq = { ...q, module: mod };
     if (!match(qq)) continue;
@@ -354,7 +360,7 @@ function slicesOf(a, match) {
 }
 
 function mixSlices(attempts, match) {
-  return attempts.filter(a => a.module === MIX_MODULE).flatMap(a => slicesOf(a, match));
+  return attempts.filter(isComposite).flatMap(a => slicesOf(a, match));
 }
 
 // Merges the per-key slices of one mixed attempt back into one slice (for module-level stats).
@@ -374,7 +380,7 @@ const matches = (filter, x) =>
 
 // Attempt-like records for a module (single attempts + mixed slices), optionally narrowed.
 function recordsFor(attempts, filter) {
-  const single = attempts.filter(a => a.module !== MIX_MODULE && matches(filter, a));
+  const single = attempts.filter(a => !isComposite(a) && matches(filter, a));
   // Whole-module attempts that don't match as stored (e.g. filter subtopic "addition", attempt "all"):
   // count the questions that do match, as one slice per attempt.
   const allSlices = attempts
@@ -389,7 +395,7 @@ function recordsFor(attempts, filter) {
 // With no module (or module "mix"), attempts are aggregated as stored.
 export function getStats({ module, subtopic, difficulty } = {}) {
   const attempts = scoredOnly(load().attempts);
-  if (module === undefined || module === MIX_MODULE) {
+  if (module === undefined || isCompositeId(module)) {
     return summarize(attempts.filter(a => matches({ module, subtopic, difficulty }, a)));
   }
   return summarize(recordsFor(attempts, { module, subtopic, difficulty }));
@@ -400,7 +406,7 @@ export function getStats({ module, subtopic, difficulty } = {}) {
 export function getStatsForModules(ids) {
   const set = new Set(ids);
   const attempts = scoredOnly(load().attempts);
-  const single = attempts.filter(a => a.module !== MIX_MODULE && set.has(a.module));
+  const single = attempts.filter(a => !isComposite(a) && set.has(a.module));
   const slices = mixSlices(attempts, q => set.has(q.module)).map(s => ({ ...s, module: 'set' }));
   return summarize(single.concat(mergeSlices(slices)));
 }

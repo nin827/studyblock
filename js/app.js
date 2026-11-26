@@ -8,6 +8,7 @@ import * as quiz from './views/quiz.js';
 import * as results from './views/results.js';
 import * as settings from './views/settings.js';
 import * as calcPage from './views/calcpage.js';
+import * as roles from './views/roles.js';
 import { applyTheme } from './views/settings.js';
 import { getCookie } from './lib/storage.js';
 import { icons, errorBox, esc, icon } from './views/ui.js';
@@ -52,6 +53,22 @@ function match(hash) {
   // Guided practice: same params and validation as #/q/…
   if (parts[0] === 'g' && parts.length === 4 && ID_RE.test(parts[1])) {
     return { view: guidedView, nav: 'home', params: { moduleId: parts[1], subtopic: parts[2], difficulty: parts[3] } };
+  }
+  // Roles: #/roles, #/roles/<role>, #/roles/<role>/<subrole>.
+  if (parts[0] === 'roles' && parts.length === 1) return { view: roles, nav: 'roles', params: {} };
+  if (parts[0] === 'roles' && (parts.length === 2 || parts.length === 3) && parts.slice(1).every(p => ID_RE.test(p))) {
+    return { view: { render: roles.renderRole }, nav: 'roles', params: { roleId: parts[1], subroleId: parts[2] ?? null } };
+  }
+  // Role quizzes: #/rq/<role>[~<subrole>]/<level> (practice) and #/rg/… (guided).
+  if ((parts[0] === 'rq' || parts[0] === 'rg') && parts.length === 3) {
+    const ids = parts[1].split('~');
+    if (ids.length <= 2 && ids.every(p => ID_RE.test(p)) && ID_RE.test(parts[2])) {
+      return {
+        view: { render: parts[0] === 'rg' ? roles.renderGuidedPlay : roles.renderPlay },
+        nav: 'roles',
+        params: { roleId: ids[0], subroleId: ids[1] ?? null, level: parts[2] },
+      };
+    }
   }
   if (parts[0] === 'results' && parts.length === 1) return { view: results, nav: 'results', params: {} };
   if (parts[0] === 'settings' && parts.length === 1) return { view: settings, nav: 'settings', params: {} };
@@ -176,12 +193,12 @@ bannerEl().addEventListener('click', e => {
 });
 
 // Re-render pages that show stored data when a folder merge brought in new attempts/presets.
-const REFRESH_ON_MERGE = new Set(['home', 'results']);
+const REFRESH_ON_MERGE = new Set(['home', 'results', 'roles']);
 folder.subscribe(f => {
   renderBanner(f);
   if (f.merged) {
     const r = match(location.hash);
-    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== guidedView && r.view !== mix) route();
+    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== guidedView && r.view !== mix && !/^#\/r[qg]\//.test(location.hash)) route();
   }
 });
 
@@ -201,7 +218,7 @@ function showUpdateToast(applyUpdate) {
     if (!b) return;
     if (b.dataset.act === 'reload') {
       // A quiz in progress would be lost on reload: ask first.
-      const inQuiz = /^#\/(q\/|g\/|mix\/(play|guided))/.test(location.hash);
+      const inQuiz = /^#\/(q\/|g\/|rq\/|rg\/|mix\/(play|guided))/.test(location.hash);
       if (inQuiz && !confirm('Reload now? The quiz in progress will be lost.')) return;
       applyUpdate();
     } else el.remove();

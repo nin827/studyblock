@@ -1,5 +1,5 @@
-import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup } from '../lib/engine.js';
-import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE } from '../lib/storage.js';
+import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, parseRoleKey } from '../lib/engine.js';
+import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
 import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 
@@ -64,6 +64,9 @@ export async function render(root, params, ctx) {
   // Titles of archived modules, for old attempts in "Recent" (archived modules are never loaded).
   let archived = new Map();
   try { archived = await loadArchived(); } catch (e) { console.warn(e); }
+  // Roles: the Home card and titles of role attempts in "Recent".
+  let roles = [];
+  try { roles = await loadRoles(); } catch (e) { console.warn(e); }
   if (!ctx.alive()) return;
   const draft = loadMixDraft();
   const quick = [...official, ...getPresets()];
@@ -170,7 +173,13 @@ export async function render(root, params, ctx) {
   const recent = attempts.slice(0, RECENT_COUNT).map(a => {
     const isMix = a.module === MIX_MODULE;
     let chip, title;
-    if (isMix) {
+    if (a.module === ROLE_MODULE) {
+      const k = parseRoleKey(a.subtopic);
+      const r = k && roles.find(x => x.id === k.roleId);
+      const sr = r && k.subroleId ? r.subroles.find(x => x.id === k.subroleId) : null;
+      chip = `<span class="tag tag-role">${icon((sr && sr.icon) || r?.icon || 'briefcase-business')}<span>Role</span></span>`;
+      title = `${r ? (sr ? sr.title : r.title) : a.subtopic} · ${difficultyLabel(a.difficulty)}`;
+    } else if (isMix) {
       const ds = new Set(a.questions.map(q => domainOfModule.get(q.module)?.id).filter(Boolean));
       chip = tag('Mix', 'tag-mix');
       title = `Mixed quiz · ${ds.size} domain${ds.size === 1 ? '' : 's'} · ${a.difficulty === 'any' ? 'Any' : difficultyLabel(a.difficulty)}`;
@@ -205,6 +214,14 @@ export async function render(root, params, ctx) {
       ${domains.length ? `<div class="domain-grid">${cards}</div>` : '<div class="card"><p class="muted">No modules installed yet.</p></div>'}
     </section>
     ${banner}
+    ${roles.length ? `<a class="tool-card" href="#/roles">
+      <span class="icon-tile">${icon('briefcase-business')}</span>
+      <span class="tool-card-text">
+        <span class="tool-card-title">Roles</span>
+        <span class="tool-card-sub">Career mixes: ${esc(roles.map(r => r.title).join(', '))}</span>
+      </span>
+      <span class="tool-card-go" aria-hidden="true">${icon('chevron-right')}</span>
+    </a>` : ''}
     <a class="tool-card" href="#/calc">
       <span class="icon-tile">${icon('calculator')}</span>
       <span class="tool-card-text">

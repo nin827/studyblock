@@ -1,0 +1,172 @@
+{
+  "id": "business-analyst",
+  "title": "Business Analyst",
+  "icon": "briefcase-business",
+  "description": "Turns business data into decisions: queries, margins, forecasts and the case for or against a plan.",
+  "exclusive": "role-business-analyst",
+  "mix": {
+    "business-case": {
+      "weight": 3
+    },
+    "sql-queries": {
+      "weight": 3
+    },
+    "business-math": {
+      "weight": 2
+    },
+    "statistics": {
+      "weight": 2,
+      "subtopics": [
+        "mean-median-mode",
+        "range-iqr",
+        "weighted-average"
+      ]
+    },
+    "finance": {
+      "weight": 2
+    },
+    "ratios-percentages": {
+      "weight": 1,
+      "subtopics": [
+        "ratios",
+        "percentages"
+      ]
+    },
+    "economics": {
+      "weight": 1,
+      "subtopics": [
+        "supply-demand",
+        "elasticity"
+      ]
+    },
+    "marketing": {
+      "weight": 1
+    },
+    "accounting-theory": {
+      "weight": 1
+    },
+    "business-theory": {
+      "weight": 1,
+      "subtopics": [
+        "stakeholders",
+        "swot",
+        "pestle"
+      ]
+    }
+  },
+  "subroles": [
+    {
+      "id": "financial-analyst",
+      "title": "Financial Analyst",
+      "icon": "landmark",
+      "description": "Valuations, loans, returns and statements: the numbers behind investment decisions.",
+      "mix": {
+        "finance": {
+          "weight": 3
+        },
+        "business-case": {
+          "weight": 2,
+          "subtopics": [
+            "investment",
+            "unit-economics",
+            "break-even"
+          ]
+        },
+        "finance-theory": {
+          "weight": 2,
+          "subtopics": [
+            "risk-return",
+            "ratios",
+            "appraisal"
+          ]
+        },
+        "accounting-theory": {
+          "weight": 2
+        },
+        "business-math": {
+          "weight": 2,
+          "subtopics": [
+            "interest",
+            "margins"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode",
+            "weighted-average"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "growth-decay"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "statement-review",
+        "investment-case",
+        "sales-review"
+      ]
+    },
+    {
+      "id": "marketing-analyst",
+      "title": "Marketing Analyst",
+      "icon": "megaphone",
+      "description": "Campaign numbers, customer data and pricing: what sells, to whom, and at what price.",
+      "mix": {
+        "marketing": {
+          "weight": 3
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "probability",
+            "weighted-average"
+          ]
+        },
+        "sql-queries": {
+          "weight": 2,
+          "subtopics": [
+            "select-where",
+            "aggregates",
+            "group-join"
+          ]
+        },
+        "business-case": {
+          "weight": 2,
+          "subtopics": [
+            "pricing-decision",
+            "unit-economics"
+          ]
+        },
+        "economics": {
+          "weight": 1,
+          "subtopics": [
+            "elasticity",
+            "supply-demand"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        },
+        "business-theory": {
+          "weight": 1,
+          "subtopics": [
+            "swot",
+            "pestle"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "campaign-pricing",
+        "sales-review"
+      ]
+    }
+  ]
+}

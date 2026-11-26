@@ -3,7 +3,7 @@
 // a subpath such as https://<user>.github.io/studyblock/.
 
 // Bump on every release: activating a new version deletes all older caches.
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v21';
 const CACHE_PREFIX = 'studyblock-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -41,12 +41,14 @@ const PRECACHE = [
   'js/views/module.js',
   'js/views/quiz.js',
   'js/views/results.js',
+  'js/views/roles.js',
   'js/views/settings.js',
   'js/views/staticgraph.js',
   'js/views/ui.js',
   'vendor/lucide.min.js',
   'modules/index.json',
   'presets/index.json',
+  'roles/index.json',
   'icons/icon.svg',
   'icons/icon-192.png',
   'icons/icon-512.png',

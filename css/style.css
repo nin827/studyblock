@@ -1816,3 +1816,48 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
 .graph-list li.is-hidden .graph-swatch { background: transparent; box-shadow: inset 0 0 0 2px var(--fn); }
 .work-note { color: var(--muted); font-size: 13px; }
 .work-window { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+
+/* ================= roles (#/roles, js/views/roles.js) ================= */
+
+.role-list { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 900px) { .role-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; } }
+.role-card { display: flex; flex-direction: column; gap: 12px; }
+.role-card-main { display: flex; align-items: flex-start; gap: 12px; min-height: 44px; text-decoration: none; color: var(--ink); }
+.role-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.role-card-title { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
+.role-card-sub { color: var(--text-2); font-size: 14px; }
+.role-card-meta { color: var(--muted); font-size: 13px; }
+.role-card-main .tool-card-go { align-self: center; }
+@media (hover: hover) { .role-card-main:hover .role-card-title { text-decoration: underline; } }
+.role-subs { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+.role-subs .chip .icon { width: 16px; height: 16px; }
+
+.role-levels { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 640px) { .role-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.role-level {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-control); background: var(--surface);
+}
+.role-level.is-plus { border-color: var(--accent); background: var(--accent-soft); }
+.role-level-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.role-level-name { font-weight: 700; font-size: 16px; }
+.role-level .btn { flex-shrink: 0; }
+
+.role-shares { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; }
+.role-shares li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
+.role-shares li:last-child { border-bottom: 0; }
+.role-share-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.role-share-text a { color: var(--ink); font-weight: 600; }
+.role-share-pct { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-2); min-width: 44px; text-align: right; }
+
+.tag-role { background: var(--ink); color: var(--paper); }
+.tag-role .icon { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* 640-899px: the Roles link is icon-only too, so the top nav fits. */
+@media (min-width: 640px) and (max-width: 899px) {
+  .nav-link[data-nav="roles"] { min-width: 44px; padding: 0 13px; justify-content: center; }
+  .nav-link[data-nav="roles"] span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+.role-subs .chip-scroll { flex-wrap: wrap; overflow-x: visible; }

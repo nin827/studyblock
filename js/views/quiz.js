@@ -3,7 +3,7 @@ import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTIC
 import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
-import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel } from './ui.js';
+import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel, isFlameLevel } from './ui.js';
 import { mountCalculator } from './calculator.js';
 import { compileGraph } from './staticgraph.js'; // also defines <sb-graph> (static plots in the review)
 import { isLang, langTitle } from '../lib/languages.js';
@@ -98,7 +98,7 @@ const SEG_CLASS = { correct: 'is-correct', partial: 'is-partial', wrong: 'is-wro
 function originTags(domainId, domainTitle, moduleTitle, subtopicTitle, difficulty, lang) {
   const where = [domainTitle, moduleTitle].filter(Boolean).join(' › ');
   // Expert gets its own pill (flame icon + label); other difficulties share the subtopic pill.
-  const expert = difficulty === 'expert';
+  const expert = isFlameLevel(difficulty);
   const rest = [subtopicTitle, difficulty && !expert ? difficultyLabel(difficulty) : null].filter(Boolean).join(' · ');
   return (where ? tag(where, domClass(domainId)) : '') + (rest ? tag(rest) : '') + (expert ? difficultyTag(difficulty) : '') + langTag({ lang });
 }
@@ -1674,7 +1674,9 @@ export async function runQuiz(root, ctx, opts) {
 
   // Questions answered with code-like blocks or run as queries: inline code in the prompt names
   // tables and columns, so it stays at text size (not the large equation style).
-  const isCodeQuestion = q => isDual(q) || !!q?.runnable || (isTiles(q) && (q.tiles || []).some(t => t.slot));
+  // Prose-style prompts: inline code stays at text size (scenario questions name columns, functions, cells).
+  const isCodeQuestion = q => isDual(q) || !!q?.runnable || q?.difficulty === 'expert-plus'
+    || (isTiles(q) && (q.tiles || []).some(t => t.slot));
 
   function showQuestion() {
     phase = 'answer';

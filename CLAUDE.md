@@ -48,6 +48,7 @@ js/lib/music.js         note/interval/scale/chord helpers (build + independent c
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
+js/views/roles.js       Roles pages (roles/ = registry)
 js/views/calcpage.js    standalone #/calc page; js/views/staticgraph.js = <sb-graph> static plot for reviews
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
@@ -64,7 +65,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run
 
 ## Registry — `modules/index.json`
 
@@ -129,6 +130,25 @@ Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficul
   - They are never exported or imported; they come from the repo.
 
 A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `difficulty: <chosen or "any">`, and **each question carries its own `module`, `subtopic`, `difficulty`** so stats can be attributed per module.
+
+## Roles and Subroles (ticket 020)
+
+A role is a hand-made weighted mix with a difficulty shift, plus role-only Expert+ scenarios. A subrole is a narrower mix under its role.
+- **Registry:**
+  - `roles/index.json` holds `{ "roles": [ids] }`, and `roles/<id>.json` holds `{ id, title, icon, description, exclusive, mix: { module: { weight, subtopics? } }, subroles: [{ id, title, description, mix?, icon?, exclusiveSubtopics }] }`.
+  - A subrole without `mix` inherits the role's. An empty `exclusiveSubtopics` means all of them.
+  - Unknown modules or subtopics are dropped with one warning per role.
+- **Levels:** Normal draws subject Medium, Hard draws Hard, Expert draws Expert (each falls back to the closest level the subtopic has). **Expert+** draws only from the role's `exclusive` module, limited to the subrole's `exclusiveSubtopics`. Runs have 10 questions, or 5 at Expert+. The Expert+ pill has a flame icon plus the label.
+- **Role-only modules** (`modules/role-*/`, `"roleOnly": true`, every subtopic `["expert-plus"]`): `loadModule` refuses them, so they never appear on domain pages, Home, mixes, `#/m` or `#/q`. `loadRoleOnlyModule` loads them only as a listed role's `exclusive`. `expert-plus` is valid only there. They are multi-part scenarios (3–4 parts, each a different subject skill) with independent verify, hints and given rows.
+  - Business Analyst (`role-business-analyst`): sales-review, statement-review, investment-case, campaign-pricing.
+  - Software Engineer (`role-software-engineer`, Python 3): api-endpoint, ledger-check, hot-loop, fx-payout.
+  - Mathematician (`role-mathematician`): quality-control, claims-pricing, growth-model, check-derivation (role level only; population SD, end-of-year discounting).
+- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary. There are no "X Teacher" subroles: teaching would be a general role of its own.
+- **Storage:** a role attempt is stored as `module: "role"`, `subtopic: "<role>"` or `"<role>~<subrole>"`, and `difficulty: <role level>`.
+  - Questions carry their own origin, and their stored difficulty is the subject level drawn (`expert-plus` for scenarios). They count toward subject stats like mixes do; role-only modules count only under the role.
+  - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.
+- **UI:** a desktop nav link "Roles" (`briefcase-business`) and a Home card, while the phone tab bar stays at 4 tabs. Expert+ prompts keep inline code at text size (`.is-code`).
+- **Bundle:** `tools/bundle.py` includes `roles/**` and the exclusive modules of listed roles.
 
 ## Module contract
 

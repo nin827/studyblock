@@ -2,7 +2,7 @@
 
 **Practice that never runs out of questions.**
 
-StudyBlock is a small quiz app with 59 subjects across eleven areas: Math, Science, Computing, Geography, History, Business, Language, Game Dev, Music Theory, Biology and Medical — from fractions and calculus to forces, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
+StudyBlock is a small quiz app with 71 subjects across 13 areas: Math, Science, Computing, Geography, History, Business, Language, Game Dev, Music Theory, Biology, Medical, Logic & Puzzles and Everyday Math — from fractions and calculus to forces, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
 
 Everything happens in your browser. There's no account and no server-side database, and none of your progress leaves your device unless you export it.
 
@@ -11,6 +11,8 @@ Everything happens in your browser. There's no account and no server-side databa
 ## What you can do
 
 - **Pick a domain and drill down.** Start from a broad area (Math, Science, Computing, Geography, History, Business, Language), open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
+- **Practise for a role.** Roles such as Business Analyst, Software Engineer and Mathematician mix the right subjects one level harder, and their Expert+ level has scenarios that combine several subjects.
+- **Build answers from blocks.** Many questions let you drag or tap blocks instead of typing, from ordering events to building SQL queries.
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
 - **Read and write code.** Code Writing and Code Reviewing show short programs in Python, C#, C++, GDScript or Rust (your pick): fill the gaps, predict the output, find the bug and choose the fix.
 - **Practise with a guide.** Switch any subject to **Guided** for hints, unlimited tries and a Show solution button. Guided sets are never scored.
