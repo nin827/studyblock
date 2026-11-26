@@ -1,0 +1,15 @@
+{
+  "id": "accounting-theory",
+  "title": "Accounting Theory",
+  "description": "Double entry, accounting concepts, classifying items and how transactions change the accounting equation.",
+  "icon": "notebook-pen",
+  "type": "generator",
+  "calculator": false,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "double-entry", "title": "Double entry", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "concepts", "title": "Accounting concepts", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "classification", "title": "Classifying items", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "equation", "title": "The accounting equation", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

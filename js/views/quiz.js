@@ -1,6 +1,6 @@
 import { loadModule, loadGuide, domainOf, checkAnswer, gradeAnswer, runAnswer, serialiseTree, SLOT_DEPTH_MAX, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
 import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
-import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, roundScore } from '../lib/storage.js';
+import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel } from './ui.js';
@@ -208,7 +208,7 @@ export async function runQuiz(root, ctx, opts) {
   function focusAnswer() {
     if (phase === 'answer' && isMulti(questions[idx]) && focusPart(lastPart)) return;
     const q = questions[idx];
-    const blockTile = phase === 'answer' && inBlocks(q) ? root.querySelector('.tiles-form .tile:not(:disabled)') : null;
+    const blockTile = phase === 'answer' && (inBlocks(q) || inBuild(q)) ? root.querySelector('.tiles-form .tile:not(:disabled):not([hidden])') : null;
     const target = blockTile || root.querySelector('#answer:not(:disabled)') || root.querySelector('#next') || root.querySelector('.choice:not(:disabled)')
       || root.querySelector('.tiles-form .tile:not(:disabled)');
     target?.focus();
@@ -271,7 +271,7 @@ export async function runQuiz(root, ctx, opts) {
     const isDate = kind === 'date';
     const typed = isMulti(q) ? kind !== 'choice' && !isDate : q.answerType !== 'choice' && !isDate && !inBlocks(q);
     calc.setUseEnabled(on && typed && phase === 'answer',
-      inBlocks(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+      inBlocks(q) || inBuild(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
         : isDate ? 'Use fills number answers. For this question, type a date.'
         : !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
         : phase !== 'answer' ? 'Use fills the answer on the next question.' : '');
@@ -372,8 +372,11 @@ export async function runQuiz(root, ctx, opts) {
       return `<div class="part" data-part="${esc(p.id)}">
         ${head}
         <p class="part-ask" id="part-${esc(p.id)}-ask">${renderInline(p.ask || p.label)}</p>
-        <div class="choices part-choices" role="group" aria-labelledby="part-${esc(p.id)}-ask" data-part="${esc(p.id)}">${(p.choices || []).map((c, j) =>
-          `<button type="button" class="btn choice part-choice" data-part="${esc(p.id)}" data-i="${j}" aria-pressed="false"><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>
+        ${isSeg(p)
+          ? `<div class="choices part-choices ${segClass(p)}" role="group" aria-labelledby="part-${esc(p.id)}-ask" data-part="${esc(p.id)}">${segHeadHtml(p)}${(p.choices || []).map((c, j) =>
+            `<button type="button" class="btn choice part-choice seg-choice" data-part="${esc(p.id)}" data-i="${j}" aria-pressed="false"><span class="choice-key seg-tick" aria-hidden="true"></span>${segCellsHtml(p, j)}<span class="choice-mark"></span></button>`).join('')}</div>`
+          : `<div class="choices part-choices" role="group" aria-labelledby="part-${esc(p.id)}-ask" data-part="${esc(p.id)}">${(p.choices || []).map((c, j) =>
+            `<button type="button" class="btn choice part-choice" data-part="${esc(p.id)}" data-i="${j}" aria-pressed="false"><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`}
         ${partHintHtml(p)}
       </div>`;
     }
@@ -384,8 +387,9 @@ export async function runQuiz(root, ctx, opts) {
       <label class="part-ask" for="part-${esc(p.id)}">${renderInline(p.ask || p.label)}</label>
       <input id="part-${esc(p.id)}" class="answer-input part-input${date ? ' date-input' : ''}" data-part="${esc(p.id)}" type="text" ${num ? 'inputmode="decimal"' : date ? 'inputmode="text"' : ''}
         enterkeyhint="${last ? 'go' : 'next'}" autocapitalize="off" autocorrect="off" spellcheck="false"
-        placeholder="${num ? 'Type a number' : date ? datePlaceholder(p.precision) : 'Type your answer'}"${date ? ` aria-describedby="part-${esc(p.id)}-readas"` : ''}>
+        placeholder="${num ? 'Type a number' : date ? datePlaceholder(p.precision) : 'Type your answer'}"${caseDescribed(p.answerType === 'text' ? p : null, `part-${p.id}-case`, date ? `part-${p.id}-readas` : '')}>
       ${date ? readAsHtml(`part-${esc(p.id)}-readas`, p.precision) : ''}
+      ${p.answerType === 'text' ? caseNoteHtml(p, `part-${p.id}-case`) : ''}
       ${partHintHtml(p)}
     </div>`;
   }
@@ -495,7 +499,7 @@ export async function runQuiz(root, ctx, opts) {
   const isDual = q => q?.answerType === 'text' && !!q.blocks && Array.isArray(q.blocks.tiles) && q.blocks.tiles.length >= 2;
   let answerMode = 'type'; // dual questions: 'type' | 'blocks' (per question, remembered per module)
   const inBlocks = q => isTiles(q) || (isDual(q) && answerMode === 'blocks');
-  const modeFor = q => (isDual(q) && answerMode === 'blocks' ? 'blocks' : 'type');
+  const modeFor = q => (isSegQ(q) ? segMode : isDual(q) && answerMode === 'blocks' ? 'blocks' : 'type');
   const DRAG_THRESHOLD = 6;
   const TILES_FILTER_MIN = 10; // more blocks than this in the bank shows "Filter blocks"
   let ts = null; // { spec, tree: [{ t, kids? }], active: tile index | null, locked, drag, pointerAt }
@@ -543,7 +547,7 @@ export async function runQuiz(root, ctx, opts) {
   const canAct = () => !!ts && !ts.locked && phase === 'answer';
 
   // The inner markup of a blocks answer (shared by tiles questions and the Blocks side of dual ones).
-  function tilesBody(spec) {
+  function tilesBody(spec, describedBy = '') {
     const nested = spec.tiles.some(t => t.slot);
     const rule = spec.useAll ? 'Use every block.' : 'You may not need every block.';
     const slotHelp = nested ? ' Tap a placed block with brackets to fill it (it gets an outline), tap it again to send it back; <kbd>Esc</kbd> goes back to the answer row.' : '';
@@ -551,7 +555,7 @@ export async function runQuiz(root, ctx, opts) {
           <p class="field-label" id="tiles-answer-label">Your answer</p>
           <button type="button" class="btn btn-small tiles-reset" id="tiles-reset" disabled>${icon('rotate-ccw')}<span>Reset</span></button>
         </div>
-        <div class="tiles-row tiles-answer" id="tiles-answer" role="group" aria-labelledby="tiles-answer-label" aria-describedby="tiles-help"
+        <div class="tiles-row tiles-answer" id="tiles-answer" role="group" aria-labelledby="tiles-answer-label" aria-describedby="tiles-help${describedBy ? ` ${esc(describedBy)}` : ''}"
           data-placeholder="Drag or tap blocks here"></div>
         <p class="field-label tiles-bank-label" id="tiles-bank-label">Blocks</p>
         ${spec.tiles.length > TILES_FILTER_MIN ? `<div class="tiles-filter" id="tiles-filter-wrap" hidden>${icon('search')}
@@ -563,8 +567,19 @@ export async function runQuiz(root, ctx, opts) {
   }
 
   function tilesHtml(q) {
-    return `<form class="answer-form tiles-form" id="answer-form" autocomplete="off" novalidate>${tilesBody(q)}</form>`;
+    return `<form class="answer-form tiles-form" id="answer-form" autocomplete="off" novalidate>${caseNoteHtml(q, 'answer-case')}${tilesBody(q, q.caseSensitive === true ? 'answer-case' : '')}</form>`;
   }
+
+  // `caseSensitive: true` (text / tiles answers): a visible warning near the answer, which the
+  // answer field also names with aria-describedby. '' when the question (or part) isn't case-sensitive.
+  function caseNoteHtml(owner, id) {
+    if (owner?.caseSensitive !== true) return '';
+    return `<p class="case-note" id="${esc(id)}">${icon('triangle-alert')}<span>Case-sensitive: capital letters matter</span></p>`;
+  }
+  const caseDescribed = (owner, id, others = '') => {
+    const ids = [others, owner?.caseSensitive === true ? id : ''].filter(Boolean).join(' ');
+    return ids ? ` aria-describedby="${esc(ids)}"` : '';
+  };
 
   function tileButton(i, pos, n) {
     const t = ts.spec.tiles[i];
@@ -1024,12 +1039,13 @@ export async function runQuiz(root, ctx, opts) {
           <button type="button" class="answer-mode-btn" data-mode="blocks" aria-pressed="false">${icon('blocks')}<span>Blocks</span></button>
         </div>
         ${note}
+        ${caseNoteHtml(q, 'answer-case')}
         <div class="dual-type" id="dual-type">
           <label class="field-label" for="answer">Your answer</label>
           <input id="answer" class="answer-input" type="text" enterkeyhint="go" autocapitalize="off" autocorrect="off"
-            placeholder="Type your answer" spellcheck="false">
+            placeholder="Type your answer" spellcheck="false"${caseDescribed(q, 'answer-case')}>
         </div>
-        <div class="dual-blocks tiles-form" id="dual-blocks" hidden>${tilesBody(q.blocks)}</div>
+        <div class="dual-blocks tiles-form" id="dual-blocks" hidden>${tilesBody(q.blocks, q.caseSensitive === true ? 'answer-case' : '')}</div>
       </form>`;
   }
 
@@ -1074,6 +1090,336 @@ export async function runQuiz(root, ctx, opts) {
     setAnswerMode(q, savedAnswerMode(q), { remember: false });
     if (answerMode === 'blocks') root.querySelector('#tiles-bank .tile')?.focus();
     else root.querySelector('#answer')?.focus();
+  }
+
+  // ---- segmented choices: Build | Choose switch (remembered per module in this tab) ----
+  // Build (default): one block per column from a bank (column-tagged blocks; order never matters;
+  // a second block in a column replaces the first). Full credit. Choose: pick one of the options,
+  // credit × the question's chooseMultiplier. The built answer is the column values joined by " | ",
+  // the same string as the matching option.
+  const isSegQ = q => q?.answerType === 'choice' && isSeg(q) && Array.isArray(q.segBank) && q.segBank.length >= 2;
+  let segMode = 'build';
+  const inBuild = q => isSegQ(q) && segMode === 'build';
+  let sb = null; // { q, cols, bank: [{ col, value }], placed: [bank index | null], locked, drag, pointerAt }
+
+  function savedSegMode(q) {
+    try {
+      const m = JSON.parse(sessionStorage.getItem(ANSWER_MODE_KEY) || '{}');
+      return m && m[modeModule(q)] === 'choose' ? 'choose' : 'build';
+    } catch { return 'build'; }
+  }
+
+  function segDualHtml(q) {
+    const m = typeof q.chooseMultiplier === 'number' ? q.chooseMultiplier : 1;
+    const level = q.difficulty && q.difficulty !== ALL ? difficultyLabel(q.difficulty) : (opts.difficulty && opts.difficulty !== ALL ? difficultyLabel(opts.difficulty) : '');
+    const note = !guided && m < 1
+      ? `<p class="answer-mode-note" id="answer-mode-note" hidden>${icon('info')}<span>Choose: up to ${pctText(m)} credit${level ? ` at ${esc(level)}` : ''}</span></p>` : '';
+    const cols = cleanChoiceCols(q.choiceCols);
+    return `<form class="answer-form dual-form seg-form" id="answer-form" autocomplete="off" novalidate>
+        <div class="answer-mode" role="group" aria-label="Answer by">
+          <button type="button" class="answer-mode-btn" data-mode="build" aria-pressed="true">${icon('blocks')}<span>Build</span></button>
+          <button type="button" class="answer-mode-btn" data-mode="choose" aria-pressed="false">${icon('list')}<span>Choose</span></button>
+        </div>
+        ${note}
+        <div class="seg-build tiles-form" id="seg-build">
+          <div class="tiles-head">
+            <p class="field-label" id="segb-answer-label">Your answer</p>
+            <button type="button" class="btn btn-small tiles-reset" id="segb-reset" disabled>${icon('rotate-ccw')}<span>Reset</span></button>
+          </div>
+          <div class="segb-slots segb-n${cols.length}" id="segb-slots" role="group" aria-labelledby="segb-answer-label" aria-describedby="segb-help"></div>
+          <p class="field-label tiles-bank-label" id="segb-bank-label">Blocks</p>
+          ${q.segBank.length > TILES_FILTER_MIN ? `<div class="tiles-filter" id="segb-filter-wrap" hidden>${icon('search')}
+            <input type="text" class="tiles-filter-input" id="segb-filter" placeholder="Filter blocks" aria-label="Filter blocks"
+              aria-controls="segb-bank" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>` : ''}
+          <div class="tiles-row tiles-bank segb-bank" id="segb-bank" role="group" aria-labelledby="segb-bank-label" aria-describedby="segb-help"></div>
+          <p class="tiles-help muted" id="segb-help">Place one block in each column; the order doesn't matter. Tap a block to place it, tap it again to send it back.</p>
+          <p class="sr-only" id="segb-status" aria-live="polite"></p>
+        </div>
+        <div class="seg-choose" id="seg-choose" hidden>
+          <div class="choices ${segClass(q)}">${segHeadHtml(q)}${(q.choices || []).map((c, i) =>
+            `<button type="button" class="btn choice seg-choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>
+        </div>
+      </form>`;
+  }
+
+  const segReady = () => !!sb && !sb.locked && phase === 'answer' && sb.placed.every(k => k !== null);
+  const segValue = () => sb.placed.map(k => sb.bank[k].value).join(SEG_SEP);
+  const segCanAct = () => !!sb && !sb.locked && phase === 'answer';
+  const segName = k => `${sb.bank[k].value} (${sb.cols[sb.bank[k].col]})`;
+  function segAnnounce(msg) { const s = root.querySelector('#segb-status'); if (s) s.textContent = msg; }
+
+  // A block button. In a slot, the column caption is the slot's own label (screen-reader text only).
+  function segTileHtml(k, inSlot) {
+    const b = sb.bank[k];
+    const cap = inSlot ? `<span class="sr-only">${esc(sb.cols[b.col])}: </span>` : `<span class="segb-cap">${esc(sb.cols[b.col])}<span class="sr-only">: </span></span>`;
+    return `<button type="button" class="tile segb-tile" data-b="${k}"${sb.locked ? ' disabled' : ''}>${cap}<span class="tile-label">${renderInline(b.value)}</span>${inSlot ? '<span class="sr-only">, placed</span>' : ''}</button>`;
+  }
+
+  // Redraw the column slots and the bank. `focus`: { k, where: 'slots'|'bank' } or { where, slot } fallback.
+  function renderSeg(focus) {
+    const slots = root.querySelector('#segb-slots');
+    const bank = root.querySelector('#segb-bank');
+    if (!sb || !slots || !bank) return;
+    slots.innerHTML = sb.cols.map((c, j) => {
+      const k = sb.placed[j];
+      return `<div class="segb-slot${k === null ? ' is-empty' : ''}" data-col="${j}"><span class="segb-col" aria-hidden="true">${esc(c)}</span>
+        <span class="segb-hole">${k === null ? `<span class="segb-empty">Empty<span class="sr-only">: ${esc(c)}</span></span>` : segTileHtml(k, true)}</span><span class="segb-mark"></span></div>`;
+    }).join('');
+    const placed = new Set(sb.placed.filter(k => k !== null));
+    const unplaced = sb.bank.map((_, k) => k).filter(k => !placed.has(k));
+    bank.innerHTML = unplaced.map(k => segTileHtml(k, false)).join('');
+    bank.classList.toggle('is-empty', unplaced.length === 0);
+    applySegFilter(unplaced.length);
+    const reset = root.querySelector('#segb-reset');
+    if (reset) {
+      if (reset === document.activeElement && (!placed.size || sb.locked)) bank.querySelector('.tile')?.focus();
+      reset.disabled = !placed.size || sb.locked;
+    }
+    const check = root.querySelector('#check');
+    if (check && segMode === 'build' && phase === 'answer') check.disabled = !segReady();
+    if (focus) {
+      const row = focus.where === 'slots' ? slots : bank;
+      const vis = [...row.querySelectorAll('.tile:not([hidden])')];
+      const el = (focus.k !== undefined ? row.querySelector(`.tile[data-b="${focus.k}"]:not([hidden])`) : null)
+        || vis[Math.min(focus.slot ?? 0, vis.length - 1)] || bank.querySelector('.tile:not([hidden])') || slots.querySelector('.tile');
+      el?.focus({ preventScroll: true });
+    }
+  }
+
+  // "Filter blocks" while the bank holds more than TILES_FILTER_MIN blocks: value and column label.
+  function applySegFilter(bankCount = root.querySelectorAll('#segb-bank .tile').length) {
+    const wrap = root.querySelector('#segb-filter-wrap');
+    const input = root.querySelector('#segb-filter');
+    if (!wrap || !input || !sb) return;
+    const show = bankCount > TILES_FILTER_MIN && !sb.locked;
+    if (!show && input.value) input.value = '';
+    if (!show && document.activeElement === input) root.querySelector('#segb-bank .tile')?.focus();
+    wrap.hidden = !show;
+    const needle = input.value.trim().toLowerCase();
+    let shown = 0;
+    root.querySelectorAll('#segb-bank .tile').forEach(el => {
+      const b = sb.bank[+el.dataset.b];
+      const hit = !needle || b.value.toLowerCase().includes(needle) || sb.cols[b.col].toLowerCase().includes(needle);
+      el.hidden = !hit;
+      if (hit) shown++;
+    });
+    root.querySelector('#segb-bank')?.classList.toggle('is-filtered-empty', !!needle && shown === 0);
+  }
+
+  function segChanged() { root.querySelector('#segb-slots')?.classList.remove('is-wrong'); }
+
+  function segPlace(k, focusWhere = null) {
+    if (!segCanAct() || sb.placed.includes(k)) return;
+    const j = sb.bank[k].col;
+    const prev = sb.placed[j];
+    const bankSlot = sb.bank.map((_, i) => i).filter(i => !sb.placed.includes(i)).indexOf(k);
+    sb.placed[j] = k;
+    segChanged();
+    const more = sb.placed.some(x => x === null);
+    renderSeg(focusWhere === 'bank' && more ? { where: 'bank', slot: bankSlot } : focusWhere ? { k, where: 'slots' } : null);
+    segAnnounce(`Placed ${segName(k)}${prev !== null ? `; ${sb.bank[prev].value} went back to the blocks` : ''}`);
+  }
+
+  function segReturn(k, focusWhere = null) {
+    if (!segCanAct()) return;
+    const j = sb.placed.indexOf(k);
+    if (j < 0) return;
+    sb.placed[j] = null;
+    segChanged();
+    renderSeg(focusWhere ? (sb.placed.some(x => x !== null) ? { where: 'slots', slot: 0 } : { k, where: 'bank' }) : null);
+    segAnnounce(`Returned ${segName(k)}`);
+  }
+
+  function segReset() {
+    if (!segCanAct() || sb.placed.every(k => k === null)) return;
+    sb.placed = sb.cols.map(() => null);
+    segChanged();
+    renderSeg({ where: 'bank', slot: 0 });
+    segAnnounce('All blocks returned');
+  }
+
+  function segToggle(el) {
+    if (!el || el.disabled || !segCanAct() || !el.isConnected) return;
+    const k = +el.dataset.b;
+    if (el.closest('#segb-slots')) segReturn(k, 'slots'); else segPlace(k, 'bank');
+  }
+
+  function lockSeg() {
+    if (!sb) return;
+    sb.locked = true;
+    cancelSegDrag();
+    root.querySelectorAll('#seg-build .tile, #segb-reset').forEach(el => { el.disabled = true; });
+    root.querySelector('#seg-build')?.classList.add('is-locked');
+    applySegFilter();
+  }
+
+  // The answer's blocks, one per column (bank indices), or null.
+  function segSolution() {
+    const ans = splitSegs(String(sb?.q.answer ?? ''), sb?.cols);
+    if (!ans) return null;
+    const out = ans.map((v, j) => sb.bank.findIndex(b => b.col === j && b.value === v));
+    return out.every(k => k >= 0) ? out : null;
+  }
+
+  // After grading (or Show solution): ✓/✗ per column, icon + screen-reader text.
+  function markSegSlots(reveal = false) {
+    const ans = splitSegs(String(sb?.q.answer ?? ''), sb?.cols);
+    if (!ans) return;
+    root.querySelectorAll('#segb-slots .segb-slot').forEach(el => {
+      const j = +el.dataset.col;
+      const k = sb.placed[j];
+      const ok = k !== null && sb.bank[k].value === ans[j];
+      el.classList.add(ok ? 'is-correct' : 'is-wrong');
+      const m = el.querySelector('.segb-mark');
+      if (m) m.innerHTML = `${icon(ok ? 'circle-check' : 'circle-x')}<span class="sr-only">${ok ? (reveal ? 'Correct block' : 'Correct') : 'Incorrect'}</span>`;
+    });
+    icons();
+  }
+
+  // ---- Build: pointer dragging (bank -> answer places, answer -> bank returns; taps toggle) ----
+  function cancelSegDrag() {
+    const d = sb?.drag;
+    if (!d) return;
+    d.ghost?.remove();
+    d.src?.classList.remove('is-drag-source');
+    root.querySelectorAll('#segb-slots.is-over, #segb-bank.is-over').forEach(r => r.classList.remove('is-over'));
+    document.body.classList.remove('tiles-dragging');
+    sb.drag = null;
+  }
+  function segZoneAt(x, y) {
+    const hit = el => { if (!el) return false; const r = el.getBoundingClientRect(); return x >= r.left - 12 && x <= r.right + 12 && y >= r.top - 12 && y <= r.bottom + 12; };
+    if (hit(root.querySelector('#segb-slots'))) return 'slots';
+    if (hit(root.querySelector('#segb-bank'))) return 'bank';
+    return null;
+  }
+  function onSegPointerDown(e) {
+    const el = e.target.closest?.('.segb-tile');
+    if (!el || el.disabled || !segCanAct()) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelSegDrag();
+    sb.drag = { id: e.pointerId, src: el, k: +el.dataset.b, x0: e.clientX, y0: e.clientY, active: false, ghost: null };
+    try { el.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
+  function onSegPointerMove(e) {
+    const d = sb?.drag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.active) {
+      if (Math.hypot(e.clientX - d.x0, e.clientY - d.y0) < DRAG_THRESHOLD) return;
+      d.active = true;
+      const r = d.src.getBoundingClientRect();
+      d.dx = d.x0 - r.left;
+      d.dy = d.y0 - r.top;
+      const g = d.src.cloneNode(true);
+      g.removeAttribute('data-b');
+      g.classList.add('tile-ghost');
+      g.setAttribute('aria-hidden', 'true');
+      g.tabIndex = -1;
+      g.style.width = `${r.width}px`;
+      g.style.height = `${r.height}px`;
+      document.body.appendChild(g);
+      d.ghost = g;
+      d.src.classList.add('is-drag-source');
+      document.body.classList.add('tiles-dragging');
+    }
+    e.preventDefault();
+    d.ghost.style.transform = `translate(${Math.round(e.clientX - d.dx)}px, ${Math.round(e.clientY - d.dy)}px)`;
+    const zone = segZoneAt(e.clientX, e.clientY);
+    root.querySelectorAll('#segb-slots.is-over, #segb-bank.is-over').forEach(r => r.classList.remove('is-over'));
+    if (zone) root.querySelector(zone === 'slots' ? '#segb-slots' : '#segb-bank')?.classList.add('is-over');
+  }
+  function onSegPointerUp(e) {
+    const d = sb?.drag;
+    if (!d || e.pointerId !== d.id) return;
+    if (!d.active) {
+      sb.drag = null;
+      sb.pointerAt = performance.now();
+      segToggle(d.src);
+      return;
+    }
+    const zone = segZoneAt(e.clientX, e.clientY);
+    const k = d.k;
+    cancelSegDrag();
+    sb.pointerAt = performance.now();
+    const placed = sb.placed.includes(k);
+    if (zone === 'slots' && !placed) segPlace(k);
+    else if (zone === 'bank' && placed) segReturn(k);
+  }
+  function onSegClick(e) {
+    const el = e.target.closest?.('.segb-tile');
+    if (!el || el.disabled || !sb) return;
+    if (e.detail > 0 && performance.now() - sb.pointerAt < 1000) { e.preventDefault(); return; }
+    segToggle(el);
+  }
+  function onSegKey(e) {
+    const el = e.target.closest?.('.segb-tile');
+    if (!el || el.disabled || !sb) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && el.closest('#segb-slots')) { e.preventDefault(); segReturn(+el.dataset.b, 'slots'); return; }
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.altKey && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      const row = [...el.closest('#segb-slots, #segb-bank').querySelectorAll('.tile:not([hidden])')];
+      const next = row[row.indexOf(el) + (e.key === 'ArrowLeft' ? -1 : 1)];
+      if (next) { e.preventDefault(); next.focus(); }
+    }
+  }
+
+  function segActionHint(q) {
+    const hint = root.querySelector('#seg-action-hint');
+    if (!hint) return;
+    const n = Math.min((q.choices || []).length, 9);
+    hint.classList.toggle('desktop-only', segMode === 'build');
+    hint.innerHTML = segMode === 'build'
+      ? '<span class="action-hint-key">Press <kbd>Enter</kbd> on a block to place it</span>'
+      : `<span class="action-hint-tap">Tap an answer</span><span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to answer</span>`;
+  }
+
+  function setSegMode(q, mode, { remember = true } = {}) {
+    if (!isSegQ(q)) return;
+    segMode = mode === 'choose' ? 'choose' : 'build';
+    if (remember) saveAnswerMode(q, segMode);
+    const build = segMode === 'build';
+    root.querySelectorAll('.answer-mode-btn').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === segMode ? 'true' : 'false'));
+    const bBox = root.querySelector('#seg-build');
+    const cBox = root.querySelector('#seg-choose');
+    if (bBox) bBox.hidden = !build;
+    if (cBox) cBox.hidden = build;
+    const note = root.querySelector('#answer-mode-note');
+    if (note) note.hidden = build;
+    const check = root.querySelector('#check');
+    if (check) { check.hidden = !build; if (phase === 'answer') check.disabled = !segReady(); }
+    segActionHint(q);
+  }
+
+  function bindSeg(q) {
+    sb = { q, cols: cleanChoiceCols(q.choiceCols), bank: q.segBank, placed: cleanChoiceCols(q.choiceCols).map(() => null), locked: false, drag: null, pointerAt: -Infinity };
+    const form = root.querySelector('#answer-form');
+    if (!form) return;
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (segMode === 'build' && segReady()) submit(segValue());
+    });
+    form.querySelectorAll('.answer-mode-btn').forEach(b => b.addEventListener('click', () => {
+      if (phase !== 'answer') return;
+      setSegMode(q, b.dataset.mode);
+    }));
+    const box = root.querySelector('#seg-build');
+    box.addEventListener('click', onSegClick);
+    box.addEventListener('keydown', onSegKey);
+    box.addEventListener('pointerdown', onSegPointerDown);
+    box.addEventListener('pointermove', onSegPointerMove);
+    box.addEventListener('pointerup', onSegPointerUp);
+    box.addEventListener('pointercancel', () => cancelSegDrag());
+    box.addEventListener('lostpointercapture', e => { if (sb?.drag && sb.drag.id === e.pointerId && sb.drag.active) cancelSegDrag(); });
+    root.querySelector('#segb-reset')?.addEventListener('click', segReset);
+    const filter = root.querySelector('#segb-filter');
+    filter?.addEventListener('input', () => applySegFilter());
+    filter?.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && filter.value) { e.preventDefault(); e.stopPropagation(); filter.value = ''; applySegFilter(); }
+    });
+    root.querySelectorAll('#seg-choose .choice').forEach(b =>
+      b.addEventListener('click', () => { if (segMode === 'choose') submit(q.choices[+b.dataset.i], +b.dataset.i); }));
+    renderSeg();
+    setSegMode(q, savedSegMode(q), { remember: false });
+    if (segMode === 'build') root.querySelector('#segb-bank .tile')?.focus();
+    else root.querySelector('#seg-choose .choice')?.focus();
   }
 
   // ---- Run (test the output) for runnable questions ----
@@ -1145,6 +1491,11 @@ export async function runQuiz(root, ctx, opts) {
     }
     if (isTiles(q)) return tilesHtml(q);
     if (isDual(q)) return dualHtml(q);
+    if (isSegQ(q)) return segDualHtml(q);
+    if (q.answerType === 'choice' && isSeg(q)) {
+      return `<div class="choices ${segClass(q)}">${segHeadHtml(q)}${(q.choices || []).map((c, i) =>
+        `<button type="button" class="btn choice seg-choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>`;
+    }
     if (q.answerType === 'choice') {
       return `<div class="choices">${(q.choices || []).map((c, i) =>
         `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
@@ -1164,7 +1515,8 @@ export async function runQuiz(root, ctx, opts) {
       <label class="field-label" for="answer">Your answer</label>
       <input id="answer" class="answer-input" type="text" ${num ? 'inputmode="decimal"' : ''} enterkeyhint="go"
         autocapitalize="off" autocorrect="off"
-        placeholder="${num ? 'Type a number' : 'Type your answer'}" spellcheck="false">
+        placeholder="${num ? 'Type a number' : 'Type your answer'}" spellcheck="false"${q.answerType === 'text' ? caseDescribed(q, 'answer-case') : ''}>
+      ${q.answerType === 'text' ? caseNoteHtml(q, 'answer-case') : ''}
     </form>`;
   }
 
@@ -1177,6 +1529,10 @@ export async function runQuiz(root, ctx, opts) {
       const blocks = inBlocks(q);
       return `<p class="action-hint desktop-only"><span class="action-hint-key" id="action-hint-key">Press <kbd>Enter</kbd> ${blocks ? 'on a block to place it' : 'to check'}</span></p>
         ${calcButton(q)}${runButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check"${blocks ? ' disabled' : ''}>${icon('check')} Check</button>`;
+    }
+    if (isSegQ(q)) {
+      return `<p class="action-hint" id="seg-action-hint"></p>
+        ${calcButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
     }
     if (q.answerType === 'choice') {
       const n = Math.min((q.choices || []).length, 9);
@@ -1321,6 +1677,7 @@ export async function runQuiz(root, ctx, opts) {
     phase = 'answer';
     const q = questions[idx];
     answerMode = isDual(q) ? savedAnswerMode(q) : 'type';
+    segMode = isSegQ(q) ? savedSegMode(q) : 'build';
     runToken++;
     const main = root.querySelector('#quiz-main');
     if (!main) return;
@@ -1339,6 +1696,8 @@ export async function runQuiz(root, ctx, opts) {
     if (isMulti(q)) lastPart = q.parts?.[0]?.id ?? null;
     cancelDrag();
     ts = null;
+    cancelSegDrag();
+    sb = null;
     if (guided) bindGuided(q);
     // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
     calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
@@ -1350,6 +1709,7 @@ export async function runQuiz(root, ctx, opts) {
     root.querySelector('#run-btn')?.addEventListener('click', runCurrent);
     if (isTiles(q)) { bindTiles(q); return; }
     if (isDual(q)) { bindDual(q); return; }
+    if (isSegQ(q)) { bindSeg(q); return; }
     const form = root.querySelector('.answer-form');
     if (form) {
       form.addEventListener('submit', e => { e.preventDefault(); submit(root.querySelector('#answer').value); });
@@ -1423,6 +1783,8 @@ export async function runQuiz(root, ctx, opts) {
     const blocks = inBlocks(q);
     if (multi) {
       if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
+    } else if (inBuild(q)) {
+      if (!segReady()) return;
     } else if (q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
       if (!b || b.disabled) return;
@@ -1448,6 +1810,8 @@ export async function runQuiz(root, ctx, opts) {
     } else if (res.correct) {
       solvedGuided(q, value, choiceIndex, res);
       return;
+    } else if (inBuild(q)) {
+      root.querySelector('#segb-slots')?.classList.add('is-wrong'); // cleared on the next change
     } else if (q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
       b.classList.add('is-wrong');
@@ -1476,6 +1840,8 @@ export async function runQuiz(root, ctx, opts) {
     if (multi) {
       updateCheck(q);
       focusPart(firstWrong, true);
+    } else if (inBuild(q)) {
+      root.querySelector('#segb-slots .tile')?.focus();
     } else if (q.answerType === 'choice') {
       root.querySelector('.choices .choice:not(:disabled)')?.focus();
     } else if (blocks) {
@@ -1489,7 +1855,9 @@ export async function runQuiz(root, ctx, opts) {
 
   function solvedGuided(q, value, choiceIndex, res = null) {
     const multi = isMulti(q);
-    if (!multi && q.answerType === 'choice') {
+    if (inBuild(q)) {
+      root.querySelector('#segb-slots')?.classList.add('is-correct');
+    } else if (!multi && q.answerType === 'choice') {
       const b = root.querySelector(`.choices .choice[data-i="${Number(choiceIndex)}"]`);
       if (b) {
         b.classList.add('is-correct');
@@ -1532,6 +1900,13 @@ export async function runQuiz(root, ctx, opts) {
           });
         }
       }
+    } else if (inBuild(q)) {
+      // Place the answer's blocks, one per column.
+      const sol = segSolution();
+      if (sol) { sb.placed = sol; renderSeg(); }
+      const slots = root.querySelector('#segb-slots');
+      slots?.classList.remove('is-wrong');
+      slots?.classList.add('is-revealed');
     } else if (inBlocks(q)) {
       // Lay the correct blocks out in the answer row.
       if (placeSolution(ts.spec, q.answer)) {
@@ -1562,6 +1937,7 @@ export async function runQuiz(root, ctx, opts) {
     applyCalc(q);
     root.querySelectorAll('.answer-form input, .choice, #check, #run-btn, .part-hint-btn, .answer-mode-btn').forEach(el => { el.disabled = true; });
     if (ts) lockTiles();
+    if (sb) lockSeg();
     const tools = root.querySelector('#guided-tools');
     if (tools) tools.hidden = true;
 
@@ -1579,8 +1955,8 @@ export async function runQuiz(root, ctx, opts) {
       const locked = id => !!partEl(id)?.classList.contains('is-locked');
       const mine = multi ? Object.fromEntries(Object.entries(readParts(q)).filter(([id]) => locked(id))) : null;
       const answers = multi
-        ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: locked(p.id) ? true : null })), mine, q.answer, 'feedback-parts')
-        : `<p>Answer: <strong>${renderInline(String(q.answer))}</strong></p>`;
+        ? partListHtml(q.parts, q.parts.map(p => ({ id: p.id, label: p.label, correct: locked(p.id) ? true : null })), mine, q.answer, 'feedback-parts', partColsOf(q))
+        : `<p>Answer: <strong>${answerInline(q.answer, q.choiceCols)}</strong></p>`;
       box = `<div class="feedback info">
         <p class="feedback-title">${icon('eye')}<span>Solved with solution</span></p>
         ${answers}
@@ -1610,7 +1986,8 @@ export async function runQuiz(root, ctx, opts) {
 
   // Feedback title for a graded single or multi-part answer (icon + text, never colour alone).
   function feedbackTitle(g, state, partsSub) {
-    const blocksBit = g.mode === 'blocks' ? ` <span class="feedback-sub">· Blocks${g.multiplier < 1 ? ` ${esc(multText(g.multiplier))}` : ''}</span>` : '';
+    const blocksBit = g.mode === 'blocks' || g.mode === 'choose'
+      ? ` <span class="feedback-sub">· ${g.mode === 'choose' ? 'Choose' : 'Blocks'}${g.multiplier < 1 ? ` ${esc(multText(g.multiplier))}` : ''}</span>` : '';
     if (state === 'correct') return `${icon('circle-check')} Correct${blocksBit}`;
     if (g.fuzzy) return `${icon('circle-dot')} Close · ${esc(pctText(g.fuzzy.factor))} credit`;
     if (state === 'partial') return `${icon('circle-dot')} Partly correct ·${partsSub}`;
@@ -1624,6 +2001,8 @@ export async function runQuiz(root, ctx, opts) {
     const multi = isMulti(q);
     if (multi) {
       if (!value || typeof value !== 'object' || !partsReady(q, value)) { enterMulti(q, lastPart); return; }
+    } else if (inBuild(q) && !segReady()) {
+      return;
     } else if (q.answerType !== 'choice' && (!String(value ?? '').trim() || (q.answerType === 'date' && !parseDate(value)))) {
       if (!inBlocks(q)) root.querySelector('#answer')?.focus();
       return;
@@ -1647,7 +2026,7 @@ export async function runQuiz(root, ctx, opts) {
       ...(partResults ? { parts: partResults } : {}),
       ...(work ? { work } : {}),
       ...(graph ? { graph } : {}),
-      ...(g.mode === 'blocks' ? { mode: 'blocks', multiplier: g.multiplier } : {}),
+      ...(g.mode === 'blocks' || g.mode === 'choose' ? { mode: g.mode, multiplier: g.multiplier } : {}),
       ...(g.fuzzy ? { fuzzy: g.fuzzy } : {}),
       ...(g.gradedBy ? { gradedBy: g.gradedBy } : {}),
       ...(g.note ? { note: g.note } : {}),
@@ -1656,6 +2035,7 @@ export async function runQuiz(root, ctx, opts) {
 
     root.querySelectorAll('.answer-form input, .action-bar button, .choice, .answer-mode-btn').forEach(el => { el.disabled = true; });
     if (ts) lockTiles();
+    if (sb) { lockSeg(); if (segMode === 'build') markSegSlots(); }
     if (blocks) root.querySelector('#tiles-answer')?.classList.add(correct ? 'is-correct' : 'is-wrong');
     if (multi) {
       for (const pr of partResults) {
@@ -1712,8 +2092,8 @@ export async function runQuiz(root, ctx, opts) {
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${feedbackTitle(g, state, partsSub)}</p>
         ${g.note ? `<p class="grade-note">${icon('info')}<span>${esc(g.note)}</span></p>` : ''}
-        ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
-          : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
+        ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts', partColsOf(q))
+          : correct ? '' : `${q.answerType === 'date' ? dateReadHtml(value, q.precision) : ''}<p>Correct answer: <strong>${answerInline(q.answer, q.choiceCols)}</strong></p>${blocks && spec ? tilesOrderHtml(spec, q.answer) : ''}`}
         ${q.runnable ? '<div class="expected-output" id="expected-output"></div>' : ''}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
@@ -1851,6 +2231,13 @@ export async function runQuiz(root, ctx, opts) {
         enterMulti(questions[idx], t?.closest?.('[data-part]')?.dataset.part || lastPart);
       } else if (phase === 'answer' && isDual(questions[idx]) && e.target?.closest?.('.answer-mode, #run-btn')) {
         // The Type | Blocks switch and Run keep their native Enter.
+      } else if (phase === 'answer' && isSegQ(questions[idx])) {
+        // Build | Choose: buttons (blocks, options, the switch, Reset, Check) keep their native Enter;
+        // elsewhere Enter checks a complete build.
+        if (e.target?.closest?.('button')) return;
+        e.preventDefault();
+        if (e.target?.id === 'segb-filter') return;
+        if (segMode === 'build' && segReady()) submit(segValue());
       } else if (phase === 'answer' && inBlocks(questions[idx])) {
         // Blocks, Reset, Check and other buttons keep their native Enter; elsewhere Enter checks
         // only once Check is enabled.
@@ -1865,7 +2252,7 @@ export async function runQuiz(root, ctx, opts) {
         e.preventDefault();
         advance();
       }
-    } else if (phase === 'answer' && questions[idx]?.answerType === 'choice' && /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    } else if (phase === 'answer' && questions[idx]?.answerType === 'choice' && !inBuild(questions[idx]) && /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const i = +e.key - 1;
       const q = questions[idx];
       // Guided: a choice already ruled out (disabled) can't be picked again from the keyboard.
@@ -1886,6 +2273,43 @@ export async function runQuiz(root, ctx, opts) {
   await start();
 }
 
+// ---- segmented choices ("block-list" options) ----
+// A choice question (or multi-part part) with `choiceCols` shows each option as aligned chips, one
+// column per label. Options are stored as strings joined by " | "; `choiceSegs` (in memory) or a
+// split of the string gives the segments. Labels are escaped; segments go through renderInline.
+const segsOf = (str, cols) => (typeof str === 'string' ? splitSegs(str, cols) : null);
+function segRow(owner, i) {
+  const cols = cleanChoiceCols(owner?.choiceCols);
+  const row = Array.isArray(owner?.choiceSegs?.[i]) ? owner.choiceSegs[i].map(String) : segsOf(owner?.choices?.[i], cols);
+  return cols && row && row.length === cols.length ? row : null;
+}
+const isSeg = owner => !!cleanChoiceCols(owner?.choiceCols) && Array.isArray(owner?.choices) && owner.choices.every((_, i) => segRow(owner, i));
+const segClass = owner => `seg-choices seg-n${cleanChoiceCols(owner.choiceCols).length}`;
+// Column headers (desktop). Hidden from screen readers: every cell carries its own label.
+function segHeadHtml(owner) {
+  return `<div class="seg-head" aria-hidden="true"><span class="seg-head-key"></span>${cleanChoiceCols(owner.choiceCols).map(c =>
+    `<span class="seg-col">${esc(c)}</span>`).join('')}<span class="seg-head-mark"></span></div>`;
+}
+// One option's cells: a caption (visible on phones, screen-reader only on wider screens) + a chip.
+function segCellsHtml(owner, i) {
+  const cols = cleanChoiceCols(owner.choiceCols);
+  return segRow(owner, i).map((s, j) =>
+    `<span class="seg-cell"><span class="seg-cap">${esc(cols[j])}<span class="sr-only">: </span></span><span class="seg-chip">${renderInline(s)}</span></span>`).join('');
+}
+// An answer value shown inline: chips when it splits into the labelled segments, else as before.
+function answerInline(value, cols) {
+  const segs = segsOf(value, cols);
+  if (!segs) return renderInline(String(value ?? ''));
+  const c = cleanChoiceCols(cols);
+  return `<span class="seg-inline">${segs.map((s, j) =>
+    `<span class="seg-chip"><span class="sr-only">${esc(c[j])}: </span>${renderInline(s)}</span>`).join('')}</span>`;
+}
+// { [partId]: cols } for a multi-part question: live parts carry `choiceCols`, stored ones `partCols`.
+function partColsOf(q) {
+  const live = Array.isArray(q?.parts) ? Object.fromEntries(q.parts.filter(p => p && cleanChoiceCols(p.choiceCols)).map(p => [p.id, p.choiceCols])) : {};
+  return cleanPartCols({ ...live, ...(q?.partCols && typeof q.partCols === 'object' ? q.partCols : {}) });
+}
+
 // Stored question fields for an attempt (mixed quizzes also keep per-question origin).
 export function storedQuestion(r, withOrigin) {
   return {
@@ -1894,8 +2318,11 @@ export function storedQuestion(r, withOrigin) {
     credit: typeof r.credit === 'number' ? roundScore(r.credit) : (r.correct ? 1 : 0),
     // Multi-part: answer/userAnswer are { [partId]: value } objects, plus per-part results.
     ...(Array.isArray(r.parts) ? { parts: r.parts.map(p => ({ id: p.id, label: p.label, correct: !!p.correct, ...(!p.correct && p.close ? { close: p.close } : {}) })) } : {}),
+    // Segmented choices: the column labels, so review and History can show the stored string as chips.
+    ...(cleanChoiceCols(r.q.choiceCols) ? { choiceCols: cleanChoiceCols(r.q.choiceCols) } : {}),
+    ...(partColsOf(r.q) ? { partCols: partColsOf(r.q) } : {}),
     // Dual questions answered with blocks: the mode and the credit multiplier applied.
-    ...(r.mode === 'blocks' ? { mode: 'blocks', multiplier: r.multiplier } : {}),
+    ...(r.mode === 'blocks' || r.mode === 'choose' ? { mode: r.mode, multiplier: r.multiplier } : {}),
     // Close answer: { kind, typos | relErr, factor }.
     ...(r.fuzzy ? { fuzzy: r.fuzzy } : {}),
     // Accepted by the module's own grader (e.g. SQL output), not by the text match.
@@ -1918,8 +2345,8 @@ export function guidedItemHtml(q, outcome, tagHtml = '', extra = []) {
   const o = OUTCOMES[outcome] || OUTCOMES.solution;
   const multi = isPlainObj(q.answer);
   const answers = multi
-    ? partListHtml(q.parts, (Array.isArray(q.parts) ? q.parts : Object.keys(q.answer).map(id => ({ id, label: id }))).map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts')
-    : `<p class="review-answers">Answer: <strong>${renderInline(String(q.answer ?? ''))}</strong></p>`;
+    ? partListHtml(q.parts, (Array.isArray(q.parts) ? q.parts : Object.keys(q.answer).map(id => ({ id, label: id }))).map(p => ({ id: p.id, label: p.label, correct: null })), undefined, q.answer, 'review-parts', partColsOf(q))
+    : `<p class="review-answers">Answer: <strong>${answerInline(q.answer ?? '', q.choiceCols)}</strong></p>`;
   return `<li class="review-item guided-item is-${o.cls}">
       <div class="review-mark">${icon(o.icon)}<span class="sr-only">${esc(o.label)}</span></div>
       <div class="review-body">
@@ -1968,7 +2395,8 @@ const ownVal = (o, k) => (isPlainObj(o) && Object.prototype.hasOwnProperty.call(
 // Part-by-part results: ✓/✗ with icon + label, the user's value, and the correct value when wrong.
 // `parts` = [{ id, label, correct }] (labels/values may come from imported data: escaped).
 // `defs` (optional) = full part definitions; only their labels are used as a fallback.
-export function partListHtml(defs, parts, userAnswer, answer, cls = '') {
+// `partCols` (optional) = { [partId]: column labels } for segmented choice parts (values shown as chips).
+export function partListHtml(defs, parts, userAnswer, answer, cls = '', partCols = null) {
   const list = Array.isArray(parts) && parts.length ? parts
     : (Array.isArray(defs) ? defs.map(d => ({ id: d.id, label: d.label, correct: null })) : []);
   return `<ul class="part-results ${cls}">${list.map(p => {
@@ -1977,6 +2405,7 @@ export function partListHtml(defs, parts, userAnswer, answer, cls = '') {
     const close = !ok && p.close && typeof p.close.factor === 'number' ? p.close : null;
     const mine = ownVal(userAnswer, p.id);
     const right = ownVal(answer, p.id);
+    const cols = isPlainObj(partCols) ? ownVal(partCols, p.id) : undefined;
     const closeText = close ? `Close · ${Math.round(Math.min(1, Math.max(0, close.factor)) * 100)}% credit` : '';
     const mark = known
       ? `${icon(ok ? 'circle-check' : close ? 'circle-dot' : 'circle-x')}<span class="sr-only">${ok ? 'Correct' : close ? esc(closeText) : 'Incorrect'}</span>`
@@ -1984,7 +2413,7 @@ export function partListHtml(defs, parts, userAnswer, answer, cls = '') {
     return `<li class="part-result ${known ? (ok ? 'good' : close ? 'partial' : 'bad') : ''}">
       <span class="part-result-mark">${mark}</span>
       <span class="part-result-body"><span class="part-result-label">${esc(p.label || p.id)}${close ? ` <span class="part-result-close">${esc(closeText)}</span>` : ''}</span>
-        <span class="part-result-values">${mine === undefined ? '' : `Your answer: <strong>${esc(String(mine) === '' ? '(blank)' : String(mine))}</strong>`}${!ok && right !== undefined ? `${mine === undefined ? '' : ' · '}Correct: <strong>${renderInline(String(right))}</strong>` : ''}</span></span>
+        <span class="part-result-values">${mine === undefined ? '' : `Your answer: <strong>${segsOf(mine, cols) ? answerInline(mine, cols) : esc(String(mine) === '' ? '(blank)' : String(mine))}</strong>`}${!ok && right !== undefined ? `${mine === undefined ? '' : ' · '}Correct: <strong>${answerInline(right, cols)}</strong>` : ''}</span></span>
     </li>`;
   }).join('')}</ul>`;
 }
@@ -1997,20 +2426,20 @@ export function reviewItem(r, showTag = false) {
   const correctFlag = r.correct ?? q.correct;
   const state = correctFlag === true ? 'correct' : creditState(credit);
   // Blocks mode (dual questions) and close-answer credit, from the run or the stored question.
-  const mode = (r.mode ?? q.mode) === 'blocks' ? 'blocks' : null;
+  const mode = ['blocks', 'choose'].includes(r.mode ?? q.mode) ? (r.mode ?? q.mode) : null;
   const mult = typeof (r.multiplier ?? q.multiplier) === 'number' ? Math.min(1, Math.max(0, r.multiplier ?? q.multiplier)) : null;
   const fz = r.fuzzy ?? q.fuzzy;
   const close = correctFlag !== true && fz && typeof fz === 'object' && typeof fz.factor === 'number' ? Math.min(1, Math.max(0, fz.factor)) : null;
-  const blocksText = mode ? `Blocks${mult !== null && mult < 1 ? ` ×${Number(mult.toFixed(2))}` : ''}` : '';
+  const blocksText = mode ? `${mode === 'choose' ? 'Choose' : 'Blocks'}${mult !== null && mult < 1 ? ` ×${Number(mult.toFixed(2))}` : ''}` : '';
   const closeText = close !== null ? `Close · ${Math.round(close * 100)}% credit` : '';
   const nParts = Array.isArray(r.parts) ? r.parts.length : 0;
   const nRight = Array.isArray(r.parts) ? r.parts.filter(p => p.correct).length : 0;
   const answer = q.answer;
   const multi = isPlainObj(answer) || isPlainObj(r.userAnswer);
   const answers = multi
-    ? partListHtml(q.parts, r.parts ?? q.parts, r.userAnswer, answer, 'review-parts')
-    : `<p class="review-answers">Your answer: <strong>${esc(r.userAnswer === '' ? '(blank)' : String(r.userAnswer ?? ''))}</strong>
-        ${r.correct ? '' : ` · Correct: <strong>${renderInline(String(answer ?? ''))}</strong>`}</p>`;
+    ? partListHtml(q.parts, r.parts ?? q.parts, r.userAnswer, answer, 'review-parts', partColsOf(q))
+    : `<p class="review-answers">Your answer: <strong>${segsOf(r.userAnswer, q.choiceCols) ? answerInline(r.userAnswer, q.choiceCols) : esc(r.userAnswer === '' ? '(blank)' : String(r.userAnswer ?? ''))}</strong>
+        ${r.correct ? '' : ` · Correct: <strong>${answerInline(answer ?? '', q.choiceCols)}</strong>`}</p>`;
   const partialText = closeText || (nParts ? `Partly correct · ${nRight} of ${nParts} parts right` : 'Partly correct');
   const markIcon = state === 'correct' ? 'circle-check' : state === 'partial' ? 'circle-dot' : 'circle-x';
   const markText = (state === 'correct' ? 'Correct' : state === 'partial' ? partialText : 'Incorrect') + (blocksText ? ` · ${blocksText}` : '');
@@ -2019,7 +2448,7 @@ export function reviewItem(r, showTag = false) {
     <div class="review-body">
       ${typeof showTag === 'function' ? showTag(q) : showTag ? questionTag(q) : langRow(q)}
       ${state === 'partial' ? `<p class="review-partial">${icon('circle-dot')}<span>${esc(partialText)}</span></p>` : ''}
-      ${blocksText ? `<p class="review-mode">${icon('blocks')}<span>${state === 'correct' ? 'Correct · ' : ''}${esc(blocksText)}</span></p>` : ''}
+      ${blocksText ? `<p class="review-mode">${icon(mode === 'choose' ? 'list' : 'blocks')}<span>${state === 'correct' ? 'Correct · ' : ''}${esc(blocksText)}</span></p>` : ''}
       ${r.note ? `<p class="grade-note">${icon('info')}<span>${esc(r.note)}</span></p>`
         : correctFlag === true && (r.gradedBy ?? q.gradedBy) === 'output' ? `<p class="grade-note">${icon('info')}<span>Accepted: the output matches the expected result</span></p>` : ''}
       <div class="prose">${renderPrompt(q.prompt)}</div>

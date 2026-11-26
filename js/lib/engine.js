@@ -4,7 +4,7 @@ import { createRng, randomSeed } from './rng.js';
 import { parseCSV } from './csv.js';
 import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js';
 import { LANG_IDS, isLang } from './languages.js';
-import { getCodeLang } from './storage.js';
+import { getCodeLang, SEG_SEP, SEG_MAX_LEN, cleanChoiceCols, splitSegs } from './storage.js';
 import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
 import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
 import { validView, clampView } from './graph.js';
@@ -140,6 +140,7 @@ export async function loadModule(id) {
     languages: parseLanguages(m, id),
     // Blocks-mode credit factor per difficulty for dual Type | Blocks questions (missing = 1).
     tilesMultiplier: parseTilesMultiplier(m, id),
+    chooseMultiplier: parseTilesMultiplier(m, id, 'chooseMultiplier', CHOOSE_MULT_DEFAULT),
     // Close-answer leniency: text level (false = 0, true/missing = 1) and the number spec
     // ({ mode, level } or null when unset; see numberSpecOf).
     fuzzy: parseLevel(m.fuzzy, id, 'fuzzy') ?? 1,
@@ -182,9 +183,12 @@ export function parseFuzzyNumber(v, warnId) {
 // module.json "tilesMultiplier": { easy, medium, hard, expert } numbers 0-1; a missing or invalid
 // level counts as 1 (invalid ones warn once per module).
 const multWarned = new Set();
-function parseTilesMultiplier(m, id) {
-  const out = { easy: 1, medium: 1, hard: 1, expert: 1 };
-  const src = m.tilesMultiplier;
+// Segmented choices answered with Choose (instead of Build): credit × this, per difficulty.
+export const CHOOSE_MULT_DEFAULT = { easy: 1, medium: 1, hard: 0.85, expert: 0.7 };
+// `key`: "tilesMultiplier" (Blocks mode of dual questions) or "chooseMultiplier" (Choose mode).
+function parseTilesMultiplier(m, id, key = 'tilesMultiplier', defaults = { easy: 1, medium: 1, hard: 1, expert: 1 }) {
+  const out = { ...defaults };
+  const src = m[key];
   if (src === undefined || src === null) return out;
   let bad = typeof src !== 'object' || Array.isArray(src);
   if (!bad) {
@@ -193,9 +197,9 @@ function parseTilesMultiplier(m, id) {
       out[k] = v;
     }
   }
-  if (bad && !multWarned.has(id)) {
-    multWarned.add(id);
-    console.warn(`StudyBlock: module ${id}: "tilesMultiplier" must map easy/medium/hard/expert to numbers 0-1; ignoring bad entries`);
+  if (bad && !multWarned.has(id + key)) {
+    multWarned.add(id + key);
+    console.warn(`StudyBlock: module ${id}: "${key}" must map easy/medium/hard/expert to numbers 0-1; ignoring bad entries`);
   }
   return out;
 }
@@ -216,8 +220,19 @@ function decorate(q, mod, difficulty) {
   out.modFuzzy = typeof mod.fuzzy === 'number' ? mod.fuzzy : (mod.fuzzy === false ? 0 : 1);
   if (mod.fuzzyNumber) out.modFuzzyNumber = mod.fuzzyNumber;
   if (out.blocks) out.blocks = { ...out.blocks, multiplier: tilesMultiplierOf(mod, difficulty) };
+  if (out.answerType === 'choice' && Array.isArray(out.choiceCols)) {
+    const v = mod?.chooseMultiplier?.[difficulty];
+    out.chooseMultiplier = typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : (CHOOSE_MULT_DEFAULT[difficulty] ?? 1);
+    out.segBank = segBankFor(out, difficulty);
+    const want = difficulty === 'easy' ? 3 : 5;
+    if (out.choices.length !== want && !segCountWarned.has(mod.id)) {
+      segCountWarned.add(mod.id);
+      console.warn(`StudyBlock: module ${mod.id}: segmented choice questions should have ${want} options at ${difficulty} (got ${out.choices.length})`);
+    }
+  }
   return out;
 }
+const segCountWarned = new Set();
 
 // ---- difficulties ----
 
@@ -392,6 +407,23 @@ function csvRowPrepare(r, warnKey) {
   const answer = String(r.answer ?? '').trim();
   const blocks = csvBlocks(r);
   if (blocks === null) return null;
+  // Segmented choices: `cols` = "|"-separated column labels; each choice (and the answer) is its
+  // segments joined by " ; ". Needs `choices` and an empty type; segment counts must match.
+  const colsRaw = String(r.cols ?? '').trim();
+  let seg;
+  if (colsRaw) {
+    if (type || !choices || blocks) return null;
+    seg = segChoiceSpec(colsRaw.split('|'), choices.split('|').map(c => c.trim()).filter(Boolean).map(c => c.split(' ; ')), answer.split(' ; '));
+    if (!seg) return null;
+    // `extra`: Build-mode decoys as "Column=value" pairs separated by " ; ".
+    const extraRaw = String(r.extra ?? '').trim();
+    if (extraRaw) {
+      const pairs = extraRaw.split(' ; ').map(x => { const i = x.indexOf('='); return i > 0 ? [x.slice(0, i).trim(), x.slice(i + 1)] : null; });
+      const extra = cleanSegExtra(pairs, seg.choiceCols);
+      if (pairs.some(x => !x) || extra.length !== pairs.length) return null;
+      seg.segExtra = extra;
+    }
+  }
   if (type === 'date') {
     if (choices || blocks) return null;
     if (!dateAnswerOk(answer)) return null;
@@ -402,7 +434,7 @@ function csvRowPrepare(r, warnKey) {
   }
   const hintsRaw = String(r.hints ?? '').trim();
   const hints = hintsRaw ? sanitizeHints(hintsRaw.split('|'), warnKey) : undefined;
-  return { ...r, ...(hints ? { _hints: hints } : {}), ...(blocks ? { _blocks: blocks } : {}) };
+  return { ...r, ...(hints ? { _hints: hints } : {}), ...(blocks ? { _blocks: blocks } : {}), ...(seg ? { _seg: seg } : {}) };
 }
 
 // A canonical date answer: parses, and BC only at year precision. -> its precision, or null.
@@ -433,8 +465,11 @@ function csvQuestion(pool, seed, near = null) {
   const rng = createRng(seed);
   const row = rng.pick(pool);
   const choicesRaw = (row.choices || '').trim();
-  const choices = choicesRaw ? rng.shuffle(choicesRaw.split('|').map(s => s.trim()).filter(Boolean)) : undefined;
-  const answer = (row.answer ?? '').trim();
+  // Segmented rows shuffle their joined options (same count, so the same rng draws); tuples stay intact.
+  const seg = row._seg;
+  const choices = seg ? rng.shuffle(seg.choices.slice())
+    : choicesRaw ? rng.shuffle(choicesRaw.split('|').map(s => s.trim()).filter(Boolean)) : undefined;
+  const answer = seg ? seg.answer : (row.answer ?? '').trim();
   const isDate = !choices && csvType(row) === 'date';
   const isTiles = !choices && csvType(row) === 'tiles' && !!row._blocks;
   const blocks = !choices && !isDate && row._blocks
@@ -448,11 +483,108 @@ function csvQuestion(pool, seed, near = null) {
     ...(isDate ? { precision: datePrecisionOf(answer) } : {}),
     ...(isTiles ? { tiles: blocks.tiles, joiner: blocks.joiner, useAll: blocks.useAll } : blocks ? { blocks } : {}),
     choices,
+    ...(seg ? { choiceCols: seg.choiceCols.slice(), choiceSegs: choices.map(c => seg.choiceSegs[seg.choices.indexOf(c)].slice()), ...(seg.segExtra ? { segExtra: seg.segExtra.map(e => e.slice()) } : {}) } : {}),
     tolerance: undefined,
     explanation: row.explanation || '',
     ...(row._hints ? { hints: row._hints.slice() } : {}),
     ...(nearMisses.length ? { nearMisses } : {}),
   };
+}
+
+// ---- segmented choices ("block-list" options) ----
+// A choice question may give `choiceCols` (2–4 short column labels) and every choice as an array
+// with one segment per column. The engine joins each choice with SEG_SEP, so checking, storage,
+// History and import see plain strings; `choiceCols` and `choiceSegs` stay on the in-memory question.
+export const SEG_CHOICES_MIN = 2;
+export const SEG_CHOICES_MAX = 6;
+const segText = v => (typeof v === 'string' || (typeof v === 'number' && Number.isFinite(v)) ? String(v).trim() : '');
+const segOk = s => !!s && s.length <= SEG_MAX_LEN && !s.includes('|') && !/[\r\n]/.test(s);
+// One answer given as an array of segments or as a string ("a | b" or "a|b") -> segments.
+const segsOfAnswer = a => (Array.isArray(a) ? a.map(segText) : typeof a === 'string' ? a.split('|').map(s => s.trim()) : null);
+
+/*
+ * Validates a segmented choice set. `choices`: arrays of segments (one per column); `answer`: the
+ * correct array or its joined string. -> { choiceCols, choiceSegs, choices: [joined], answer: joined }
+ * or null (bad labels, 2–6 choices, wrong segment counts, empty/long segments, duplicate tuples,
+ * or an answer that isn't one of the choices).
+ */
+export function segChoiceSpec(cols, choices, answer) {
+  const c = cleanChoiceCols(cols);
+  if (!c || !Array.isArray(choices) || choices.length < SEG_CHOICES_MIN || choices.length > SEG_CHOICES_MAX) return null;
+  const segs = [];
+  for (const ch of choices) {
+    if (!Array.isArray(ch) || ch.length !== c.length) return null;
+    const row = ch.map(segText);
+    if (!row.every(segOk)) return null;
+    segs.push(row);
+  }
+  const joined = segs.map(r => r.join(SEG_SEP));
+  if (new Set(joined).size !== joined.length) return null;
+  const a = segsOfAnswer(answer);
+  if (!a || a.length !== c.length) return null;
+  const ans = a.join(SEG_SEP);
+  if (!joined.includes(ans)) return null;
+  return { choiceCols: c, choiceSegs: segs, choices: joined, answer: ans };
+}
+
+// Extra decoy blocks for Build mode: [[col, value], ...] where col is a column label (any case)
+// or a 0-based index. -> [[colIndex, value]] (bad, duplicate or answer-equal entries dropped).
+export const SEG_EXTRA_MAX = 30;
+export function cleanSegExtra(raw, cols) {
+  if (!Array.isArray(raw) || !Array.isArray(cols)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const e of raw) {
+    if (out.length >= SEG_EXTRA_MAX) break;
+    if (!Array.isArray(e) || e.length !== 2) continue;
+    const j = typeof e[0] === 'number' ? e[0] : cols.findIndex(c => c.toLowerCase() === String(e[0] ?? '').trim().toLowerCase());
+    const v = segText(e[1]);
+    if (!Number.isInteger(j) || j < 0 || j >= cols.length || !segOk(v) || seen.has(j + '\u0000' + v)) continue;
+    seen.add(j + '\u0000' + v);
+    out.push([j, v]);
+  }
+  return out;
+}
+
+// Build mode's bank: Easy 1–2, Medium 3–5, Hard 6–9, Expert 9–14 distractor blocks (at most 24
+// blocks in all), first from the other options' segments, then the question's extra decoys.
+export const SEG_DISTRACTORS = { easy: [1, 2], medium: [3, 5], hard: [6, 9], expert: [9, 14] };
+export const SEG_BANK_MAX = 24;
+const SEG_BANK_SALT = 0x5e9b10c5;
+/*
+ * -> [{ col, value }] in a seeded shuffled order: the answer's blocks plus distractors. Drawn from its
+ * own rng (derived from the question's seed), so the question itself never changes. A block is a
+ * (column, value) pair: the same value under two columns is two different blocks.
+ */
+function segBankFor(q, difficulty) {
+  const cols = q.choiceCols;
+  const ans = splitSegs(q.answer, cols);
+  if (!ans) return [];
+  const rng = createRng(((Number(q.seed) >>> 0) ^ SEG_BANK_SALT) >>> 0);
+  const key = (j, v) => `${j}\u0000${v}`;
+  const used = new Set(ans.map((v, j) => key(j, v)));
+  const fromOptions = [];
+  for (const row of q.choiceSegs || []) row.forEach((v, j) => { const k = key(j, v); if (!used.has(k)) { used.add(k); fromOptions.push({ col: j, value: v }); } });
+  const extras = [];
+  for (const [j, v] of q.segExtra || []) { const k = key(j, v); if (!used.has(k)) { used.add(k); extras.push({ col: j, value: v }); } }
+  const [lo, hi] = SEG_DISTRACTORS[difficulty] || SEG_DISTRACTORS.medium;
+  const n = Math.min(rng.int(lo, hi), SEG_BANK_MAX - ans.length);
+  const picked = [...rng.shuffle(fromOptions), ...rng.shuffle(extras)].slice(0, Math.max(0, n));
+  return rng.shuffle([...ans.map((v, j) => ({ col: j, value: v })), ...picked]);
+}
+
+// A (raw) choice question or part's normalised choice fields: { choices, answer?, choiceCols?, choiceSegs? }.
+// Plain choices are stringified as before; segmented ones are joined (null spec = choices undefined,
+// so the shape check rejects it). Arrays without `choiceCols` are invalid too.
+function choiceFields(q) {
+  if (q?.choiceCols !== undefined && q?.choiceCols !== null) {
+    const spec = segChoiceSpec(q.choiceCols, q.choices, q.answer);
+    if (!spec) return { choices: undefined };
+    const extra = cleanSegExtra(q.extraSegs, spec.choiceCols);
+    return { choices: spec.choices, answer: spec.answer, choiceCols: spec.choiceCols, choiceSegs: spec.choiceSegs, ...(extra.length ? { segExtra: extra } : {}) };
+  }
+  if (!Array.isArray(q?.choices) || q.choices.some(Array.isArray)) return { choices: undefined };
+  return { choices: q.choices.map(String) };
 }
 
 const PART_TYPES = ['number', 'text', 'choice', 'date'];
@@ -470,7 +602,8 @@ function normalizePart(p, warnKey) {
     ask: p?.ask ? String(p.ask) : '',
     answerType,
     answer: p?.answer,
-    choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
+    choices: undefined,
+    ...(answerType === 'choice' ? choiceFields(p) : {}),
     tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
     ...(answerType === 'date' ? { answer: String(p?.answer ?? '').trim(), precision: datePrecisionFor(p) } : {}),
     ...(hint ? { hint } : {}),
@@ -531,8 +664,10 @@ export function multiShapeOk(raw) {
     } else if (p.answerType === 'date') {
       if (typeof p.answer !== 'string' || !dateAnswerOk(p.answer.trim(), p.precision)) return false;
       if (p.precision !== undefined && !PRECISIONS.includes(p.precision)) return false;
+    } else if (p.choiceCols !== undefined && p.choiceCols !== null) {
+      if (!segChoiceSpec(p.choiceCols, p.choices, p.answer)) return false;
     } else {
-      if (!Array.isArray(p.choices) || p.choices.length < 2) return false;
+      if (!Array.isArray(p.choices) || p.choices.length < 2 || p.choices.some(Array.isArray)) return false;
       const cs = p.choices.map(String);
       if (new Set(cs).size !== cs.length || !cs.includes(String(p.answer))) return false;
     }
@@ -829,7 +964,8 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
     prompt: String(q.prompt ?? ''),
     answer: q.answer,
     answerType,
-    choices: answerType === 'choice' && Array.isArray(q.choices) ? q.choices.map(String) : undefined,
+    choices: undefined,
+    ...(answerType === 'choice' ? choiceFields(q) : {}),
     tolerance: typeof q.tolerance === 'number' ? q.tolerance : undefined,
     explanation: q.explanation ? String(q.explanation) : '',
     ...closeExtras(q, answerType),
@@ -1492,6 +1628,12 @@ export function gradeAnswer(q, userAnswer, mode = 'type') {
     const g = correct ? null : gradeByModule(q, userAnswer);
     if (g) correct = g.correct;
     return { correct, credit: correct ? m : 0, mode: 'blocks', multiplier: m, ...gradeExtras(g) };
+  }
+  // Segmented choices: Build (default) earns full credit; Choose earns credit × chooseMultiplier.
+  if (q.answerType === 'choice' && Array.isArray(q.choiceCols) && mode === 'choose') {
+    const correct = checkSingle(q, userAnswer);
+    const m = typeof q.chooseMultiplier === 'number' ? Math.min(1, Math.max(0, q.chooseMultiplier)) : 1;
+    return { correct, credit: correct ? m : 0, mode: 'choose', multiplier: m };
   }
   const correct = checkSingle(q, userAnswer);
   if (correct) return { correct: true, credit: 1 };

@@ -164,6 +164,8 @@
 .dom-music     { --dom-bg: #FBF1D2; --dom-fg: #765300; --dom-solid: #B07D0A; --dom-bright: #E6B840; }
 .dom-biology   { --dom-bg: #DFF3E4; --dom-fg: #1B5E2B; --dom-solid: #2E8B47; --dom-bright: #6CC985; }
 .dom-medical   { --dom-bg: #DDF4F8; --dom-fg: #0A5866; --dom-solid: #0E8FA6; --dom-bright: #5CCBDD; }
+.dom-logic     { --dom-bg: #E4E8EE; --dom-fg: #334155; --dom-solid: #52637A; --dom-bright: #8C9DB5; }
+.dom-everyday-math { --dom-bg: #F1E7DD; --dom-fg: #5E4126; --dom-solid: #8C6239; --dom-bright: #C99A6B; }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .dom-default   { --dom-bg: #2C2A25; --dom-fg: #CFCBC1; --dom-solid: #A19C90; }
@@ -178,6 +180,8 @@
   :root:not([data-theme="light"]) .dom-music     { --dom-bg: #362A0E; --dom-fg: #F0D58A; --dom-solid: #E6B840; }
   :root:not([data-theme="light"]) .dom-biology   { --dom-bg: #15301D; --dom-fg: #A6E0B4; --dom-solid: #6CC985; }
   :root:not([data-theme="light"]) .dom-medical   { --dom-bg: #0F2E35; --dom-fg: #9EE0EC; --dom-solid: #5CCBDD; }
+  :root:not([data-theme="light"]) .dom-logic     { --dom-bg: #1E2530; --dom-fg: #C3CDDB; --dom-solid: #8C9DB5; }
+  :root:not([data-theme="light"]) .dom-everyday-math { --dom-bg: #2E2219; --dom-fg: #E3CDB6; --dom-solid: #C99A6B; }
 }
 :root[data-theme="dark"] .dom-default   { --dom-bg: #2C2A25; --dom-fg: #CFCBC1; --dom-solid: #A19C90; }
 :root[data-theme="dark"] .dom-math      { --dom-bg: #26264A; --dom-fg: #C3C0FB; --dom-solid: #8B85F5; }
@@ -191,6 +195,8 @@
 :root[data-theme="dark"] .dom-music     { --dom-bg: #362A0E; --dom-fg: #F0D58A; --dom-solid: #E6B840; }
 :root[data-theme="dark"] .dom-biology   { --dom-bg: #15301D; --dom-fg: #A6E0B4; --dom-solid: #6CC985; }
 :root[data-theme="dark"] .dom-medical   { --dom-bg: #0F2E35; --dom-fg: #9EE0EC; --dom-solid: #5CCBDD; }
+:root[data-theme="dark"] .dom-logic     { --dom-bg: #1E2530; --dom-fg: #C3CDDB; --dom-solid: #8C9DB5; }
+:root[data-theme="dark"] .dom-everyday-math { --dom-bg: #2E2219; --dom-fg: #E3CDB6; --dom-solid: #C99A6B; }
 
 /* ================= base ================= */
 
@@ -793,6 +799,47 @@ a.chip-main { text-decoration: none; }
 .choice.is-wrong .choice-mark { color: var(--wrong-fg); }
 @media (hover: hover) { .choice:hover:not(:disabled) { border-color: var(--accent); } }
 
+/* segmented choices: each option is a row of aligned chips, one column per label.
+   Phones: one column of options; each option stacks its chips with the label as a caption. */
+.seg-choices { grid-template-columns: minmax(0, 1fr); }
+.seg-head { display: none; }
+.seg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; row-gap: 6px; }
+.seg-choice > .choice-key { grid-column: 1; grid-row: 1; align-self: start; }
+.seg-choice > .choice-mark { grid-column: 3; grid-row: 1; align-self: start; }
+.seg-choice > .seg-cell { grid-column: 2; display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.seg-cap {
+  flex: 0 0 auto; width: 6.5em; font-size: 12px; font-weight: 600; color: var(--muted);
+  overflow-wrap: anywhere; line-height: 1.3;
+}
+.seg-chip, .seg-inline .seg-chip {
+  display: inline-block; min-width: 0; max-width: 100%; padding: 3px 9px; border-radius: 8px;
+  background: var(--sunken); border: 1px solid var(--line); color: var(--ink);
+  font-weight: 600; line-height: 1.35; overflow-wrap: anywhere;
+}
+.seg-choice:disabled .seg-chip { color: var(--muted); font-weight: 500; }
+.seg-choice.is-correct .seg-chip, .seg-choice.is-wrong .seg-chip { background: var(--surface); color: var(--ink); font-weight: 600; }
+.seg-inline { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; vertical-align: middle; }
+.seg-inline .seg-chip { font-size: 0.95em; }
+/* multi-part segmented parts: the key slot is a tick box (✓ when picked) */
+.seg-tick { font-size: 14px; font-weight: 700; color: var(--accent-ink); }
+.part-choice[aria-pressed="true"] .seg-tick { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.part-choice[aria-pressed="true"] .seg-tick::before { content: "\2713"; }
+.part-choices.is-answered .part-choice[aria-pressed="true"]:not(.is-correct):not(.is-wrong) .seg-tick { background: var(--paper); border-color: var(--line); color: var(--text-2); }
+/* From 640px: one shared grid (subgrid), so each column lines up across every option, plus a header row. */
+@media (min-width: 640px) {
+  .seg-choices { grid-template-columns: auto repeat(var(--seg-n, 2), minmax(0, 1fr)) auto; column-gap: 0; row-gap: 10px; }
+  .seg-choices.seg-n2 { --seg-n: 2; }
+  .seg-choices.seg-n3 { --seg-n: 3; }
+  .seg-choices.seg-n4 { --seg-n: 4; }
+  .seg-head, .seg-choice { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; column-gap: 12px; }
+  .seg-head { padding: 0 17px; margin-bottom: -4px; }
+  .seg-col { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; }
+  .seg-choice > .choice-key, .seg-choice > .choice-mark { grid-column: auto; grid-row: auto; align-self: center; }
+  .seg-choice > .seg-cell { grid-column: auto; display: block; }
+  .seg-cap { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .seg-choice.is-correct, .seg-choice.is-wrong, .part-choice.seg-choice[aria-pressed="true"] { padding-left: 15px; padding-right: 15px; }
+}
+
 /* drag-the-blocks questions (answerType "tiles"): an answer row above a bank of blocks */
 .tiles-form { gap: 10px; }
 .tiles-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -913,7 +960,54 @@ body.tiles-dragging, body.tiles-dragging * { cursor: grabbing !important; user-s
 .answer-mode-btn:disabled { cursor: default; }
 .answer-mode-note { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; font-weight: 600; color: var(--warn-fg); }
 .answer-mode-note[hidden] { display: none; }
+/* case-sensitive answers: a warning near the answer (icon + text, warn tokens) */
+.case-note {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; align-self: flex-start;
+  font-size: 14px; font-weight: 600; color: var(--warn-fg); background: var(--warn-bg);
+  border: 1px solid var(--warn); border-radius: var(--r-control);
+}
+.case-note .icon { width: 16px; height: 16px; flex-shrink: 0; }
 .answer-mode-note .icon { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* segmented choices: Build | Choose. Build = one column-tagged block per column slot. */
+.seg-build, .seg-choose { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.seg-build[hidden], .seg-choose[hidden] { display: none; }
+.segb-slots {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px;
+  border: 2px dashed var(--line); border-radius: 14px; background: var(--paper);
+  transition: border-color 0.12s, background-color 0.12s;
+}
+.segb-slots.is-over { border-color: var(--accent); background: var(--accent-soft); }
+.segb-slots.is-correct { border-style: solid; border-color: var(--correct); background: var(--correct-bg); }
+.segb-slots.is-wrong { border-style: solid; border-color: var(--wrong); background: var(--wrong-bg); }
+.segb-slots.is-revealed { border-style: solid; border-color: var(--accent); }
+.segb-slot { display: grid; grid-template-columns: 6.5em minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; }
+.segb-col { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); overflow-wrap: anywhere; line-height: 1.3; }
+.segb-hole { display: flex; min-width: 0; }
+.segb-hole .tile { border-color: var(--accent); }
+.segb-empty {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; flex: 1;
+  border: 1px dashed var(--line); border-radius: var(--r-control); color: var(--muted); font-size: 14px;
+}
+.segb-mark { display: inline-flex; width: 18px; }
+.segb-mark .icon { width: 18px; height: 18px; }
+.segb-slot.is-correct .segb-mark { color: var(--correct-fg); }
+.segb-slot.is-wrong .segb-mark { color: var(--wrong-fg); }
+.segb-slot.is-correct .segb-hole .tile { border-color: var(--correct); }
+.segb-slot.is-wrong .segb-hole .tile, .segb-slot.is-wrong .segb-empty { border-color: var(--wrong); }
+.segb-tile { flex-direction: column; align-items: flex-start; gap: 1px; padding-top: 6px; padding-bottom: 6px; }
+.segb-cap { font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--muted); line-height: 1.2; }
+.segb-hole .segb-tile { flex-direction: row; align-items: center; }
+/* From 640px: the column slots sit side by side, label above each. */
+@media (min-width: 640px) {
+  .segb-slots.segb-n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .segb-slots.segb-n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .segb-slots.segb-n4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .segb-slot { grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "col mark ." "hole hole hole"; align-items: center; gap: 4px 6px; }
+  .segb-col { grid-area: col; }
+  .segb-mark { grid-area: mark; }
+  .segb-hole { grid-area: hole; }
+}
 
 /* close answers (partial credit): warn colours, always with an icon and label elsewhere */
 .answer-input.is-close { border-color: var(--warn); background: var(--warn-bg); color: var(--ink); }
@@ -1553,7 +1647,7 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
   background: var(--sunken); padding: 0.05em 0.3em; border-radius: 6px; white-space: normal; overflow-wrap: anywhere;
 }
 .question:has(.tag-lang) code, .question.is-code code { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
-.question:has(.tag-lang) .choice-text code, .question:has(.tag-lang) .part-ask code { font-family: var(--mono); font-size: 0.95em; overflow-wrap: anywhere; }
+.question:has(.tag-lang) .choice-text code, .question:has(.tag-lang) .seg-chip code, .question:has(.tag-lang) .part-ask code { font-family: var(--mono); font-size: 0.95em; overflow-wrap: anywhere; }
 
 /* ================= Guided mode (js/views/guided.js, quiz.js with opts.guided, module.js switch) ================= */
 

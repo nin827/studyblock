@@ -275,6 +275,22 @@ A near miss earns part credit; `correct` stays false. This applies to single que
 - **Quiz:** a **Run** button (Ctrl/Cmd+Enter) works in Type and Blocks modes. It shows an escaped Output table (20 rows, then "n more") or the error. It's unlimited, never scored, and allowed in Guided mode. Feedback and review also show the expected output.
 - **Used by:** SQL Queries *Write the query*. Its hand-written SQL engine covers only the grammar the subtopic teaches.
 
+### Block-list choices (segmented options) and Build | Choose
+
+Options that combine several facts show as aligned blocks under column labels (ticket 019), e.g. `Elastic | Price ↓ | Revenue ↑`.
+- **Generator shape:** `answerType: "choice"`, `choiceCols: [2–4 labels ≤ 24 chars]`, `choices: [[segment per column], …]` (segments ≤ 40 chars, no `|`), `answer` = the right array or its joined string, and optional `extraSegs: [[column label or index, value], …]` decoys.
+  - Options: exactly 3 at Easy and 5 at Medium and above (the engine warns otherwise). Wrong options differ from the answer in 1 to n−1 columns.
+  - The engine stores each option as one string joined by `" | "`, so checking, storage and History are unchanged. It keeps `choiceCols`/`choiceSegs` in memory. A bad shape regenerates.
+  - Multi-part choice parts accept the same fields; they are Choose-only, at full credit.
+- **CSV:** an optional `cols` column (labels `|`-separated) splits each choice into segments by ` ; `. An optional `extra` column holds `Column=value ; …` decoys. A mismatched row is skipped with one warning per module.
+- **Build | Choose switch** (sessionStorage `studyblock:answerMode`, default **Build**):
+  - **Build:** one slot per column. Bank blocks are tagged with their column, so `↑` under Assets and under Liabilities are different blocks. Order never matters, and a second block in a column replaces the first.
+  - Build decoys come from other options, then extras: Easy 1–2, Medium 3–5, Hard 6–9, Expert 9–14 (≤ 24 blocks). The bank is shuffled by a generator seeded from the question seed, so the question never changes.
+  - Build keeps Filter blocks (above 10), Reset, keys and ✓/✗ per column after Check. It earns full credit.
+  - **Choose:** pick an option. Credit × `chooseMultiplier` (module.json; default easy 1, medium 1, hard 0.85, expert 0.7), stored as `mode: "choose"` and `multiplier`. The note reads "Choose: up to 85% credit at Hard".
+- **Storage:** optional `choiceCols`/`partCols` on stored questions, validated on import, so review and History show chips.
+- **Case-sensitive notice:** any question or part with `caseSensitive: true` shows a warn box ("Case-sensitive: capital letters matter", `triangle-alert`), linked to the answer by `aria-describedby`.
+
 ### Multi-part questions (`answerType: "multi"`)
 
 One scenario, several labelled answer fields. Used by Business Case for things like *Calculation* + *Recommendation*.
@@ -581,6 +597,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Word Roots and Grammar:** every cell has at least 10 rows. Word Roots has build-the-word rows (dual Type | Blocks and pure blocks, joiner `(none)`). Grammar has sentence-ordering rows (capitalised first block, punctuated last block, wrong-form distractors such as is/are) and dual verb-form rows in Tenses. Both set `tilesMultiplier`. Vocabulary also has 10 rows per cell.
 - **Logic & Puzzles:** logic-puzzles (knights and knaves, ordering, whodunits), syllogisms (categorical and if-then) and number-patterns (numbers, letters, shapes). Every puzzle is brute-forced to a unique answer, and verify() re-solves it independently. Number-patterns' verify infers the rule from the shown terms, trying several rule families that must agree. Conventions: syllogisms assume every group has a member and use made-up nouns; "or" is inclusive; "A unless B" means "if not B then A"; letter wrap-around is stated. All are exact (`fuzzy: false`, `fuzzyNumber: 0`); number-patterns has `tilesMultiplier`.
 - **Everyday Math:** time-dates, recipes-scaling, shopping-money and travel. Conventions: fixed UTC offsets with no daylight saving; a generic `$`; made-up exchange rates, always stated; kitchen conversion factors stated in the question. `fuzzyNumber` is 1, and whole counts (days, minutes, servings, bags) set `fuzzyNumber: 0` per question.
+- **Business theory:** Management (Maslow/Herzberg, leadership, structure, Porter), Accounting Theory (double entry, concepts, classification, accounting equation) and Finance Theory (sources, risk/return, ratios, appraisal) use block-list choices. Accounting conventions: goods bought go to Inventory, sales record revenue only, depreciation goes to Accumulated depreciation, and "Accruals (matching)" is one concept. Porter thresholds (10%/15%) are stated in prompts.
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.

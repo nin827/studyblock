@@ -152,6 +152,43 @@ export function cleanGraph(graph) {
   return { fns, view: cleanGraphView(graph.view) || { ...GRAPH_DEFAULT_VIEW } };
 }
 
+// Segmented choices: an option made of 2–4 aligned segments ("Elastic | Price ↓ | Revenue ↑"),
+// stored as one string joined by SEG_SEP, plus the column labels (`choiceCols` on a single
+// question, `partCols: { [partId]: cols }` on a multi-part one). Labels ≤ 24 chars, segments ≤ 40.
+export const SEG_SEP = ' | ';
+export const SEG_COLS_MIN = 2;
+export const SEG_COLS_MAX = 4;
+export const SEG_COL_MAX_LEN = 24;
+export const SEG_MAX_LEN = 40;
+
+// Column labels: 2–4 non-empty trimmed strings (≤ 24 chars, no "|"), or null.
+export function cleanChoiceCols(v) {
+  if (!Array.isArray(v) || v.length < SEG_COLS_MIN || v.length > SEG_COLS_MAX) return null;
+  const out = v.map(c => (isStr(c) ? c.trim() : ''));
+  return out.every(c => c && c.length <= SEG_COL_MAX_LEN && !c.includes('|')) ? out : null;
+}
+
+// { [partId]: cols } for a multi-part question's segmented parts, or null.
+export function cleanPartCols(v) {
+  if (!isObj(v)) return null;
+  const out = {};
+  let n = 0;
+  for (const k of Object.keys(v).slice(0, PARTS_MAX)) {
+    const cols = PART_ID_RE.test(k) && k.length <= 40 ? cleanChoiceCols(v[k]) : null;
+    if (cols) { out[k] = cols; n++; }
+  }
+  return n ? out : null;
+}
+
+// A stored/joined option split back into its segments: an array of cols.length strings, or null
+// (no valid cols, or the string doesn't have exactly that many segments).
+export function splitSegs(str, cols) {
+  const c = cleanChoiceCols(cols);
+  if (!c || !isStr(str)) return null;
+  const segs = str.split('|').map(s => s.trim());
+  return segs.length === c.length && segs.every(Boolean) ? segs : null;
+}
+
 // Multi-part questions store `answer` / `userAnswer` as { [partId]: value } and
 // `parts: [{ id, label, correct }]`. All optional on import; validated and capped here. Data only.
 export const PARTS_MAX = 4;
@@ -211,9 +248,10 @@ export function cleanClose(v) {
 
 // Answer mode of a stored question: "blocks" (dual Type | Blocks question answered with blocks)
 // with its multiplier 0-1. Returns the fields to keep ({} when absent or invalid).
+// Also "choose" (a segmented-choice question answered by picking an option instead of building it).
 export function cleanMode(q) {
-  if (!isObj(q) || q.mode !== 'blocks') return {};
-  return { mode: 'blocks', ...(isNum(q.multiplier) && q.multiplier >= 0 && q.multiplier <= 1 ? { multiplier: q.multiplier } : {}) };
+  if (!isObj(q) || (q.mode !== 'blocks' && q.mode !== 'choose')) return {};
+  return { mode: q.mode, ...(isNum(q.multiplier) && q.multiplier >= 0 && q.multiplier <= 1 ? { multiplier: q.multiplier } : {}) };
 }
 
 // A stored answer: number, string, or a multi-part object; anything else becomes a string.
@@ -709,6 +747,9 @@ function importObject(incoming, mode) {
       ...(isNum(q.credit) ? { credit: Math.min(1, Math.max(0, q.credit)) } : {}),
       // Optional per-part results of a multi-part question.
       ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
+      // Optional segmented-choice column labels (single question / per multi-part part).
+      ...(cleanChoiceCols(q.choiceCols) ? { choiceCols: cleanChoiceCols(q.choiceCols) } : {}),
+      ...(cleanPartCols(q.partCols) ? { partCols: cleanPartCols(q.partCols) } : {}),
       // Optional answer mode (Blocks + multiplier) and close-answer credit; validated, 0-1.
       ...cleanMode(q),
       ...(!q.correct && cleanClose(q.fuzzy) ? { fuzzy: cleanClose(q.fuzzy) } : {}),
