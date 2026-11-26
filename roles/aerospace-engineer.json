@@ -1,0 +1,18 @@
+{
+  "id": "aerospace-engineer",
+  "title": "Aerospace Engineer",
+  "icon": "rocket",
+  "flags": ["theory_heavy"],
+  "description": "Thrust and weight, lift and stall speed, the rocket equation and centre-of-gravity loading: made-up vehicles worked from the figures, with every rule stated.",
+  "exclusive": "role-aerospace-engineer",
+  "mix": {
+    "forces-energy": { "weight": 3, "subtopics": ["forces", "momentum"] },
+    "kinematics": { "weight": 2, "subtopics": ["acceleration", "motion-equations"] },
+    "exponents-logs": { "weight": 2, "subtopics": ["logarithms", "growth-decay"] },
+    "fluid-systems": { "weight": 2, "subtopics": ["flow-rate"] },
+    "gases-pressure": { "weight": 2, "subtopics": ["pressure", "gas-laws"] },
+    "trigonometry": { "weight": 1, "subtopics": ["right-angles"] },
+    "structures": { "weight": 1, "subtopics": ["moments"] }
+  },
+  "subroles": []
+}

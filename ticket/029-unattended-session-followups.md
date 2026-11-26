@@ -28,8 +28,8 @@ With only GDScript chosen, Software Engineer and Game Developer now use Python, 
 *Options:* keep (current), or let Game Developer allow GDScript as its one exception.
 
 ## 5. Next roles
-Not yet built: Database Administrator, HR Manager, Insurance Underwriter, Aerospace Engineer, Ship Navigator, Air Traffic Planner, Travel Agent, Philosopher, Journalist, Puzzle Designer.
-*Options:* build the next batch of four (one per thin industry), or stop at 41.
+Batch 4 (Database Administrator, HR Manager, Aerospace Engineer, Ship Navigator) was built after this ticket was filed, so there are now 45 roles. Not yet built: Insurance Underwriter, Air Traffic Planner, Travel Agent, Philosopher, Journalist, Puzzle Designer.
+*Options:* build the rest, or stop at 45.
 
 ## 6. Code Writing Blocks for the new languages
 Some JS/TS/Java/Go lines have no Blocks alternative in Code Writing. The extended lexer that fixes this is used only in Code Reviewing, because turning it on in Code Writing changes those questions per seed.

@@ -1,0 +1,22 @@
+{
+  "id": "ship-navigator",
+  "title": "Ship Navigator",
+  "icon": "ship",
+  "flags": ["safety_critical", "license_oriented", "experience_heavy"],
+  "startNotice": {
+    "title": "For learning only",
+    "text": "This role is **arithmetic practice only**. All vessels, places and figures are made up. It is **not for real navigation**, which needs official charts and tide tables, the rules of the road at sea, proper training and a certificate of competency."
+  },
+  "description": "Passage time and fuel, set and drift, the rule of twelfths for tides and under-keel clearance, and closest approach of two ships: navigation arithmetic worked from the figures, with every rule stated.",
+  "exclusive": "role-ship-navigator",
+  "mix": {
+    "map-skills": { "weight": 3, "subtopics": ["scale-distance", "bearings", "time-zones"] },
+    "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles", "non-right"] },
+    "vectors-movement": { "weight": 2, "subtopics": ["vectors", "angles"] },
+    "time-dates": { "weight": 2, "subtopics": ["clock", "time-zones"] },
+    "travel": { "weight": 2, "subtopics": ["journeys", "fuel-costs"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "time-speed"] },
+    "kinematics": { "weight": 1, "subtopics": ["speed"] }
+  },
+  "subroles": []
+}

@@ -1,0 +1,16 @@
+{
+  "id": "role-database-administrator",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join index or scan page reads, table and index sizing, backup and recovery times, and connection pools and replica lag, as a database administrator meets them (made-up figures and exercise rules).",
+  "icon": "database",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "index-scan", "title": "Index or full scan", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "sizing", "title": "Table and index sizing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "backup-recovery", "title": "Backups and recovery time", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "pool-replica", "title": "Connections and replicas", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

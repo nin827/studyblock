@@ -1,0 +1,16 @@
+{
+  "id": "role-aerospace-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join thrust and weight, lift and stall speed, the rocket equation and centre-of-gravity loading, as an aerospace engineer meets them (made-up vehicles and exercise rules).",
+  "icon": "rocket",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "lift-off", "title": "Thrust-to-weight and lift-off", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "lift-stall", "title": "Lift and stall speed", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "rocket-staging", "title": "Rocket equation and staging", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "mass-balance", "title": "Mass and balance", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

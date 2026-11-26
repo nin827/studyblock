@@ -1,0 +1,16 @@
+{
+  "id": "role-hr-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join payroll and overtime, staff turnover and hiring, leave and absence, and pay reviews, as an HR manager meets them (made-up figures and exercise rules, not real employment law).",
+  "icon": "users",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "payroll", "title": "Payroll and overtime", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "turnover-hiring", "title": "Staff turnover and hiring", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "leave-absence", "title": "Leave and absence", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "pay-review", "title": "Pay review and budget", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

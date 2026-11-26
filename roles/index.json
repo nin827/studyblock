@@ -40,7 +40,11 @@
     "frontend-engineer",
     "astronomer",
     "event-planner",
-    "farmer"
+    "farmer",
+    "database-administrator",
+    "hr-manager",
+    "aerospace-engineer",
+    "ship-navigator"
   ],
   "industries": [
     {
@@ -54,7 +58,8 @@
         "network-engineer",
         "game-developer",
         "cloud-engineer",
-        "frontend-engineer"
+        "frontend-engineer",
+        "database-administrator"
       ]
     },
     {
@@ -66,7 +71,8 @@
         "business-analyst",
         "economist",
         "project-manager",
-        "marketing-manager"
+        "marketing-manager",
+        "hr-manager"
       ]
     },
     {
@@ -92,7 +98,8 @@
         "electrician",
         "architect",
         "surveyor",
-        "mechanical-engineer"
+        "mechanical-engineer",
+        "aerospace-engineer"
       ]
     },
     {
@@ -102,7 +109,8 @@
       "roles": [
         "operations-manager",
         "pilot",
-        "logistics-manager"
+        "logistics-manager",
+        "ship-navigator"
       ]
     },
     {

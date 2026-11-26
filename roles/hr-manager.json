@@ -1,0 +1,17 @@
+{
+  "id": "hr-manager",
+  "title": "HR Manager",
+  "icon": "users",
+  "flags": ["experience_heavy", "region_specific"],
+  "description": "Overtime and take-home pay, staff turnover and hiring funnels, leave and absence, and pay reviews against a budget, with every rule stated as an exercise rule.",
+  "exclusive": "role-hr-manager",
+  "mix": {
+    "management": { "weight": 1, "subtopics": ["motivation", "structure"] },
+    "business-math": { "weight": 3, "subtopics": ["percentages", "margins"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average", "probability"] },
+    "time-dates": { "weight": 1, "subtopics": ["calendar"] },
+    "business-theory": { "weight": 1, "subtopics": ["stakeholders", "objectives"] }
+  },
+  "subroles": []
+}

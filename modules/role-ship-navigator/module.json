@@ -1,0 +1,16 @@
+{
+  "id": "role-ship-navigator",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join passage time and fuel, set and drift, the rule of twelfths for tides, and closest approach of two ships, as a ship navigator meets them (practice figures only).",
+  "icon": "ship",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "passage-plan", "title": "Passage time, ETA and fuel", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "set-drift", "title": "Set, drift and course made good", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "tide-heights", "title": "Tides and under-keel clearance", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "closest-approach", "title": "Closest approach of two ships", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

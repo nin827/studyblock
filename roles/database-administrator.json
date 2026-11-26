@@ -1,0 +1,18 @@
+{
+  "id": "database-administrator",
+  "title": "Database Administrator",
+  "icon": "database",
+  "flags": ["experience_heavy", "tool_heavy", "tool_specific"],
+  "description": "Index or full scan, table and index sizes, backups and recovery times, and connection pools and replica lag, with every rule and figure stated.",
+  "exclusive": "role-database-administrator",
+  "mix": {
+    "sql-queries": { "weight": 3 },
+    "data-representation": { "weight": 2, "subtopics": ["characters", "compression"] },
+    "algorithms": { "weight": 2, "subtopics": ["searching", "complexity", "data-structures"] },
+    "networking": { "weight": 1, "subtopics": ["data-transfer"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "probability"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["time-speed", "mass-volume"] }
+  },
+  "subroles": []
+}
