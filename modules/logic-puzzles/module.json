@@ -1,0 +1,16 @@
+{
+  "id": "logic-puzzles",
+  "title": "Logic Puzzles",
+  "description": "Knights and knaves, ordering puzzles from clues, and whodunits with liars.",
+  "icon": "puzzle",
+  "type": "generator",
+  "calculator": false,
+  "fuzzy": false,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 8,
+  "subtopics": [
+    { "id": "knights-knaves", "title": "Knights and knaves", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "ordering", "title": "Ordering puzzles", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "whodunit", "title": "Whodunits", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

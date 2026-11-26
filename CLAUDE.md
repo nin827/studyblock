@@ -351,7 +351,7 @@ Scores per module/subtopic/difficulty are derived from attempts. On import, `cre
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords, Vocabulary, Word Roots, Grammar and the three Logic modules set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**
@@ -461,6 +461,7 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Music | `#FBF1D2` / `#765300` | `#B07D0A` |
   | Biology | `#DFF3E4` / `#1B5E2B` | `#2E8B47` |
   | Medical | `#DDF4F8` / `#0A5866` | `#0E8FA6` |
+  | Logic | `#E4E8EE` / `#334155` | `#52637A` |
 
   A domain can override these with `color` in `index.json`.
 - Correct and incorrect states always show an icon and a label, not colour alone.
@@ -577,6 +578,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Boolean Logic:** *Write the expression* is typed with Blocks (letters, AND/OR/XOR/NOT, a bracket slot). Any expression with the same truth table counts (`grade()`); operators may not be mixed at one bracket level without brackets.
 - **Genetics:** *Write gametes & genotypes* is typed with Blocks, case-sensitive, in the order stated in the prompt (capital first, then alphabetical).
 - **Word Roots and Grammar:** every cell has at least 10 rows. Word Roots has build-the-word rows (dual Type | Blocks and pure blocks, joiner `(none)`). Grammar has sentence-ordering rows (capitalised first block, punctuated last block, wrong-form distractors such as is/are) and dual verb-form rows in Tenses. Both set `tilesMultiplier`. Vocabulary also has 10 rows per cell.
+- **Logic & Puzzles:** logic-puzzles (knights and knaves, ordering, whodunits), syllogisms (categorical and if-then) and number-patterns (numbers, letters, shapes). Every puzzle is brute-forced to a unique answer, and verify() re-solves it independently. Number-patterns' verify infers the rule from the shown terms, trying several rule families that must agree. Conventions: syllogisms assume every group has a member and use made-up nouns; "or" is inclusive; "A unless B" means "if not B then A"; letter wrap-around is stated. All are exact (`fuzzy: false`, `fuzzyNumber: 0`); number-patterns has `tilesMultiplier`.
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.

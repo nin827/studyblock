@@ -146,6 +146,17 @@
         "body-measurements",
         "nutrition"
       ]
+    },
+    {
+      "id": "logic",
+      "title": "Logic & Puzzles",
+      "icon": "brain",
+      "description": "Knights and knaves, ordering puzzles, whodunits, syllogisms and if-then arguments, and number, letter and shape patterns.",
+      "modules": [
+        "logic-puzzles",
+        "syllogisms",
+        "number-patterns"
+      ]
     }
   ],
   "archived": [

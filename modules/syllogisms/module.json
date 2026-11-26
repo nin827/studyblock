@@ -1,0 +1,15 @@
+{
+  "id": "syllogisms",
+  "title": "Syllogisms & Arguments",
+  "description": "Is the argument valid? All / some / no syllogisms, and if-then reasoning with only if, unless and either-or.",
+  "icon": "git-merge",
+  "type": "generator",
+  "calculator": false,
+  "fuzzy": false,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "categorical", "title": "Categorical syllogisms", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "conditionals", "title": "If-then arguments", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}
