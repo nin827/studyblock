@@ -6,6 +6,8 @@ import { loadJSON, loadText, loadModule as loadSourceModule } from './source.js'
 import { LANG_IDS, isLang } from './languages.js';
 import { getCodeLang } from './storage.js';
 import { PRECISIONS, parseDate, hasPrecision, dateDistance, parseYear, yearDistance } from './dates.js';
+import { parse as parseCalc, MAX_EXPR as CALC_MAX_EXPR } from './calc.js';
+import { validView, clampView } from './graph.js';
 
 const ID_RE = /^[a-z0-9-]+$/;
 
@@ -569,6 +571,43 @@ export function sanitizeGiven(raw, warnKey) {
   return out.length ? out : undefined;
 }
 
+// Calculator graph functions a question pre-fills (Graph mode, like given rows):
+// graphFns [{ expr, label? }] (1–3; the graph grammar: x, sheet labels such as _a, constants and
+// functions; expr ≤ 200 chars; label plain text ≤ 40 chars) and graphView { xmin, xmax, ymin, ymax }
+// (finite, min < max, spans 1e-6 to 1e9; only with graphFns). Bad entries are dropped with one
+// console.warn per generator module. Never stored in attempts (the user's graph is, as `graph`).
+export const GRAPH_FNS_MAX = 3;
+const GRAPH_LABEL_MAX = 40;
+const graphWarned = new WeakSet();
+
+export function sanitizeGraphFns(rawFns, rawView, warnKey) {
+  if ((rawFns === undefined || rawFns === null) && (rawView === undefined || rawView === null)) return {};
+  const fns = [];
+  let bad = !Array.isArray(rawFns);
+  for (const g of Array.isArray(rawFns) ? rawFns : []) {
+    const expr = g && typeof g === 'object' ? g.expr : undefined;
+    let ok = fns.length < GRAPH_FNS_MAX && typeof expr === 'string' && expr.trim() !== '' && expr.length <= CALC_MAX_EXPR;
+    if (ok) { try { parseCalc(expr, { vars: ['x'] }); } catch { ok = false; } }
+    if (!ok) { bad = true; continue; }
+    const label = g.label;
+    if (label !== undefined && (typeof label !== 'string' || !label.trim() || label.length > GRAPH_LABEL_MAX)) bad = true;
+    const cleanLabel = typeof label === 'string' && label.trim() && label.length <= GRAPH_LABEL_MAX ? label.trim() : '';
+    fns.push({ expr, ...(cleanLabel ? { label: cleanLabel } : {}) });
+  }
+  let view;
+  if (rawView !== undefined && rawView !== null) {
+    if (fns.length && validView(rawView)) {
+      const { xmin, xmax, ymin, ymax } = rawView;
+      view = clampView({ xmin, xmax, ymin, ymax });
+    } else bad = true;
+  }
+  if (bad && warnKey && typeof warnKey === 'object' && !graphWarned.has(warnKey)) {
+    graphWarned.add(warnKey);
+    console.warn('StudyBlock: a generator returned invalid "graphFns" / "graphView" entries; they were dropped', rawFns, rawView);
+  }
+  return fns.length ? { graphFns: fns, ...(view ? { graphView: view } : {}) } : {};
+}
+
 // Guided-mode hints: [markdown] shown one at a time; they lead toward the method without stating
 // the final answer. Strings only, trimmed, non-empty, each ≤ HINT_MAX_LEN chars, at most HINTS_MAX.
 // Bad entries are dropped (one console.warn per generator module). Never stored in attempts.
@@ -736,10 +775,11 @@ export function tilesReachable(tiles, joiner, answer, useAll) {
 
 function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
+  const graph = sanitizeGraphFns(q?.graphFns, q?.graphView, warnKey);
   const hints = sanitizeHints(q?.hints, warnKey);
   // `lang` only on questions from language-aware modules.
   const extra = {
-    ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
+    ...(given ? { given } : {}), ...graph, ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
     // `runnable`: the module's run(question, answer) can show the answer's output (Run button).
     ...(q?.runnable === true ? { runnable: true } : {}),
     // `gradeByOutput`: a text answer that fails the text check is offered to the module's grade().

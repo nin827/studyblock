@@ -205,6 +205,14 @@ export async function render(root, params, ctx) {
       ${domains.length ? `<div class="domain-grid">${cards}</div>` : '<div class="card"><p class="muted">No modules installed yet.</p></div>'}
     </section>
     ${banner}
+    <a class="tool-card" href="#/calc">
+      <span class="icon-tile">${icon('calculator')}</span>
+      <span class="tool-card-text">
+        <span class="tool-card-title">Calculator</span>
+        <span class="tool-card-sub">Named values and a graph plotter, outside quizzes</span>
+      </span>
+      <span class="tool-card-go" aria-hidden="true">${icon('chevron-right')}</span>
+    </a>
     ${recent ? `<section aria-labelledby="recent-h">
       <div class="section-head">
         <h2 id="recent-h" class="section-title">Recent</h2>

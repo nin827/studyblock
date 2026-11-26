@@ -1,6 +1,6 @@
 # 009 — Graphing calculator choices
 
-**Status:** resolved (2026-11-26): to build
+**Status:** resolved (2026-11-26): built
 **Raised:** 2026-11-24
 
 The calculator panel now has a **Sheet | Graph** switch. Graph plots up to six functions of `x` (`y1 … y6`), which can use your sheet rows such as `_a`.

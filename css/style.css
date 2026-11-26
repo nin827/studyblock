@@ -1665,3 +1665,58 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
 .grade-note .icon { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; color: var(--accent-ink); }
 .mix-mode-row .seg-mode { flex: 0 1 auto; }
 .mix-options .mode-note[hidden] { display: none; }
+
+/* ================= standalone Calculator page (#/calc, js/views/calcpage.js) ================= */
+
+/* Desktop nav only: the phone tab bar keeps its four tabs (Home has a Calculator card instead). */
+.nav-desktop { display: none !important; }
+@media (min-width: 640px) {
+  .nav-desktop { display: flex !important; }
+}
+/* Between 640 and 899px the Calculator link is icon-only (its label stays for screen readers). */
+@media (min-width: 640px) and (max-width: 899px) {
+  .nav-link[data-nav="calc"] { min-width: 44px; padding: 0 13px; justify-content: center; }
+  .nav-link[data-nav="calc"] span {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+}
+
+.tool-card {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 14px 16px;
+  text-decoration: none; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--r-card); box-shadow: var(--shadow-card);
+}
+.tool-card .icon-tile { background: var(--accent-soft); color: var(--accent-ink); }
+.tool-card-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tool-card-title { font-weight: 700; }
+.tool-card-sub { font-size: 14px; color: var(--muted); }
+.tool-card-go { color: var(--muted); display: inline-flex; }
+@media (hover: hover) { .tool-card:hover { border-color: var(--muted); } }
+
+.calc-page { max-width: 760px; margin: 0 auto; }
+.calc-page .page-head p { margin: 6px 0 0; }
+.calc-page-card { display: flex; flex-direction: column; gap: 14px; margin-bottom: 0; }
+.calc-page-card .btn-small { min-height: 44px; }
+.calc-page-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.calc-page-note { font-size: 13px; }
+
+/* No answer field to fill on the standalone page. */
+.calc.no-use .calc-use { display: none; }
+
+/* "given" badge on the Graph mode button, and given functions (dashed, like given rows). */
+.calc-mode-badge {
+  font-size: 11px; font-weight: 650; letter-spacing: .02em; padding: 1px 7px; border-radius: var(--r-pill);
+  background: var(--accent-soft); color: var(--accent-ink);
+}
+.calc-mode-badge[hidden] { display: none; }
+.graph-fn.is-given { border-style: dashed; border-left-style: solid; }
+.graph-given { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14em; }
+
+/* "Your graph" in the quiz review and History: a static plot plus the function list. */
+sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var(--line); border-radius: var(--r-control); overflow: hidden; background: var(--surface); }
+.static-graph-canvas { display: block; width: 100%; height: 200px; }
+.graph-list li { align-items: center; }
+.graph-list .graph-swatch { flex-shrink: 0; }
+.graph-list li.is-hidden .graph-swatch { background: transparent; box-shadow: inset 0 0 0 2px var(--fn); }
+.work-note { color: var(--muted); font-size: 13px; }
+.work-window { margin: 2px 0 0; font-size: 13px; color: var(--muted); }

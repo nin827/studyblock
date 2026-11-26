@@ -48,6 +48,7 @@ js/lib/music.js         note/interval/scale/chord helpers (build + independent c
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
+js/views/calcpage.js    standalone #/calc page; js/views/staticgraph.js = <sb-graph> static plot for reviews
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
 modules/<id>/intro.md   optional markdown shown on the module page
@@ -63,7 +64,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator
 
 ## Registry — `modules/index.json`
 
@@ -419,7 +420,10 @@ A two-button switch (`aria-pressed`) at the top of the calculator picks the mode
   - Keys on the focusable canvas: arrows pan, + / − zoom, 0 resets, and Shift+←/→ moves the trace.
   - Tapping traces the nearest curve; the readout is aria-live polite.
 - **Points:** for one function, within the visible x range: zeros, minima, maxima and intersections with the other visible functions, up to 10 of each. They are drawn as rings on the plot. **Add x / Add y** writes the value to the sheet (12 significant digits, in a trailing blank row or the next free label; "sheet is full" at 30 rows).
-- **Storage:** the optional `mode` and `graph: { fns: [{ slot, expr, hidden }], view }` fields sit in the same `studyblock:calc` record. Older records still load. `work` stays sheet-only.
+- **Storage:** the optional `mode` and `graph: { fns: [{ slot, expr, hidden }], view }` fields sit in the same `studyblock:calc` record. Older records still load.
+- **Saved with answers (ticket 009):** when an answer is checked and the graph has a non-empty function (given ones count), the question stores `graph: { fns: [{slot, expr, hidden}], view }` next to `work`. Review and History show a collapsible "Your graph": a static `<sb-graph>` plot redrawn from the functions (`_a` uses the saved working), plus the function list. On import it's optional and validated: ≤ 6 functions, unique slots 1–6, each expression 1–200 chars, and a bad view falls back to the default.
+- **Given graph functions:** a generator question may carry `graphFns: [{ expr, label? }]` (1–3, graph grammar) and an optional `graphView`. The engine validates them with calc's parser (invalid ones are dropped, one warning per module), and they are never stored in attempts. They fill the lowest free slots with a "given" tag, and are replaced on the next question unless edited. The question's view applies while it's shown. No module uses them yet.
+- **Standalone page** `#/calc`: the same Sheet | Graph panel full-page, without Use, saved in localStorage `studyblock:calcPage` with Clear all. It's reached from the desktop nav and a Home card; the phone tab bar stays at 4 tabs.
 - **Phone:** in the bottom sheet, the plot height is min(75% of width, 30% of the viewport), at least 150px.
 
 **Lifetime**

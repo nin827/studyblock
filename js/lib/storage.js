@@ -120,6 +120,38 @@ export function cleanWork(work) {
   return out.length ? out : null;
 }
 
+// Calculator graph saved on a question with its working: { fns: [{ slot, expr, hidden }], view }.
+// At most 6 functions (slots 1–6, unique), non-empty expressions of at most 200 characters. The view
+// must be four finite numbers with min < max (spans 1e-6 to 1e9); otherwise the default window is used.
+// Returns null when no valid function is left. Data only (expressions are parsed, never executed).
+export const GRAPH_MAX_FNS = 6;
+const GRAPH_EXPR_MAX = 200;
+const GRAPH_DEFAULT_VIEW = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 };
+
+function cleanGraphView(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { xmin, xmax, ymin, ymax } = v;
+  if (![xmin, xmax, ymin, ymax].every(isNum)) return null;
+  const okAxis = (a, b) => a < b && b - a >= 1e-6 * 0.999 && b - a <= 1e9 * 1.001 && Math.abs(a) <= 2e9 && Math.abs(b) <= 2e9;
+  return okAxis(xmin, xmax) && okAxis(ymin, ymax) ? { xmin, xmax, ymin, ymax } : null;
+}
+
+export function cleanGraph(graph) {
+  if (!graph || typeof graph !== 'object' || Array.isArray(graph) || !Array.isArray(graph.fns)) return null;
+  const fns = [];
+  const used = new Set();
+  for (const f of graph.fns.slice(0, GRAPH_MAX_FNS)) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) continue;
+    if (!isStr(f.expr) || !f.expr.trim() || f.expr.length > GRAPH_EXPR_MAX) continue;
+    if (!Number.isInteger(f.slot) || f.slot < 1 || f.slot > GRAPH_MAX_FNS || used.has(f.slot)) continue;
+    used.add(f.slot);
+    fns.push({ slot: f.slot, expr: f.expr, hidden: f.hidden === true });
+  }
+  if (!fns.length) return null;
+  fns.sort((a, b) => a.slot - b.slot);
+  return { fns, view: cleanGraphView(graph.view) || { ...GRAPH_DEFAULT_VIEW } };
+}
+
 // Multi-part questions store `answer` / `userAnswer` as { [partId]: value } and
 // `parts: [{ id, label, correct }]`. All optional on import; validated and capped here. Data only.
 export const PARTS_MAX = 4;
@@ -692,6 +724,8 @@ function importObject(incoming, mode) {
       ...(isLang(q.lang) ? { lang: q.lang } : {}),
       // Optional calculator working ("Your working"); validated and capped.
       ...(cleanWork(q.work) ? { work: cleanWork(q.work) } : {}),
+      // Optional calculator graph saved with the working; validated and capped.
+      ...(cleanGraph(q.graph) ? { graph: cleanGraph(q.graph) } : {}),
     })),
   }));
   // Optional mix fields: invalid presets are dropped individually; an invalid draft is ignored.

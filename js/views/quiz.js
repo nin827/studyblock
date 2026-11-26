@@ -1,10 +1,11 @@
 import { loadModule, loadGuide, domainOf, checkAnswer, gradeAnswer, runAnswer, serialiseTree, SLOT_DEPTH_MAX, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
 import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
-import { saveAttempt, setCookie, getCookie, cleanWork, creditOf, roundScore } from '../lib/storage.js';
+import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, roundScore } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel } from './ui.js';
 import { mountCalculator } from './calculator.js';
+import { compileGraph } from './staticgraph.js'; // also defines <sb-graph> (static plots in the review)
 import { isLang, langTitle } from '../lib/languages.js';
 import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates.js';
 
@@ -1341,6 +1342,8 @@ export async function runQuiz(root, ctx, opts) {
     if (guided) bindGuided(q);
     // Given values: the previous question's untouched pre-filled rows go; this one's (if any) come in.
     calc?.setGiven(calcAllowed(q) && Array.isArray(q.given) ? q.given : []);
+    // Given graph functions (after the rows, so references like _a resolve): same rule as given rows.
+    calc?.setGivenGraph(calcAllowed(q) && Array.isArray(q.graphFns) ? q.graphFns : [], calcAllowed(q) ? q.graphView ?? null : null);
     applyCalc(q);
     icons();
     if (isMulti(q)) { bindMulti(q); return; }
@@ -1634,6 +1637,8 @@ export async function runQuiz(root, ctx, opts) {
     const partResults = multi ? g.parts : null;
     // Snapshot of the calculator sheet at check time ("Your working"), when it was shown.
     const work = calcAllowed(q) && calc ? cleanWork(calc.snapshot()) : null;
+    // ...and the graph's functions, when at least one is non-empty ("Your graph").
+    const graph = calcAllowed(q) && calc ? cleanGraph(calc.graphSnapshot()) : null;
     const userAnswer = multi
       ? Object.fromEntries((q.parts || []).map(p => [p.id, String(value[p.id] ?? '')]))
       : String(value ?? '');
@@ -1641,6 +1646,7 @@ export async function runQuiz(root, ctx, opts) {
       q, userAnswer, correct, credit,
       ...(partResults ? { parts: partResults } : {}),
       ...(work ? { work } : {}),
+      ...(graph ? { graph } : {}),
       ...(g.mode === 'blocks' ? { mode: 'blocks', multiplier: g.multiplier } : {}),
       ...(g.fuzzy ? { fuzzy: g.fuzzy } : {}),
       ...(g.gradedBy ? { gradedBy: g.gradedBy } : {}),
@@ -1899,6 +1905,7 @@ export function storedQuestion(r, withOrigin) {
     // Code language (language-aware modules), stored on every quiz kind so the seed regenerates it.
     ...(isLang(r.q.lang) ? { lang: r.q.lang } : {}),
     ...(r.work && r.work.length ? { work: r.work.slice(0, 30) } : {}),
+    ...(cleanGraph(r.graph) ? { graph: cleanGraph(r.graph) } : {}),
   };
 }
 
@@ -2019,6 +2026,7 @@ export function reviewItem(r, showTag = false) {
       ${answers}
       ${q.explanation ? `<details><summary>Explanation</summary><div class="prose">${renderMarkdown(q.explanation)}</div></details>` : ''}
       ${workHtml(r.work ?? q.work)}
+      ${graphHtml(r.graph ?? q.graph, r.work ?? q.work)}
     </div>
   </li>`;
 }
@@ -2034,6 +2042,27 @@ function workHtml(work) {
   return `<details class="work"><summary>${icon('calculator')} Your working</summary>
     <ol class="work-list">${rows.map(r =>
       `<li><code class="work-label">${esc(r.label)}</code><span class="work-eq">=</span><code class="work-expr">${esc(r.expr)}</code><span class="work-arrow" aria-hidden="true">→</span>${val(r.value)}</li>`).join('')}</ol>
+  </details>`;
+}
+
+// "Your graph": the calculator's functions saved when the answer was checked, re-plotted by
+// <sb-graph> (js/views/staticgraph.js) from the stored functions; references like _a use the saved
+// working's values. Escaped throughout (the JSON attributes are escaped and re-validated on read).
+function graphHtml(graph, work) {
+  const g = cleanGraph(graph);
+  if (!g) return '';
+  const compiled = compileGraph(g, work);
+  const values = cleanWork(work) || [];
+  const fmtN = v => String(Number(v.toPrecision(6)));
+  const v = g.view;
+  const items = compiled.map(c => `<li class="graph-c${c.slot}${c.hidden ? ' is-hidden' : ''}">
+      <span class="graph-swatch" aria-hidden="true"></span><code class="work-label">y${c.slot}</code><span class="work-eq">=</span><code class="work-expr">${esc(c.expr)}</code>${
+      c.hidden ? '<span class="work-note">(hidden)</span>' : ''}${
+      c.error ? `<span class="work-err">${icon('circle-alert')}${esc(c.error)}</span>` : ''}</li>`).join('');
+  return `<details class="work work-graph"><summary>${icon('chart-spline')} Your graph</summary>
+    <sb-graph class="static-graph" data-graph="${esc(JSON.stringify(g))}" data-work="${esc(JSON.stringify(values))}"></sb-graph>
+    <ol class="work-list graph-list">${items}</ol>
+    <p class="work-window">Window: x ${esc(fmtN(v.xmin))} to ${esc(fmtN(v.xmax))}, y ${esc(fmtN(v.ymin))} to ${esc(fmtN(v.ymax))}</p>
   </details>`;
 }
 
