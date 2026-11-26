@@ -31,10 +31,8 @@ const nearTie = (x, k) => {
   return Math.abs(v - Math.floor(v) - 0.5) < 1e-6;
 };
 const isExact = (x, k) => Math.abs(x * 10 ** k - Math.round(x * 10 ** k)) < 1e-6;
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+import { fmtNum } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 const approx = (x, k = 4) => (isExact(x, 4) ? `= ${num(x)}` : `≈ ${x.toFixed(k)}`);
 const cash2 = (d) => `$${roundK(d, 2).toFixed(2)}`;
 const cash = (d) => (isExact(d, 0) ? `$${roundK(d, 0)}` : cash2(d));

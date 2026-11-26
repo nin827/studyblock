@@ -6,25 +6,13 @@
 
 const G = 9.8; // N/kg, stated in every question that uses it
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Rounding half away from zero, answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
+import { fmtAnswer as fmtAns, fmtNum, round2 } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 // Display values: strip binary noise (e.g. 3.6 * 7 = 25.200000000000003).
 const fix = (n) => Math.round(n * 1e6) / 1e6;
 // Whole-number answers: snap tiny binary error to the integer.
 const clean = (n) => (Math.abs(n - Math.round(n)) < 1e-7 ? Math.round(n) : n);
-
-// Answer/choice formatter: whole numbers as-is, rounded answers with exactly 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-// Given values and intermediate steps: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
 
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 
@@ -1180,8 +1168,6 @@ const PUSHED = ["trolley", "sledge", "boat", "cart", "go-kart", "canoe"];
 const BALLS = [
   ["tennis ball", 58], ["football", 430], ["cricket ball", 160], ["golf ball", 46], ["hockey puck", 170], ["basketball", 620],
 ];
-
-const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 
 function genMomentum(d, rng) {
   const rounded = d === "hard";

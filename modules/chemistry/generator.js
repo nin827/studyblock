@@ -11,12 +11,8 @@ import {
 // ---------------------------------------------------------------------------------------------
 // Number helpers
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-function roundTo(n, dp) {
-  const f = 10 ** dp;
-  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
-  return Object.is(r, -0) ? 0 : r;
-}
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...): mathutil.
+import { roundTo } from "../../js/lib/mathutil.js";
 
 // True when n sits within 2% of a unit of a rounding tie at dp decimals (…5 boundary).
 function nearTie(n, dp) {

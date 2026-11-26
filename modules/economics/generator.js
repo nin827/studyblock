@@ -51,18 +51,8 @@ function segOk(q, answer, isRight, want, build = true) {
 }
 
 
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
-
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+import { fmtAnswer as fmtAns, fmtNum, round2 } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 
 // Dollar amounts: "$240", "$12.50", "-$3.75".
 function cash(n) {

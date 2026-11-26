@@ -11,19 +11,15 @@
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Rounding half away from zero and intermediate numbers (up to 4 dp, never "-0") come from mathutil.
+import { fmtNum, round2 } from "../../js/lib/mathutil.js";
 
 function fmt2(n) {
   const r = round2(n);
   return (Object.is(r, -0) ? 0 : r).toFixed(2);
 }
 
-// Intermediate values: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+const num = (n) => fmtNum(n);
 
 // True when n sits (almost) exactly on a 2-decimal rounding boundary, where float noise could flip it.
 const nearHalf = (n) => Math.abs(Math.abs(n * 100) % 1 - 0.5) < 1e-6;

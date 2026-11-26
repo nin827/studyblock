@@ -2,21 +2,9 @@
 // Easy answers are whole numbers; medium/hard answers are rounded to 2 decimals (tolerance 0.005).
 // Percent answers are typed as plain numbers, without the % sign.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
-
-// Answer/choice formatter: whole numbers as-is, rounded answers with exactly 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-// Given values and intermediate steps: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+// Rounding half away from zero, answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
+import { fmtAnswer as fmtAns, fmtNum, round2 } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 
 // Dollar amounts: "$240" for whole dollars, "$12.50" otherwise.
 function cash(n) {

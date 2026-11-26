@@ -7,21 +7,9 @@
 // Explanations list every step as a labelled calculator row, e.g. `_margin = _price - _unit_cost` → 3.30.
 // Money is handled in whole cents where it matters, so ceil() never trips over binary error.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
-
-// Answer/choice formatter: whole numbers as-is, rounded answers with exactly 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-// Intermediate values: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+// Rounding half away from zero, answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
+import { fmtAnswer as fmtAns, fmtNum, gcd, round2 } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise (no $, no commas).
 function mv(n) {
@@ -42,7 +30,6 @@ const PCT_NOTE = " Answer as a number without the % sign.";
 const DP2 = " Round to 2 decimal places.";
 const RATIO_NOTE = " If the ratio is x:1, answer with x.";
 
-const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
 const ceilDiv = (a, b) => Math.floor((a + b - 1) / b); // positive integers only
 
 // True when fixed/margin (in cents) is safely away from a whole number, so ceil() is not

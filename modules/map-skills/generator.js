@@ -17,10 +17,8 @@ function round(n, dp = 0) {
   return Object.is(r, -0) ? 0 : r;
 }
 const fix = (n, dp) => round(n, dp).toFixed(dp);
-function num(n) {
-  const r = Math.round(n * 1e6) / 1e6;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+import { fmtNum } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n, 6);
 // Thousands grouped with non-breaking spaces (prose only): 25 000.
 function big(n) {
   const [i, d] = num(n).split(".");

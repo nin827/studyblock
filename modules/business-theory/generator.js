@@ -23,7 +23,7 @@ const keyOf = (c) => segsOf(c).join(SEP);
 const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const cash = (n) => (Number.isInteger(n) ? fmt(n) : Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const money = (n) => (n < 0 ? `−$${cash(-n)}` : `$${cash(n)}`);
-const round2 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9) / 100;
+import { round2 } from "../../js/lib/mathutil.js";
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const fill = (t, vars) => t.replace(/\{(\w+)\}/g, (_, k) => vars[k]);
 

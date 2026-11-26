@@ -48,22 +48,14 @@ function segOk(q, answer, isRight, want, build = true) {
 // ---------- number helpers ----------
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { fmtAnswer as fmtAns, fmtNum, round2 } from "../../js/lib/mathutil.js";
 const fix0 = (n) => (Object.is(n, -0) ? 0 : n);
 
 // Shortest display form (up to 4 decimals); never "-0".
-function num(n) {
-  return String(fix0(Math.round(n * 10000) / 10000));
-}
+const num = (n) => fmtNum(n);
 // Negative numbers in brackets inside a formula.
 const par = (n) => (n < 0 ? `(${num(n)})` : num(n));
 const vec = (x, y) => `(${num(x)}, ${num(y)})`;
-
-// Answer text: whole numbers as-is, rounded answers with exactly 2 decimals.
-function fmtAns(n, rounded) {
-  const r = fix0(round2(n));
-  return rounded ? r.toFixed(2) : String(r);
-}
 
 // Final value line: "= **5**" or "≈ 5.3852, which rounds to **5.39**".
 function res(exact, rounded, unit = "") {

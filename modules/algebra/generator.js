@@ -1,7 +1,7 @@
 // Algebra generator. Uses only the seeded rng passed in by the engine.
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { gcd, round2 } from "../../js/lib/mathutil.js";
 
 // Number -> display string; never "-0".
 function fmtNum(n) {
@@ -234,12 +234,6 @@ function genQuadratic(difficulty, rng) {
 // Every template draws all of its rng values first, then builds text. Hints use only values
 // already drawn (no rng), and never state a final answer.
 
-const gcd = (a, b) => {
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) [a, b] = [b, a % b];
-  return a;
-};
 const isSquare = (n) => Number.isInteger(Math.sqrt(n));
 // "3x + 5", "-x", "2x"
 const lin = (m, a, v = "x") => `${m === 1 ? v : m === -1 ? `-${v}` : `${m}${v}`}${signedTerm(a)}`;

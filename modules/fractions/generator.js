@@ -4,15 +4,8 @@
 // whitespace collapsed), so every prompt spells out the exact format to type.
 // Decimal and percent answers are numbers; rounded ones use 2 decimals (tolerance 0.005).
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
-
-// Number answer/choice formatter: exact values in shortest form, rounded ones with 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
+// Rounding half away from zero and the answer formatter (exact values in shortest form, rounded ones with 2 decimals) come from mathutil.
+import { fmtAnswer as fmtAns, round2 } from "../../js/lib/mathutil.js";
 
 function gcd(a, b) {
   a = Math.abs(a);

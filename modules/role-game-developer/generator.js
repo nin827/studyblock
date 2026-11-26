@@ -11,11 +11,7 @@
 
 // ---------- helpers ----------
 
-function roundTo(n, d) {
-  const f = 10 ** d;
-  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
-  return Object.is(r, -0) ? 0 : r;
-}
+import { roundTo } from "../../js/lib/mathutil.js";
 function nearHalf(n, d, margin = 0.05) {
   const x = Math.abs(n) * 10 ** d;
   return Math.abs(x - Math.floor(x) - 0.5) < margin;

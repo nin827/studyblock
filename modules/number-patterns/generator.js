@@ -6,6 +6,8 @@
 // every rule that fits to agree, and checks the answer against that. Generators redraw until their
 // own verify passes, so no puzzle shown has two reasonable answers within those families.
 
+import { lcm } from "../../js/lib/mathutil.js";
+
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const ORDN = (n) => {
   const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd", "th", "th", "th", "th", "th", "th"][n % 10];
@@ -214,7 +216,7 @@ function genNumbers(difficulty, rng) {
 // Letter patterns and codes
 // ======================================================================
 
-const ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+import { ALPHABET as ABC } from "../../js/lib/ciphers.js";
 const L = (i) => ABC[((i % 26) + 26) % 26];
 const P = (ch) => ABC.indexOf(ch);
 const WRAP = "The alphabet wraps around: after Z comes A.";
@@ -520,7 +522,6 @@ function genShapes(difficulty, rng) {
     if (qf === 4 && fillCyc.join("") === "0101") fillCyc = [0, 0, 1, 1];
     const n = 2 * Math.max(p, qf) + rng.int(0, 2);
     const items = [...Array(n)].map((_, i) => itemAt(shapeCyc, fillCyc, i));
-    const lcm = (a, b) => (a * b) / (function g(x, y) { return y ? g(y, x % y) : x; })(a, b);
     const both = `The shapes repeat every ${p} items (${shapeCyc.map((s) => SHAPES[s][0]).join(" ")}), and filled/hollow repeats every ${qf} items (${fillCyc.map((f) => (f ? "hollow" : "filled")).join(", ")}).`;
     const pickMode = difficulty === "hard" ? rng.pick(["next", "far"]) : rng.pick(["far", "far", "count", "countShape"]);
     if (pickMode === "next" || pickMode === "far") {

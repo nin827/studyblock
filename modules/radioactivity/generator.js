@@ -7,29 +7,18 @@ import { ELEMENTS, symbolOf } from "../../js/lib/chem.js";
 // standard textbook values (stated in each question). Easy/medium answers are whole numbers or simplest
 // fractions like 1/8; hard answers are rounded to 2 decimal places (tolerance 0.005).
 
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { fmtAnswer as fmtAns, fmtNum, isHalfStep, round2 } from "../../js/lib/mathutil.js";
 const fix = (n) => Math.round(n * 1e6) / 1e6;
 const clean = (n) => (Math.abs(n - Math.round(n)) < 1e-7 ? Math.round(n) : n);
 const isInt = (n) => Math.abs(n - Math.round(n)) < 1e-7;
 
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+const num = (n) => fmtNum(n);
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
 const DP = " Round to 2 decimal places.";
 const THEN = " Then round to 2 decimal places.";
 
 class Retry extends Error {}
-const isTie = (x) => {
-  const f = Math.abs(x) * 100;
-  return Math.abs(f - Math.floor(f) - 0.5) < 1e-6;
-};
+const isTie = (x) => isHalfStep(x, 2, 1e-6);
 
 // ---------------------------------------------------------------------------------------------
 // Elements and notation

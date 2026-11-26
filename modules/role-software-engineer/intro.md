@@ -2,7 +2,7 @@
 
 **Expert+** questions for the Software Engineer role. Each one is a single workplace scenario with three or four parts, and every part uses a different skill: SQL, algorithms and Big-O, data sizes, networking, floating point and money, or dates. A later part often builds on an earlier answer, so work through them in order.
 
-Code is **Python 3** throughout. The calculator starts with the scenario's numbers filled in.
+Code is shown in the language you pick in Settings (Python, C#, C++, GDScript or Rust); the maths and answers are the same in each. Loop code is shown with line numbers, and questions refer to lines by number. The calculator starts with the scenario's numbers filled in.
 
 ## Scenarios
 

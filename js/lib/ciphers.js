@@ -9,6 +9,8 @@
 //   gcd, lcm, gcdAll, lcmAll, modPos, modInverse (null when gcd(a, m) != 1)
 // Independent checks (verify) stay in each module.
 
+import { gcd, lcm, gcdAll, lcmAll } from './mathutil.js';
+
 export const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 // The 12 multipliers a with gcd(a, 26) = 1 (valid affine keys), in order.
 export const UNITS26 = Object.freeze([1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25]);
@@ -25,15 +27,8 @@ export const keyStream = (w, key) => [...w].map((_, i) => key[i % key.length]).j
 // E(x) = (a*x + b) mod 26 on every letter.
 export const affine = (w, a, b) => [...w].map(c => numberLetter(a * letterNumber(c) + b)).join('');
 
-export function gcd(a, b) {
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) [a, b] = [b, a % b];
-  return a;
-}
-export const lcm = (a, b) => (a / gcd(a, b)) * b;
-export const gcdAll = arr => arr.reduce((g, x) => gcd(g, x));
-export const lcmAll = arr => arr.reduce((l, x) => lcm(l, x));
+// gcd/lcm live in mathutil.js (one source of truth); re-exported so existing imports keep working.
+export { gcd, lcm, gcdAll, lcmAll };
 
 // Inverse of a mod m by the extended Euclidean algorithm; null when it does not exist.
 export function modInverse(a, m) {

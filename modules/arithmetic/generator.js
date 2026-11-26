@@ -1,7 +1,7 @@
 // Arithmetic generator. Uses only the seeded rng passed in by the engine.
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { round2 } from "../../js/lib/mathutil.js";
 
 const RANGES = {
   addition: { easy: [1, 20], medium: [10, 999], hard: [1000, 99999] },

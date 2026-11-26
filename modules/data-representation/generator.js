@@ -473,7 +473,7 @@ const LOW = "abcdefghijklmnopqrstuvwxyz";
 // Generation-side ASCII table: position in the alphabet + start code.
 const ascii = (ch) => (UP.includes(ch) ? 65 + UP.indexOf(ch) : LOW.includes(ch) ? 97 + LOW.indexOf(ch) : "0123456789".includes(ch) ? 48 + "0123456789".indexOf(ch) : ch === " " ? 32 : NaN);
 const fromAscii = (n) => (n >= 65 && n <= 90 ? UP[n - 65] : n >= 97 && n <= 122 ? LOW[n - 97] : n >= 48 && n <= 57 ? String(n - 48) : n === 32 ? " " : null);
-const bin8 = (n) => n.toString(2).padStart(8, "0");
+import { bin8 } from "../../js/lib/mathutil.js";
 
 const WORDS = ["APPLE", "BREAD", "CHAIR", "HONEY", "RIVER", "STORM", "ZEBRA", "PLANT", "GRAPE", "HOUSE", "TORCH", "CANDLE", "PUZZLE", "BASKET", "FLOWER", "ROCKET", "GARDEN", "PLANET", "WINDOW", "BRIDGE", "COOKIE", "PARROT", "VIOLIN", "TURTLE", "PENCIL", "JUMP", "FROG", "WAVE", "GOLD", "LAMP", "SNOW", "RAIN", "BELL", "NEST", "WOLF", "DUCK",
   "CAT", "SUN", "MAP", "KITE", "MOON", "STAR", "BOOK", "FISH", "TREE", "CAKE", "HELLO", "PIZZA", "ROBOT", "TIGER", "MUSIC", "OCEAN", "CLOUD", "LEMON", "TRAIN", "PIXEL", "BYTE", "CODE", "DATA", "GAME", "CHIP", "DISK", "LOOP", "MOUSE", "SCREEN", "LAPTOP"];

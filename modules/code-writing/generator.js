@@ -17,6 +17,7 @@
 import { S, E, program, render, lineAt, renderExpr, renderStmtLine, fence, ident, run, langNotes, rangeText,
   blocksFor, serialiseBlocks, spacingVariants, textKey, decoyTokens } from '../../js/lib/codelang.js';
 import { LANG_IDS } from '../../js/lib/languages.js';
+import { lcm } from '../../js/lib/mathutil.js';
 
 const BLANK = '___';
 const bl = () => E.blank(BLANK);
@@ -1249,13 +1250,12 @@ MAKE.condFizz = (p, X) => {
     S.forRange(p.i, 1, p.N, 1, [S.if(E.bin('==', E.call(p.fn, [V(p.i)]), E.str(p.wa)), [S.augAssign(p.c, '+', 1)])]),
     S.print(V(p.c))]);
 };
-const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 function condFizz(rng, lang) {
   const [A, B] = rng.pick([[4, 6], [6, 8], [6, 9], [4, 10], [6, 10], [8, 12], [9, 12], [10, 15], [6, 15], [4, 14], [3, 5], [2, 7], [3, 4], [5, 6]]);
   const [wa, wb, both] = rng.pick([['fizz', 'buzz', 'fizzbuzz'], ['red', 'blue', 'purple'], ['ping', 'pong', 'pingpong'], ['tick', 'tock', 'ticktock'], ['hot', 'cold', 'warm']]);
   const fn = rng.pick(['label_for', 'tag_of', 'sort_out', 'classify']), par = rng.pick(['n', 'num', 'k']);
   const c = rng.pick(['count', 'tally', 'hits']), i = rng.pick(['i', 'x', 'step']);
-  const L = A * B / gcd(A, B), N = rng.int(Math.max(20, L + 2), 60);
+  const L = lcm(A, B), N = rng.int(Math.max(20, L + 2), 60);
   const none = 'plain';
   const label = n => (n % A === 0 && n % B === 0 ? both : n % A === 0 ? wa : n % B === 0 ? wb : none);
   let other = 1;

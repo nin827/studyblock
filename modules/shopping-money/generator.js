@@ -10,10 +10,8 @@ const nearTie = (x, k) => {
   const v = Math.abs(x) * 10 ** k;
   return Math.abs(v - Math.floor(v) - 0.5) < 1e-6;
 };
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+import { fmtNum } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 // "$4.20", "$12" (whole dollars), from dollars.
 function cash(d) {
   const r = roundK(d, 2);

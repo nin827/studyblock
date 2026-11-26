@@ -141,7 +141,7 @@ function finishNum(base, correct, cands, rng, pChoice = 0.3, note = WHOLE, fmt =
   return { ...base, prompt: base.prompt + note, answer: correct, answerType: "number", tolerance: 0, choices: undefined };
 }
 
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { round2 } from "../../js/lib/mathutil.js";
 const fmt2 = (n) => round2(n).toFixed(2);
 const nearHalf = (n) => Math.abs(Math.abs(n * 100) % 1 - 0.5) < 1e-6;
 

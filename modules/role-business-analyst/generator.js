@@ -20,8 +20,9 @@ import { execQuery } from "../../js/lib/sql.js";
 const fmt = (n) => Number(n).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const money = (n) => (n < 0 ? `−$${fmt(-n)}` : `$${fmt(n)}`);
 const kmoney = (n) => `$${fmt(n)}k`;
+import { round2 } from "../../js/lib/mathutil.js";
+// verify() uses its own round1, so it does not depend on the library's.
 const round1 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 10 + 1e-9) / 10;
-const round2 = (n) => Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9) / 100;
 const signed1 = (n) => (n > 0 ? `+${n.toFixed(1)}%` : n < 0 ? `−${(-n).toFixed(1)}%` : "0.0%");
 // x is not within 0.0001 of a rounding half-step at `dp` decimal places.
 const safeAt = (x, dp) => Math.abs((Math.abs(x * 10 ** dp) % 1) - 0.5) > 1e-4;

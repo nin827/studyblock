@@ -20,14 +20,14 @@ Example: 3 of 8 sample rows on 800,000 rows → 300,000 rows × 200 bytes × 8 =
 
 1. **SQL:** keep the rows for the account with kind 'card' and add the amounts. Add cents as whole numbers to avoid rounding drift.
 2. **Fees:** work out each payment's fee on its own (amount × rate ÷ 100, rounded to the cent, plus any fixed fee), then add them. Rounding once on the total can differ by a cent or more.
-3. **Floats:** most cent values can't be stored exactly in binary, so a float total can print a hair above or below the true value. `int()` cuts towards zero: a total a hair *below* loses a whole cent, a hair *above* survives.
-4. **Fix:** a correct line rounds to the nearest cent (per amount, or on the total) instead of truncating, and works in cents. Check each option against the amounts: `int(total) * 100` loses the cents, `round(total)` gives dollars, not cents.
+3. **Floats:** most cent values can't be stored exactly in binary, so a float total can print a hair above or below the true value. The truncating cast (`int()`, `(int)` or `as i64`, depending on the language) cuts towards zero: a total a hair *below* loses a whole cent, a hair *above* survives.
+4. **Fix:** a correct line rounds to the nearest cent (per amount, or on the total) instead of truncating, and works in cents. Check each option against the amounts: truncating `total` before multiplying by 100 loses the cents, and rounding `total` itself gives dollars, not cents.
 
-**Watch out:** Python 3's `round(x)` with one argument returns a whole number.
+**Watch out:** rounding a float with one argument (`round(x)`, `Math.Round(x)`, `std::round(x)`, `roundi(x)`, `x.round()`) gives a whole number, so multiply by 100 first to round to cents.
 
 ## Profile a hot loop
 
-1. **Trace:** make a small table of i against how many times the hot line runs, then add up. `range(i + 1, n)` runs n − 1 − i times; a `while j < n: j *= 2` loop from 1 runs ⌈log₂ n⌉ times.
+1. **Trace:** make a small table of i against how many times the numbered line the question names runs, then add up. A loop from i + 1 up to n (`range(i + 1, n)` in Python) runs n − 1 − i times; a `while j < n` loop that doubles `j` (`j *= 2`) from 1 runs ⌈log₂ n⌉ times.
 2. **Big-O:** time follows the total number of steps; memory follows how many items end up in the list. Drop constants (3n is O(n)) and halving (n(n − 1)/2 is O(n²)).
 3. **Size:** bits per pair ÷ 8 = bytes per pair. Count the pairs for the production n with the same rule as the trace, multiply, divide by 1,000,000 for MB.
 4. **Upload:** MB × 8 = megabits; ÷ Mbps = seconds.

@@ -26,11 +26,9 @@ function dur(min) {
 }
 const TIME24 = " Give the time in 24-hour format (hh:mm).";
 
-// Shortest form, up to 4 decimals; never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+// Shortest form, up to 4 decimals; never "-0" (and the gcd below): mathutil.
+import { fmtNum, gcd } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 // Round to a step (1 = whole, 0.1, 0.01), half away from zero, with a nudge for binary error.
 const roundTo = (x, step) => Math.round(x / step + 1e-9) * step;
 const fix = (x, step) => Number(roundTo(x, step).toFixed(step < 1 ? Math.round(-Math.log10(step)) : 0));
@@ -59,7 +57,6 @@ const INGR = [
   ["pasta", "g", 200, 500, 50], ["lentils", "g", 100, 400, 20], ["cream", "mL", 100, 400, 25],
 ];
 const amountOf = (rng, [, , lo, hi, step]) => step * rng.int(Math.ceil(lo / step), Math.floor(hi / step));
-const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 const unitWord = (u) => (u === "g" ? "gram" : "millilitre");
 
 // =====================================================================

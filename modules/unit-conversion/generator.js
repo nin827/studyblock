@@ -6,8 +6,9 @@
 // Non-metric factors are always stated in the prompt (1 in = 2.54 cm, 1 ft = 12 in, 1 mile = 1.609 km).
 // Explanations list every step as a labelled calculator row, e.g. `_m = _km * 1000` → 3500.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...) and the
+// 2-dp answer string come from mathutil.
+import { fmtAnswer, round2 } from "../../js/lib/mathutil.js";
 
 // Strip binary noise (0.07 * 1000 = 70.00000000000001) without changing a real value; never "-0".
 function clean(n) {
@@ -18,8 +19,7 @@ const show = (n) => String(clean(n));
 
 function fmtAns(n, fmt) {
   if (fmt !== "2dp") return show(n);
-  const r = round2(n);
-  return (Object.is(r, -0) ? 0 : r).toFixed(2);
+  return fmtAnswer(n, true);
 }
 
 const EXACT = " Give the exact answer.";

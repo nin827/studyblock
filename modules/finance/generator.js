@@ -12,19 +12,10 @@
 // Round half away from zero; the 1e-9 nudge absorbs binary error.
 const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
 
-// Answer/choice formatter: whole numbers as-is, rounded answers with exactly 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-// Intermediate values: shortest form (up to `dp` decimals); never "-0".
-function num(n, dp = 4) {
-  const f = Math.pow(10, dp);
-  const r = Math.round(n * f) / f;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+// Answer/choice formatter (whole numbers as-is, rounded answers with 2 decimals) and intermediate values
+// (shortest form, up to `dp` decimals; never "-0") come from mathutil.
+import { fmtAnswer as fmtAns, fmtNum } from "../../js/lib/mathutil.js";
+const num = (n, dp = 4) => fmtNum(n, dp);
 
 // Money inside calculator rows: "3300" for whole dollars, "4.50" otherwise.
 function mv(n) {

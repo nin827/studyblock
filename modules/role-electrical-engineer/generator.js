@@ -11,11 +11,7 @@
 // ---------- helpers ----------
 
 // Round half away from zero to d places; the 1e-9 nudge absorbs binary error.
-function roundTo(n, d) {
-  const f = 10 ** d;
-  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
-  return Object.is(r, -0) ? 0 : r;
-}
+import { roundTo } from "../../js/lib/mathutil.js";
 // True when n sits within `margin` (in units of the last place) of a rounding half-step.
 function nearHalf(n, d, margin = 0.05) {
   const x = Math.abs(n) * 10 ** d;

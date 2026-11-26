@@ -2,13 +2,21 @@
 // Every question is one workplace scenario with 3-4 parts, each a different skill:
 //   api-endpoint    SQL on a sample table -> index complexity -> binary-search probes -> transfer time
 //   ledger-check    SQL SUM -> card fees rounded per payment -> float truncation bug -> the fix
-//   hot-loop        trace a Python loop -> time and memory growth -> data size -> upload time
+//   hot-loop        trace a loop (shown in the chosen language) -> time and memory growth -> data size -> upload time
 //   fx-payout       fee with a minimum -> currency conversion floored to the cent -> settlement date -> batch time
-// Code is Python 3 only (stated in each prompt). Money is handled in whole cents. Parts that use an
+// Code snippets are shown in the user's code language (module.json "languages"; generate() gets `lang`).
+// hot-loop is built once with js/lib/codelang.js and rendered per language; the ledger float bug uses
+// per-language templates (floats are outside codelang) in floatcode.js. Calendar maths comes from
+// js/lib/dates.js. Money is handled in whole cents. Parts that use an
 // earlier answer are drawn so the rounded earlier answer gives the same later answer, and no answer
 // sits on a rounding half-step (the generator redraws with the same rng until both hold).
 // verify() recomputes each part another way: it re-reads the SQL text, simulates loops and binary
 // search, runs the code options on the amounts, and walks the calendar day by day.
+
+import { S, E, program, render, run as runCode, fence, ident, rangeText } from "../../js/lib/codelang.js";
+import { LANG_IDS, DEFAULT_LANG, langTitle } from "../../js/lib/languages.js";
+import { MONTHS, WEEKDAYS, addCalendarDays, daysInMonth, formatDMY } from "../../js/lib/dates.js";
+import { floatSnippet, fixCode, castNote, cutName } from "./floatcode.js";
 
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
@@ -21,7 +29,7 @@ function num(n) {
   const r = Math.round(n * 10000) / 10000;
   return String(Object.is(r, -0) ? 0 : r);
 }
-// Cents (non-negative integer) as "1234.56" (calculator, SQL, Python) or "$1,234.56" (prose).
+// Cents (non-negative integer) as "1234.56" (calculator, SQL, code) or "$1,234.56" (prose).
 const dec = (c) => `${Math.floor(c / 100)}.${String(c % 100).padStart(2, "0")}`;
 const usd = (c) => `$${commas(Math.floor(c / 100))}.${String(c % 100).padStart(2, "0")}`;
 const eur = (c) => `€${commas(Math.floor(c / 100))}.${String(c % 100).padStart(2, "0")}`;
@@ -208,25 +216,26 @@ function verifyApi(q, a) {
 
 const ACCOUNTS = ["AC-101", "AC-102", "AC-117", "AC-205", "AC-311", "AC-420"];
 const KINDS = ["card", "card", "refund", "payout"];
-// Replacement lines for the float bug, with what each does to the amounts (JS doubles = Python floats).
+// Replacement lines for the float bug, with what each does to the amounts (JS doubles are the same IEEE doubles as Python, C#, C++, GDScript and Rust floats; the shown code lines are in floatcode.js).
 const FIXES = {
-  ok: { code: "cents = sum(round(a * 100) for a in amounts)", run: (am) => am.reduce((s, a) => s + Math.round(a * 100), 0),
+  ok: { run: (am) => am.reduce((s, a) => s + Math.round(a * 100), 0),
     why: "rounds each amount to whole cents first, then adds integers, which floats hold exactly" },
-  round100: { code: "cents = round(total * 100)", run: (am, t) => Math.round(t * 100),
+  round100: { run: (am, t) => Math.round(t * 100),
     why: "rounds to the nearest cent instead of cutting off: the float error is far smaller than half a cent" },
-  halfUp: { code: "cents = int(total * 100 + 0.5)", run: (am, t) => Math.trunc(t * 100 + 0.5),
+  halfUp: { run: (am, t) => Math.trunc(t * 100 + 0.5),
     why: "adds half a cent before cutting off, which rounds a positive total to the nearest cent" },
-  old: { code: "cents = int(total * 100)", run: (am, t) => Math.trunc(t * 100) },
-  intTotal: { code: "cents = int(total) * 100", run: (am, t) => Math.trunc(t) * 100 },
-  itemTrunc: { code: "cents = sum(int(a * 100) for a in amounts)", run: (am) => am.reduce((s, a) => s + Math.trunc(a * 100), 0) },
-  roundTotal: { code: "cents = round(total)", run: (am, t) => Math.round(t) },
-  tenths: { code: "cents = int(total * 10) * 10", run: (am, t) => Math.trunc(t * 10) * 10 },
-  sumInt: { code: "cents = sum(int(a) for a in amounts) * 100", run: (am) => am.reduce((s, a) => s + Math.trunc(a), 0) * 100 },
+  old: { run: (am, t) => Math.trunc(t * 100) },
+  intTotal: { run: (am, t) => Math.trunc(t) * 100 },
+  itemTrunc: { run: (am) => am.reduce((s, a) => s + Math.trunc(a * 100), 0) },
+  roundTotal: { run: (am, t) => Math.round(t) },
+  tenths: { run: (am, t) => Math.trunc(t * 10) * 10 },
+  sumInt: { run: (am) => am.reduce((s, a) => s + Math.trunc(a), 0) * 100 },
 };
 const GOOD_FIXES = ["ok", "round100", "halfUp"];
 const tick = (s) => `\`${s}\``;
+const fixTick = (k, lang) => tick(fixCode(k, lang));
 
-function genLedger(rng) {
+function genLedger(rng, lang) {
   for (let tries = 0; tries < 200; tries++) {
     const accts = rng.shuffle(ACCOUNTS).slice(0, rng.int(2, 3));
     const acct = accts[0];
@@ -247,7 +256,7 @@ function genLedger(rng) {
     const clean = parseFloat(dec(trueC));
     if (t === clean) continue; // the float error must show in print(total)
     const cents = Math.trunc(t * 100);
-    if ((t < clean) !== (cents < trueC) || Math.abs(cents - trueC) > 1) continue; // printed value must explain int()
+    if ((t < clean) !== (cents < trueC) || Math.abs(cents - trueC) > 1) continue; // printed value must explain the truncation
     const okId = rng.pick(GOOD_FIXES);
     if (FIXES[okId].run(amounts, t) !== trueC) continue;
     const wrongIds = Object.keys(FIXES).filter((k) => !GOOD_FIXES.includes(k) && FIXES[k].run(amounts, t) !== trueC);
@@ -258,42 +267,41 @@ function genLedger(rng) {
 
     const shown = rows.map((r) => ({ id: r.id, account: r.account, kind: r.kind, amount: dec(r.amountC) }));
     const sql = `SELECT SUM(amount) FROM payments\nWHERE account = '${acct}' AND kind = 'card';`;
-    const code =
-      `total = 0.0\nfor a in amounts:   # the matched amounts as floats, in table order\n    total += a\n` +
-      `print(total)        # prints ${String(t)}\ncents = int(total * 100)`;
+    const code = floatSnippet(lang, match.map((r) => dec(r.amountC)));
+    const cut = cutName(lang);
     const pct = num(bp / 100);
     const prompt =
       `You're on the payments team. Finance wants the card total for account **${acct}** checked against the bank. A sample of the \`payments\` table:\n\n` +
       `${mdTable("payments", ["id", "account", "kind", "amount"], shown)}\n\nThe report runs:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\n` +
       `The card processor charges **${pct}% + ${usd(fixedC)}** per card payment, and each payment's fee is rounded to the nearest cent (halves round up).\n\n` +
-      `The old report code, in Python 3 (\`int()\` drops everything after the point; \`round()\` with one argument gives the nearest whole number):\n\n\`\`\`python\n${code}\n\`\`\``;
-    const choices = choiceIds.map((k) => tick(FIXES[k].code));
+      `The old report code, in ${langTitle(lang)} (${castNote(lang)}; \`amounts\` holds the matched payments, in table order). After the loop, \`total\` is the double-precision number whose shortest decimal form is **${String(t)}**:\n\n\`\`\`${fence(lang)}\n${code}\n\`\`\``;
+    const choices = choiceIds.map((k) => fixTick(k, lang));
     const parts = [
       numPart("total", "SQL", `What does the query return, in dollars?${ROUND2}`, trueC / 100, 2,
         `Keep only rows where account is '${acct}' and kind is 'card', then add their amounts. Add in cents if you can: it avoids the very error this ticket is about.`),
       numPart("fees", "Fees", `What are the total processor fees on those payments, in dollars?${ROUND2}`, feeC / 100, 2,
         `Work out each payment's fee on its own: amount × ${pct} ÷ 100, rounded to the cent, plus ${usd(fixedC)}. Then add the fees up. Rounding the total once can give a different answer.`),
       numPart("cents", "Floats", "What whole number does the old code store in `cents`?", cents, 0,
-        "Compare the printed `total` with your SQL answer: is it a hair above or below? Multiplying by 100 keeps that tiny error, and `int()` cuts towards zero rather than rounding."),
-      choicePart("fix", "Fix", "Which replacement for the last line gives the exact total in cents for these amounts?", tick(FIXES[okId].code), choices,
+        `Compare the stated \`total\` with your SQL answer: is it a hair above or below? Multiplying by 100 keeps that tiny error, and \`${cut}\` cuts towards zero rather than rounding.`),
+      choicePart("fix", "Fix", "Which replacement for the line that sets `cents` gives the exact total in cents for these amounts?", fixTick(okId, lang), choices,
         "Truncating is the bug: a total a hair below the true value loses a whole cent. A correct line rounds to the nearest cent somewhere, and works in cents, not dollars or tenths."),
     ];
     const lines = match.map((r) => {
       const raw = (r.amountC * bp) / 10000;
       return `- ${usd(r.amountC)}: ${dec(r.amountC)} × ${pct}% = ${num(raw / 100)} → ${usd(Math.round(raw))}, + ${usd(fixedC)} = ${usd(Math.round(raw) + fixedC)}`;
     });
-    const wrongNotes = pickWrong.map((k) => `${tick(FIXES[k].code)} gives ${commas(FIXES[k].run(amounts, t))}`).join("; ");
+    const wrongNotes = pickWrong.map((k) => `${fixTick(k, lang)} gives ${commas(FIXES[k].run(amounts, t))}`).join("; ");
     const explanation =
       `**SQL.** Rows for ${acct} with kind 'card': ${match.map((r) => usd(r.amountC)).join(" + ")} = **${usd(trueC)}** (${commas(trueC)} cents).\n\n` +
       `**Fees.** Each fee is rounded on its own, then added:\n\n${lines.join("\n")}\n\nTotal fees: **${usd(feeC)}**.\n\n` +
-      `**Floats.** Binary floats can't hold most cent values exactly, so the running total prints as ${String(t)}, a hair ${t < clean ? "below" : "above"} ${dec(trueC)}. ` +
-      `× 100 gives about ${num(t * 100)}${t < clean ? " (just under the whole number)" : ""}, and \`int()\` cuts off the fraction: **${commas(cents)}**` +
+      `**Floats.** Binary floats can't hold most cent values exactly, so the running total is ${String(t)}, a hair ${t < clean ? "below" : "above"} ${dec(trueC)}. ` +
+      `× 100 gives about ${num(t * 100)}${t < clean ? " (just under the whole number)" : ""}, and \`${cut}\` cuts off the fraction: **${commas(cents)}**` +
       `${cents === trueC ? ", which happens to be right this time, but only by luck." : `, one cent short of ${commas(trueC)}.`}\n\n` +
-      `**Fix.** ${tick(FIXES[okId].code)} ${FIXES[okId].why}, so it gives ${commas(trueC)}. The others are wrong here: ${wrongNotes}.`;
+      `**Fix.** ${fixTick(okId, lang)} ${FIXES[okId].why}, so it gives ${commas(trueC)}. The others are wrong here: ${wrongNotes}.`;
     return {
       prompt, answerType: "multi", parts, explanation,
       given: given([["_fee_pct", bp / 100], ["_fixed_fee", fixedC / 100]]),
-      params: { kind: "ledger", sql, rows: shown.map((r) => ({ ...r })), bp, fixedC, printed: String(t), choiceIds },
+      params: { kind: "ledger", sql, rows: shown.map((r) => ({ ...r })), bp, fixedC, printed: String(t), choiceIds, lang },
     };
   }
   throw new Error("ledger-check: no draw");
@@ -318,7 +326,7 @@ function verifyLedger(q, a) {
     fee += q0 + (rem > 5000 ? 1 : 0) + p.fixedC;
   }
   if (!same2dp(a.fees, fee / 100)) return false;
-  // Re-run the float loop and int() from the amount strings.
+  // Re-run the float loop and the truncation from the amount strings.
   const amounts = match.map((r) => Number(r.amount));
   let t = 0;
   amounts.forEach((v) => { t = t + v; });
@@ -330,31 +338,61 @@ function verifyLedger(q, a) {
   if (!fix || !Array.isArray(fix.choices) || fix.choices.length !== 4 || new Set(fix.choices).size !== 4) return false;
   const passing = p.choiceIds.filter((k) => FIXES[k] && FIXES[k].run(amounts, t) === trueC);
   if (passing.length !== 1) return false;
-  const want = tick(FIXES[passing[0]].code);
+  const want = fixTick(passing[0], p.lang);
   return fix.choices.includes(want) && String(a.fix) === want;
 }
 
 // ---------------------------------------------------------------------------------------------
 // Subtopic: hot-loop (Backend and Fintech)
 
-// hot(n): runs of the # hot line; recs(n): pairs appended; sim(n): [hot, recs] by running the loop.
+// The loop shapes as language-neutral codelang programs (js/lib/codelang.js): collect_pairs(n) fills
+// `records` with pairs (two appended values each) and the statement with id "hot" is the line the
+// questions ask about. Rendered per language, with line numbers, so the prompt names the hot line.
+const v = E.var, bin = E.bin;
+const two = (a, b, hot) => [S.append("records", a, hot ? "hot" : undefined), S.append("records", b)];
+const LOOP_BODY = {
+  square: () => [S.forRange("j", 0, v("n"), 1, two(v("i"), v("j"), true))],
+  triangle: () => [S.forRange("j", bin("+", v("i"), 1), v("n"), 1, two(v("i"), v("j"), true))],
+  doubling: () => [S.decl("j", 1), S.while(bin("<", v("j"), v("n")), [S.augAssign("j", "*", 2, "hot")]), ...two(v("i"), v("j"))],
+  "inner-sum": () => [S.decl("total", 0), S.forRange("j", 0, v("n"), 1, [S.augAssign("total", "+", bin("*", v("i"), v("j")), "hot")]), ...two(v("i"), v("total"))],
+  three: () => [S.forRange("j", 0, 3, 1, two(v("i"), v("j"), true))],
+  evens: () => [S.if(bin("==", bin("%", v("i"), 2), 0), two(v("i"), bin("*", v("i"), v("i")), true))],
+  const: (c) => [S.forRange("j", 0, c, 1, two(v("i"), v("j"), true))],
+  every: (c) => [S.if(bin("==", bin("%", v("i"), c), 0), two(v("i"), bin("*", v("i"), v("i")), true))],
+};
+function loopProgram(key, c) {
+  return program([S.fn("collect_pairs", ["n"], [
+    S.decl("records", E.list([]), "list"),
+    S.forRange("i", 0, v("n"), 1, LOOP_BODY[key](c)),
+    S.return(v("records")),
+  ], "list")]);
+}
+// { code (fenced, numbered), hotLine, fn (the function's name in this language) }
+function loopSnippet(key, c, lang) {
+  const r = render(loopProgram(key, c), lang, { lineNumbers: true });
+  return { code: "```" + fence(lang) + "\n" + r.code + "\n```", hotLine: r.lineOf.get("hot"), fn: ident("collect_pairs", lang, "fn") };
+}
+const loopIntro = (job, snip, lang) =>
+  `You're profiling ${job}. Its core is this ${langTitle(lang)} function, \`${snip.fn}(n)\`, shown with line numbers. Loop ranges: ${rangeText(lang)}. Each pair it builds is the two values appended together:\n\n${snip.code}`;
+
+// hot(n): runs of the hot line; recs(n): pairs appended; sim(n): [hot, recs] by running the loop.
 const LOOPS = [
-  { key: "square", code: ["for i in range(n):", "    for j in range(n):", "        out.append((i, j))      # hot"], time: "O(n²)", mem: "O(n²)",
+  { key: "square", time: "O(n²)", mem: "O(n²)",
     hot: (n) => n * n, recs: (n) => n * n, quad: true,
     why: "The inner loop runs n times for each of the n values of i, and every run appends a pair." },
-  { key: "triangle", code: ["for i in range(n):", "    for j in range(i + 1, n):", "        out.append((i, j))      # hot"], time: "O(n²)", mem: "O(n²)",
+  { key: "triangle", time: "O(n²)", mem: "O(n²)",
     hot: (n) => (n * (n - 1)) / 2, recs: (n) => (n * (n - 1)) / 2, quad: true,
     why: "j runs from i + 1, so the inner loop runs n − 1, n − 2, …, 0 times: n(n − 1)/2 in all. Halving n² doesn't change its growth." },
-  { key: "doubling", code: ["for i in range(n):", "    j = 1", "    while j < n:", "        j *= 2                  # hot", "    out.append((i, j))"], time: "O(n log n)", mem: "O(n)",
+  { key: "doubling", time: "O(n log n)", mem: "O(n)",
     hot: (n) => n * Math.ceil(Math.log2(n)), recs: (n) => n, quad: false,
     why: "j doubles from 1 until it reaches n, which takes ⌈log₂ n⌉ steps, for each of the n values of i. Only one pair is appended per i." },
-  { key: "inner-sum", code: ["for i in range(n):", "    total = 0", "    for j in range(n):", "        total += i * j          # hot", "    out.append((i, total))"], time: "O(n²)", mem: "O(n)",
+  { key: "inner-sum", time: "O(n²)", mem: "O(n)",
     hot: (n) => n * n, recs: (n) => n, quad: false,
-    why: "The inner loop runs n times for each i (n² steps), but it only updates one number. One pair is appended per i, so `out` grows like n." },
-  { key: "three", code: ["for i in range(n):", "    for j in range(3):", "        out.append((i, j))      # hot"], time: "O(n)", mem: "O(n)",
+    why: "The inner loop runs n times for each i (n² steps), but it only updates one number. One pair is appended per i, so `records` grows like n." },
+  { key: "three", time: "O(n)", mem: "O(n)",
     hot: (n) => 3 * n, recs: (n) => 3 * n, quad: false,
     why: "The inner loop always runs 3 times, a constant, so the work is 3n: constants drop out of Big-O." },
-  { key: "evens", code: ["for i in range(n):", "    if i % 2 == 0:", "        out.append((i, i * i))  # hot"], time: "O(n)", mem: "O(n)",
+  { key: "evens", time: "O(n)", mem: "O(n)",
     hot: (n) => Math.ceil(n / 2), recs: (n) => Math.ceil(n / 2), quad: false,
     why: "The loop runs n times and appends on every other one, so the work and the list are both about n/2." },
 ];
@@ -371,7 +409,7 @@ const JOBS = [
   "a sync job that prepares rows for a partner",
 ];
 
-function genLoop(rng) {
+function genLoop(rng, lang) {
   for (let tries = 0; tries < 80; tries++) {
     const L = rng.pick(LOOPS);
     const job = rng.pick(JOBS);
@@ -386,18 +424,17 @@ function genLoop(rng) {
     if (nearTie2(mb) || nearTie2(secs) || round2(secs) < 0.05) continue;
     if (f2((round2(mb) * 8) / R) !== f2(secs) || nearTie2((round2(mb) * 8) / R)) continue; // chaining from the rounded size
     const hot = L.hot(small);
-    const code = ["out = []", ...L.code].join("\n");
+    const snip = loopSnippet(L.key, 0, lang);
     const prompt =
-      `You're profiling ${job}. Its core is this Python 3 code (\`range(a, b)\` counts from a up to b − 1, and \`range(n)\` from 0 up to n − 1):\n\n` +
-      `\`\`\`python\n${code}\n\`\`\`\n\n` +
-      `In production **n = ${commas(N)}**. The job stores each pair in \`out\` as **${rec.desc}** (no other overhead), then uploads those bytes over a **${R} Mbps** link (${MBPS}; 1 MB = 1,000,000 bytes).`;
+      `${loopIntro(job, snip, lang)}\n\n` +
+      `In production **n = ${commas(N)}**. For sizing, count each pair as **${rec.desc}** (no other overhead); the job then uploads those bytes over a **${R} Mbps** link (${MBPS}; 1 MB = 1,000,000 bytes).`;
     const opts = pairOptions(rng, [L.time, L.mem], ["O(log n)", "O(n)", "O(n log n)", "O(n²)"]);
     const parts = [
-      numPart("runs", "Trace", `How many times does the line marked \`# hot\` run when n = ${small}?`, hot, 0,
-        "Trace it by hand: for each value of i, count how many times the hot line runs, then add the counts up. A small table of i against runs helps."),
-      segPart("growth", "Big-O", "As n grows, how do the running time and the size of `out` grow?", ["Time", "Memory of out"], [L.time, L.mem], opts,
-        "Time follows the total number of loop steps; memory follows how many pairs end up in `out`. Drop constant factors and smaller terms."),
-      numPart("size", "Data size", `How many megabytes do the pairs in \`out\` take in production?${ROUND2}`, mb, 2,
+      numPart("runs", "Trace", `How many times does line ${snip.hotLine} run when n = ${small}?`, hot, 0,
+        `Trace it by hand: for each value of i, count how many times line ${snip.hotLine} runs, then add the counts up. A small table of i against runs helps.`),
+      segPart("growth", "Big-O", "As n grows, how do the running time and the size of `records` grow?", ["Time", "Memory of records"], [L.time, L.mem], opts,
+        "Time follows the total number of loop steps; memory follows how many pairs end up in `records`. Drop constant factors and smaller terms."),
+      numPart("size", "Data size", `How many megabytes do the pairs built by \`${snip.fn}\` take in production?${ROUND2}`, mb, 2,
         "Bytes per pair = total bits ÷ 8. Count the pairs for the production n with the same rule you used in your trace, multiply, then divide by 1,000,000."),
       numPart("upload", "Networking", `How many seconds does the upload take? Use your size answer and ignore protocol overhead.${ROUND2}`, secs, 2,
         "Megabytes × 8 gives megabits; divide by the link speed in Mbps to get seconds."),
@@ -408,8 +445,8 @@ function genLoop(rng) {
       : L.key === "evens" ? `i = ${Array.from({ length: Math.ceil(small / 2) }, (_, k) => 2 * k).join(", ")}: ${hot} runs`
       : L.key === "three" ? `3 × ${small} = ${hot}` : `${small} × ${small} = ${hot}`;
     const explanation =
-      `**Trace.** For n = ${small}: ${smallHow}, so the hot line runs **${hot}** times.\n\n` +
-      `**Big-O.** ${L.why} Time **${L.time}**, memory of \`out\` **${L.mem}**.\n\n` +
+      `**Trace.** For n = ${small}: ${smallHow}, so line ${snip.hotLine} runs **${hot}** times.\n\n` +
+      `**Big-O.** ${L.why} Time **${L.time}**, memory of \`records\` **${L.mem}**.\n\n` +
       `**Data size.** One pair is ${rec.bits[0]} + ${rec.bits[1]} = ${rec.bits[0] + rec.bits[1]} bits = ${recBytes} bytes.\n\n` +
       [row("_n", N), row("_pair_bytes", recBytes), row("_mbps", R),
         step("_pairs", recExpr, commas(L.recs(N))),
@@ -419,7 +456,7 @@ function genLoop(rng) {
     return {
       prompt, answerType: "multi", parts, explanation,
       given: given([["_n", N], ["_mbps", R]]),
-      params: { kind: "loop", loop: L.key, small, N, bits: rec.bits.slice(), R },
+      params: { kind: "loop", loop: L.key, small, N, bits: rec.bits.slice(), R, lang, hotLine: snip.hotLine },
     };
   }
   throw new Error("hot-loop: no draw");
@@ -454,10 +491,24 @@ function pairsAt(key, n) {
   return s;
 }
 
+// The shown snippet must be this shape's program: line N is the hot line, and running the code (codelang
+// interpreter) builds two values per pair, as many pairs as the independent simulation counted.
+function loopCodeOk(q, p, pairs) {
+  if (!LOOP_BODY[p.loop]) return false;
+  const lang = LANG_IDS.includes(p.lang) ? p.lang : DEFAULT_LANG;
+  const prog = loopProgram(p.loop, p.c);
+  const r = render(prog, lang, { lineNumbers: true });
+  if (r.lineOf.get("hot") !== p.hotLine) return false;
+  const runs = q.parts.find((x) => x.id === "runs");
+  if (!runs || !runs.ask.includes(`line ${p.hotLine} `) || !q.prompt.includes("```" + fence(lang) + "\n" + r.code + "\n```")) return false;
+  const out = runCode(prog, { entry: "collect_pairs", args: [p.small] });
+  return !out.timedOut && Array.isArray(out.returned) && out.returned.length === 2 * pairs;
+}
+
 function verifyLoop(q, a) {
   const p = q.params;
   const s = simLoop(p.loop, p.small);
-  if (!s || !sameInt(a.runs, s[0])) return false;
+  if (!s || !sameInt(a.runs, s[0]) || !loopCodeOk(q, p, s[1])) return false;
   const lo = simLoop(p.loop, 200), hi = simLoop(p.loop, 400);
   const want = [growthOf(lo[0] + 200, hi[0] + 400), growthOf(lo[1], hi[1])];
   if (want.includes("?") || !segOk(q, "growth", a.growth, want)) return false;
@@ -471,13 +522,11 @@ function verifyLoop(q, a) {
 // ---------------------------------------------------------------------------------------------
 // Subtopic: fx-payout (Fintech)
 
-const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const PAYEES = ["a supplier in Lisbon", "a freelancer in Berlin", "a hotel in Rome", "a studio in Dublin", "a shop in Vienna", "a school in Madrid"];
-const dayMs = 86400000;
-const utc = (y, m, d) => Date.UTC(y, m - 1, d);
-const fromMs = (ms) => { const d = new Date(ms); return { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate(), w: d.getUTCDay() }; };
-const fmtDay = (x) => `${x.d} ${MONTHS[x.m - 1]} ${x.y}`;
+// Calendar days come from js/lib/dates.js: { y, m, d, w } with w = 0 (Sunday) ... 6 (Saturday).
+const fmtDay = formatDMY;
+const isBizDay = (w) => w !== 0 && w !== 6;
+const nextBiz = (c) => { do c = addCalendarDays(c.y, c.m, c.d, 1); while (!isBizDay(c.w)); return c; };
 const hhmm = (h, mi) => `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
 
 function genFx(rng) {
@@ -486,7 +535,7 @@ function genFx(rng) {
     const bp = rng.pick([50, 75, 90, 120, 150]);
     const minC = rng.pick([500, 750, 1000, 1500, 2500]);
     const rate = rng.int(6000, 15000); // euros per dollar × 10,000
-    const day0 = utc(2026, 1, 1) + rng.int(0, 729) * dayMs;
+    const day0 = addCalendarDays(2026, 1, 1, rng.int(0, 729));
     const hour = rng.int(7, 21);
     const minute = rng.int(0, 11) * 5;
     const k = rng.int(1, 3);
@@ -505,14 +554,13 @@ function genFx(rng) {
     if (rem <= 5 || rem >= 9995) continue; // keep clear of whole cents, so calculator floats floor the same way
     const outC = Math.floor(x / 10000);
 
-    const sub = fromMs(day0);
+    const sub = day0;
     const late = hour >= 16;
     let cur = day0;
-    const isBiz = (ms0) => { const w = fromMs(ms0).w; return w !== 0 && w !== 6; };
-    if (late || !isBiz(cur)) { do cur += dayMs; while (!isBiz(cur)); }
-    const start = fromMs(cur);
-    for (let i = 0; i < k; i++) { do cur += dayMs; while (!isBiz(cur)); }
-    const settle = fromMs(cur);
+    if (late || !isBizDay(cur.w)) cur = nextBiz(cur);
+    const start = cur;
+    for (let i = 0; i < k; i++) cur = nextBiz(cur);
+    const settle = cur;
     const batches = Math.ceil(N / conc);
     const secs = (batches * ms) / 1000;
 
@@ -535,7 +583,7 @@ function genFx(rng) {
         `Groups needed = ${commas(N)} ÷ ${conc}, rounded **up** (a part-full last group still takes a full ${ms} ms). Multiply by the time per group and convert ms to seconds.`),
     ];
     const pctRaw = pctX / 10000;
-    const startWhy = late ? `it was submitted at ${hhmm(hour, minute)}, after the 16:00 cut-off` : !isBiz(day0) ? "it was submitted on a weekend" : "it was submitted on a weekday before 16:00";
+    const startWhy = late ? `it was submitted at ${hhmm(hour, minute)}, after the 16:00 cut-off` : !isBizDay(day0.w) ? "it was submitted on a weekend" : "it was submitted on a weekday before 16:00";
     const explanation =
       `**Fee.** ${pct}% of ${usd(amountC)} = ${num(pctRaw / 100)}, which rounds to ${usd(pctC)}. ` +
       `${pctC >= minC ? `That is at least the ${usd(minC)} minimum, so the fee is **${usd(feeC)}**.` : `That is below the ${usd(minC)} minimum, so the fee is **${usd(feeC)}**.`}\n\n` +
@@ -555,18 +603,15 @@ function genFx(rng) {
   throw new Error("fx-payout: no draw");
 }
 
-// Day of week by Sakamoto's method (0 = Sunday), month lengths by rule: no Date object.
+// Check side: day of week by Sakamoto's method (0 = Sunday) and a day-by-day walk, so it does not
+// share the build side's day-number arithmetic. Month lengths are the calendar fact from dates.js.
 function dow(y, m, d) {
   const t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
   if (m < 3) y -= 1;
   return (y + Math.floor(y / 4) - Math.floor(y / 100) + Math.floor(y / 400) + t[m - 1] + d) % 7;
 }
-function monthLen(y, m) {
-  if (m === 2) return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0 ? 29 : 28;
-  return [4, 6, 9, 11].includes(m) ? 30 : 31;
-}
 function nextDay([y, m, d]) {
-  if (d < monthLen(y, m)) return [y, m, d + 1];
+  if (d < daysInMonth(y, m)) return [y, m, d + 1];
   return m < 12 ? [y, m + 1, 1] : [y + 1, 1, 1];
 }
 
@@ -745,8 +790,9 @@ function genLedgerMedium(rng) {
   throw new Error("ledger-check: no draw");
 }
 
-function genLedgerTier(rng, tier) {
+function genLedgerTier(rng, tier, lang) {
   if (tier === "medium") return genLedgerMedium(rng);
+  const cut = cutName(lang);
   const expert = tier === "expert";
   for (let tries = 0; tries < 300; tries++) {
     const accts = rng.shuffle(ACCOUNTS).slice(0, rng.int(2, 3));
@@ -777,7 +823,7 @@ function genLedgerTier(rng, tier) {
     const feeC = match.reduce((s, r) => s + Math.round((r.amountC * bp) / 10000) + fixedC, 0);
     const shown = rows.map((r) => ({ id: r.id, account: r.account, kind: r.kind, amount: dec(r.amountC) }));
     const sql = `SELECT SUM(amount) FROM payments\nWHERE account = '${acct}' AND kind = 'card';`;
-    const code = `total = 0.0\nfor a in amounts:   # the matched amounts as floats, in table order\n    total += a\nprint(total)        # prints ${String(t)}\ncents = int(total * 100)`;
+    const code = floatSnippet(lang, match.map((r) => dec(r.amountC)));
     const pct = num(bp / 100);
     const feeRule = fixedC ? `**${pct}% + ${usd(fixedC)}**` : `**${pct}%**`;
     const parts = [
@@ -786,9 +832,9 @@ function genLedgerTier(rng, tier) {
       numPart("fees", "Fees", `What are the total processor fees on those payments, in dollars?${ROUND2}`, feeC / 100, 2,
         `Work out each payment's fee on its own: amount × ${pct} ÷ 100, rounded to the cent${fixedC ? `, plus ${usd(fixedC)}` : ""}. Then add the fees up.`),
       numPart("cents", "Floats", "What whole number does the old code store in `cents`?", cents, 0,
-        "Compare the printed `total` with your SQL answer: is it a hair above or below? Multiplying by 100 keeps that tiny error, and `int()` cuts towards zero rather than rounding."),
+        `Compare the stated \`total\` with your SQL answer: is it a hair above or below? Multiplying by 100 keeps that tiny error, and \`${cut}\` cuts towards zero rather than rounding.`),
     ];
-    if (expert) parts.push(choicePart("fix", "Fix", "Which replacement for the last line gives the exact total in cents for these amounts?", tick(FIXES[okId].code), choiceIds.map((k) => tick(FIXES[k].code)),
+    if (expert) parts.push(choicePart("fix", "Fix", "Which replacement for the line that sets `cents` gives the exact total in cents for these amounts?", fixTick(okId, lang), choiceIds.map((k) => fixTick(k, lang)),
       "Truncating is the bug. A correct line rounds to the nearest cent somewhere, and works in cents, not dollars or tenths."));
     const lines = match.map((r) => {
       const raw = (r.amountC * bp) / 10000;
@@ -797,13 +843,13 @@ function genLedgerTier(rng, tier) {
     const explanation =
       `**SQL.** Rows for ${acct} with kind 'card': ${match.map((r) => usd(r.amountC)).join(" + ")} = **${usd(trueC)}** (${commas(trueC)} cents).\n\n` +
       `**Fees.** Each fee is rounded on its own, then added:\n\n${lines.join("\n")}\n\nTotal fees: **${usd(feeC)}**.\n\n` +
-      `**Floats.** The running total prints as ${String(t)}, a hair ${t < clean ? "below" : "above"} ${dec(trueC)}. × 100 gives about ${num(t * 100)}, and \`int()\` cuts off the fraction: **${commas(cents)}**${cents === trueC ? " (right this time, but only by luck)" : `, one cent short of ${commas(trueC)}`}.` +
-      (expert ? `\n\n**Fix.** ${tick(FIXES[okId].code)} ${FIXES[okId].why}, so it gives ${commas(trueC)}. ${wrongIds.map((k) => `${tick(FIXES[k].code)} gives ${commas(FIXES[k].run(amounts, t))}`).join("; ")}.` : "");
+      `**Floats.** The running total is ${String(t)}, a hair ${t < clean ? "below" : "above"} ${dec(trueC)}. × 100 gives about ${num(t * 100)}, and \`${cut}\` cuts off the fraction: **${commas(cents)}**${cents === trueC ? " (right this time, but only by luck)" : `, one cent short of ${commas(trueC)}`}.` +
+      (expert ? `\n\n**Fix.** ${fixTick(okId, lang)} ${FIXES[okId].why}, so it gives ${commas(trueC)}. ${wrongIds.map((k) => `${fixTick(k, lang)} gives ${commas(FIXES[k].run(amounts, t))}`).join("; ")}.` : "");
     return {
-      prompt: `You're on the payments team. Finance wants the card total for account **${acct}** checked against the bank. A sample of the \`payments\` table:\n\n${mdTable("payments", ["id", "account", "kind", "amount"], shown)}\n\nThe report runs:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\nThe card processor charges ${feeRule} per card payment, and each payment's fee is rounded to the nearest cent (halves round up).\n\nThe old report code, in Python 3 (\`int()\` drops everything after the point; \`round()\` with one argument gives the nearest whole number):\n\n\`\`\`python\n${code}\n\`\`\``,
+      prompt: `You're on the payments team. Finance wants the card total for account **${acct}** checked against the bank. A sample of the \`payments\` table:\n\n${mdTable("payments", ["id", "account", "kind", "amount"], shown)}\n\nThe report runs:\n\n\`\`\`sql\n${sql}\n\`\`\`\n\nThe card processor charges ${feeRule} per card payment, and each payment's fee is rounded to the nearest cent (halves round up).\n\nThe old report code, in ${langTitle(lang)} (${castNote(lang)}; \`amounts\` holds the matched payments, in table order). After the loop, \`total\` is the double-precision number whose shortest decimal form is **${String(t)}**:\n\n\`\`\`${fence(lang)}\n${code}\n\`\`\``,
       answerType: "multi", parts, explanation,
       given: given(fixedC ? [["_fee_pct", bp / 100], ["_fixed_fee", fixedC / 100]] : [["_fee_pct", bp / 100]]),
-      params: { kind: "ledger-t", tier, sql, rows: shown.map((r) => ({ ...r })), bp, fixedC, printed: String(t), choiceIds: expert ? choiceIds : [] },
+      params: { kind: "ledger-t", tier, sql, rows: shown.map((r) => ({ ...r })), bp, fixedC, printed: String(t), choiceIds: expert ? choiceIds : [], lang },
     };
   }
   throw new Error("ledger-check: no draw");
@@ -813,17 +859,17 @@ function genLedgerTier(rng, tier) {
 
 // Medium loops: a constant c (2–5) varies the shape; [hot runs, time] for n.
 const MED_LOOPS = {
-  const: { code: (c) => ["for i in range(n):", `    for j in range(${c}):`, "        out.append((i, j))      # hot"], hot: (n, c) => c * n, time: "O(n)",
+  const: { hot: (n, c) => c * n, time: "O(n)",
     why: (c) => `The inner loop always runs ${c} times, a constant, so the work is ${c}n: constants drop out of Big-O.` },
-  every: { code: (c) => ["for i in range(n):", `    if i % ${c} == 0:`, "        out.append((i, i * i))  # hot"], hot: (n, c) => Math.ceil(n / c), time: "O(n)",
+  every: { hot: (n, c) => Math.ceil(n / c), time: "O(n)",
     why: (c) => `The loop runs n times and appends on every ${c}th one: about n/${c} runs, still growing like n.` },
-  square: { code: () => ["for i in range(n):", "    for j in range(n):", "        out.append((i, j))      # hot"], hot: (n) => n * n, time: "O(n²)",
+  square: { hot: (n) => n * n, time: "O(n²)",
     why: () => "The inner loop runs n times for each of the n values of i: n² runs." },
-  triangle: { code: () => ["for i in range(n):", "    for j in range(i + 1, n):", "        out.append((i, j))      # hot"], hot: (n) => (n * (n - 1)) / 2, time: "O(n²)",
+  triangle: { hot: (n) => (n * (n - 1)) / 2, time: "O(n²)",
     why: () => "j runs from i + 1, so the inner loop runs n − 1, n − 2, …, 0 times: n(n − 1)/2 in all. Halving n² doesn't change its growth." },
 };
 
-function genLoopMedium(rng) {
+function genLoopMedium(rng, lang) {
   const key = rng.pick(Object.keys(MED_LOOPS));
   const L = MED_LOOPS[key];
   const job = rng.pick(JOBS);
@@ -831,26 +877,26 @@ function genLoopMedium(rng) {
   const small = key === "square" || key === "triangle" ? rng.int(4, 10) : rng.int(5, 15);
   const timeChoices = rng.shuffle(BIG_O4.slice());
   const hot = L.hot(small, c);
-  const code = ["out = []", ...L.code(c)].join("\n");
+  const snip = loopSnippet(key, c, lang);
   const runs = key === "const" ? `${c} × ${small} = ${hot}` : key === "every" ? `i = ${Array.from({ length: hot }, (_, k) => k * c).join(", ")}: ${hot} runs`
     : key === "square" ? `${small} × ${small} = ${hot}` : `${Array.from({ length: small }, (_, i) => small - 1 - i).join(" + ")} = ${hot}`;
   return {
-    prompt: `You're profiling ${job}. Its core is this Python 3 code (\`range(a, b)\` counts from a up to b − 1, and \`range(n)\` from 0 up to n − 1):\n\n\`\`\`python\n${code}\n\`\`\`\n\nA test run uses **n = ${small}**.`,
+    prompt: `${loopIntro(job, snip, lang)}\n\nA test run uses **n = ${small}**.`,
     answerType: "multi",
     parts: [
-      numPart("runs", "Trace", "In the test run, how many times does the line marked `# hot` run?", hot, 0,
-        "Trace it by hand: for each value of i, count how many times the hot line runs, then add the counts up."),
+      numPart("runs", "Trace", `In the test run, how many times does line ${snip.hotLine} run?`, hot, 0,
+        `Trace it by hand: for each value of i, count how many times line ${snip.hotLine} runs, then add the counts up.`),
       choicePart("time", "Big-O", "As n grows, how does the running time grow?", L.time, timeChoices,
         "Picture n doubling: does the work double, or more? Drop constant factors and smaller terms."),
     ],
-    explanation: `**Trace.** For n = ${small}: ${runs}, so the hot line runs **${hot}** times.\n\n**Big-O.** ${L.why(c)} Time grows like **${L.time}**.`,
+    explanation: `**Trace.** For n = ${small}: ${runs}, so line ${snip.hotLine} runs **${hot}** times.\n\n**Big-O.** ${L.why(c)} Time grows like **${L.time}**.`,
     given: given([["_n", small]]),
-    params: { kind: "loop-t", tier: "medium", loop: key, c, small },
+    params: { kind: "loop-t", tier: "medium", loop: key, c, small, lang, hotLine: snip.hotLine },
   };
 }
 
-function genLoopTier(rng, tier) {
-  if (tier === "medium") return genLoopMedium(rng);
+function genLoopTier(rng, tier, lang) {
+  if (tier === "medium") return genLoopMedium(rng, lang);
   for (let tries = 0; tries < 80; tries++) {
     const L = rng.pick(LOOPS);
     const job = rng.pick(JOBS);
@@ -865,16 +911,16 @@ function genLoopTier(rng, tier) {
     if (tier !== "medium" && (nearTie2(mb) || round2(mb) < 0.05)) continue;
     if (tier === "expert" && (nearTie2(secs) || round2(secs) < 0.05 || f2((round2(mb) * 8) / R) !== f2(secs) || nearTie2((round2(mb) * 8) / R))) continue;
     const hot = L.hot(small);
-    const code = ["out = []", ...L.code].join("\n");
-    const extra = tier === "medium" ? "" : ` In production **n = ${commas(N)}**, and the job stores each pair in \`out\` as **${rec.desc}** (no other overhead; 1 MB = 1,000,000 bytes)${tier === "expert" ? `, then uploads those bytes over a **${R} Mbps** link (${MBPS})` : ""}.`;
-    const prompt = `You're profiling ${job}. Its core is this Python 3 code (\`range(a, b)\` counts from a up to b − 1, and \`range(n)\` from 0 up to n − 1):\n\n\`\`\`python\n${code}\n\`\`\`${extra ? `\n\n${extra.trim()}` : ""}`;
+    const snip = loopSnippet(L.key, 0, lang);
+    const extra = tier === "medium" ? "" : ` In production **n = ${commas(N)}**. For sizing, count each pair as **${rec.desc}** (no other overhead; 1 MB = 1,000,000 bytes)${tier === "expert" ? `, then uploads those bytes over a **${R} Mbps** link (${MBPS})` : ""}.`;
+    const prompt = `${loopIntro(job, snip, lang)}${extra ? `\n\n${extra.trim()}` : ""}`;
     const parts = [
-      numPart("runs", "Trace", `How many times does the line marked \`# hot\` run when n = ${small}?`, hot, 0,
-        "Trace it by hand: for each value of i, count how many times the hot line runs, then add the counts up."),
+      numPart("runs", "Trace", `How many times does line ${snip.hotLine} run when n = ${small}?`, hot, 0,
+        `Trace it by hand: for each value of i, count how many times line ${snip.hotLine} runs, then add the counts up.`),
       choicePart("time", "Big-O", "As n grows, how does the running time grow?", L.time, timeChoices,
         "Time follows the total number of loop steps. Drop constant factors and smaller terms."),
     ];
-    if (tier !== "medium") parts.push(numPart("size", "Data size", `How many megabytes do the pairs in \`out\` take in production?${ROUND2}`, mb, 2,
+    if (tier !== "medium") parts.push(numPart("size", "Data size", `How many megabytes do the pairs built by \`${snip.fn}\` take in production?${ROUND2}`, mb, 2,
       "Bytes per pair = total bits ÷ 8. Count the pairs for the production n with the same rule you used in your trace, multiply, then divide by 1,000,000."));
     if (tier === "expert") parts.push(numPart("upload", "Networking", `How many seconds does the upload take? Use your size answer and ignore protocol overhead.${ROUND2}`, secs, 2,
       "Megabytes × 8 gives megabits; divide by the link speed in Mbps to get seconds."));
@@ -883,7 +929,7 @@ function genLoopTier(rng, tier) {
       : L.key === "doubling" ? `j goes 1 → 2 → … until it reaches ${small}: ${Math.ceil(Math.log2(small))} doublings, × ${small} values of i = ${hot}`
       : L.key === "evens" ? `i = ${Array.from({ length: Math.ceil(small / 2) }, (_, k) => 2 * k).join(", ")}: ${hot} runs`
       : L.key === "three" ? `3 × ${small} = ${hot}` : `${small} × ${small} = ${hot}`;
-    let explanation = `**Trace.** For n = ${small}: ${smallHow}, so the hot line runs **${hot}** times.\n\n**Big-O.** ${L.why} Time grows like **${L.time}**.`;
+    let explanation = `**Trace.** For n = ${small}: ${smallHow}, so line ${snip.hotLine} runs **${hot}** times.\n\n**Big-O.** ${L.why} Time grows like **${L.time}**.`;
     if (tier !== "medium") {
       explanation += `\n\n**Data size.** One pair is ${rec.bits[0]} + ${rec.bits[1]} = ${rec.bits[0] + rec.bits[1]} bits = ${recBytes} bytes.\n\n` +
         [row("_n", N), row("_pair_bytes", recBytes), ...(tier === "expert" ? [row("_mbps", R)] : []),
@@ -894,7 +940,7 @@ function genLoopTier(rng, tier) {
     return {
       prompt, answerType: "multi", parts, explanation,
       given: given(tier === "medium" ? [["_n", small]] : tier === "hard" ? [["_n", N]] : [["_n", N], ["_mbps", R]]),
-      params: { kind: "loop-t", tier, loop: L.key, small, N, bits: rec.bits.slice(), R },
+      params: { kind: "loop-t", tier, loop: L.key, small, N, bits: rec.bits.slice(), R, lang, hotLine: snip.hotLine },
     };
   }
   throw new Error("hot-loop: no draw");
@@ -909,7 +955,7 @@ function genFxTier(rng, tier) {
     const bp = medium ? rng.pick([100, 150, 200, 250, 300]) : rng.pick([50, 75, 90, 120, 150]);
     const minC = medium ? 0 : rng.pick([500, 750, 1000, 1500, 2500]);
     const rate = medium ? rng.int(8000, 9800) : rng.int(6000, 15000);
-    const day0 = utc(2026, 1, 1) + rng.int(0, 729) * dayMs;
+    const day0 = addCalendarDays(2026, 1, 1, rng.int(0, 729));
     const k = rng.int(1, 3);
     const payee = rng.pick(PAYEES);
     const N = rng.int(150, 5000);
@@ -924,14 +970,13 @@ function genFxTier(rng, tier) {
     const rem = x % 10000;
     if (rem <= 5 || rem >= 9995) continue;
     const outC = Math.floor(x / 10000);
-    const sub = fromMs(day0);
-    const isBiz = (ms0) => { const w = fromMs(ms0).w; return w !== 0 && w !== 6; };
-    if (tier === "hard" && !isBiz(day0)) continue;
+    const sub = day0;
+    if (tier === "hard" && !isBizDay(day0.w)) continue;
     let cur = day0;
-    if (!isBiz(cur)) { do cur += dayMs; while (!isBiz(cur)); }
-    const start = fromMs(cur);
-    for (let i = 0; i < k; i++) { do cur += dayMs; while (!isBiz(cur)); }
-    const settle = fromMs(cur);
+    if (!isBizDay(cur.w)) cur = nextBiz(cur);
+    const start = cur;
+    for (let i = 0; i < k; i++) cur = nextBiz(cur);
+    const settle = cur;
     const batches = Math.ceil(N / conc);
     const secs = (batches * ms) / 1000;
     const pct = num(bp / 100);
@@ -962,7 +1007,7 @@ function genFxTier(rng, tier) {
         step("_net", `_amount - ${dec(feeC)}`, dec(amountC - feeC)),
         step("_eur", "_net * _rate", `${num((amountC - feeC) * rate / 1e6)}`),
         step("_received", "floor(_eur * 100) / 100", `**${eur(outC)}**`)].join("\n");
-    if (!medium) explanation += `\n\n**Settlement.** ${tier === "expert" && !isBiz(day0) ? `It was submitted on a weekend, so it starts on ${WEEKDAYS[start.w]} ${fmtDay(start)}. ` : ""}Counting ${k} business day${k > 1 ? "s" : ""} forward from ${WEEKDAYS[start.w]} ${fmtDay(start)} gives **${WEEKDAYS[settle.w]} ${fmtDay(settle)}**.`;
+    if (!medium) explanation += `\n\n**Settlement.** ${tier === "expert" && !isBizDay(day0.w) ? `It was submitted on a weekend, so it starts on ${WEEKDAYS[start.w]} ${fmtDay(start)}. ` : ""}Counting ${k} business day${k > 1 ? "s" : ""} forward from ${WEEKDAYS[start.w]} ${fmtDay(start)} gives **${WEEKDAYS[settle.w]} ${fmtDay(settle)}**.`;
     if (tier === "expert") explanation += `\n\n**Throughput.** ${commas(N)} ÷ ${conc} = ${num(N / conc)}, rounded up to ${commas(batches)} groups. ${commas(batches)} × ${ms} ms = ${commas(batches * ms)} ms = **${f2(secs)} s**.`;
     return {
       prompt: `You're building the payout service for a marketplace. A customer pays **${usd(amountC)}** to ${payee}, who is paid in euros.\n\n${lines.join("\n")}`,
@@ -1037,7 +1082,7 @@ function verifyLedgerTier(q, a) {
   if (!fix || fix.choices.length !== 3 || new Set(fix.choices).size !== 3) return false;
   const passing = p.choiceIds.filter((k) => FIXES[k] && FIXES[k].run(amounts, t) === trueC);
   if (passing.length !== 1) return false;
-  const want = tick(FIXES[passing[0]].code);
+  const want = fixTick(passing[0], p.lang);
   return fix.choices.includes(want) && String(a.fix) === want;
 }
 
@@ -1057,13 +1102,13 @@ function verifyLoopTier(q, a) {
       return hot;
     };
     const h = run(p.small);
-    if (h === null || !sameInt(a.runs, h)) return false;
+    if (h === null || !sameInt(a.runs, h) || !loopCodeOk(q, p, h)) return false;
     const time = growthOf(run(200) + 200, run(400) + 400);
     const tp = q.parts.find((x) => x.id === "time");
     return time !== "?" && !!tp && tp.choices.filter((x) => x === time).length === 1 && a.time === time;
   }
   const s = simLoop(p.loop, p.small);
-  if (!s || !sameInt(a.runs, s[0])) return false;
+  if (!s || !sameInt(a.runs, s[0]) || !loopCodeOk(q, p, s[1])) return false;
   const lo = simLoop(p.loop, 200), hi = simLoop(p.loop, 400);
   const time = growthOf(lo[0] + 200, hi[0] + 400);
   const tp = q.parts.find((x) => x.id === "time");
@@ -1102,16 +1147,20 @@ function verifyFxTier(q, a) {
 
 const GENS = { "api-endpoint": genApi, "ledger-check": genLedger, "hot-loop": genLoop, "fx-payout": genFx };
 
-export function generate({ subtopic, difficulty, rng }) {
+// Questions that show code carry their language (the engine keeps it for regenerate and review).
+const withLang = (q) => (q.params && q.params.lang ? { ...q, lang: q.params.lang } : q);
+
+export function generate({ subtopic, difficulty, rng, lang }) {
+  const L = LANG_IDS.includes(lang) ? lang : DEFAULT_LANG;
   if (TIER_IDS.includes(difficulty)) {
     const t = TIER_GENS[subtopic];
     if (!t) throw new Error(`Unknown subtopic: ${subtopic}`);
-    return t(rng, difficulty);
+    return withLang(t(rng, difficulty, L));
   }
   if (difficulty !== "expert-plus") throw new Error(`Unknown difficulty: ${difficulty}`);
   const g = GENS[subtopic];
   if (!g) throw new Error(`Unknown subtopic: ${subtopic}`);
-  return g(rng);
+  return withLang(g(rng, L));
 }
 
 export function verify(question, answer) {

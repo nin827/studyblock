@@ -13,12 +13,15 @@
 //   Counting:       addressCount(n), usableHosts(n) = 2^(32-n) - 2
 //   Arithmetic:     addToOctets(octets, delta) (with carry, may be negative)
 
+import { bin8 } from './mathutil.js';
+
 const pow2 = k => Math.pow(2, k);
 
 export const octetsToInt = o => ((o[0] << 24) | (o[1] << 16) | (o[2] << 8) | o[3]) >>> 0;
 export const intToOctets = v => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
 export const formatIPv4 = a => (Array.isArray(a) ? a : intToOctets(a)).join('.');
-export const bin8 = d => d.toString(2).padStart(8, '0');
+// bin8 lives in mathutil.js; re-exported so existing imports keep working.
+export { bin8 };
 export const binDotted = o => o.map(bin8).join('.');
 
 // Mask octets for /n: each octet holds `bits` ones, worth 256 - 2^(8 - bits).
