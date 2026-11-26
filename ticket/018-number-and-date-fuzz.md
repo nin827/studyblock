@@ -27,3 +27,10 @@
 - **Credit:** 1 unit off at the answer's precision → 50% (1 month off for month/year, 1 day off for full dates, including across month or year ends); otherwise 0.
 - CSV modules gain an optional `type` column (`date`), with the precision taken from the answer's own format.
 - New hand-checked date rows go in World History and Inventions.
+
+## Update: leniency is a number (user, 2026-11-26)
+
+The named profiles are replaced by a number. 0 means exact, 1 means normal (the bands above), and higher means more lenient; fractions are allowed.
+- **Text:** `"fuzzy": n`. Up to floor(n) typos are allowed, and each extra typo costs 15% more (never below 25%). `false` still means 0.
+- **Numbers:** `"fuzzyNumber": n` scales the relative bands. For example, at 2: ≤ 0.2% → 90%, ≤ 2% → 75%, ≤ 4% → 50%.
+- **Years and dates:** `"fuzzyNumber": { "mode": "years", "level": n }`. Being up to n years (or months/days) off earns 50%.
