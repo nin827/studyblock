@@ -1,0 +1,16 @@
+{
+  "id": "role-physicist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join motion, orbits, radioactive decay, heat and electricity, as a working physicist meets them.",
+  "icon": "atom",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "launch-motion", "title": "Launch and slide", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "orbit-signals", "title": "Orbits and signals", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "decay-safety", "title": "Decay and safe handling", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "heating-power", "title": "Heating and power", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

@@ -145,7 +145,10 @@ A role is a hand-made weighted mix with a difficulty shift, plus role-only Exper
   - Business Analyst (`role-business-analyst`): sales-review, statement-review, investment-case, campaign-pricing.
   - Software Engineer (`role-software-engineer`, Python 3): api-endpoint, ledger-check, hot-loop, fx-payout.
   - Mathematician (`role-mathematician`): quality-control, claims-pricing, growth-model, check-derivation (role level only; population SD, end-of-year discounting).
-- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary. There are no "X Teacher" subroles: teaching would be a general role of its own.
+  - Data Analyst (`role-data-analyst`): ab-test, kpi-review, query-outliers, storage-cost. Lifts are percentage points; a segment's contribution is its change ÷ last period's total; outlier = more than 2 × the median of the returned rows; 1 GB = 10^9 bytes.
+  - Physicist (`role-physicist`, g = 10 m/s², constants stated): launch-motion, orbit-signals, decay-safety, heating-power.
+  - Accountant (`role-accountant`): transaction-review, audit-review, asset-review, break-even-review (whole-dollar figures, 365-day year, covenant and materiality rules stated in each prompt, no country-specific law).
+- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary, BI and Research Analyst, Astrophysicist and Nuclear Physicist, Auditor and Management Accountant. There are no "X Teacher" subroles: teaching would be a general role of its own. Future roles are parked in ticket 021.
 - **Storage:** a role attempt is stored as `module: "role"`, `subtopic: "<role>"` or `"<role>~<subrole>"`, and `difficulty: <role level>`.
   - Questions carry their own origin, and their stored difficulty is the subject level drawn (`expert-plus` for scenarios). They count toward subject stats like mixes do; role-only modules count only under the role.
   - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.

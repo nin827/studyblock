@@ -1,0 +1,16 @@
+{
+  "id": "role-data-analyst",
+  "title": "Data Analyst scenarios",
+  "description": "Multi-part cases that join experiments, KPI reviews, SQL results and storage costs, as a data analyst meets them.",
+  "icon": "chart-line",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "ab-test", "title": "A/B test", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "kpi-review", "title": "KPI review", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "query-outliers", "title": "Query results and outliers", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "storage-cost", "title": "Data storage cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}
