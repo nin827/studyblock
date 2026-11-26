@@ -177,10 +177,44 @@ function draw(rng, make, ok, tries = 60) {
 // ---------------------------------------------------------------------------------------------
 // Forces
 
-// Names that suit the mass (kg): the first pool whose upper bound is above m.
-function nameFor(m, rng, pools) {
-  for (const [upTo, names] of pools) if (m < upTo) return rng.pick(names);
-  return rng.pick(pools[pools.length - 1][1]);
+// Names that suit the mass (kg): the first pool whose upper bound is above m. With a speed v (m/s),
+// a name that can't go that fast is swapped for one that can (realism only: the rng draw is the same,
+// so the numbers never change).
+function nameFor(m, rng, pools, v) {
+  let names = pools[pools.length - 1][1];
+  for (const [upTo, list] of pools) if (m < upTo) { names = list; break; }
+  const name = rng.pick(names);
+  return v === undefined ? name : fitName(name, names, { v }) ?? fastName(m, v);
+}
+// Plausible limits per name: [min kg, max kg, top speed in m/s]. Names not listed fit anything.
+const LIMITS = {
+  ball: [0, 1, 70], "toy car": [0, 10, 15], "wooden block": [0, 10, 10], "hockey puck": [0, 1, 50], "model boat": [0, 10, 10],
+  trolley: [0, 40, 6], "bowling ball": [0, 10, 10], drone: [0, 10, 30], box: [0, 45, 10], crate: [0, 1000, 10],
+  sledge: [1, 130, 25], wheelbarrow: [5, 130, 3], "shopping cart": [5, 60, 5], "go-kart": [60, 250, 27],
+  runner: [40, 130, 12], cyclist: [40, 130, 20], skater: [30, 130, 15],
+  motorbike: [100, 700, 70], "quad bike": [150, 700, 30], "loaded pallet": [100, 2000, 5], "small boat": [100, 2000, 25],
+  car: [700, 3000, 60], "electric car": [900, 3000, 60], van: [700, 4000, 45], minibus: [1000, 5000, 35],
+  tractor: [1000, 10000, 12], "pickup truck": [900, 4000, 45],
+  cart: [1, 200, 8], "toy go-kart": [1, 20, 8], "model rocket car": [0, 20, 60],
+  skateboarder: [30, 110, 20], "BMX rider": [30, 120, 20], "roller-coaster car": [150, 2000, 40], toboggan: [5, 300, 25], "soapbox racer": [40, 250, 25],
+};
+function fitName(name, list, { m, v }) {
+  const ok = (n) => {
+    const L = LIMITS[n];
+    return !L || ((m === undefined || (m >= L[0] && m <= L[1])) && (v === undefined || v <= L[2]));
+  };
+  const i = Math.max(0, list.indexOf(name));
+  for (let k = 0; k < list.length; k++) if (ok(list[(i + k) % list.length])) return list[(i + k) % list.length];
+  return null;
+}
+// Something that really does move this fast at this mass.
+function fastName(m, v) {
+  if (m < 1) return v <= 70 ? "ball" : "model rocket";
+  if (m < 10) return v <= 30 ? "drone" : "model rocket";
+  if (m < 45) return "skeleton sled";
+  if (m < 130) return "skier";
+  if (m < 700) return "motorbike";
+  return v <= 60 ? "car" : "racing car";
 }
 // Something pushed, pulled or moving (people only at adult masses).
 const BODY_POOLS = [
@@ -706,7 +740,7 @@ function genWork(d, rng) {
 
   if (kind === "pfv" || kind === "pfv-F") {
     const unknown = kind === "pfv" ? "P" : "F";
-    const who = rng.pick(VEHICLES);
+    const whoDrawn = rng.pick(VEHICLES);
     let F, v, P;
     const units = {};
     if (d === "medium") {
@@ -723,6 +757,7 @@ function genWork(d, rng) {
     }
     const { C } = labeler(units);
     const vs = toSI(v, units.v);
+    const who = fitName(whoDrawn, VEHICLES, { v: vs }) ?? "car"; // no tractor at motorway speed
     const vTxt = `${num(v)} ${units.v || "m/s"}`;
     const conv = units.v ? [`Convert first: ${convLine(v, "km/h")}.`] : [];
     if (unknown === "P") {
@@ -857,6 +892,9 @@ function workMulti(rng) {
 // ---------------------------------------------------------------------------------------------
 // Energy
 
+// Nobody throws a brick upward much faster than this by hand (m/s); faster launches use a catapult.
+const HAND_THROW = 15;
+const upVerb = (u) => (u > HAND_THROW ? "launched by a catapult" : "thrown");
 const DROPS = ["stone", "rock", "parcel", "sandbag", "ball", "melon", "brick"];
 
 function genEnergy(d, rng) {
@@ -908,7 +946,7 @@ function genEnergy(d, rng) {
       if (unknown !== "Ek") Ek = Math.max(0.1, fix(Math.round(0.5 * m * v * v * 10) / 10)); // stated to 1 decimal
     }
     if (Ek === undefined) Ek = fix(0.5 * m * v * v);
-    const thing = bodyFor(m, rng);
+    const thing = nameFor(m, rng, BODY_POOLS, v);
     const mShown = fix(units.m ? m * 1000 : m);
     const vShown = fix(units.v ? v * 3.6 : v);
     const values = { m: mShown, v: vShown, Ek };
@@ -1064,7 +1102,7 @@ function genEnergy(d, rng) {
   }
   const exact = (u * u) / (2 * G);
   return single({
-    prompt: `A ${num(m)} kg ${thing} is thrown straight up at ${num(u)} m/s. Ignoring air resistance and using g = 9.8 N/kg, how high does it rise above the point where it was thrown, in m?${end}`,
+    prompt: `A ${num(m)} kg ${thing} is ${upVerb(u)} straight up at ${num(u)} m/s. Ignoring air resistance and using g = 9.8 N/kg, how high does it rise above the point where it was ${u > HAND_THROW ? "launched" : "thrown"}, in m?${end}`,
     exact, unit: "m", rounded, formula: "rise", unknown: "h", values: { m, u, g: G }, units: {},
     steps: [
       "At the top it stops for a moment, so all its kinetic energy has become potential energy: `½mu² = mgh`. The mass cancels, so `h = u² / (2g)`.",
@@ -1114,9 +1152,9 @@ function energyMulti(rng) {
     `2. \`m × g × h = Ek\`, so \`h = Ek / (m × g) = ${num(Ek)} / (${num(m)} × 9.8)\` ${result(h, true, "m")}`,
   ].join("\n\n");
   return multi(
-    `A ${num(m)} kg ${thing} is thrown straight up at ${num(u)} m/s. Use g = 9.8 N/kg and ignore air resistance.`,
+    `A ${num(m)} kg ${thing} is ${upVerb(u)} straight up at ${num(u)} m/s. Use g = 9.8 N/kg and ignore air resistance.`,
     [
-      numPart("ke", "Kinetic energy", `What is its kinetic energy as it leaves the hand, in J?${DP}`, Ek,
+      numPart("ke", "Kinetic energy", `What is its kinetic energy as it ${u > HAND_THROW ? "is launched" : "leaves the hand"}, in J?${DP}`, Ek,
         "Use `Ek = ½ × m × v²` (in the calculator: `0.5 * _m * _u^2`).", { formula: "ke", unknown: "Ek", values: { m, v: u }, units: {} }),
       numPart("height", "Maximum height", `How high does it rise, in m?${DP}`, h,
         "At the top all of it is potential energy: set `m × g × h = Ek` and solve for h (the mass cancels; in the calculator: `_u^2 / (2 * _g)`).", { formula: "rise", unknown: "h", values, units: {} }),
@@ -1190,7 +1228,7 @@ function genMomentum(d, rng) {
       if (unknown !== "p") p = Math.max(0.1, fix(Math.round(m * v * 10) / 10)); // stated to 1 decimal
     }
     if (p === undefined) p = fix(m * v);
-    const body = units.m && d === "medium" ? rng.pick(["ball", "hockey puck"]) : bodyFor(unknown === "m" ? p / v : m, rng);
+    const body = units.m && d === "medium" ? rng.pick(["ball", "hockey puck"]) : nameFor(unknown === "m" ? p / v : m, rng, BODY_POOLS, v);
     const mShown = fix(units.m ? m * 1000 : m);
     const vShown = fix(units.v ? v * 3.6 : v);
     const values = { p, m: mShown, v: vShown };
@@ -1385,7 +1423,8 @@ function genMomentum(d, rng) {
         ([mm, uu, vv, tt]) => Number.isInteger(clean((mm * (vv - uu)) / tt)),
       );
       const exact = clean((m * (v - u)) / t);
-      const body = rng.pick(["trolley", "cart", "go-kart", "sledge"]);
+      const IMPULSE_BODIES = ["trolley", "cart", "toy go-kart", "sledge"];
+      const body = fitName(rng.pick(IMPULSE_BODIES), IMPULSE_BODIES, { m, v }) ?? "model rocket car";
       return single({
         prompt: `A ${m} kg ${body} speeds up from ${u ? `${u} m/s` : "rest"} to ${v} m/s in ${num(t)} s. What average resultant force acts on it, in N?`,
         exact, unit: "N", rounded: false, formula: "impulse", unknown: "F", values: { m, u, v, t }, units: {}, skip: u ? [] : ["u"],
@@ -1962,9 +2001,11 @@ function xBounce(rng) {
 
 // energy / expert: work backwards from a target speed to the start height, with and without losses.
 function xRamp(rng) {
-  const who = rng.pick(["skateboarder", "BMX rider", "roller-coaster car", "toboggan", "soapbox racer"]);
+  const RIDERS = ["skateboarder", "BMX rider", "roller-coaster car", "toboggan", "soapbox racer"];
+  const whoDrawn = rng.pick(RIDERS);
   const m = rng.int(30, 400);
   const v = rng.int(40, 200) / 10;
+  const who = fitName(whoDrawn, RIDERS, { m, v }) ?? "roller-coaster car";
   const loss = rng.int(10, 40);
   const h0 = (v * v) / (2 * G);
   const h1 = h0 / (1 - loss / 100);

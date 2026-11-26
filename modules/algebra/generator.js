@@ -114,6 +114,11 @@ function genLinear(difficulty, rng) {
     a = intWithMinAbs(rng, -15, 15, 2);
     b = rng.int(-50, 50);
     c = rng.int(-50, 50);
+    // Never land exactly on a rounding half-step (x.xx5): redraw b and c with the same rng.
+    while ((200 * (c - b)) % a === 0 && Math.abs((1000 * (c - b)) / a) % 10 === 5) {
+      b = rng.int(-50, 50);
+      c = rng.int(-50, 50);
+    }
   } else {
     throw new Error(`Unknown difficulty: ${difficulty}`);
   }
@@ -596,7 +601,11 @@ export function verify(question, answer) {
   if (p.kind === "linear") {
     if (p.a === 0) return false;
     const residual = Math.abs(p.a * x + p.b - p.c);
-    if (p.rounded) return residual <= 0.005 * Math.abs(p.a) + 1e-6;
+    if (p.rounded) {
+      // In hundredths, with integers: |a·X + 100b − 100c| < |a|/2 strictly, so a half-step tie fails.
+      const X = Math.round(x * 100);
+      return Math.abs(x * 100 - X) < 1e-6 && 2 * Math.abs(p.a * X + 100 * (p.b - p.c)) < Math.abs(p.a);
+    }
     return Number.isInteger(x) && residual === 0;
   }
 

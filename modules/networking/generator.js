@@ -902,6 +902,9 @@ function roundWords(rounded) {
 // "an 8 Mbps link", "an 11 Mbps link", but "a 100 Mbps link".
 const an = (n) => (/^(8|(11|18)(\d{3})?(\.\d+)?$)/.test(String(n)) ? "an" : "a");
 
+// Significant digits of a whole number (trailing zeros don't count).
+const sigDigits = (n) => String(n).replace(/0+$/, "").length;
+
 function genTransfer(difficulty, rng) {
   checkDifficulty(difficulty);
   const what = rng.pick(FILES);
@@ -1004,8 +1007,14 @@ function genTransfer(difficulty, rng) {
 
   // hard
   const kind = rng.pick(["time", "rate", "multi"]);
-  const su = rng.pick(["MiB", "GiB", "GiB"]);
-  const S = su === "GiB" ? rng.int(1, 64) : rng.int(50, 4000);
+  let su = rng.pick(["MiB", "GiB", "GiB"]);
+  let S = su === "GiB" ? rng.int(1, 64) : rng.int(50, 4000);
+  // The multi-part question asks for the size in bits: keep it within 10 significant digits, which is
+  // what the calculator's Use copies. Otherwise switch to MiB, at most 1192 (under 10^10 bits).
+  if (kind === "multi" && sigDigits(S * SIZE_F[su] * 8) > 10) {
+    su = "MiB";
+    S = rng.int(50, 1192);
+  }
   if (kind === "rate") {
     const mins = rng.int(1, 30), secsPart = rng.int(0, 59);
     const T = mins * 60 + secsPart;

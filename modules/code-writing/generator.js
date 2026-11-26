@@ -122,17 +122,38 @@ function checkBlank(m, part, solution, lo, hi) {
 // Picks 3 distractors that fail the spec, and whose rendering differs from every other option in
 // every language (decided without rng, so it is the same for every language). Returns options in
 // shuffled order with the correct index.
+// Meaning key of an option: comparisons written in one orientation (`c < x` is `x > c`), `not (a != b)`
+// as `a == b` and `not (not a)` as `a`. `and`/`or` keep their order (short-circuiting can matter).
+const CMPS = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!=' };
+const NEGS = { '<': '>=', '>=': '<', '>': '<=', '<=': '>', '==': '!=', '!=': '==' };
+function canon(e) {
+  if (Array.isArray(e)) return e.map(canon);
+  if (!e || typeof e !== 'object') return e;
+  if (e.k === 'not' && e.x && e.x.k === 'bin' && NEGS[e.x.op]) return canon({ ...e.x, op: NEGS[e.x.op] });
+  if (e.k === 'not' && e.x && e.x.k === 'not') return canon(e.x.x);
+  const o = {};
+  for (const [k, v] of Object.entries(e)) o[k] = canon(v);
+  if (o.k === 'bin' && CMPS[o.op] && JSON.stringify(o.a) > JSON.stringify(o.b)) return { ...o, op: CMPS[o.op], a: o.b, b: o.a };
+  return o;
+}
+const meaningKey = o => JSON.stringify(canon(o));
+
 function pickOptions(rng, m, correct, pool, spec, renderOpt) {
   const passes = o => { const p = buildWith(m, o); return !!p && meets(p, spec); };
   if (!passes(correct)) throw new Error(`template ${m.t}: correct option fails`);
   const shuffled = rng.shuffle(pool);
   const chosen = [correct];
   const keys = LANG_IDS.map(l => new Set([renderOpt(correct, l)]));
+  const meanings = new Set([meaningKey(correct)]);
   for (const o of shuffled) {
     if (chosen.length === 4) break;
     if (passes(o)) continue;
     const r = LANG_IDS.map(l => renderOpt(o, l));
     if (r.some((s, i) => keys[i].has(s))) continue;
+    // Two wrong options that say the same thing (`== M` and `not (!= M)`, `x > c` and `c < x`): keep the first.
+    const mk = meaningKey(o);
+    if (meanings.has(mk)) continue;
+    meanings.add(mk);
     r.forEach((s, i) => keys[i].add(s));
     chosen.push(o);
   }
@@ -177,9 +198,12 @@ function choiceQ({ rng, m, correct, pool, spec, renderOpt, prompt, explain, lang
   return {
     prompt, answer: choices[correctIndex], answerType: 'choice', choices, explanation: explain(opts, correctIndex), lang,
     meta: { t: m.t, p: m.p, lang, correctIndex, main: { kind: 'choice', spec, opts } },
-    ...(hints ? { hints } : {}),
+    ...(hints ? { hints: typeof hints === 'function' ? hints(opts) : hints } : {}),
   };
 }
+// Does any shown option divide (/ or %)? The whole-number division note is only added when one does.
+const usesDiv = e => !!e && typeof e === 'object' && ((e.k === 'bin' && (e.op === '/' || e.op === '%')) || Object.values(e).some(v => Array.isArray(v) ? v.some(usesDiv) : usesDiv(v)));
+const divNoteFor = (opts, lang) => (opts.some(usesDiv) ? ` ${intDivNote(lang)}` : '');
 
 // Two-part question: a number blank plus "what does line k print?".
 function blankOutputQ({ m, solution, smallest = false, floor = 0, lo, hi, spec, outLine, outAnswer, prompt, askBlank, askOut, explanation, lang, hintBlank, hintOut }) {
@@ -357,9 +381,9 @@ function exprCompound(rng, lang) {
     prompt: `Which expression fills the blank ${tk(BLANK)} so that this program prints ${tk(js[k])}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `Brackets first, then ${tk('*')}, ${tk(langNotes(lang).intDiv)} and ${tk('%')}, then ${tk('+')} and ${tk('-')}, left to right. ` +
       `${tk(renderOpt(opts[ci], lang))} gives ${js[k]}. ` + opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, spec, lang)}.`).join(' '),
-    hints: [
+    hints: opts => [
       `Put the values into each option: ${tk(vn(a, lang))} = ${A}, ${tk(vn(b, lang))} = ${B}, ${tk(vn(c, lang))} = ${C}. Only one gives ${js[k]}.`,
-      `Order matters: brackets first, then ${tk('*')}, ${tk(langNotes(lang).intDiv)} and ${tk('%')}, then ${tk('+')} and ${tk('-')}. ${intDivNote(lang)}`,
+      `Order matters: brackets first, then ${tk('*')}, ${tk(langNotes(lang).intDiv)} and ${tk('%')}, then ${tk('+')} and ${tk('-')}.${divNoteFor(opts, lang)}`,
     ] });
 }
 
@@ -985,9 +1009,9 @@ function fnReturnChoice(rng, lang) {
     prompt: `${tk(fnName(goal.fn, lang))} should return ${words}. For example: ${examplesText(prog, goal.fn, tests, lang)}. Which expression fills the blank ${tk(BLANK)}?\n\n${code(prog, lang)}`,
     explain: (opts, ci) => `${tk(renderOpt(opts[ci], lang))} gives ${tests.map(t => t.expect).join(' and ')}.${goal.fn === 'half' || goal.fn === 'parity' ? ' ' + intDivNote(lang) : ''} ` +
       opts.filter((_, i) => i !== ci).map(o => `${tk(renderOpt(o, lang))} ${whyWrong(m, o, { tests }, lang, showCall(prog, goal.fn, lang))}.`).join(' '),
-    hints: [
+    hints: opts => [
       `Put each example into every option: with ${tk(vn(par, lang))} = ${a} the function must return ${tests[0].expect}, and with ${tk(vn(par, lang))} = ${b} it must return ${tests[1].expect}.`,
-      `An option has to match both examples, not just one. ${intDivNote(lang)}`,
+      `An option has to match both examples, not just one.${divNoteFor(opts, lang)}`,
     ] });
 }
 

@@ -108,7 +108,51 @@ function nibbleTable(hex) {
 
 // ---- binary ----
 
+// Easy binary also asks counting, doubling, mixed-base sums and bit counts (ticket 014: the 2-15
+// conversions alone gave only ~42 distinct prompts). The extra draw comes after every conversion draw,
+// so seeds that stay conversions give exactly the question they always did.
 function genBinary(difficulty, rng) {
+  const q = genBinaryConvert(difficulty, rng);
+  if (difficulty !== "easy" || rng.next() >= 0.5) return q;
+  const p = q.params;
+  const v = p.from === "bin" ? parseDigits(p.input, 2) : Number(p.input);
+  const bin = toBin(v);
+  const kind = rng.pick(["step", "double", "mixsum", "bits"]);
+  if (kind === "step") {
+    const delta = rng.next() < 0.5 ? 1 : -1;
+    return {
+      prompt: `Counting in binary, which number comes straight ${delta > 0 ? "after" : "before"} \`${bin}\`? ${BIN_FMT}`,
+      answer: toBin(v + delta), answerType: "text", choices: undefined,
+      explanation: `\`${bin}\` = ${v}, and ${v} ${delta > 0 ? "+" : "−"} 1 = ${v + delta}.\n\n${explainFromDec(v + delta, 2).join("\n\n")}`,
+      params: { kind: "step", input: bin, delta },
+    };
+  }
+  if (kind === "double") {
+    return {
+      prompt: `What is double the binary number \`${bin}\`? ${BIN_FMT}`,
+      answer: toBin(2 * v), answerType: "text", choices: undefined,
+      explanation: `Doubling moves every bit one place to the left, so a 0 goes on the end: \`${bin}\` → **${toBin(2 * v)}**. Check: ${v} × 2 = ${2 * v}.`,
+      params: { kind: "double", input: bin },
+    };
+  }
+  if (kind === "mixsum") {
+    const w = rng.int(2, 15);
+    return {
+      prompt: `What is the binary number \`${bin}\` plus the decimal number ${w}? Answer in decimal.`,
+      answer: v + w, answerType: "number", tolerance: 0, choices: undefined,
+      explanation: `${explainToDec(bin, 2).join("\n\n")}\n\nThen ${v} + ${w} = **${v + w}**.`,
+      params: { kind: "mixsum", a: bin, b: w },
+    };
+  }
+  return {
+    prompt: `How many bits (binary digits) does the number ${v} need, written in binary without leading zeros?`,
+    answer: bin.length, answerType: "number", tolerance: 0, choices: undefined,
+    explanation: `${v} in binary is \`${bin}\`, which has **${bin.length}** bits. (${2 ** (bin.length - 1)} ≤ ${v} < ${2 ** bin.length}.)`,
+    params: { kind: "bits", input: String(v) },
+  };
+}
+
+function genBinaryConvert(difficulty, rng) {
   const [lo, hi] = range(BIN_RANGE, difficulty);
   const v = rng.int(lo, hi);
   const bin = toBin(v);
@@ -580,6 +624,22 @@ function hintsFor(p) {
     if (from === "bin" && to === "hex") return hintsBinToHex(input);
     return null;
   }
+  if (p.kind === "step") return [
+    `Turn \`${p.input}\` into decimal first: add the place values 1, 2, 4, 8 under each 1.`,
+    `${p.delta > 0 ? "Add" : "Take away"} 1, then turn the result back into binary (divide by 2 again and again and read the remainders upwards).`,
+  ];
+  if (p.kind === "double") return [
+    "Every place in binary is worth twice the place to its right.",
+    `So doubling moves each bit of \`${p.input}\` one place to the left: write a 0 on the end, just as × 10 does in decimal.`,
+  ];
+  if (p.kind === "mixsum") return [
+    `Only one number is in binary. Turn \`${p.a}\` into decimal: add the place values 1, 2, 4, 8 under each 1.`,
+    `Then add ${p.b} to it in decimal.`,
+  ];
+  if (p.kind === "bits") return [
+    "The place values in binary are 1, 2, 4, 8, 16, …. Find the biggest place value that fits into the number.",
+    `That place is the leftmost bit. Count the places from it down to the 1s place, including both.`,
+  ];
   if (p.kind === "add") return hintsAdd(p.a, p.b);
   if (p.kind === "negate8") return hintsNegate(p.input);
   if (p.kind === "signed8") return hintsSigned(p.input);
@@ -646,6 +706,28 @@ function expectation(p) {
     const b = parseDigits(p.b, 2);
     if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     return { to: "bin", ok: (v) => v === a + b };
+  }
+  if (p.kind === "step") {
+    const x = parseDigits(p.input, 2);
+    if (!Number.isFinite(x) || (p.delta !== 1 && p.delta !== -1)) return null;
+    return { to: "bin", ok: (v) => v - p.delta === x }; // undo the step
+  }
+  if (p.kind === "double") {
+    const x = parseDigits(p.input, 2);
+    if (!Number.isFinite(x)) return null;
+    return { to: "bin", ok: (v) => v % 2 === 0 && v / 2 === x }; // halve it back
+  }
+  if (p.kind === "mixsum") {
+    const x = parseDigits(p.a, 2);
+    if (!Number.isFinite(x) || !Number.isInteger(p.b)) return null;
+    return { to: "dec", ok: (v) => v - p.b === x };
+  }
+  if (p.kind === "bits") {
+    const x = Number(p.input);
+    if (!Number.isInteger(x) || x < 1) return null;
+    let n = 0;
+    for (let y = x; y > 0; y = Math.floor(y / 2)) n++; // halvings until 0 = number of bits
+    return { to: "dec", ok: (v) => v === n };
   }
   if (p.kind === "negate8") {
     if (!/^[01]{8}$/.test(p.input)) return null;

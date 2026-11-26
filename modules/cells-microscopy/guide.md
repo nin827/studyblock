@@ -48,4 +48,6 @@ Example: doubling every 20 min for 2 hours = 120 ÷ 20 = 6 generations, so 1 cel
 
 Example: a 2 µm cube has SA 24 µm² and volume 8 µm³, so SA:V = 3.
 
+**Missing side:** divide the volume by the two sides you know. **A cell that divides in two** keeps its volume but gains two new faces, each the size of the cut (the two sides that weren't halved).
+
 **Watch out:** the bigger cell has the **smaller** ratio. Cutting a cube into smaller cubes adds surface without changing the volume.

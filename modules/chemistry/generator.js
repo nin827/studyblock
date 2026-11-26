@@ -718,6 +718,71 @@ const EQUATIONS = {
   ],
 };
 
+// More real equations per level (ticket 014: 18 a level was thin). Picked by a draw made after the
+// original question is built, so seeds that keep an EQUATIONS equation are unchanged.
+const EXTRA_EQUATIONS = {
+  easy: [
+    "2 Zn + 1 O2 = 2 ZnO",
+    "1 S + 1 O2 = 1 SO2",
+    "2 C + 1 O2 = 2 CO",
+    "2 Al + 3 Cl2 = 2 AlCl3",
+    "1 Mg + 1 Cl2 = 1 MgCl2",
+    "2 K + 1 Cl2 = 2 KCl",
+    "2 Fe + 3 Cl2 = 2 FeCl3",
+    "1 Fe + 1 S = 1 FeS",
+    "1 MgCO3 = 1 MgO + 1 CO2",
+    "1 CuCO3 = 1 CuO + 1 CO2",
+    "1 Zn + 1 CuSO4 = 1 ZnSO4 + 1 Cu",
+    "1 Fe + 1 CuSO4 = 1 FeSO4 + 1 Cu",
+    "1 Mg + 1 H2SO4 = 1 MgSO4 + 1 H2",
+    "1 Ca + 2 H2O = 1 Ca(OH)2 + 1 H2",
+    "1 CaO + 1 H2O = 1 Ca(OH)2",
+    "4 K + 1 O2 = 2 K2O",
+    "1 NaOH + 1 HCl = 1 NaCl + 1 H2O",
+    "1 Ca + 1 Cl2 = 1 CaCl2",
+  ],
+  medium: [
+    "1 CuO + 1 H2SO4 = 1 CuSO4 + 1 H2O",
+    "1 MgO + 2 HCl = 1 MgCl2 + 1 H2O",
+    "2 KOH + 1 H2SO4 = 1 K2SO4 + 2 H2O",
+    "1 CaCO3 + 2 HNO3 = 1 Ca(NO3)2 + 1 H2O + 1 CO2",
+    "1 Zn + 2 AgNO3 = 1 Zn(NO3)2 + 2 Ag",
+    "1 Cu + 2 AgNO3 = 1 Cu(NO3)2 + 2 Ag",
+    "2 ZnS + 3 O2 = 2 ZnO + 2 SO2",
+    "1 Fe3O4 + 4 CO = 3 Fe + 4 CO2",
+    "1 C2H4 + 3 O2 = 2 CO2 + 2 H2O",
+    "2 C3H6 + 9 O2 = 6 CO2 + 6 H2O",
+    "1 CuO + 2 HCl = 1 CuCl2 + 1 H2O",
+    "1 Fe + 2 HCl = 1 FeCl2 + 1 H2",
+    "2 NaOH + 1 CuSO4 = 1 Cu(OH)2 + 1 Na2SO4",
+    "1 MgCO3 + 2 HCl = 1 MgCl2 + 1 H2O + 1 CO2",
+    "1 Na2O + 2 HCl = 2 NaCl + 1 H2O",
+    "2 NH3 + 1 H2SO4 = 1 (NH4)2SO4",
+    "2 Mg + 1 CO2 = 2 MgO + 1 C",
+    "1 ZnO + 2 HNO3 = 1 Zn(NO3)2 + 1 H2O",
+  ],
+  hard: [
+    "1 C5H12 + 8 O2 = 5 CO2 + 6 H2O",
+    "2 C6H14 + 19 O2 = 12 CO2 + 14 H2O",
+    "2 C3H7OH + 9 O2 = 6 CO2 + 8 H2O",
+    "4 NH3 + 7 O2 = 4 NO2 + 6 H2O",
+    "1 Fe3O4 + 8 HCl = 1 FeCl2 + 2 FeCl3 + 4 H2O",
+    "2 KMnO4 = 1 K2MnO4 + 1 MnO2 + 1 O2",
+    "1 Mg3N2 + 6 H2O = 3 Mg(OH)2 + 2 NH3",
+    "1 PCl5 + 4 H2O = 1 H3PO4 + 5 HCl",
+    "1 P4 + 6 Cl2 = 4 PCl3",
+    "1 P4O10 + 6 H2O = 4 H3PO4",
+    "2 Fe(OH)3 = 1 Fe2O3 + 3 H2O",
+    "1 Cu + 2 H2SO4 = 1 CuSO4 + 1 SO2 + 2 H2O",
+    "2 Al(OH)3 + 3 H2SO4 = 1 Al2(SO4)3 + 6 H2O",
+    "4 Al + 3 MnO2 = 2 Al2O3 + 3 Mn",
+    "8 Al + 3 Fe3O4 = 4 Al2O3 + 9 Fe",
+    "2 Fe2O3 + 3 C = 4 Fe + 3 CO2",
+    "1 C12H22O11 + 12 O2 = 12 CO2 + 11 H2O",
+    "4 Zn + 10 HNO3 = 4 Zn(NO3)2 + 1 N2O + 5 H2O",
+  ],
+};
+
 // "2 H2 + 1 O2 = 2 H2O" -> [[{ coef: 2, f: "H2" }, …], [{ coef: 2, f: "H2O" }]]
 function parseEquation(text) {
   return text.split("=").map((side) =>
@@ -747,7 +812,7 @@ function balanced(sides, coefs) {
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 
 // Self-check on load: every listed equation balances and is in lowest whole-number terms.
-for (const list of Object.values(EQUATIONS)) {
+for (const list of [...Object.values(EQUATIONS), ...Object.values(EXTRA_EQUATIONS)]) {
   for (const text of list) {
     const sides = parseEquation(text);
     const coefs = sides.flat().map((t) => t.coef);
@@ -757,7 +822,14 @@ for (const list of Object.values(EQUATIONS)) {
 
 function genBalancing(d, rng) {
   checkDifficulty(d);
-  const text = rng.pick(EQUATIONS[d]);
+  const q = balancingQuestion(rng.pick(EQUATIONS[d]), rng);
+  const more = EXTRA_EQUATIONS[d];
+  // Each equation in the combined pool is equally likely.
+  if (rng.next() < more.length / (more.length + EQUATIONS[d].length)) return balancingQuestion(rng.pick(more), rng);
+  return q;
+}
+
+function balancingQuestion(text, rng) {
   const sides = parseEquation(text);
   const terms = sides.flat();
   const miss = rng.int(0, terms.length - 1);

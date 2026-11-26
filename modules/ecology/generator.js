@@ -704,11 +704,17 @@ function genBiodiversity(difficulty, rng) {
 export function generate({ subtopic, difficulty, rng }) {
   if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
-  if (subtopic === "energy") return genEnergy(difficulty, rng);
-  if (subtopic === "estimates") return genEstimates(difficulty, rng);
-  if (subtopic === "growth") return genGrowth(difficulty, rng);
-  if (subtopic === "biodiversity") return genBiodiversity(difficulty, rng);
-  throw new Error(`Unknown subtopic: ${subtopic}`);
+  const gen = { energy: genEnergy, estimates: genEstimates, growth: genGrowth, biodiversity: genBiodiversity }[subtopic];
+  if (!gen) throw new Error(`Unknown subtopic: ${subtopic}`);
+  // Redraw (same rng, so still deterministic) the rare question whose own check fails, e.g. an exact
+  // rounding tie such as 42.735 to 2 decimal places.
+  let q;
+  for (let t = 0; t < 20; t++) {
+    q = gen(difficulty, rng);
+    const own = q.answerType === "multi" ? Object.fromEntries(q.parts.map((x) => [x.id, x.answer])) : q.answer;
+    if (verify(q, own)) return q;
+  }
+  return q;
 }
 
 // =====================================================================================
@@ -794,6 +800,14 @@ function expected(p, partId) {
   }
 }
 
+// The dp-decimal value next to x (x rounded, or one step either side) that passes the reverse check
+// `ok`; NaN if none does. Used so verify agrees with checkAnswer near the edges of the tolerance.
+function snapRounded(ok, x, dp) {
+  const step = 10 ** -dp, r0 = roundTo(x, dp);
+  const pass = [r0, roundTo(r0 - step, dp), roundTo(r0 + step, dp)].filter((R) => ok(R));
+  return pass.length === 1 ? pass[0] : NaN; // two passing values: the true value is a rounding tie
+}
+
 function matches(exp, answer, q, d) {
   if (!exp || answer === undefined || answer === null || answer === "") return false;
   if (q.answerType === "choice") {
@@ -803,8 +817,15 @@ function matches(exp, answer, q, d) {
   if (exp.str !== undefined) return String(answer) === exp.str;
   const x = Number(String(answer).trim());
   if (!Number.isFinite(x)) return false;
-  if (exp.rev) return exp.rev(x);
   const dd = exp.d !== undefined ? exp.d : d;
+  if (exp.rev) {
+    // A rounded answer is compared with the rounded value the question asks for, as checkAnswer does:
+    // find that value R next to x (the reverse check holds for it), then x must be within the tolerance of R.
+    const tol = q.tolerance > 0 ? q.tolerance : tolFor(dd);
+    if (!(tol > 0)) return exp.rev(x);
+    const R = snapRounded(exp.rev, x, Math.round(-Math.log10(2 * tol)));
+    return Number.isFinite(R) && Math.abs(x - R) <= tol + 1e-9;
+  }
   return Math.abs(x - roundTo(exp.num, dd)) <= tolFor(dd) + 1e-9;
 }
 
@@ -930,7 +951,10 @@ function xVerify(question, answer) {
     const x = xNumOf(a);
     if (!Number.isFinite(x)) return false;
     if (spec.int) return Number.isInteger(x) && fn(v, x, 0) === true;
-    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+    // Compare with the rounded value the part asks for (as checkAnswer does), not the unrounded one.
+    const h = 0.5 * 10 ** -spec.dp;
+    const R = snapRounded((r) => fn(v, r, h) === true, x, spec.dp);
+    return Number.isFinite(R) && Math.abs(x - R) <= h + 1e-9;
   };
   if (question.answerType === "multi") {
     if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;

@@ -17,7 +17,7 @@ Useful conversions: 1 kΩ = 1000 Ω, 1 mA = 0.001 A, 1 kW = 1000 W. Energy cost 
 | Level | What to expect |
 | --- | --- |
 | Easy | Small whole numbers, series circuits, whole-number answers |
-| Medium | mA and kΩ, P = V²/R, two resistors in parallel, still whole-number answers |
+| Medium | mA and kΩ, P = V²/R, resistors in parallel (two, three, n identical, or the missing one), still whole-number answers |
 | Hard | Decimal values, energy and cost in kWh, combined circuits, answers rounded to 2 decimal places |
 | Expert | Multi-step circuit problems in two or three parts, each rounded as stated |
 

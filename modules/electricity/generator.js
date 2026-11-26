@@ -79,6 +79,28 @@ function checkDifficulty(difficulty) {
 }
 
 const DEVICES = ["a resistor", "a lamp", "a heating element", "a small motor", "an LED circuit", "a speaker coil"];
+// Plausible ranges per device, in volts, amps, ohms and watts (a resistor fits anything). The device is
+// still drawn with the rng as before; one that doesn't suit the numbers is swapped for the next one that
+// does, so only the wording changes, never the numbers.
+const DEVICE_FIT = {
+  "a lamp": { V: [1.5, 240], I: [0.02, 5], P: [0.1, 200] },
+  "a heating element": { V: [6, 250], P: [50, 3500] },
+  "a small motor": { V: [1.5, 24], I: [0.05, 10], P: [0.1, 200] },
+  "an LED circuit": { V: [1.5, 24], I: [0.001, 1], P: [0, 20] },
+  "a speaker coil": { V: [0, 60], R: [2, 16], P: [0, 500] },
+};
+function deviceFor(drawn, { V, I, R, P }) {
+  const vals = { V, I, R, P };
+  if (vals.R === undefined && V !== undefined && I !== undefined) vals.R = V / I;
+  if (vals.P === undefined && V !== undefined && I !== undefined) vals.P = V * I;
+  if (vals.V === undefined && I !== undefined && R !== undefined) vals.V = I * R;
+  if (vals.I === undefined && V !== undefined && R !== undefined) vals.I = V / R;
+  if (vals.P === undefined && vals.V !== undefined && vals.I !== undefined) vals.P = vals.V * vals.I;
+  const fits = (d) => Object.entries(DEVICE_FIT[d] || {}).every(([k, [lo, hi]]) => vals[k] === undefined || (vals[k] >= lo && vals[k] <= hi));
+  const i = DEVICES.indexOf(drawn);
+  for (let k = 0; k < DEVICES.length; k++) if (fits(DEVICES[(i + k) % DEVICES.length])) return DEVICES[(i + k) % DEVICES.length];
+  return "a resistor";
+}
 
 // ---------------------------------------------------------------------------------------------
 // Ohm's law: V = I × R. Medium works in mA and kΩ (mA × kΩ = V).
@@ -87,7 +109,7 @@ function genOhm(difficulty, rng) {
   checkDifficulty(difficulty);
   const rounded = difficulty === "hard";
   const unknown = rng.pick(["V", "I", "R"]);
-  const dev = rng.pick(DEVICES);
+  const devDrawn = rng.pick(DEVICES);
   const milli = difficulty === "medium";
   const uI = milli ? "mA" : "A";
   const uR = milli ? "kΩ" : "Ω";
@@ -114,6 +136,9 @@ function genOhm(difficulty, rng) {
   const end = rounded ? DP2 : "";
   const toA = (x) => (milli ? x / 1000 : x); // mA -> A
   const toOhm = (x) => (milli ? x * 1000 : x); // kΩ -> Ω
+  const dev = deviceFor(devDrawn, {
+    V: V ?? toA(I) * toOhm(R), I: I === undefined ? V / toOhm(R) : toA(I), R: R === undefined ? V / toA(I) : toOhm(R),
+  });
   let prompt, exact, unit, intro, lines, candidates, gv, hints;
   const thenRound = rounded ? " Then round to 2 decimal places." : "";
   // Medium states mA and kΩ; the explanation's _I/_R rows hold amps and ohms, so those get their own labels.
@@ -194,15 +219,16 @@ function genOhm(difficulty, rng) {
 // ---------------------------------------------------------------------------------------------
 // Power: P = VI, P = I²R, P = V²/R; energy E = Pt (kWh) and cost on hard.
 
+// maxH: the most hours a day it plausibly runs (hard energy questions stay within it).
 const APPLIANCES = [
-  { name: "an electric kettle", W: [1800, 3000] },
-  { name: "a space heater", W: [800, 2400] },
-  { name: "a desktop computer", W: [150, 450] },
-  { name: "a television", W: [60, 250] },
-  { name: "a washing machine", W: [500, 2200] },
-  { name: "a ceiling fan", W: [40, 90] },
-  { name: "a microwave oven", W: [700, 1300] },
-  { name: "a fridge", W: [100, 250] },
+  { name: "an electric kettle", W: [1800, 3000], maxH: 1 },
+  { name: "a space heater", W: [800, 2400], maxH: 8 },
+  { name: "a desktop computer", W: [150, 450], maxH: 10 },
+  { name: "a television", W: [60, 250], maxH: 8 },
+  { name: "a washing machine", W: [500, 2200], maxH: 3 },
+  { name: "a ceiling fan", W: [40, 90], maxH: 10 },
+  { name: "a microwave oven", W: [700, 1300], maxH: 1 },
+  { name: "a fridge", W: [100, 250], maxH: 10 },
 ];
 
 function genPower(difficulty, rng) {
@@ -215,7 +241,8 @@ function genPower(difficulty, rng) {
         ? ["v2r-P", "v2r-R", "i2r-I", "vi-V"]
         : ["energy", "cost", "vi-I", "v2r-P"]
   );
-  const dev = rng.pick(DEVICES);
+  const devDrawn = rng.pick(DEVICES);
+  let dev = devDrawn;
   const end = rounded ? DP2 : "";
   let prompt, exact, unit, intro, lines, candidates, formula, unknown, values, gv, hints;
   const thenRound = rounded ? " Then round to 2 decimal places." : "";
@@ -245,6 +272,7 @@ function genPower(difficulty, rng) {
       V = difficulty === "easy" ? rng.int(2, 24) : rng.int(6, 240);
       I = difficulty === "easy" ? rng.int(1, 10) : rng.int(2, 15);
       P = V * I;
+      dev = deviceFor(devDrawn, { V, I, P });
       if (kind === "vi-P") {
         unknown = "P";
         exact = P;
@@ -294,6 +322,7 @@ function genPower(difficulty, rng) {
     const I = difficulty === "easy" ? rng.int(1, 6) : rng.int(2, 12);
     const R = difficulty === "easy" ? rng.int(2, 20) : rng.int(2, 60);
     const P = I * I * R;
+    dev = deviceFor(devDrawn, { I, R, P });
     if (kind === "i2r-P") {
       unknown = "P";
       exact = P;
@@ -337,6 +366,7 @@ function genPower(difficulty, rng) {
       V = I * R;
       P = I * I * R;
     }
+    dev = deviceFor(devDrawn, { V, R, P });
     if (kind === "v2r-P") {
       unknown = "P";
       exact = P;
@@ -370,7 +400,9 @@ function genPower(difficulty, rng) {
     // Hard: energy in kWh, optionally its cost.
     const a = rng.pick(APPLIANCES);
     const P = 10 * rng.int(a.W[0] / 10, a.W[1] / 10);
-    const hours = rng.int(1, 40) / 4; // 0.25 h steps
+    // 0.25 h steps; a draw above the appliance's daily maximum wraps round into range (same rng draw).
+    const q4 = rng.int(1, 40);
+    const hours = (q4 > a.maxH * 4 ? ((q4 - 1) % (a.maxH * 4)) + 1 : q4) / 4;
     const days = rng.int(5, 31);
     const E = (P * hours * days) / 1000;
     const appl = `${a.name[0].toUpperCase()}${a.name.slice(1)}`;
@@ -541,7 +573,66 @@ function genCircuit(difficulty, rng) {
   }
 
   const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded }, given: givenRows(gv), hints };
-  return finish(base, exact, rounded, candidates, rng);
+  const q = finish(base, exact, rounded, candidates, rng);
+  // Medium also asks for a missing parallel resistor, n equal resistors, or three in parallel (ticket 014:
+  // the pair alone was thin). This draw comes after all the pair's draws, so other seeds are unchanged.
+  if (difficulty === "medium" && rng.next() < 0.5) return parallelExtra(rng, values.a, values.b);
+  return q;
+}
+
+// Medium extras. Every answer is a whole number of ohms.
+function parallelExtra(rng, a, b) {
+  const unit = "Ω";
+  const kind = rng.pick(["parallel-missing", "parallel-equal", "parallel-three"]);
+  let prompt, exact, intro, lines, candidates, values, gv, hints;
+  if (kind === "parallel-missing") {
+    const t = (a * b) / (a + b);
+    exact = b;
+    values = { a, total: t };
+    prompt = `A ${a} Ω resistor is connected in parallel with a second resistor. Their combined resistance is ${t} Ω. What is the resistance of the second resistor, in Ω?`;
+    intro = "In parallel the conductances (1 / R) add: `1/R_total = 1/R1 + 1/R2`, so `1/R2 = 1/R_total - 1/R1`. Flip the result at the end.";
+    gv = [["_R1", a], ["_R_total", t]];
+    lines = [given("_R1", a), given("_R_total", t), step("_R2", "1 / (1/_R_total - 1/_R1)", final(exact, false, unit))];
+    candidates = [a - t, a + t, (a * t) / (a + t), a * t];
+    hints = [
+      "For resistors in parallel, `1/R_total = 1/R1 + 1/R2`. Rearrange it for the unknown: `1/R2 = 1/R_total - 1/R1`.",
+      `Work out \`1/${t} - 1/${a}\`, then flip it (1 divided by the result) to get R2 (in the calculator: \`1 / (1/_R_total - 1/_R1)\`).`,
+    ];
+  } else if (kind === "parallel-equal") {
+    const n = rng.int(2, 6);
+    const R = n * rng.int(1, 30) * rng.pick([1, 1, 10]);
+    exact = R / n;
+    values = { n, R };
+    prompt = `${["", "", "Two", "Three", "Four", "Five", "Six"][n]} identical ${R} Ω resistors are connected in parallel. What is their combined resistance, in Ω?`;
+    intro = `For n identical resistors in parallel, \`R_total = R / n\`: each extra path shares the current.`;
+    gv = [["_R", R], ["_n", n]];
+    lines = [given("_R", R), given("_n", n), step("_R_total", "_R / _n", final(exact, false, unit))];
+    candidates = [R * n, R, R + n, R / (n + 1)];
+    hints = [
+      `${n} equal paths: \`1/R_total = 1/${R} + … + 1/${R}\` (${n} times), which is ${n}/${R}.`,
+      `Flip it: \`R_total = ${R} / ${n}\` (in the calculator: \`_R / _n\`).`,
+    ];
+  } else {
+    let r = null;
+    for (let i = 0; i < 400 && !r; i++) {
+      const x = rng.int(2, 60), y = rng.int(2, 60), z = rng.int(2, 60);
+      if ((x * y * z) % (x * y + y * z + z * x) === 0) r = [x, y, z];
+    }
+    const [x, y, z] = r || rng.pick([[6, 12, 12], [10, 15, 30], [12, 24, 24], [20, 30, 60], [6, 6, 6], [4, 6, 12]]);
+    exact = (x * y * z) / (x * y + y * z + z * x);
+    values = { rs: [x, y, z] };
+    prompt = `Three resistors of ${x} Ω, ${y} Ω and ${z} Ω are connected in parallel. What is their combined resistance, in Ω?`;
+    intro = "In parallel the conductances add: `1/R_total = 1/R1 + 1/R2 + 1/R3`. Flip the sum at the end.";
+    gv = [["_R1", x], ["_R2", y], ["_R3", z]];
+    lines = [given("_R1", x), given("_R2", y), given("_R3", z), step("_R_total", "1 / (1/_R1 + 1/_R2 + 1/_R3)", final(exact, false, unit))];
+    candidates = [x + y + z, (x + y + z) / 3, (x * y) / (x + y), Math.min(x, y, z)];
+    hints = [
+      "For resistors in parallel add the conductances: `1/R_total = 1/R1 + 1/R2 + 1/R3`. The answer is smaller than the smallest resistor.",
+      `Work out \`1/${x} + 1/${y} + 1/${z}\`, then flip it (in the calculator: \`1 / (1/_R1 + 1/_R2 + 1/_R3)\`).`,
+    ];
+  }
+  const base = { prompt, explanation: explain(intro, lines), params: { formula: kind, values, rounded: false }, given: givenRows(gv), hints };
+  return finish(base, exact, false, candidates, rng);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -775,28 +866,31 @@ function xDelta(rng) {
   });
 }
 
+// [name, min W, max W, most hours a day it plausibly runs]
 const X_APPLIANCES = [
-  ["a toaster", 800, 1500], ["a microwave", 600, 1200], ["a hair dryer", 1000, 2200], ["a games console", 100, 250],
-  ["a fan heater", 1500, 2900], ["a lamp", 20, 100], ["a laptop charger", 45, 140], ["an iron", 1100, 2600], ["a fridge", 80, 200],
+  ["a toaster", 800, 1500, 1], ["a microwave", 600, 1200, 1], ["a hair dryer", 1000, 2200, 1], ["a games console", 100, 250, 6],
+  ["a fan heater", 1500, 2900, 8], ["a lamp", 20, 100, 12], ["a laptop charger", 45, 140, 10], ["an iron", 1100, 2600, 2], ["a fridge", 80, 200, 12],
 ];
 const X_FUSES = [3, 5, 13];
 
 // power / expert: current at 230 V, the right fuse, and the running cost.
 function xFuse(rng) {
-  const [what, lo, hi] = rng.pick(X_APPLIANCES);
+  const [what, lo, hi, maxH] = rng.pick(X_APPLIANCES);
   const P = rng.int(lo / 10, hi / 10) * 10;
   const V = 230;
   const I = P / V;
   if (X_FUSES.some((f) => Math.abs(I - f) < 0.15 * f)) return null; // keep clear of a rating
   const fuse = `${X_FUSES.find((f) => f > I)} A`;
-  const hours = rng.int(2, 40) / 2;
+  // 0.5 h steps from 1 h; a draw above the daily maximum wraps round into range (same rng draw).
+  const q2 = rng.int(2, 40);
+  const hours = (q2 > maxH * 2 ? ((q2 - 2) % (maxH * 2 - 1)) + 2 : q2) / 2;
   const days = rng.pick([7, 30, 31, 90, 365]);
   const price = rng.int(10, 45) / 100;
   const cost = (P / 1000) * hours * days * price;
   return xMulti({
     kind: "x-fuse",
     v: { P, V, hours, days, price },
-    prompt: `${what[0].toUpperCase() + what.slice(1)} is rated ${P} W on the ${V} V mains. Fuses come in 3 A, 5 A and 13 A. It is used for ${xs(hours)} hours a day for ${days} days, and electricity costs ${cash(price)} per kWh. ${X_UNROUNDED}`,
+    prompt: `${what[0].toUpperCase() + what.slice(1)} is rated ${P} W on the ${V} V mains. Fuses come in 3 A, 5 A and 13 A. It is used for ${xs(hours)} ${hours === 1 ? "hour" : "hours"} a day for ${days} days, and electricity costs ${cash(price)} per kWh. ${X_UNROUNDED}`,
     parts: [
       xNum("I", "Current", "Current it draws, in A", I, 2, "P = V × I, so I = P ÷ V."),
       xChoice("fuse", "Fuse", "Which fuse should it have?", fuse, ["3 A", "5 A", "13 A"], "Choose the smallest fuse rated above the normal current: big enough not to blow in normal use, small enough to blow on a fault."),
@@ -1103,6 +1197,22 @@ export function verify(question, answer) {
       break;
     case "parallel": { // x · (1/a + 1/b) = 1
       const g = 1 / k.a + 1 / k.b;
+      residual = x * g - 1;
+      sens = g;
+      break;
+    }
+    case "parallel-missing": { // x · (1/total - 1/a) = 1
+      const g = 1 / k.total - 1 / k.a;
+      residual = x * g - 1;
+      sens = g;
+      break;
+    }
+    case "parallel-equal": // x · n = R
+      residual = x * k.n - k.R;
+      sens = k.n;
+      break;
+    case "parallel-three": { // x · Σ(1/r) = 1
+      const g = k.rs.reduce((s, r) => s + 1 / r, 0);
       residual = x * g - 1;
       sens = g;
       break;

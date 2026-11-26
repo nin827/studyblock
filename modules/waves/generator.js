@@ -213,7 +213,8 @@ function genWaveEquation(d, rng) {
       const fM = rng.pick([1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 10, 12, 12.5, 15, 20, 24, 25, 30, 40, 50, 60, 75, 100, 120, 150, 200, 250, 300, 400, 500, 600, 750, 1000]);
       const lam = 300 / fM;
       if (!isClean(lam, 4)) return null;
-      intro = "Radio waves travel at the speed of light, `v = 3 × 10⁸ m/s`. Use `v = f × λ`, converting MHz to Hz (× 10⁶). In MHz the powers of ten cancel: `λ = 300 / f(MHz)`.";
+      // The "λ = 300 / f(MHz)" shortcut is the answer itself at 1 MHz (300 m), so it's left out there.
+      intro = `Radio waves travel at the speed of light, \`v = 3 × 10⁸ m/s\`. Use \`v = f × λ\`, converting MHz to Hz (× 10⁶).${fM === 1 ? "" : " In MHz the powers of ten cancel: `λ = 300 / f(MHz)`."}`;
       if (sc === "radio-lam") {
         unknown = "lam";
         scale = 1;

@@ -73,3 +73,8 @@ Three reviewers checked all 50 subjects. They found no wrong answers in the gene
 ## Resolution (cleared 2026-11-26)
 
 Fix all of them: variety (2–3), choices and hints (4–8), rounding (9, 10, 12) and realistic numbers (11). Item 1 is covered by the fact-list expansion (ticket 013).
+
+**Built 2026-11-26:**
+- Items 2–12 are done.
+- Item 1 (fact lists) is in progress in batch 2.
+- Left as is: momentum/expert "trolleys" at up to about 19 m/s (not in this ticket).

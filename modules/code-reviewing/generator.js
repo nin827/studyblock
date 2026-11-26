@@ -559,6 +559,21 @@ T['pair-count'] = {
 };
 
 const fnProg = (tpl, c, v = {}) => program([S.fn(c.f, tpl.params(c).map(p => (typeof p === 'string' ? p : p)), tpl.body(c, v), 'int', 'fn')], []);
+// Meaning key of a variant: comparisons written in one orientation (`t > x` is `x < t`) and `not (a < b)`
+// as `a >= b`, so two fix options that say the same thing (or a "fix" that only restates the bug) can be told apart.
+const CMPS = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!=' };
+const NEGS = { '<': '>=', '>=': '<', '>': '<=', '<=': '>', '==': '!=', '!=': '==' };
+function canon(e) {
+  if (Array.isArray(e)) return e.map(canon);
+  if (!e || typeof e !== 'object') return e;
+  if (e.k === 'not' && e.x && e.x.k === 'bin' && NEGS[e.x.op]) return canon({ ...e.x, op: NEGS[e.x.op] });
+  if (e.k === 'not' && e.x && e.x.k === 'not') return canon(e.x.x);
+  const o = {};
+  for (const [k, v] of Object.entries(e)) o[k] = canon(v);
+  if (o.k === 'bin' && CMPS[o.op] && JSON.stringify(o.a) > JSON.stringify(o.b)) return { ...o, op: CMPS[o.op], a: o.b, b: o.a };
+  return o;
+}
+const meaningKey = (tpl, c, v) => JSON.stringify(canon(fnProg(tpl, c, v)));
 const paramNames = (tpl, c) => tpl.params(c).map(p => (typeof p === 'string' ? p : p.name));
 
 // Statement ids of a function body, in source order.
@@ -605,7 +620,7 @@ const BUG_POOL = {
 // Does this run count as "wrong" (fails the spec) without crashing?
 const fails = (r, want) => r.timedOut || (r.ok && r.value !== want);
 
-function planBug(rng, diff, { needFix, pool }) {
+function planBug(rng, diff, { needFix, pool, dedupe = false }) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const tplId = rng.pick(pool || BUG_POOL[diff]);
     const tpl = T[tplId];
@@ -646,8 +661,20 @@ function planBug(rng, diff, { needFix, pool }) {
         const rs = tests.map(a => exec(p, c.f, a));
         return !rs.some(r => r.threw) && rs.some((r, j) => fails(r, tpl.ref(c, tests[j])));
       });
-      if (usable.length >= 3) fixKeys = rng.shuffle(['ok', ...rng.shuffle(usable).slice(0, 3)]);
-      else if (needFix) continue;
+      if (!dedupe) {
+        // Fix options aren't offered as choices here; keep the original draws so these questions never change.
+        if (usable.length >= 3) fixKeys = rng.shuffle(['ok', ...rng.shuffle(usable).slice(0, 3)]);
+      } else {
+        // Skip a fix option that means the same as the correct line or one already picked (`x > c` vs `c < x`).
+        const seen = new Set([meaningKey(tpl, c)]), picked = [];
+        for (const k of usable.length >= 3 ? rng.shuffle(usable) : []) {
+          if (picked.length === 3) break;
+          const key = meaningKey(tpl, c, { [bug.slot]: k });
+          if (!seen.has(key)) { seen.add(key); picked.push(k); }
+        }
+        if (picked.length === 3) fixKeys = rng.shuffle(['ok', ...picked]);
+      }
+      if (!fixKeys && needFix) continue;
     }
     const others = stmtIds(bad.fns[0].body).filter(id => id !== bug.slot);
     if (others.length < 3) continue;
@@ -1301,8 +1328,13 @@ function planFixTrap(rng) {
     for (let t = 0; t < 4; t++) tests.push(tpl.input(c, rng));
     if (!passesAll(tpl, c, good, tests)) continue;
     const traps = [], plain = [];
+    const seen = new Set([meaningKey(tpl, c)]);
     for (const k of Object.keys(slots[bug.slot])) {
       if (k === bug.key || slots[bug.slot][k] === 'early') continue;
+      // Skip a variant that means the same as the correct line or one already kept (`x > c` vs `c < x`).
+      const key = meaningKey(tpl, c, { [bug.slot]: k });
+      if (seen.has(key)) continue;
+      seen.add(key);
       const p = fnProg(tpl, c, { [bug.slot]: k });
       const rs = shown.map(a => exec(p, c.f, a));
       if (rs.some(r => r.threw)) continue;
@@ -1644,7 +1676,7 @@ export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
   if (difficulty === 'expert') return generateExpert(subtopic, rng, lang);
   if (!['easy', 'medium', 'hard'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === 'predict-output') return presentPredict(planPredict(rng, difficulty), lang);
-  const p = planBug(rng, difficulty, { needFix: subtopic === 'fix-the-bug' });
+  const p = planBug(rng, difficulty, { needFix: subtopic === 'fix-the-bug', dedupe: subtopic === 'fix-the-bug' });
   p.askActual = subtopic === 'bug-types' && difficulty !== 'hard' && rng.next() < 0.4;
   return presentBug(p, subtopic, difficulty, lang);
 }

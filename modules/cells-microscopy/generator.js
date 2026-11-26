@@ -643,6 +643,54 @@ function genDivision(difficulty, rng) {
 const SAV_NOTE = "SA:V is surface area ÷ volume, written as a single number (for example 3 for 3 : 1).";
 const sa = (l, w, h) => 2 * (l * w + l * h + w * h);
 
+// Medium extras on the same cuboid: the third side from the volume, or the total surface of the two
+// halves after it divides across an even side (adds two new faces).
+function savMediumExtra(rng, l, w, h) {
+  const even = [l, w, h].findIndex((x) => x % 2 === 0);
+  const kind = even < 0 ? "missing" : rng.pick(["missing", "halves"]);
+  const V = l * w * h;
+  if (kind === "missing") {
+    return finish(
+      {
+        prompt: `A cell is modelled as a cuboid with a volume of ${V} µm³. Two of its sides are ${l} µm and ${w} µm. How long is the third side, in µm?`,
+        explanation: `Volume = l × w × h, so the third side = volume ÷ (l × w).\n\n\`${V} ÷ (${l} × ${w})\` = \`${V} ÷ ${l * w}\` = **${h} µm**.`,
+        hints: [
+          "The volume of a cuboid is length × width × height.",
+          "You know the volume and two of the sides: divide the volume by the two known sides multiplied together (in the calculator: `_V / (_l * _w)`).",
+        ],
+        given: [{ label: "_V", value: V }, { label: "_l", value: l }, { label: "_w", value: w }],
+        params: { sub: "sav", kind: "missing", l, w, V },
+      },
+      h,
+      0,
+      [V / l, V / w, V - l * w, l * w],
+      rng,
+    );
+  }
+  const dims = [l, w, h];
+  const cut = dims[even];
+  const half = dims.map((x, i) => (i === even ? x / 2 : x));
+  const others = dims.filter((_, i) => i !== even);
+  const total = 2 * sa(...half);
+  const before = sa(l, w, h);
+  return finish(
+    {
+      prompt: `A cell is modelled as a cuboid ${l} µm × ${w} µm × ${h} µm. It divides into two identical halves, split across the middle of its ${cut} µm side. What is the total surface area of the two halves, in µm²?`,
+      explanation: `Each half is a cuboid ${half.join(" µm × ")} µm, with surface area \`2 × (${half[0]} × ${half[1]} + ${half[0]} × ${half[2]} + ${half[1]} × ${half[2]})\` = ${sa(...half)} µm².\n\nTwo halves: \`2 × ${sa(...half)}\` = **${total} µm²**. That is the original ${before} µm² plus two new ${others[0]} µm × ${others[1]} µm faces, with the volume unchanged.`,
+      hints: [
+        `Each half keeps the two other sides (${others[0]} µm and ${others[1]} µm), and the ${cut} µm side is halved.`,
+        "Work out the surface area of one half (3 pairs of faces: add them and double), then double it for the two halves. Or: the original surface area plus the two new faces made by the cut.",
+      ],
+      given: [{ label: "_l", value: l }, { label: "_w", value: w }, { label: "_h", value: h }],
+      params: { sub: "sav", kind: "halves", dims, axis: even },
+    },
+    total,
+    0,
+    [before, sa(...half), before + others[0] * others[1], 2 * before],
+    rng,
+  );
+}
+
 function genSAV(difficulty, rng) {
   if (difficulty === "easy") {
     const kind = rng.pick(["SA", "V", "ratio"]);
@@ -726,7 +774,7 @@ function genSAV(difficulty, rng) {
       );
     }
     const exact = A / V;
-    return finish(
+    const q = finish(
       {
         prompt: `${intro} What is its surface area to volume ratio? ${SAV_NOTE} Round to 2 decimal places.`,
         explanation: `${saLine}\n\nVolume: \`${l} × ${w} × ${h}\` = ${V} µm³.\n\nSA:V = \`${A} ÷ ${V}\` ${resultTxt(exact, 2, "")}.`,
@@ -742,6 +790,10 @@ function genSAV(difficulty, rng) {
       [V / A, A / 2 / V, (l * w + l * h + w * h) / V + 1, exact * 2],
       rng,
     );
+    // Medium also asks for a missing side or the surface after the cell divides (ticket 014: two
+    // templates were thin). This draw comes after the ratio question's, so those seeds are unchanged.
+    if (rng.next() < 0.4) return savMediumExtra(rng, l, w, h);
+    return q;
   }
 
   // hard
@@ -938,6 +990,17 @@ function expected(p, partId) {
       if (p.kind === "SA" || p.kind === "V" || p.kind === "ratio") {
         const c = countBlock(...p.dims);
         return { num: p.kind === "SA" ? c.area : p.kind === "V" ? c.vol : c.area / c.vol };
+      }
+      if (p.kind === "missing") {
+        // The third side h is the one whose block of unit cubes holds exactly V of them.
+        for (let h = 1; h <= 50; h++) if (countBlock(p.l, p.w, h).vol === p.V) return { num: h, d: 0 };
+        return null;
+      }
+      if (p.kind === "halves") {
+        // Count the exposed faces of the two separated halves as unit-cube blocks.
+        const half = p.dims.map((x, i) => (i === p.axis ? x / 2 : x));
+        if (!half.every((x) => Number.isInteger(x) && x >= 1)) return null;
+        return { num: 2 * countBlock(...half).area, d: 0 };
       }
       if (p.kind === "cut") {
         const big = countBlock(p.s, p.s, p.s).area;
