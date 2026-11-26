@@ -43,6 +43,20 @@ const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
 const segKey = (c) => segsOf(c).join(" | ");
 const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
 // Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
 // is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
 // every block on offer (the options' segments plus extraSegs).
@@ -57,7 +71,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -99,16 +113,49 @@ function ratioSeg(rng, cols, correct, pool, diff) {
   const n = cols.length;
   const opts = [ans];
   const pools = () => cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  const cands = [];
   const consider = (c) => {
-    if (opts.length >= SEG_OPTIONS[diff] || c.length !== n || !c.map(Number).some((x) => x > 0)) return;
+    if (c.length !== n || !c.map(Number).some((x) => x > 0)) return;
     const d = segDiff(c, ans);
-    if (d < 1 || d >= n || opts.some((t) => segKey(t) === segKey(c))) return;
-    opts.push(c);
-    if (ratioCubeHits(pools(), want) !== 1) opts.pop();
+    if (d < 1 || (n > 2 && d >= n) || cands.some((t) => segKey(t) === segKey(c))) return;
+    cands.push(c);
   };
   pool.forEach((x) => consider(x.split(" : ")));
   for (let v = 0; v <= 4; v++) for (let j = 0; j < n; j++) { const c = ans.slice(); c[j] = String(v); consider(c); }
-  if (opts.length !== SEG_OPTIONS[diff]) throw new Error("not enough ratio options");
+  // Two classes changed (mixed distances, ticket 022).
+  for (let v = 0; v <= 4; v++) for (let w = 0; w <= 4; w++) for (let j = 0; j < n; j++) for (let k = j + 1; k < n; k++) { const c = ans.slice(); c[j] = String(v); c[k] = String(w); consider(c); }
+  const want0 = SEG_OPTIONS[diff];
+  // Greedy first (the old selection, so compliant draws are unchanged), then a search for a set that
+  // satisfies the rule; each added option must keep exactly one proportional block combination.
+  const greedy = () => {
+    for (const c of cands) {
+      if (opts.length >= want0) break;
+      opts.push(c);
+      if (ratioCubeHits(pools(), want) !== 1) opts.pop();
+    }
+  };
+  greedy();
+  if (opts.length === want0 && !mixOk(opts, ans, true)) {
+    let found = null;
+    const search = (start, noCount) => {
+      if (found) return;
+      if (opts.length === want0) { if (mixOk(opts, ans, noCount)) found = opts.slice(); return; }
+      for (let i = start; i < cands.length && !found; i++) {
+        opts.push(cands[i]);
+        if (ratioCubeHits(pools(), want) === 1) search(i + 1, noCount);
+        opts.pop();
+      }
+    };
+    const keep = opts.slice();
+    for (const nc of [true, false]) {
+      opts.length = 1;
+      search(0, nc);
+      if (found) break;
+    }
+    opts.length = 0;
+    opts.push(...(found || keep));
+  }
+  if (opts.length !== want0) throw new Error("not enough ratio options");
   const ps = pools();
   const extraSegs = [];
   let decoys = ps.reduce((a, p) => a + p.size - 1, 0);
@@ -443,12 +490,22 @@ function genPunnett(difficulty, rng) {
         : scen === "dr"
           ? `The ${t.rec} parent is ${code(g1(L, 0))}. Some offspring are ${t.rec}, so the other parent must also pass on ${code(l)}: it is ${code(g1(L, 1))}, which gives about 1 : 1.`
           : `The ${t.rec} parent is ${code(g1(L, 0))} and passes ${code(l)} to every offspring. No ${t.rec} offspring among ${total} means the other parent almost certainly has no ${code(l)}: it is ${code(g1(L, 2))}. (A ${code(g1(L, 1))} parent would give about half ${t.rec}.)`;
+    // Ticket 022: wrong pairs come from all 8 other genotype pairs (same rng) until the set mixes
+    // distances (some wrong pair differs in both parents, the answer is not the majority everywhere).
+    const allPairs = [];
+    for (let a = 0; a <= 2; a++) for (let b = 0; b <= 2; b++) if (segKey(tup(a, b)) !== segKey(correctT)) allPairs.push(tup(a, b));
+    let inferWrong = null;
+    for (let t = 0; t < 80 && !inferWrong; t++) {
+      const pick = rng.shuffle(allPairs.slice()).slice(0, SEG_OPTIONS.hard - 1);
+      if (mixOk([correctT, ...pick], correctT, t < 50)) inferWrong = pick;
+    }
+    if (!inferWrong) inferWrong = pool;
     return {
       prompt: `${intro} ${parents} ${result} Which parent genotypes (in the order the parents are described) best explain these results?`,
       answerType: "choice",
       answer: correctT,
       choiceCols: ["Parent 1", "Parent 2"],
-      choices: rng.shuffle([correctT, ...pool]),
+      choices: rng.shuffle([correctT, ...inferWrong]),
       explanation: `${why}\n\nSo the parents are **${correct}**.`,
       hints: [
         `A ${t.rec} ${t.one} must be ${code(g1(L, 0))}. A ${t.one} with ${t.dom} could be ${code(g1(L, 2))} or ${code(g1(L, 1))}.`,
@@ -1966,6 +2023,26 @@ function xDihybridInfer(rng) {
     shown.push(o);
   }
   if (shown.length !== 5) throw new XRetry();
+  // Ticket 022: mixed distances. If the set only changes one parent each time (or the answer is the
+  // majority in both columns), redraw the wrong crosses (same rng) from every clearly worse pair of
+  // parent genotypes until the rule holds.
+  const asSegs = (o) => [plainG(o[0]), plainG(o[1])];
+  if (!mixOk(shown.map(asSegs), asSegs(ans), true)) {
+    const worse = [];
+    for (const a of X_DI_GENO) for (const b of X_DI_GENO) {
+      const o = [a, b];
+      if (same(a, ans[0]) && same(b, ans[1])) continue;
+      if (xDiFit(counts, xDiShares(a, b)) > best * 4 + 1e-6) worse.push(o);
+    }
+    let found = null;
+    for (let tr = 0; tr < 80 && !found; tr++) {
+      const pick = rng.shuffle(worse.slice()).slice(0, 4);
+      if (pick.length === 4 && mixOk([ans, ...pick].map(asSegs), asSegs(ans), tr < 50)) found = pick;
+    }
+    if (!found) throw new XRetry();
+    shown.length = 1;
+    shown.push(...found);
+  }
   const values = { counts, opts: shown, M, cls };
   const ratio = sh.map((s) => s * 16);
   return xMulti(

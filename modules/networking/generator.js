@@ -30,7 +30,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -1407,19 +1407,17 @@ function xKth(rng) {
   };
 }
 
-// Gateway check as Valid? | Reason blocks. The options are the answer plus every tuple that changes
-// exactly one column (5 in all, fixed order, no rng).
+// Gateway check as Valid? | Reason blocks. Ticket 022: the same five options whatever the answer, so
+// counting cannot find it: the four sensible pairs (Yes with a usable host; No with each of the three
+// reasons) plus "No | Usable host in the same subnet" as the near miss. Some wrong option always differs
+// in both columns (2 columns allow that) and the answer is never the majority in both columns.
 const GW_COLS = ["Valid?", "Reason"];
 const GW_REASON = { ok: "Usable host in the same subnet", other: "In a different subnet", net: "The subnet's network address", bc: "The subnet's broadcast address" };
 const gwTuple = (kind) => [kind === "ok" ? "Yes" : "No", GW_REASON[kind]];
-function gwChoices(kind) {
-  const [v, r] = gwTuple(kind);
-  const out = [];
-  for (const k of ["ok", "other", "net", "bc"]) {
-    if (GW_REASON[k] === r) out.push(["Yes", r], ["No", r]);
-    else out.push([v, GW_REASON[k]]);
-  }
-  return out;
+function gwChoices(kind, rng) {
+  const all = ["ok", "other", "net", "bc"].map(gwTuple);
+  all.push(["No", GW_REASON.ok]);
+  return rng.shuffle(all);
 }
 
 function xGateway(rng) {
@@ -1443,7 +1441,7 @@ function xGateway(rng) {
     prompt: `A laptop is set up as \`${dotted(ip)}/${n}\` with default gateway \`${dotted(gw)}\`.`,
     answerType: "multi",
     parts: [
-      { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop, and why?", answerType: "choice", answer: ans, choiceCols: GW_COLS, choices: gwChoices(kind),
+      { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop, and why?", answerType: "choice", answer: ans, choiceCols: GW_COLS, choices: gwChoices(kind, rng),
         hint: "Work out the laptop's network and broadcast addresses, then see where the gateway falls." },
       { id: "last", label: "Last host", ask: `A common choice of gateway is the subnet's last usable host. What is it? ${IP_NOTE}.`, answerType: "text", answer: dotted(addToOctets(bc, -1)),
         hint: "The last usable host is the broadcast address minus 1." },

@@ -36,6 +36,20 @@ const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
 const segKey = (c) => segsOf(c).join(" | ");
 const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
 // Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
 // is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
 // every block on offer (the options' segments plus extraSegs).
@@ -50,7 +64,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -381,8 +395,15 @@ function genExpressions(difficulty, rng) {
     if (cube) {
       const want = SEG_OPTIONS[difficulty];
       const inCube = (r) => r.every((v, i) => cube.vary[i] || v === good.r[i]);
-      const far = (r) => cube.vary.every((on, i) => !on || r[i] !== good.r[i]) && cube.vary.filter(Boolean).length === names.length;
-      const bad = pool.filter((x) => inCube(x.r) && !far(x.r)).slice(0, want - 1);
+      const bits = (r) => r.map(String);
+      const cand = pool.filter((x) => inCube(x.r));
+      // Ticket 022: mixed distances. Draw (same rng) wrong rows until the set satisfies the rule.
+      let bad = null;
+      for (let t = 0; t < 60 && !bad; t++) {
+        const pick = rng.shuffle(cand.slice()).slice(0, want - 1);
+        if (pick.length === want - 1 && mixOk([good.r, ...pick.map((x) => x.r)].map((r) => r.map(String)), bits(good.r), t < 40)) bad = pick;
+      }
+      if (!bad) return genExpressions(difficulty, rng);
       const answer = fmtRow(names, good.r);
       const steps = [];
       evalSteps(tree, Object.fromEntries(names.map((n, i) => [n, good.r[i]])), steps);
@@ -391,7 +412,6 @@ function genExpressions(difficulty, rng) {
         `The other options give ${1 - target}: ${bad.map((b) => fmtRow(names, b.r)).join("; ")}.`,
         `So the answer is **${answer}**.`,
       ];
-      const bits = (r) => r.map(String);
       const q = {
         prompt: `Which input makes \`${expr}\` equal to ${target}?`,
         answer: bits(good.r),

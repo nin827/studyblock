@@ -657,20 +657,39 @@ const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
 const segKey = (c) => segsOf(c).join(" | ");
 const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
-// The right tuple plus wrong ones from `cands` (rng.shuffle order) -> `want` options, shuffled; or null.
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
+// The right tuple plus wrong ones from `cands` -> `want` options, shuffled; or null. Wrong options are
+// drawn (rng.shuffle) until the set satisfies the mixed-distance rule; 2 columns allow a wrong option
+// that differs in both.
 function segPick(rng, correct, cands, want) {
   const n = correct.length;
   const seen = new Set([segKey(correct)]);
-  const out = [correct];
-  for (const c of rng.shuffle(cands.slice())) {
-    if (out.length >= want) break;
+  const ok = [];
+  for (const c of cands) {
     if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
     const d = segDiff(c, correct);
-    if (d < 1 || d >= n || seen.has(segKey(c))) continue;
+    if (d < 1 || (n > 2 && d >= n) || seen.has(segKey(c))) continue;
     seen.add(segKey(c));
-    out.push(c);
+    ok.push(c);
   }
-  return out.length === want ? rng.shuffle(out) : null;
+  for (let t = 0; t < 80; t++) {
+    const out = [correct, ...rng.shuffle(ok.slice()).slice(0, want - 1)];
+    if (out.length === want && mixOk(out, correct, t < 50)) return rng.shuffle(out);
+  }
+  return null;
 }
 // Build-mode decoys: the [column index, value] pairs no option already shows (max 14). Indexes, not
 // labels, because labels such as TT and Tt differ only in case.
@@ -697,7 +716,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -825,13 +844,19 @@ function genTimes(d, rng) {
     // Day | Time blocks: each wrong option changes one of them (fixed candidate order, so the only rng
     // draw is the final shuffle). Build decoys: two more days and times.
     const ansT = [dayName(day, sh), hm(out)];
-    const choices = segPick({ shuffle: (a) => a }, ansT, [[DAYS[day], hm(out)], [dayName(day, -sh), hm(out)], [ansT[0], hm(out + 60)], [ansT[0], hm(wrong)], [ansT[0], hm(out - 60)], [ansT[0], hm(t)]], SEG_OPTIONS.medium);
+    const wrongDay = dayName(day, dayShift(wrong));
+    const choices = segPick(rng, ansT, [
+      [DAYS[day], hm(out)], [dayName(day, -sh), hm(out)], [ansT[0], hm(out + 60)], [ansT[0], hm(wrong)], [ansT[0], hm(out - 60)], [ansT[0], hm(t)],
+      // both wrong (ticket 022): forgot the day change as well, or reversed the offsets throughout
+      [DAYS[day], hm(wrong)], [wrongDay, hm(wrong)], [DAYS[day], hm(out + 60)], [dayName(day, -sh), hm(out - 60)], [dayName(day, -sh), hm(t)],
+    ], SEG_OPTIONS.medium);
+    if (!choices) throw new Error("no day/time options");
     return {
       prompt: `${TZ_NOTE}: ${A[0]} is ${offStr(A[1])} and ${B[0]} is ${offStr(B[1])}. It is ${hm(t)} on ${DAYS[day]} in ${A[0]}. What day and time is it in ${B[0]}?`,
       answer: ansT,
       answerType: "choice",
       choiceCols: ["Day", "Time"],
-      choices: rng.shuffle(choices),
+      choices,
       extraSegs: segExtras(["Day", "Time"], choices, [[0, dayName(day, 2 * sh)], [1, hm(out + 120)]]),
       explanation: `Go through UTC, counting the days.\n\n- ${A[0]} → UTC: \`${hm(t)} - (${offStr(A[1])})\` gives ${hm(t - A[1])}${dayShift(t - A[1]) ? ` on ${dayName(day, dayShift(t - A[1]))}` : ` on ${DAYS[day]}`}.\n- UTC → ${B[0]}: add ${offStr(B[1])}, which gives **${ans}**.`,
       hints: [`Change ${A[0]} time to UTC first (take away ${offStr(A[1])}), keeping track of whether you pass midnight.`, `Then add ${offStr(B[1])}. Going past midnight moves to the next day; going below 00:00 moves to the day before.`],

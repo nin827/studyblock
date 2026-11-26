@@ -13,6 +13,20 @@ const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
 const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
 const segKey = (c) => segsOf(c).join(" | ");
 const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
 // Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
 // is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
 // every block on offer (the options' segments plus extraSegs).
@@ -27,7 +41,7 @@ function segOk(q, answer, isRight, want, build = true) {
   if (right.length !== 1) return false;
   const a = segsOf(answer);
   if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
-  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) >= n))) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
   if (!build) return true;
   const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
   for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
@@ -388,7 +402,7 @@ function genVectors(d, rng) {
     prompt: `${YUP} A guard at G = ${vec(gx, gy)} faces the direction f = ${vec(fx, fy)}. The player is at P = ${vec(px, py)}. Let d = P − G. Find f · d, then decide where the player is relative to the guard's facing.`,
     parts: [
       numPart("dot", "Dot product", "f · d", dot, false, `\`d = P − G = ${vec(dxp, dyp)}\`. Then \`f · d = ${par(fx)} × ${par(dxp)} + ${par(fy)} × ${par(dyp)}\` (in the calculator: \`_fx * (_px - _gx) + _fy * (_py - _gy)\`).`),
-      { ...choicePart("rel", "Position", "Where is the player, and what is the sign of f · d?", segsOf(rel), oneOffChoices(segsOf(rel), REL_POS, REL_DOT), "Positive dot product: the angle between f and d is under 90°. Negative: over 90°. Zero: exactly 90°."), choiceCols: ["Position", "Dot"] },
+      { ...choicePart("rel", "Position", "Where is the player, and what is the sign of f · d?", segsOf(rel), oneOffChoices(segsOf(rel), REL_POS, REL_DOT, rng), "Positive dot product: the angle between f and d is under 90°. Negative: over 90°. Zero: exactly 90°."), choiceCols: ["Position", "Dot"] },
     ],
     explanation:
       `The sign of the dot product tells you whether two directions point the same way.\n\n` +
@@ -406,14 +420,19 @@ function genVectors(d, rng) {
 const REL_POS = ["In front", "Behind", "Exactly to the side"];
 const REL_DOT = ["dot > 0", "dot < 0", "dot = 0"];
 const REL = REL_POS.map((x, i) => `${x} | ${REL_DOT[i]}`);
-// The right [a, b] pair plus every pair that changes exactly one of them, in a fixed order (no rng).
-function oneOffChoices(right, colA, colB) {
-  const out = [];
-  for (const a of colA) for (const b of colB) {
-    const d = (a !== right[0]) + (b !== right[1]);
-    if (d <= 1) out.push([a, b]);
+// The right [a, b] pair plus 4 wrong ones, shuffled with the rng (ticket 022). colA[i] goes with colB[i],
+// so the other two sensible pairs are always offered (they differ from the answer in both columns);
+// the other two options are drawn from the pairs that change exactly one column, until the set
+// satisfies the mixed-distance rule. Every wrong option is a real-looking pair.
+function oneOffChoices(right, colA, colB, rng) {
+  const sensible = colA.map((a, i) => [a, colB[i]]).filter((t) => t[0] !== right[0] || t[1] !== right[1]);
+  const near = [];
+  for (const a of colA) for (const b of colB) if ((a !== right[0]) + (b !== right[1]) === 1) near.push([a, b]);
+  for (let t = 0; t < 80; t++) {
+    const out = [right, ...sensible, ...rng.shuffle(near.slice()).slice(0, 4 - sensible.length)];
+    if (out.length === 5 && mixOk(out, right, t < 50)) return rng.shuffle(out);
   }
-  return out;
+  throw new Error("no segmented options");
 }
 
 // ======================= Movement =======================
@@ -1409,7 +1428,7 @@ function xTurnRate(rng) {
   return multi({
     prompt: `${YUP} ${ANG} A tank turret faces ${facing}°. Its target is in the direction ${vec(dx, dy)}. The turret turns at ${rate}° per second and always takes the shorter way round. Which way does it turn, how long does it take to face the target, and what heading does it face ${num(t1)} s after it starts turning?${END}`,
     parts: [
-      { ...choicePart("dir", "Direction", "Which way does it turn?", segsOf(left ? LR[0] : LR[1]), oneOffChoices(segsOf(left ? LR[0] : LR[1]), LR_TURN, LR_ROT), "Wrap (target heading − facing) into −180 to 180: positive is a left turn, negative a right turn."), choiceCols: ["Turn", "Rotation"] },
+      { ...choicePart("dir", "Direction", "Which way does it turn?", segsOf(left ? LR[0] : LR[1]), oneOffChoices(segsOf(left ? LR[0] : LR[1]), LR_TURN, LR_ROT, rng), "Wrap (target heading − facing) into −180 to 180: positive is a left turn, negative a right turn."), choiceCols: ["Turn", "Rotation"] },
       numPart("time", "Time", "Seconds to face the target", time, true, `Size of the turn (ignore its sign) ÷ ${rate}.${THEN}`),
       numPart("heading", `After ${num(t1)} s`, `Heading after ${num(t1)} s`, h1, true, `It has turned ${rate} × ${num(t1)} degrees from ${facing}° in its turning direction; wrap into 0 to 360.`),
     ],
