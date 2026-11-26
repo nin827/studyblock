@@ -394,6 +394,8 @@ function genLogarithms(difficulty, rng) {
       answerType: "number", answer: k, tolerance: 0,
       explanation: [`Combine into one log first.`, `\`${logb(b)} ${X} ${op} ${logb(b)} ${Y} = ${logb(b)} ${op === "+" ? `(${X} × ${Y})` : `(${X} ÷ ${Y})`} = ${logb(b)} ${T}\`.`, `\`${pw(b, k)} = ${T}\`, so the answer is **${k}**.`].join("\n\n"),
       hints: [LOGLAWS, `Neither log is a whole number on its own. ${op === "+" ? "Multiply" : "Divide"} ${X} and ${Y} to get one log, then ask what power of ${b} that is.`],
+      // The calculator helps with X × Y or X ÷ Y; no rows when one of them is also the answer.
+      ...(X !== k && Y !== k ? { given: [{ label: "_X", value: X }, { label: "_Y", value: Y }] } : {}),
       params: { sub: "logarithms", kind, b, X, Y, op },
     };
   }
@@ -456,6 +458,8 @@ function genLogarithms(difficulty, rng) {
     ],
     explanation: [`\`${logb(b)} ${X} − ${logb(b)} ${Y} = ${logb(b)} (${X} ÷ ${Y}) = ${logb(b)} ${T}\`, so k = **${T}**.`, `\`${pw(b, k)} = ${T}\`, so the value is **${k}**.`].join("\n\n"),
     hints: [LOGLAWS],
+    // X ÷ Y is the calculator step; no rows when X or Y is also one of the answers (T, k).
+    ...([X, Y].every((v) => v !== T && v !== k) ? { given: [{ label: "_X", value: X }, { label: "_Y", value: Y }] } : {}),
     params: { sub: "logarithms", kind: "multi", b, X, Y },
   };
 }
@@ -487,6 +491,8 @@ function genSolving(difficulty, rng) {
       answerType: "number", answer: b ** k, tolerance: 0,
       explanation: [`\`log_b x = y\` means \`x = bʸ\`.`, `So x = \`${pw(b, k)}\` = **${b ** k}**.`].join("\n\n"),
       hints: [LOGDEF, `Rewrite it in index form with base ${b}.`],
+      // The calculator helps evaluate b^k; no rows when the base is also the answer (k = 1).
+      ...(k > 1 ? { given: [{ label: "_b", value: b }, { label: "_k", value: k }] } : {}),
       params: { sub: "solving", kind: "log", b, k, c: 0 },
     };
   }
@@ -531,6 +537,8 @@ function genSolving(difficulty, rng) {
       answerType: "number", answer: b ** k - c, tolerance: 0,
       explanation: [`Index form: \`${inner} = ${pw(b, k)} = ${b ** k}\`.`, `x = ${b ** k} ${c < 0 ? "+" : MINUS} ${Math.abs(c)} = **${num(b ** k - c)}**.`].join("\n\n"),
       hints: [LOGDEF, `Rewrite as \`${inner} = ${pw(b, k)}\`, then solve for x.`],
+      // b and k only (c's sign is part of the equation); none when one of them is also the answer.
+      ...(b ** k - c !== b && b ** k - c !== k ? { given: [{ label: "_b", value: b }, { label: "_k", value: k }] } : {}),
       params: { sub: "solving", kind: "log", b, k, c },
     };
   }

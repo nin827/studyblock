@@ -283,6 +283,7 @@ function genUnits(d, rng) {
       intro: "There are 2.2046 lb in every kilogram, so multiply by 2.2046.",
       lines: [row("_kg", kg), step("_lb", "_kg * 2.2046", res(exact, R1, "lb"))],
       candidates: [kg / LB, kg * 2, kg * 2.5],
+      given: [["_kg", kg], ["_lb_per_kg", LB]],
       hints: [
         "A pound is smaller than a kilogram, so the number of pounds is bigger. Multiply: `lb = kg × 2.2046`.",
         `Work out \`${num(kg)} × 2.2046\` (in the calculator: \`${num(kg)} * 2.2046\`).${thenRound(R1)}`,
@@ -300,6 +301,7 @@ function genUnits(d, rng) {
       intro: "Each kilogram is 2.2046 lb, so divide the pounds by 2.2046.",
       lines: [row("_lb", lb), step("_kg", "_lb / 2.2046", res(exact, o, "kg"))],
       candidates: [lb * LB, lb / 2, lb / 2.5],
+      given: [["_lb", lb], ["_lb_per_kg", LB]],
       hints: [
         "A kilogram is bigger than a pound, so the number of kilograms is smaller. Divide: `kg = lb ÷ 2.2046`.",
         `Work out \`${num(lb)} ÷ 2.2046\` (in the calculator: \`${num(lb)} / 2.2046\`).${thenRound(o)}`,
@@ -317,6 +319,7 @@ function genUnits(d, rng) {
       intro: "Each inch is 2.54 cm, so multiply by 2.54.",
       lines: [row("_in", inch), step("_cm", "_in * 2.54", res(exact, EX, "cm"))],
       candidates: [inch / CM, inch * 2.5, inch * 25.4],
+      given: [["_in", inch], ["_cm_per_in", CM]],
       hints: [
         "A centimetre is smaller than an inch, so you get more centimetres. Multiply: `cm = inches × 2.54`.",
         `Work out \`${inch} × 2.54\` exactly (in the calculator: \`${inch} * 2.54\`).`,
@@ -334,6 +337,7 @@ function genUnits(d, rng) {
       intro: "Each inch is 2.54 cm, so divide the centimetres by 2.54.",
       lines: [row("_cm", cm), step("_in", "_cm / 2.54", res(exact, R1, "in"))],
       candidates: [cm * CM, cm / 2.5, cm / 25.4],
+      given: [["_cm", cm], ["_cm_per_in", CM]],
       hints: [
         "An inch is bigger than a centimetre, so you get fewer inches. Divide: `inches = cm ÷ 2.54`.",
         `Work out \`${cm} ÷ 2.54\` (in the calculator: \`${cm} / 2.54\`).${thenRound(R1)}`,
@@ -378,6 +382,8 @@ function genUnits(d, rng) {
       intro: `Use ${C_TO_F}: multiply by 9/5 first, then add 32.`,
       lines: [row("_c", c), step("_f", "_c * 9 / 5 + 32", res(exact, o, "°F"))],
       candidates: [(c * 9) / 5, ((c + 32) * 9) / 5, (c * 5) / 9 + 32],
+      // The 32 is in the formula; no rows at 0 °C, where the answer is 32.
+      given: c === 0 ? undefined : [["_c", c], ["_offset", 32]],
       hints: [
         `Use ${C_TO_F}. Multiply before you add.`,
         `Work out \`${par(c)} × 9 / 5\`, then add 32 (in the calculator: \`${num(c)} * 9 / 5 + 32\`).${thenRound(o)}`,
@@ -395,6 +401,7 @@ function genUnits(d, rng) {
       intro: `Use ${F_TO_C}: subtract 32 first, then multiply by 5/9.`,
       lines: [row("_f", f), step("_c", "(_f - 32) * 5 / 9", res(exact, o, "°C"))],
       candidates: [(f * 5) / 9 - 32, ((f - 32) * 9) / 5, f - 32],
+      given: [["_f", f], ["_offset", 32]],
       hints: [
         `Use ${F_TO_C}. Take away 32 before you multiply.`,
         `Work out \`(${num(f)} − 32) × 5 / 9\` (in the calculator: \`(${num(f)} - 32) * 5 / 9\`).${thenRound(o)}`,
@@ -446,6 +453,7 @@ function genUnits(d, rng) {
       step("_feet", "floor(_inches / 12)", `**${ft} ft**`),
       step("_left", "_inches - _feet * 12", res(rest, R0, "in")),
     ],
+    given: [["_cm", cm], ["_cm_per_in", CM]],
     hints: ["Convert the whole height to inches first (divide by 2.54), then split it into feet (12 in each) and inches."],
   });
 }

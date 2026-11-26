@@ -109,6 +109,7 @@ function genEnergy(difficulty, rng) {
         prompt: `In the food chain ${chain}, the ${ch[0]} contain ${E}${UNIT}. Assume about 10% of the energy passes from one trophic level to the next. How much energy reaches the ${ch[1]}, in kJ/m²/year?`,
         explanation: `10% of the energy is passed on: \`${E} × 10 ÷ 100\` = **${num(exact)}${UNIT}**. The other 90% is lost as heat from respiration, in waste and in parts that aren't eaten.`,
         hints: ["Only about a tenth of the energy at one level reaches the next.", `Work out 10% of ${E} (in the calculator: \`${E} * 0.1\`).`],
+        given: [{ label: "_E", value: E }, { label: "_pct", value: 10 }],
         params: { sub: "energy", kind: "rule", E, steps: 1, pct: 10 },
       },
       exact,
@@ -128,6 +129,7 @@ function genEnergy(difficulty, rng) {
           prompt: `In the food chain ${chain}, the ${ch[0]} contain ${E}${UNIT}. ${LEVELS} Assume 10% of the energy passes from each level to the next. How much energy reaches the ${ch[steps]} (level ${steps + 1}), in kJ/m²/year?`,
           explanation: `From level 1 to level ${steps + 1} there are ${steps} transfers, each keeping 10%.\n\n\`${E} × 0.1${" × 0.1".repeat(steps - 1)}\` = **${num(exact)}${UNIT}**.`,
           hints: [`Count the transfers: from level 1 to level ${steps + 1}.`, "Each transfer keeps 10%, so multiply by 0.1 once for every transfer."],
+          given: [{ label: "_E", value: E }, { label: "_pct", value: 10 }],
           params: { sub: "energy", kind: "rule", E, steps, pct: 10 },
         },
         exact,
@@ -607,6 +609,8 @@ function genBiodiversity(difficulty, rng) {
         prompt: `A quadrat is divided into ${grid} equal squares. ${cap(plant)} covers more than half of ${covered} of the squares, so those squares count as covered. What is the percentage cover of ${plant}?`,
         explanation: `Percentage cover = covered squares ÷ total squares × 100.\n\n\`${covered} ÷ ${grid} × 100\` = **${num(exact)}%**.`,
         hints: ["Percentage cover = covered squares ÷ total squares × 100.", grid === 100 ? "With 100 squares, each square is 1% of the quadrat." : "With 25 squares, each square is 4% of the quadrat."],
+        // With 100 squares the covered count equals the answer, so no given rows then.
+        ...(grid === 25 ? { given: [{ label: "_covered", value: covered }, { label: "_grid", value: grid }] } : {}),
         params: { sub: "bio", kind: "cover", covered, grid },
       },
       exact,
@@ -632,6 +636,7 @@ function genBiodiversity(difficulty, rng) {
           "Add up all the individuals to get N. Then, for each species, work out n × (n − 1) and add those up.",
           `Divide your total by N × (N − 1) and subtract the result from 1.`,
         ],
+        given: list.map((s, i) => ({ label: `_n${i + 1}`, value: s.n })),
         params: { sub: "bio", kind: "simpson", list },
       },
       D,
@@ -653,6 +658,7 @@ function genBiodiversity(difficulty, rng) {
         prompt: `A sample from ${HABITAT_NAME[habitat]} contains: ${listTxt(list)}. ${SIMPSON}. Calculate D.${R2}`,
         explanation: `N = ${N}, Σ n(n − 1) = ${top}, N(N − 1) = ${N * (N - 1)}.\n\n\`D = 1 - ${top} ÷ ${N * (N - 1)}\` ${resultTxt(D, 2)}.`,
         hints: ["Find N (the total) and, for each species, n × (n − 1). Add those products.", "D = 1 − (sum of products) ÷ (N × (N − 1))."],
+        given: list.map((s, i) => ({ label: `_n${i + 1}`, value: s.n })),
         params: { sub: "bio", kind: "simpson", list },
       },
       D,
@@ -695,6 +701,10 @@ function genBiodiversity(difficulty, rng) {
       `**Site 1:** N = ${rA.N}, Σ n(n − 1) = ${rA.top}, \`D = 1 - ${rA.top} ÷ ${rA.N * (rA.N - 1)}\` ${resultTxt(rA.D, 2)}.\n\n` +
       `**Site 2:** N = ${rB.N}, Σ n(n − 1) = ${rB.top}, \`D = 1 - ${rB.top} ÷ ${rB.N * (rB.N - 1)}\` ${resultTxt(rB.D, 2)}.\n\n` +
       `**More diverse:** the higher D is **${more}**.`,
+    given: [
+      ...A.map((s, i) => ({ label: `_a${i + 1}`, value: s.n })),
+      ...B.map((s, i) => ({ label: `_b${i + 1}`, value: s.n })),
+    ],
     params: { sub: "bio", kind: "compare", A, B },
   };
 }

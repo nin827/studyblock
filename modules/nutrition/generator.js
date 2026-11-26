@@ -295,6 +295,7 @@ function genEnergyFood(d, rng) {
       intro: `Multiply the grams by the energy per gram of ${nut} (${f} kcal/g).`,
       lines: [row("_grams", g), step("_kcal", `_grams * ${f}`, res(exact, EX, "kcal"))],
       candidates: [g * (f === 9 ? 4 : 9), g + f, g * 7],
+      given: [["_grams", g], ["_kcal_per_g", f]],
       hints: [`Each gram of ${nut} gives ${f} kcal.`, `Work out \`${num(g)} × ${f}\`.`],
     });
   }
@@ -330,6 +331,7 @@ function genEnergyFood(d, rng) {
       intro: `Each gram of ${nut} gives ${f} kcal, so divide the kcal by ${f}.`,
       lines: [row("_kcal", kcal), step("_grams", `_kcal / ${f}`, res(exact, o, "g"))],
       candidates: [kcal * f, kcal / (f === 9 ? 4 : 9), kcal / 7],
+      given: [["_kcal", kcal], ["_kcal_per_g", f]],
       hints: [`Each gram of ${nut} gives ${f} kcal, so ask how many lots of ${f} kcal there are.`, `Work out \`${kcal} ÷ ${f}\`.${thenRound(o)}`],
     });
   }
@@ -394,6 +396,7 @@ function genUnitsE(d, rng) {
       intro: "A kilojoule is smaller than a kilocalorie, so multiply by 4.184.",
       lines: [row("_kcal", kcal), step("_kj", "_kcal * 4.184", res(exact, R0, "kJ"))],
       candidates: [kcal / KJ, kcal * 4, kcal * 4.2 + 10],
+      given: [["_kcal", kcal], ["_kj_per_kcal", KJ]],
       hints: ["Every kcal is 4.184 kJ, so the number of kJ is bigger.", `Work out \`${kcal} × 4.184\`.${thenRound(R0)}`],
     });
   }
@@ -409,6 +412,7 @@ function genUnitsE(d, rng) {
       intro: "A kilocalorie is bigger than a kilojoule, so divide by 4.184.",
       lines: [row("_kj", kj), step("_kcal", "_kj / 4.184", res(exact, o, "kcal"))],
       candidates: [kj * KJ, kj / 4, kj / 4.2 - 10],
+      given: [["_kj", kj], ["_kj_per_kcal", KJ]],
       hints: ["Every kcal is 4.184 kJ, so the number of kcal is smaller.", `Work out \`${kj} ÷ 4.184\`.${thenRound(o)}`],
     });
   }
@@ -439,6 +443,7 @@ function genUnitsE(d, rng) {
       intro: "Change MJ to kJ, then kJ to kcal.",
       lines: [row("_mj", mj), step("_kj", "_mj * 1000", `${num(mj * 1000)} kJ`), step("_kcal", "_kj / 4.184", res(exact, R0, "kcal"))],
       candidates: [mj * 1000 * KJ, (mj * 100) / KJ, mj * 1000],
+      given: [["_mj", mj], ["_kj_per_mj", 1000], ["_kj_per_kcal", KJ]],
       hints: [`Change to kJ first: \`${num(mj)} × 1000\`.`, `Divide the kJ by 4.184.${thenRound(R0)}`],
     });
   }
@@ -452,6 +457,7 @@ function genUnitsE(d, rng) {
       intro: "Change kcal to kJ, then kJ to MJ.",
       lines: [row("_kcal", kcal), step("_kj", "_kcal * 4.184", `${num(kcal * KJ)} kJ`), step("_mj", "_kj / 1000", res(exact, R2, "MJ"))],
       candidates: [kcal / KJ / 1000, (kcal * KJ) / 100, kcal / 1000],
+      given: [["_kcal", kcal], ["_kj_per_kcal", KJ], ["_kj_per_mj", 1000]],
       hints: [`Change to kJ first: \`${kcal} × 4.184\`.`, `Divide the kJ by 1000 to get MJ.${thenRound(R2)}`],
     });
   }
