@@ -4,7 +4,9 @@
     {"id": "business", "title": "Business", "icon": "briefcase", "roles": ["accountant", "business-analyst", "economist", "project-manager"]},
     {"id": "science", "title": "Science", "icon": "flask-conical", "roles": ["mathematician", "physicist", "chemist", "biologist"]},
     {"id": "engineering", "title": "Engineering", "icon": "hard-hat", "roles": ["civil-engineer", "electrical-engineer", "electrician", "architect", "surveyor"]},
-    {"id": "operations-service", "title": "Operations & Service", "icon": "store", "roles": ["operations-manager", "retail-manager", "chef", "nutritionist", "pilot", "investigator"]},
-    {"id": "humanities", "title": "Humanities", "icon": "book-open", "roles": ["teacher", "historian", "geographer", "linguist", "music-theorist"]}
+    {"id": "operations", "title": "Operations", "icon": "truck", "roles": ["operations-manager", "pilot"]},
+    {"id": "service", "title": "Service", "icon": "store", "roles": ["retail-manager", "chef", "nutritionist"]},
+    {"id": "humanities", "title": "Humanities", "icon": "book-open", "roles": ["teacher", "historian", "geographer", "linguist"]},
+    {"id": "misc", "title": "Miscellaneous", "icon": "shapes", "roles": ["music-theorist", "investigator"]}
   ]
 }

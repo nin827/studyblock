@@ -1,20 +1,37 @@
 # 028 — Group roles by industry
 
-**Status:** built (2026-11-27) with the user's simpler names
+**Status:** grouping built; new roles planned (waiting for the user's pick)
 **Raised:** 2026-11-27
 
 ## Request
 The Roles page is "all over the place". Group it as **Industry → Role → Subrole**.
 
-## Built (user, 2026-11-27: simpler names)
+## Built (user, 2026-11-27, second pass)
 - **Technology:** Software Engineer, Data Analyst, Data Scientist, Network Engineer, Game Developer
 - **Business:** Accountant, Business Analyst, Economist, Project Manager
 - **Science:** Mathematician, Physicist, Chemist, Biologist
 - **Engineering:** Civil Engineer, Electrical Engineer, Electrician, Architect, Land Surveyor
-- **Operations & Service:** Operations Manager, Retail Manager, Chef, Nutritionist, Pilot, Investigator
-- **Humanities:** Teacher, Historian, Geographer, Linguist, Music Theorist
-- No "Miscellaneous" was needed: every role fits one. A role left out of every industry would show under "Other".
+- **Operations:** Operations Manager, Pilot (transport and logistics)
+- **Service:** Retail Manager, Chef, Nutritionist
+- **Humanities:** Teacher, Historian, Geographer, Linguist
+- **Miscellaneous** (niche roles): Music Theorist, Investigator
 - *Not done yet:* the industry in the role page's breadcrumb.
+
+## Plan: more roles (user: no more subroles needed)
+New roles are **role-only**: a mix of existing subjects plus a role-only module with 4 scenario types (like today's roles), but **no subroles**. Health stays out (Medical rules: no doses or diagnosis). Recommended first in **bold**, one or two per thin industry.
+
+| Industry | New roles | Scenario ideas (all arithmetic on stated, made-up figures) |
+|---|---|---|
+| Technology | **Cloud / DevOps Engineer**, Database Administrator, Frontend Engineer (once JavaScript/TypeScript land, ticket 027) | uptime % and error budgets, autoscaling and cost per hour, storage growth; index vs scan row counts, backups |
+| Business | **Marketing Manager**, HR Manager, Insurance Underwriter | funnel conversion, CAC, ROAS, budget split; payroll, turnover rate, overtime; expected loss, premium from stated risk tables |
+| Science | **Environmental Scientist**, Astronomer | pollutant concentrations and dilution, carbon footprint, sampling; parallax, magnitudes, light travel time |
+| Engineering | **Mechanical Engineer**, Aerospace Engineer | gears, torque, fluids, tolerances (subjects already exist); thrust/weight, lift, fuel fraction |
+| Operations | **Logistics / Supply Chain Manager**, Ship Navigator, Air Traffic Planner | EOQ, routes and loads, lead times; tides, ETA and fuel at sea, bearings; separation times and slot planning |
+| Service | **Hotel Manager**, Event Planner, Travel Agent | occupancy, ADR and RevPAR, housekeeping staffing; per-head costing, seating, timelines; time zones, currency and fare comparisons |
+| Humanities | **Archaeologist**, Philosopher, Journalist | radiocarbon half-lives, stratigraphy order, finds density; argument validity (Logic subjects); word counts, readability, source dating |
+| Miscellaneous | **Sports Analyst**, Farmer / Agronomist, Puzzle Designer | pace, splits and league tables; yield per hectare, fertiliser rates, rainfall; unique-solution logic puzzles |
+
+Each new role is one agent: role JSON + `modules/role-<id>/` (4 subtopics × medium/hard/expert/expert-plus, verify, hints, given rows, intro and guide). About a day's work each, so build in batches of 3–4.
 
 ## First proposal (superseded)
 
