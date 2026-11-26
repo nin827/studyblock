@@ -1,9 +1,12 @@
 // Calculator widget: a small live worksheet of named rows (see "Calculator with stored values"
 // in CLAUDE.md). The maths lives in js/lib/calc.js; this file is DOM only.
 //
-// mountCalculator(container, { onUse(valueString), onEscape(), storageKey, owner })
-//   -> { setVisible(bool), snapshot(), clear(), destroy({ forget }), focus(), setUseEnabled(bool, hint),
-//        setGiven([{ label, value }]) }
+// mountCalculator(container, { onUse(valueString), onEscape(), storageKey, owner, store, showUse, page })
+//   store    'session' (default: the quiz sheet) or 'local' (the standalone Calculator page)
+//   showUse  false hides the Use buttons (no answer field to fill)
+//   page     true on the standalone page (taller plot on phones)
+//   -> { setVisible(bool), snapshot(), graphSnapshot(), clear(), clearAll(), destroy({ forget }), focus(),
+//        setUseEnabled(bool, hint), setGiven([{ label, value }]), setGivenGraph([{ expr, label? }], view) }
 //
 // Given values: setGiven() drops the rows still flagged `given` (untouched pre-filled rows from the
 // previous question) and inserts the new ones at the top. Editing a given row's label or expression
@@ -64,9 +67,13 @@ function withIcon(node, name, text) {
 
 // -> { rows: [...] | null, mode: 'sheet' | 'graph', graph: state | null } or null.
 // `mode` and `graph` are optional: older records (rows only) still load.
-function readStore(key, owner) {
+function storageOf(kind) {
+  return kind === 'local' ? localStorage : sessionStorage; // may throw (blocked storage): callers catch
+}
+
+function readStore(key, owner, kind) {
   try {
-    const raw = sessionStorage.getItem(key);
+    const raw = storageOf(kind).getItem(key);
     if (!raw) return null;
     const v = JSON.parse(raw);
     if (!v || typeof v !== 'object' || !Array.isArray(v.rows)) return null;
@@ -80,11 +87,11 @@ function readStore(key, owner) {
   }
 }
 
-export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAULT_KEY, owner = '' } = {}) {
+export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAULT_KEY, owner = '', store = 'session', showUse = true, page = false } = {}) {
   const id = `calc${++uid}`;
   let nextId = 1;
   const withId = r => ({ id: nextId++, label: r.label, expr: r.expr, given: r.given === true });
-  const stored = readStore(storageKey, owner);
+  const stored = readStore(storageKey, owner, store);
   let rows = (stored?.rows || [{ label: '_a', expr: '' }]).map(withId);
   let mode = stored?.mode || 'sheet';
   let graph = null;
@@ -94,10 +101,15 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   let lastFocusedRow = null;
 
   // ---- static shell ----
-  const root = el('div', 'calc');
+  const root = el('div', `calc${showUse ? '' : ' no-use'}`);
   const modes = el('div', 'calc-modes', { role: 'group', 'aria-label': 'Calculator mode' });
   const sheetBtn = withIcon(el('button', 'calc-mode', { type: 'button', 'data-mode': 'sheet' }), 'table-2', 'Sheet');
   const graphBtn = withIcon(el('button', 'calc-mode', { type: 'button', 'data-mode': 'graph' }), 'chart-spline', 'Graph');
+  // "given" badge: this question pre-fills graph functions (visible text, not colour alone).
+  const graphBadge = el('span', 'calc-mode-badge');
+  graphBadge.textContent = 'given';
+  graphBadge.hidden = true;
+  graphBtn.appendChild(graphBadge);
   modes.append(sheetBtn, graphBtn);
   const sheetWrap = el('div', 'calc-sheet');
   const graphWrap = el('div', 'calc-graph');
@@ -121,7 +133,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
   // ---- persistence ----
   function save() {
     try {
-      sessionStorage.setItem(storageKey, JSON.stringify({
+      storageOf(store).setItem(storageKey, JSON.stringify({
         v: 1, owner: String(owner ?? ''),
         rows: rows.map(r => (r.given ? { label: r.label, expr: r.expr, given: true } : { label: r.label, expr: r.expr })),
         mode,
@@ -167,6 +179,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     const res = el('output', 'calc-result', { for: exprId });
     const use = el('button', 'btn btn-small btn-soft calc-use', { type: 'button' });
     use.textContent = 'Use';
+    if (!showUse) use.hidden = true;
     const del = withIcon(el('button', 'btn btn-small calc-del', { type: 'button' }), 'trash-2');
     out.append(res, use, del);
     const err = el('p', 'calc-label-err', { id: errId });
@@ -491,12 +504,20 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
     return { ok: true, label: row.label, expr };
   }
 
+  function syncGraphBadge() {
+    const on = !!graph?.hasGiven();
+    graphBadge.hidden = !on;
+    graphBtn.setAttribute('aria-label', on ? 'Graph (this question gives functions)' : 'Graph');
+  }
+
   graph = mountGraph(graphWrap, {
     state: stored?.graph || null,
+    tall: page,
     getLookup: () => sheetLookup(rows.map(r => ({ label: r.label, expr: r.expr })), results),
-    onChange: () => save(),
+    onChange: () => { save(); syncGraphBadge(); },
     onAddValue: addValueRow,
   });
+  syncGraphBadge();
 
   renderAll();
   setMode(mode, { store: false });
@@ -517,7 +538,22 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
       });
       return out;
     },
+    // { fns: [{ slot, expr, hidden }], view } when the graph has a non-empty function, else null.
+    graphSnapshot() {
+      return graph ? graph.snapshot() : null;
+    },
     clear: clearSheet,
+    // Sheet and graph back to their starting state (the standalone page's Clear).
+    clearAll() {
+      clearSheet();
+      graph?.reset();
+      save();
+    },
+    // A question's graph functions (validated by the engine) replace the previous untouched ones.
+    setGivenGraph(list, view) {
+      graph?.setGiven(list, view);
+      syncGraphBadge();
+    },
     focus,
     setGiven,
     setUseEnabled(enabled, hint) {
@@ -532,7 +568,7 @@ export function mountCalculator(container, { onUse, onEscape, storageKey = DEFAU
       graph = null;
       root.remove();
       if (forget) {
-        try { sessionStorage.removeItem(storageKey); } catch { /* ignore */ }
+        try { storageOf(store).removeItem(storageKey); } catch { /* ignore */ }
       }
     },
   };

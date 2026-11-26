@@ -1,0 +1,43 @@
+{
+  "id": "investigator",
+  "title": "Investigator",
+  "icon": "file-search",
+  "flags": ["experience_heavy", "authority_required"],
+  "description": "Timelines and alibis, one-liar statements, odd records and base-rate odds: reasoning from stated facts, with every rule made up for practice.",
+  "exclusive": "role-investigator",
+  "mix": {
+    "logic-puzzles": { "weight": 4, "subtopics": ["whodunit", "knights-knaves", "ordering"] },
+    "syllogisms": { "weight": 1, "subtopics": ["categorical", "conditionals"] },
+    "number-patterns": { "weight": 2, "subtopics": ["numbers"] },
+    "probability": { "weight": 2, "subtopics": ["basic", "combined"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] },
+    "time-dates": { "weight": 2, "subtopics": ["clock", "calendar"] }
+  },
+  "subroles": [
+    {
+      "id": "case-analyst",
+      "title": "Case Analyst",
+      "icon": "user-search",
+      "description": "Timelines and alibis from stated times, and statements where exactly one person lies.",
+      "mix": {
+        "logic-puzzles": { "weight": 5, "subtopics": ["whodunit", "knights-knaves", "ordering"] },
+        "syllogisms": { "weight": 2, "subtopics": ["categorical", "conditionals"] },
+        "time-dates": { "weight": 3, "subtopics": ["clock", "calendar", "time-zones"] }
+      },
+      "exclusiveSubtopics": ["timeline", "statements"]
+    },
+    {
+      "id": "fraud-examiner",
+      "title": "Fraud Examiner",
+      "icon": "scan-search",
+      "description": "Odd entries in records, first-digit counts against a stated rule, and how likely a flagged case is to be real.",
+      "mix": {
+        "number-patterns": { "weight": 3, "subtopics": ["numbers"] },
+        "probability": { "weight": 3, "subtopics": ["basic", "combined"] },
+        "statistics": { "weight": 3, "subtopics": ["mean-median-mode", "range-iqr"] },
+        "logic-puzzles": { "weight": 1, "subtopics": ["whodunit"] }
+      },
+      "exclusiveSubtopics": ["record-patterns", "flag-odds"]
+    }
+  ]
+}

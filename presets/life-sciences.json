@@ -1,0 +1,24 @@
+{
+  "id": "life-sciences",
+  "name": "Life sciences",
+  "description": "Biology and Medical, with a little Chemistry.",
+  "config": {
+    "domains": {
+      "biology": {
+        "weight": 2
+      },
+      "medical": {
+        "weight": 1
+      },
+      "science": {
+        "weight": 1,
+        "modules": {
+          "chemistry": 1,
+          "elements": 1
+        }
+      }
+    },
+    "difficulty": "medium",
+    "count": 10
+  }
+}

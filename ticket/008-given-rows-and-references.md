@@ -1,6 +1,6 @@
 # 008 — Your rows that use a given value
 
-**Status:** open (built with the default below)
+**Status:** resolved (2026-11-26): keep as built
 **Raised:** 2026-11-24
 
 Questions fill the calculator with *given* rows such as `_price = 9`. When the next question appears, untouched given rows are replaced by the new question's values.
@@ -12,3 +12,7 @@ If you wrote your own row that uses one, like `_total = _price * 2`, it keeps wo
 **Alternatives**
 - **Freeze it:** a given row that one of your rows uses becomes your own row and stays as it was. The new question's value then appears as `_price_2`, so its name no longer matches the explanation.
 - **Ask:** show a small "keep old values?" choice when this happens.
+
+## Resolution (cleared 2026-11-26)
+
+Keep the default: your rows follow each new question's given values.

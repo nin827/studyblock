@@ -1,0 +1,16 @@
+{
+  "id": "role-game-developer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join movement vectors, collision timing, drop rates, XP curves and frame budgets, as a game team meets them.",
+  "icon": "gamepad-2",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "move-collide", "title": "Movement and collision", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "loot-odds", "title": "Loot odds and pity", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "xp-curve", "title": "XP curves and levelling", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "frame-budget", "title": "Frame budget and loop cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

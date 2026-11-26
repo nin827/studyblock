@@ -4,6 +4,8 @@
   "description": "Moles and molar mass, solution concentration and dilution, balancing equations, percent composition and empirical formulae.",
   "icon": "test-tube",
   "type": "generator",
+  "fuzzyNumber": 0,
+  "fuzzy": false,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "moles", "title": "Moles and molar mass", "difficulties": ["easy", "medium", "hard", "expert"] },

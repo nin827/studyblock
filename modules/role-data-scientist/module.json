@@ -1,0 +1,16 @@
+{
+  "id": "role-data-scientist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join confusion matrices, base rates, training runs, A/B tests and fitted lines, as a data scientist meets them.",
+  "icon": "brain-circuit",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "classifier-scores", "title": "Classifier scores", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "model-training", "title": "Splits and gradient descent", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "experiment-test", "title": "Experiments and z-scores", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "regression-fit", "title": "Least-squares lines", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

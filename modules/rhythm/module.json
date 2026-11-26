@@ -4,6 +4,8 @@
   "description": "Note values and dotted notes, time signatures, counting bars, and tempo in beats per minute.",
   "icon": "drum",
   "type": "generator",
+  "fuzzyNumber": 0,
+  "fuzzy": false,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "note-values", "title": "Note values", "difficulties": ["easy", "medium", "hard"] },

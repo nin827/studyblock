@@ -10,7 +10,7 @@ export { escapeHtml };
 try { applyAccent(getAccent()); } catch (e) { console.warn('Accent not applied', e); }
 
 // Domain colour class: fixed tints for known domains, a neutral one for anything else.
-const KNOWN_DOMAINS = ['math', 'science', 'geography', 'business', 'computing', 'history', 'language', 'game-dev', 'music', 'biology', 'medical'];
+const KNOWN_DOMAINS = ['math', 'science', 'geography', 'business', 'computing', 'history', 'language', 'game-dev', 'music', 'biology', 'medical', 'logic', 'everyday-math', 'engineering'];
 export function domClass(id) {
   return KNOWN_DOMAINS.includes(id) ? `dom-${id}` : 'dom-default';
 }
@@ -55,22 +55,25 @@ export function fmtScore(n) {
   return String(v);
 }
 
-// Labels for the reserved "all" subtopic / difficulty of whole-module quizzes.
+// Labels for the reserved "all" subtopic / difficulty of whole-module quizzes, and Expert+.
 export function difficultyLabel(d) {
-  return d === 'all' ? 'All difficulties' : cap(d);
+  return d === 'all' ? 'All difficulties' : d === 'expert-plus' ? 'Expert+' : cap(d);
 }
 
-// Difficulty as HTML: escaped label text; Expert also gets a flame icon and its own styling
-// (class "diff-expert"), so it never relies on colour alone. `label` overrides the text.
+// Expert and Expert+ (role-only questions) get a flame icon and accent styling.
+export const isFlameLevel = d => d === 'expert' || d === 'expert-plus';
+
+// Difficulty as HTML: escaped label text; Expert/Expert+ also get a flame icon and their own
+// styling (class "diff-expert"), so they never rely on colour alone. `label` overrides the text.
 export function difficultyHtml(d, label = difficultyLabel(d)) {
-  return d === 'expert'
+  return isFlameLevel(d)
     ? `<span class="diff-expert">${icon('flame')}${esc(label)}</span>`
     : esc(label);
 }
 
-// Difficulty pill for tag rows (Expert: flame icon + accent outline; others: plain tag).
+// Difficulty pill for tag rows (Expert/Expert+: flame icon + accent outline; others: plain tag).
 export function difficultyTag(d) {
-  return d === 'expert'
+  return isFlameLevel(d)
     ? `<span class="tag tag-expert">${icon('flame')}${esc(difficultyLabel(d))}</span>`
     : tag(difficultyLabel(d));
 }

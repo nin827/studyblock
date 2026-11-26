@@ -2,10 +2,13 @@
 // Answers are whole numbers (tolerance 0) or multiple choice; there is no calculator, because
 // working it out by hand is the point.
 // verify() never reuses generate()'s shortcuts. generate() works with prime factorisations, the
-// divisor-count formula, Euclid-style gcd/lcm, divisibility rules, cycles and modular inverses;
+// divisor-count formula, Euclid-style gcd/lcm, divisibility rules, cycles and modular inverses
+// (gcd/lcm, inverses and the cipher maps come from js/lib/ciphers.js, generation side only);
 // verify() brute-forces from params: trial division by every number, counting divisors one by one,
 // scanning for common divisors and multiples, long division digit by digit, simulating clocks,
 // buses and weekdays step by step, multiplying powers out mod 10 or mod n, and trying every x.
+
+import { ALPHABET, modPos, gcd, lcm, gcdAll, lcmAll, modInverse, letterNumber, numberLetter, caesar, vigenere, keyStream, affine } from "../../js/lib/ciphers.js";
 
 // ---------------------------------------------------------------------------------------------
 // Shared helpers (generation side)
@@ -13,16 +16,6 @@
 const NAMES = ["Ava", "Ben", "Chloe", "Dev", "Ella", "Finn", "Grace", "Hugo", "Isla", "Jack", "Kiran", "Lena", "Maya", "Noah", "Omar", "Priya", "Sam", "Tara", "Uma", "Zoe"];
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const WHOLE = " Give a whole number.";
-
-function gcd2(a, b) {
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) [a, b] = [b, a % b];
-  return a;
-}
-const gcdN = (arr) => arr.reduce((g, x) => gcd2(g, x));
-const lcm2 = (a, b) => (a / gcd2(a, b)) * b;
-const lcmN = (arr) => arr.reduce((l, x) => lcm2(l, x));
 
 // 6k ± 1 primality test (generation only).
 function isPrime(n) {
@@ -366,18 +359,18 @@ function gcdPair(rng, gLo, gHi, xLo, xHi) {
       const y = rng.int(xLo, xHi);
       return [g * x, g * y];
     },
-    ([a, b]) => a !== b && gcd2(a, b) > 1
+    ([a, b]) => a !== b && gcd(a, b) > 1
   );
 }
 
 const factLine = (nums) => nums.map((n) => `${n} = ${fmtFact(factorize(n))}`).join(", ");
 
 function gcdExplain(nums) {
-  const g = gcdN(nums);
+  const g = gcdAll(nums);
   return `Write each number as a product of primes: ${factLine(nums)}.\n\nTake each prime they all share, with the lowest power: GCD = ${g === 1 ? "1" : fmtFact(factorize(g))} = **${g}**.`;
 }
 function lcmExplain(nums) {
-  const l = lcmN(nums);
+  const l = lcmAll(nums);
   return `Write each number as a product of primes: ${factLine(nums)}.\n\nTake every prime that appears, with the highest power: LCM = ${fmtFact(factorize(l))} = **${l}**.`;
 }
 
@@ -391,10 +384,10 @@ function qGcd(difficulty, rng) {
         const g = rng.int(2, 15);
         return [rng.int(2, 9), rng.int(2, 9), rng.int(2, 9)].map((x) => g * x);
       },
-      (v) => new Set(v).size === 3 && gcdN(v) > 1
+      (v) => new Set(v).size === 3 && gcdAll(v) > 1
     );
   }
-  const g = gcdN(nums);
+  const g = gcdAll(nums);
   const prompt = rng.pick([
     `What is the greatest common divisor (GCD, also called the HCF) of ${andList(nums)}?`,
     `Find the highest common factor (HCF, the GCD) of ${andList(nums)}.`,
@@ -410,7 +403,7 @@ function qGcd(difficulty, rng) {
   );
   const base = { prompt, explanation: gcdExplain(nums), hints, params: { kind: "gcd", nums } };
   const sp = smallestPrimeFactor(g);
-  return finishInt(base, g, [g / sp, g * 2, lcmN(nums), Math.min(...nums), g * smallestPrimeFactor(nums[0] / g || 2)], rng, 0.3, 1);
+  return finishInt(base, g, [g / sp, g * 2, lcmAll(nums), Math.min(...nums), g * smallestPrimeFactor(nums[0] / g || 2)], rng, 0.3, 1);
 }
 
 function qLcm(difficulty, rng) {
@@ -420,9 +413,9 @@ function qLcm(difficulty, rng) {
   else
     nums = draw(
       () => [rng.int(3, difficulty === "hard" ? 30 : 15), rng.int(3, difficulty === "hard" ? 30 : 15), rng.int(3, difficulty === "hard" ? 30 : 15)],
-      (v) => new Set(v).size === 3 && lcmN(v) <= 2000 && lcmN(v) < v.reduce((a, b) => a * b, 1) && !v.some((a) => v.some((b) => a !== b && b % a === 0))
+      (v) => new Set(v).size === 3 && lcmAll(v) <= 2000 && lcmAll(v) < v.reduce((a, b) => a * b, 1) && !v.some((a) => v.some((b) => a !== b && b % a === 0))
     );
-  const l = lcmN(nums);
+  const l = lcmAll(nums);
   const prompt = rng.pick([
     `What is the lowest common multiple (LCM) of ${andList(nums)}?`,
     `Find the least common multiple of ${andList(nums)}.`,
@@ -438,7 +431,7 @@ function qLcm(difficulty, rng) {
   );
   const base = { prompt, explanation: lcmExplain(nums), hints, params: { kind: "lcm", nums } };
   const prod = nums.reduce((a, b) => a * b, 1);
-  return finishInt(base, l, [prod, l * 2, gcdN(nums), l / smallestPrimeFactor(l), l + Math.max(...nums)], rng, 0.3, 1);
+  return finishInt(base, l, [prod, l * 2, gcdAll(nums), l / smallestPrimeFactor(l), l + Math.max(...nums)], rng, 0.3, 1);
 }
 
 const LCM_STORIES = [
@@ -468,10 +461,10 @@ function qLcmStory(difficulty, rng) {
   const [a, b] =
     difficulty === "easy"
       ? draw(() => [rng.int(2, 12), rng.int(2, 12)], ([x, y]) => x < y && y % x !== 0)
-      : draw(() => [rng.int(6, 40), rng.int(6, 40)], ([x, y]) => x < y && y % x !== 0 && gcd2(x, y) > 1);
+      : draw(() => [rng.int(6, 40), rng.int(6, 40)], ([x, y]) => x < y && y % x !== 0 && gcd(x, y) > 1);
   const who = rng.pick(NAMES);
   const s = rng.pick(LCM_STORIES)(a, b, who);
-  const l = lcm2(a, b);
+  const l = lcm(a, b);
   const prompt = s.text;
   const explanation = `They line up again at the first number that is a multiple of both ${a} and ${b}: the lowest common multiple.\n\n${lcmExplain([a, b])}\n\nSo the answer is **${l}** ${s.unit}.`;
   const hints = guardAll(
@@ -483,7 +476,7 @@ function qLcmStory(difficulty, rng) {
     prompt
   );
   const base = { prompt, explanation, hints, params: { kind: "lcm", nums: [a, b] } };
-  return finishInt(base, l, [a * b, gcd2(a, b), l * 2, a + b], rng, 0.3, 1);
+  return finishInt(base, l, [a * b, gcd(a, b), l * 2, a + b], rng, 0.3, 1);
 }
 
 const GCD_STORIES = [
@@ -513,7 +506,7 @@ function qGcdStory(difficulty, rng) {
   const [a, b] = difficulty === "easy" ? gcdPair(rng, 2, 10, 2, 7) : gcdPair(rng, 6, 30, 2, 11);
   const who = rng.pick(NAMES);
   const s = rng.pick(GCD_STORIES)(a, b, who);
-  const g = gcd2(a, b);
+  const g = gcd(a, b);
   const prompt = s.text;
   const explanation = `The answer must divide both ${a} and ${b} exactly, and be as large as possible: the greatest common divisor.\n\n${gcdExplain([a, b])}`;
   const hints = guardAll(
@@ -525,13 +518,13 @@ function qGcdStory(difficulty, rng) {
     prompt
   );
   const base = { prompt, explanation, hints, params: { kind: "gcd", nums: [a, b] } };
-  return finishInt(base, g, [lcm2(a, b), g / smallestPrimeFactor(g), g * 2, b - a], rng, 0.3, 1);
+  return finishInt(base, g, [lcm(a, b), g / smallestPrimeFactor(g), g * 2, b - a], rng, 0.3, 1);
 }
 
 function qOtherNumber(rng) {
   const [G, x, y] = draw(
     () => [rng.int(2, 15), rng.int(2, 12), rng.int(2, 12)],
-    ([g, p, q]) => p !== q && gcd2(p, q) === 1
+    ([g, p, q]) => p !== q && gcd(p, q) === 1
   );
   const a = G * x, b = G * y, L = G * x * y;
   const prompt = `Two whole numbers have a greatest common divisor of ${G} and a lowest common multiple of ${L}. One of the numbers is ${a}. What is the other number?`;
@@ -551,9 +544,9 @@ function qOtherNumber(rng) {
 function qSmallestAbove(rng) {
   const nums = draw(
     () => [rng.int(3, 20), rng.int(3, 20), rng.int(3, 20)].sort((p, q) => p - q),
-    (v) => new Set(v).size === 3 && lcmN(v) >= 24 && lcmN(v) <= 900 && !v.some((p) => v.some((q) => p !== q && q % p === 0))
+    (v) => new Set(v).size === 3 && lcmAll(v) >= 24 && lcmAll(v) <= 900 && !v.some((p) => v.some((q) => p !== q && q % p === 0))
   );
-  const L = lcmN(nums);
+  const L = lcmAll(nums);
   const X = draw(() => rng.int(300, 5000), (v) => v % L !== 0);
   const ans = (Math.floor(X / L) + 1) * L;
   const prompt = `What is the smallest whole number greater than ${X} that is divisible by ${andList(nums)}?`;
@@ -572,7 +565,7 @@ function qSmallestAbove(rng) {
 
 function qGcdMulti(rng) {
   const [W, H] = gcdPair(rng, 10, 60, 2, 9);
-  const g = gcd2(W, H);
+  const g = gcd(W, H);
   const n = (W / g) * (H / g);
   const room = rng.pick(["kitchen floor", "patio", "bathroom wall", "hallway floor", "stage"]);
   const prompt = `A rectangular ${room} measures ${W} cm by ${H} cm. It is covered exactly with identical square tiles, as large as possible, and no tile is cut.`;
@@ -807,9 +800,9 @@ function qCountMultiples(difficulty, rng) {
 }
 
 function qCountOr(rng, asMulti) {
-  const [p, q] = draw(() => [rng.int(2, 15), rng.int(2, 15)], ([x, y]) => x < y && y % x !== 0 && gcd2(x, y) > 1);
+  const [p, q] = draw(() => [rng.int(2, 15), rng.int(2, 15)], ([x, y]) => x < y && y % x !== 0 && gcd(x, y) > 1);
   const N = rng.int(100, 1000);
-  const l = lcm2(p, q);
+  const l = lcm(p, q);
   const nP = Math.floor(N / p), nQ = Math.floor(N / q), nB = Math.floor(N / l);
   const either = nP + nQ - nB;
   const explanation =
@@ -858,8 +851,6 @@ function genDivisibility(difficulty, rng) {
 
 // ---------------------------------------------------------------------------------------------
 // Modular arithmetic
-
-const modPos = (a, n) => ((a % n) + n) % n;
 
 function qMod(difficulty, rng) {
   const n = rng.int(3, difficulty === "easy" ? 12 : 25);
@@ -1053,19 +1044,8 @@ function qPowMod(rng) {
   return finishInt(base, ans, cyc.filter((x) => x !== ans).concat([n - ans, (b * k) % n]), rng, 0.3, 0);
 }
 
-// Modular inverse by the extended Euclidean algorithm (generation only).
-function modInverse(a, n) {
-  let [r0, r1, t0, t1] = [n, a % n, 0, 1];
-  while (r1) {
-    const q = Math.floor(r0 / r1);
-    [r0, r1] = [r1, r0 - q * r1];
-    [t0, t1] = [t1, t0 - q * t1];
-  }
-  return modPos(t0, n);
-}
-
 function qCongruence(rng) {
-  const [a, n] = draw(() => [rng.int(2, 12), rng.int(5, 23)], ([x, y]) => x < y && gcd2(x, y) === 1);
+  const [a, n] = draw(() => [rng.int(2, 12), rng.int(5, 23)], ([x, y]) => x < y && gcd(x, y) === 1);
   const b = rng.int(1, n - 1);
   const x = (modInverse(a, n) * b) % n;
   const prompt = `Find the whole number x from 0 to ${n - 1} such that ${a}x mod ${n} = ${b} (that is, ${a} × x leaves remainder ${b} when divided by ${n}).`;
@@ -1084,7 +1064,7 @@ function qCongruence(rng) {
 }
 
 function qCrt(rng) {
-  const [m1, m2] = draw(() => [rng.int(3, 11), rng.int(3, 13)], ([p, q]) => p < q && gcd2(p, q) === 1);
+  const [m1, m2] = draw(() => [rng.int(3, 11), rng.int(3, 13)], ([p, q]) => p < q && gcd(p, q) === 1);
   const r1 = rng.int(1, m1 - 1), r2 = rng.int(1, m2 - 1);
   let x = r2;
   while (x % m1 !== r1) x += m2; // walk through the numbers ≡ r2 (mod m2)
@@ -1156,8 +1136,6 @@ function genModular(difficulty, rng) {
 // cxVerify re-derives answers another way: rotated-alphabet tables, re-encoding the candidate,
 // brute force over shifts / inverses / φ, BigInt powers and repeated multiplication.
 
-const CX_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-
 // Plain, family-friendly words (upper case, letters only).
 const CX_SHORT = ["CAT", "DOG", "SUN", "HAT", "MAP", "BOX", "CUP", "KEY", "OWL", "FOX", "BEE", "EGG", "PEN", "BUS", "JAM", "ANT", "BAT", "COW", "PIG", "HEN",
   "TREE", "BOOK", "CAKE", "FISH", "FROG", "KITE", "LAMP", "MILK", "MOON", "NEST", "RAIN", "ROSE", "SHIP", "SNOW", "STAR", "BELL", "DUCK", "GOAT", "LEAF", "WOLF"];
@@ -1174,12 +1152,7 @@ const CX_KEYS3 = ["SUN", "KEY", "CAT", "SKY", "BEE", "RED", "ICE", "OAK", "FUN",
 const CX_KEYS4 = ["MOON", "BLUE", "STAR", "LION", "CODE", "GOLD", "KING", "WAVE", "RUBY", "SNOW", "BIRD", "TIDE"];
 const CX_KEYS5 = ["LIGHT", "MAPLE", "OCEAN", "TULIP", "CROWN", "PEARL"];
 
-// Generation maths (letter-index arithmetic).
-const cxIdx = (c) => c.charCodeAt(0) - 65;
-const cxChr = (i) => String.fromCharCode((((i % 26) + 26) % 26) + 65);
-const cxCaesar = (w, k) => [...w].map((c) => cxChr(cxIdx(c) + k)).join("");
-const cxVig = (w, key, sign = 1) => [...w].map((c, i) => cxChr(cxIdx(c) + sign * cxIdx(key[i % key.length]))).join("");
-const cxKeyStream = (w, key) => [...w].map((_, i) => key[i % key.length]).join("");
+// Generation maths: letter-index arithmetic from js/lib/ciphers.js.
 const cxPl = (k) => (k === 1 ? "" : "s");
 
 // Thousands separators for prompts and explanations.
@@ -1202,11 +1175,11 @@ const CX_SHIFT_NOTE = (k) => `Shift each letter **${k}** place${cxPl(k)} forward
 const CX_VIG_NOTE = "Take A = 0, B = 1, …, Z = 25; each key letter shifts the plaintext letter under it forward by its value, the key repeats, and letters wrap from Z to A.";
 
 function cxCaesarSteps(w, k, dir) {
-  return [...w].map((c) => `${c}→${cxChr(cxIdx(c) + dir * k)}`).join(", ");
+  return [...w].map((c) => `${c}→${numberLetter(letterNumber(c) + dir * k)}`).join(", ");
 }
 function cxVigTable(w, key, dir) {
-  const ks = cxKeyStream(w, key);
-  return [...w].map((c, i) => `- ${c} ${dir > 0 ? "+" : "−"} ${ks[i]} (${cxIdx(ks[i])}) → ${cxChr(cxIdx(c) + dir * cxIdx(ks[i]))}`).join("\n");
+  const ks = keyStream(w, key);
+  return [...w].map((c, i) => `- ${c} ${dir > 0 ? "+" : "−"} ${ks[i]} (${letterNumber(ks[i])}) → ${numberLetter(letterNumber(c) + dir * letterNumber(ks[i]))}`).join("\n");
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1214,21 +1187,21 @@ function cxVigTable(w, key, dir) {
 
 function cxQCaesarLetter(rng) {
   const k = rng.int(1, 6);
-  const p = rng.pick(CX_ALPHA.split(""));
-  const correct = cxChr(cxIdx(p) + k);
-  const c = cxTextChoices(correct, [cxChr(cxIdx(p) - k), cxChr(cxIdx(p) + k + 1), cxChr(cxIdx(p) + k - 1)], rng);
-  const sum = cxIdx(p) + k;
+  const p = rng.pick(ALPHABET.split(""));
+  const correct = numberLetter(letterNumber(p) + k);
+  const c = cxTextChoices(correct, [numberLetter(letterNumber(p) - k), numberLetter(letterNumber(p) + k + 1), numberLetter(letterNumber(p) + k - 1)], rng);
+  const sum = letterNumber(p) + k;
   return {
     prompt: `A Caesar cipher uses a shift of **${k}**. ${CX_SHIFT_NOTE(k)} Which letter does **${p}** become?`,
     answerType: "choice", ...c,
-    explanation: `Count ${k} letter${cxPl(k)} forward from ${p}, wrapping after Z.\n\n- ${p} is letter number ${cxIdx(p)} (A = 0).\n- ${cxIdx(p)} + ${k} = ${sum}${sum > 25 ? `, and ${sum} − 26 = ${sum - 26}` : ""}\n- That is **${correct}**.`,
+    explanation: `Count ${k} letter${cxPl(k)} forward from ${p}, wrapping after Z.\n\n- ${p} is letter number ${letterNumber(p)} (A = 0).\n- ${letterNumber(p)} + ${k} = ${sum}${sum > 25 ? `, and ${sum} − 26 = ${sum - 26}` : ""}\n- That is **${correct}**.`,
     hints: [`Count forward ${k} place${cxPl(k)} from ${p}. Forward means towards Z.`, "If you pass Z, carry on from the start of the alphabet."],
     params: { kind: "c-letter", p, k },
   };
 }
 
 function cxQCaesarEnc(w, k, rot13) {
-  const ans = cxCaesar(w, k);
+  const ans = caesar(w, k);
   const name = rot13 ? "ROT13 (a Caesar cipher with shift **13**)" : `a Caesar cipher, shift **${k}**`;
   return {
     prompt: `Encode **${w}** with ${name}. ${CX_SHIFT_NOTE(k)} Type the encoded word.`,
@@ -1236,13 +1209,13 @@ function cxQCaesarEnc(w, k, rot13) {
     explanation: `Move every letter ${k} place${cxPl(k)} forward, wrapping after Z.\n\n- ${cxCaesarSteps(w, k, 1)}\n\nEncoded: **${ans}**`,
     hints: k <= 6
       ? [`Do one letter at a time: ${w[0]} moves ${k} place${cxPl(k)} forward.`, "If a letter passes Z, wrap round to A and keep counting."]
-      : [`Number the letters A = 0 to Z = 25, then add ${k} to each. ${w[0]} is ${cxIdx(w[0])}.`, "If a total is 26 or more, subtract 26 before turning it back into a letter."],
+      : [`Number the letters A = 0 to Z = 25, then add ${k} to each. ${w[0]} is ${letterNumber(w[0])}.`, "If a total is 26 or more, subtract 26 before turning it back into a letter."],
     params: { kind: "c-enc", w, k },
   };
 }
 
 function cxQCaesarDec(w, k, rot13) {
-  const cw = cxCaesar(w, k);
+  const cw = caesar(w, k);
   const name = rot13 ? "ROT13 (a Caesar cipher with shift **13**)" : `a Caesar cipher, shift **${k}** forward`;
   return {
     prompt: `**${cw}** was encoded with ${name}. Letters wrap from Z to A. Decode it. Type the original word.`,
@@ -1258,12 +1231,12 @@ function cxQCaesarDec(w, k, rot13) {
 function cxQCaesarShift(rng) {
   const w = rng.pick(CX_MID);
   const k = rng.int(1, 25);
-  const cw = cxCaesar(w, k);
-  const d0 = cxIdx(cw[0]) - cxIdx(w[0]);
+  const cw = caesar(w, k);
+  const d0 = letterNumber(cw[0]) - letterNumber(w[0]);
   return {
     prompt: `A Caesar cipher turned **${w}** into **${cw}**. Each letter was shifted forward by the same amount, wrapping from Z to A. What is the shift? Give a whole number from 1 to 25.`,
     answerType: "number", answer: k, tolerance: 0,
-    explanation: `Compare the first letters.\n\n- ${w[0]} is ${cxIdx(w[0])} and ${cw[0]} is ${cxIdx(cw[0])} (A = 0).\n- ${cxIdx(cw[0])} − ${cxIdx(w[0])} = ${d0}${d0 < 0 ? `; add 26: ${d0 + 26}` : ""}\n- Check another pair: ${w[1]}→${cw[1]} gives the same shift.\n\nShift: **${k}**`,
+    explanation: `Compare the first letters.\n\n- ${w[0]} is ${letterNumber(w[0])} and ${cw[0]} is ${letterNumber(cw[0])} (A = 0).\n- ${letterNumber(cw[0])} − ${letterNumber(w[0])} = ${d0}${d0 < 0 ? `; add 26: ${d0 + 26}` : ""}\n- Check another pair: ${w[1]}→${cw[1]} gives the same shift.\n\nShift: **${k}**`,
     hints: [`Number the letters A = 0 to Z = 25 and compare ${w[0]} with ${cw[0]}.`, "Subtract plaintext from ciphertext. If the result is negative, add 26. Check with a second letter."],
     params: { kind: "c-shift", w, cw },
   };
@@ -1274,9 +1247,9 @@ function cxQCaesarWhich(rng) {
   const pool = CX_BY_LEN[len];
   const w = rng.pick(pool);
   const k = rng.int(1, 25);
-  const cw = cxCaesar(w, k);
+  const cw = caesar(w, k);
   // Distractors: real words of the same length that no shift turns into cw.
-  const wrong = rng.shuffle(pool).filter((x) => x !== w && !Array.from({ length: 26 }, (_, s) => cxCaesar(x, s)).includes(cw));
+  const wrong = rng.shuffle(pool).filter((x) => x !== w && !Array.from({ length: 26 }, (_, s) => caesar(x, s)).includes(cw));
   const c = cxTextChoices(w, wrong, rng);
   return {
     prompt: `A Caesar cipher with an unknown shift (1 to 25, forward, wrapping from Z to A) turned a word into **${cw}**. Which word was it?`,
@@ -1290,9 +1263,9 @@ function cxQCaesarWhich(rng) {
 function cxQCaesarBack(rng) {
   const w = rng.pick(CX_LONG);
   const k = rng.int(3, 12);
-  const cw = cxCaesar(w, -k);
+  const cw = caesar(w, -k);
   return {
-    prompt: `This time the encoder shifted each letter **${k}** places **backward** (so A became ${cxChr(-k)}), wrapping from A to Z. The result was **${cw}**. Decode it. Type the original word.`,
+    prompt: `This time the encoder shifted each letter **${k}** places **backward** (so A became ${numberLetter(-k)}), wrapping from A to Z. The result was **${cw}**. Decode it. Type the original word.`,
     answerType: "text", answer: w,
     explanation: `The encoder moved letters back, so decoding moves them **forward** ${k} places.\n\n- ${cxCaesarSteps(cw, k, 1)}\n\nDecoded: **${w}**`,
     hints: ["Decoding undoes the encoding, so go the opposite way: forward.", `Add ${k} to each letter number (A = 0), subtracting 26 if you pass Z.`],
@@ -1304,8 +1277,8 @@ function cxQCaesarMulti(rng) {
   const known = rng.pick(CX_SHORT.filter((x) => x.length === 4));
   const w = rng.pick(CX_LONG);
   const k = rng.int(1, 25);
-  const kc = cxCaesar(known, k);
-  const cw = cxCaesar(w, k);
+  const kc = caesar(known, k);
+  const cw = caesar(w, k);
   return {
     prompt: `A spy uses one Caesar shift (forward, 1 to 25, wrapping from Z to A) for every message. You know that **${known}** was sent as **${kc}**. The next message is **${cw}**.`,
     answerType: "multi",
@@ -1315,45 +1288,45 @@ function cxQCaesarMulti(rng) {
       { id: "word", label: "Message", ask: "Decode the next message. Type the word.", answerType: "text", answer: w,
         hint: "Move every letter of the next message back by the shift you found." },
     ],
-    explanation: `Find the shift from the known pair, then undo it.\n\n- ${known[0]} = ${cxIdx(known[0])}, ${kc[0]} = ${cxIdx(kc[0])}, so the shift is ${k}.\n- Decode: ${cxCaesarSteps(cw, k, -1)}\n\n**Shift:** **${k}**\n\n**Message:** **${w}**`,
+    explanation: `Find the shift from the known pair, then undo it.\n\n- ${known[0]} = ${letterNumber(known[0])}, ${kc[0]} = ${letterNumber(kc[0])}, so the shift is ${k}.\n- Decode: ${cxCaesarSteps(cw, k, -1)}\n\n**Shift:** **${k}**\n\n**Message:** **${w}**`,
     hints: ["Find the shift from the pair you know first, then use it on the new message."],
     params: { kind: "c-multi", known, kc, cw },
   };
 }
 
 function cxQVigLetter(rng) {
-  const p = rng.pick(CX_ALPHA.split(""));
-  const kl = rng.pick(CX_ALPHA.slice(1).split("").filter((c) => c !== "N")); // N (13): forward = backward
-  const sum = cxIdx(p) + cxIdx(kl);
-  const correct = cxChr(sum);
-  const c = cxTextChoices(correct, [cxChr(cxIdx(p) - cxIdx(kl)), cxChr(sum + 1), cxChr(sum - 1)], rng);
+  const p = rng.pick(ALPHABET.split(""));
+  const kl = rng.pick(ALPHABET.slice(1).split("").filter((c) => c !== "N")); // N (13): forward = backward
+  const sum = letterNumber(p) + letterNumber(kl);
+  const correct = numberLetter(sum);
+  const c = cxTextChoices(correct, [numberLetter(letterNumber(p) - letterNumber(kl)), numberLetter(sum + 1), numberLetter(sum - 1)], rng);
   return {
     prompt: `In a Vigenère cipher the plaintext letter **${p}** sits under the key letter **${kl}**. ${CX_VIG_NOTE} Which ciphertext letter does it give?`,
     answerType: "choice", ...c,
-    explanation: `Add the key letter's value to the plaintext letter.\n\n- ${p} = ${cxIdx(p)}, ${kl} = ${cxIdx(kl)}\n- ${cxIdx(p)} + ${cxIdx(kl)} = ${sum}${sum > 25 ? `, and ${sum} − 26 = ${sum - 26}` : ""}\n- That is **${correct}**.`,
-    hints: [`The key letter ${kl} is worth ${cxIdx(kl)} (A = 0), so it shifts ${p} forward by ${cxIdx(kl)}.`, "Wrap round to the start of the alphabet if you pass Z."],
+    explanation: `Add the key letter's value to the plaintext letter.\n\n- ${p} = ${letterNumber(p)}, ${kl} = ${letterNumber(kl)}\n- ${letterNumber(p)} + ${letterNumber(kl)} = ${sum}${sum > 25 ? `, and ${sum} − 26 = ${sum - 26}` : ""}\n- That is **${correct}**.`,
+    hints: [`The key letter ${kl} is worth ${letterNumber(kl)} (A = 0), so it shifts ${p} forward by ${letterNumber(kl)}.`, "Wrap round to the start of the alphabet if you pass Z."],
     params: { kind: "v-letter", p, kl },
   };
 }
 
 function cxQVigEnc(w, key) {
-  const ans = cxVig(w, key);
+  const ans = vigenere(w, key);
   return {
     prompt: `Encode **${w}** with a Vigenère cipher using the key **${key}**. ${CX_VIG_NOTE} Type the encoded word.`,
     answerType: "text", answer: ans,
-    explanation: `Repeat the key under the word: ${w} / ${cxKeyStream(w, key)}. Add each pair, subtracting 26 when a total reaches 26.\n\n${cxVigTable(w, key, 1)}\n\nEncoded: **${ans}**`,
-    hints: [`Write the key under the word, repeating it: ${w} over ${cxKeyStream(w, key)}.`, `Each key letter is a shift: ${[...new Set(key)].map((c) => `${c} = ${cxIdx(c)}`).join(", ")}. Shift each letter forward by the key letter under it, wrapping past Z.`],
+    explanation: `Repeat the key under the word: ${w} / ${keyStream(w, key)}. Add each pair, subtracting 26 when a total reaches 26.\n\n${cxVigTable(w, key, 1)}\n\nEncoded: **${ans}**`,
+    hints: [`Write the key under the word, repeating it: ${w} over ${keyStream(w, key)}.`, `Each key letter is a shift: ${[...new Set(key)].map((c) => `${c} = ${letterNumber(c)}`).join(", ")}. Shift each letter forward by the key letter under it, wrapping past Z.`],
     params: { kind: "v-enc", w, key },
   };
 }
 
 function cxQVigDec(w, key) {
-  const cw = cxVig(w, key);
+  const cw = vigenere(w, key);
   return {
     prompt: `**${cw}** was encoded with a Vigenère cipher using the key **${key}**. ${CX_VIG_NOTE} Decode it. Type the original word.`,
     answerType: "text", answer: w,
-    explanation: `To decode, **subtract** each key letter instead of adding it. Key under the ciphertext: ${cw} / ${cxKeyStream(cw, key)}.\n\n${cxVigTable(cw, key, -1)}\n\nDecoded: **${w}**`,
-    hints: [`Repeat the key under the ciphertext: ${cw} over ${cxKeyStream(cw, key)}.`, "Subtract each key letter's value (A = 0) from the letter above it. If a result is negative, add 26."],
+    explanation: `To decode, **subtract** each key letter instead of adding it. Key under the ciphertext: ${cw} / ${keyStream(cw, key)}.\n\n${cxVigTable(cw, key, -1)}\n\nDecoded: **${w}**`,
+    hints: [`Repeat the key under the ciphertext: ${cw} over ${keyStream(cw, key)}.`, "Subtract each key letter's value (A = 0) from the letter above it. If a result is negative, add 26."],
     params: { kind: "v-dec", cw, key },
   };
 }
@@ -1361,8 +1334,8 @@ function cxQVigDec(w, key) {
 function cxQVigKey(rng, asMulti) {
   const key = rng.pick(rng.next() < 0.5 ? CX_KEYS3 : CX_KEYS4);
   const known = rng.pick(CX_MID); // every MID word has 5+ letters, longer than any 3- or 4-letter key
-  const kc = cxVig(known, key);
-  const keySteps = [...key].map((c, i) => `- ${kc[i]} (${cxIdx(kc[i])}) − ${known[i]} (${cxIdx(known[i])}) → ${c}`).join("\n");
+  const kc = vigenere(known, key);
+  const keySteps = [...key].map((c, i) => `- ${kc[i]} (${letterNumber(kc[i])}) − ${known[i]} (${letterNumber(known[i])}) → ${c}`).join("\n");
   if (!asMulti) {
     return {
       prompt: `A Vigenère cipher with a **${key.length}-letter** key turned **${known}** into **${kc}**. ${CX_VIG_NOTE} What is the key? Type its ${key.length} letters.`,
@@ -1373,7 +1346,7 @@ function cxQVigKey(rng, asMulti) {
     };
   }
   const w = rng.pick(CX_LONG);
-  const cw = cxVig(w, key);
+  const cw = vigenere(w, key);
   return {
     prompt: `Two words were encoded with the same Vigenère key, which has **${key.length} letters**. ${CX_VIG_NOTE} You know **${known}** became **${kc}**. The second word arrived as **${cw}**.`,
     answerType: "multi",
@@ -1383,7 +1356,7 @@ function cxQVigKey(rng, asMulti) {
       { id: "word", label: "Second word", ask: "Decode the second word. Type it.", answerType: "text", answer: w,
         hint: `Repeat your key under ${cw}, then subtract each key letter's value from the letter above it.` },
     ],
-    explanation: `Recover the key from the known pair, then decode.\n\n${keySteps}\n\nThe key is ${key}. Decoding ${cw} with ${cxKeyStream(cw, key)}:\n\n${cxVigTable(cw, key, -1)}\n\n**Key:** **${key}**\n\n**Second word:** **${w}**`,
+    explanation: `Recover the key from the known pair, then decode.\n\n${keySteps}\n\nThe key is ${key}. Decoding ${cw} with ${keyStream(cw, key)}:\n\n${cxVigTable(cw, key, -1)}\n\n**Key:** **${key}**\n\n**Second word:** **${w}**`,
     hints: ["Recover the key from the pair you know first, then use it to decode the second word."],
     params: { kind: "v-multi", known, kc, cw, len: key.length },
   };
@@ -1419,17 +1392,6 @@ function cxGenCiphers(difficulty, rng) {
 // ---------------------------------------------------------------------------------------------
 // Keys & RSA
 
-// Extended Euclid inverse of a mod m (generation only).
-function cxInv(a, m) {
-  let [r0, r1, s0, s1] = [m, ((a % m) + m) % m, 0, 1];
-  while (r1 !== 0) {
-    const qq = Math.floor(r0 / r1);
-    [r0, r1] = [r1, r0 - qq * r1];
-    [s0, s1] = [s1, s0 - qq * s1];
-  }
-  return r0 === 1 ? ((s0 % m) + m) % m : null;
-}
-
 // Every toy key (p < q prime, e coprime to φ) that is small enough to work by hand. No rng here.
 const CX_RSA = (() => {
   const out = [];
@@ -1437,7 +1399,7 @@ const CX_RSA = (() => {
   for (const p of P) for (const q of P) {
     if (p >= q) continue;
     const n = p * q, phi = (p - 1) * (q - 1);
-    for (const e of [3, 5, 7, 11]) if (e < phi && gcd2(e, phi) === 1) out.push({ p, q, n, phi, e, d: cxInv(e, phi) });
+    for (const e of [3, 5, 7, 11]) if (e < phi && gcd(e, phi) === 1) out.push({ p, q, n, phi, e, d: modInverse(e, phi) });
   }
   return out;
 })();
@@ -1578,7 +1540,7 @@ function cxQTime(rng) {
 
 function cxQInv26(rng) {
   const a = rng.pick([3, 5, 7, 9, 11, 15, 17, 19, 21, 23]);
-  const d = cxInv(a, 26);
+  const d = modInverse(a, 26);
   const k = (a * d - 1) / 26;
   const prompt0 = `A multiplicative cipher turns the letter with number x (A = 0, B = 1, …, Z = 25) into the letter with number (${a} × x) mod 26. To decode, you multiply by the **inverse of ${a} mod 26**: the whole number d from 1 to 25 with (${a} × d) mod 26 = 1.`;
   const dExplain = `- You need ${a} × d to be 1 more than a multiple of 26: 27, 53, 79, 105, 131, …\n- (1 + 26 × ${k}) ÷ ${a} = ${1 + 26 * k} ÷ ${a} = ${d}\n- Check: ${a} × ${d} = ${a * d} = 26 × ${k} + 1`;
@@ -1596,7 +1558,7 @@ function cxQInv26(rng) {
   }
   const x = rng.pick(Array.from({ length: 25 }, (_, i) => i + 1).filter((v) => v !== 13)); // A and N never move
   const y = (a * x) % 26;
-  const cl = CX_ALPHA[y], pl = CX_ALPHA[x];
+  const cl = ALPHABET[y], pl = ALPHABET[x];
   const prompt = `${prompt0} The ciphertext letter is **${cl}**.`;
   return {
     prompt, answerType: "multi",
@@ -1634,7 +1596,7 @@ function cxMsgs(K, mMax) {
   const ms = [];
   for (let x = 2; x <= Math.min(mMax, K.n - 1); x++) {
     const c = cxPowChain(x, K.e, K.n).c;
-    if (gcd2(x, K.n) === 1 && c !== x && c > 1) ms.push(x);
+    if (gcd(x, K.n) === 1 && c !== x && c > 1) ms.push(x);
   }
   return ms;
 }
@@ -1735,12 +1697,12 @@ function cxWhole(q) {
 // ---------------------------------------------------------------------------------------------
 // Ciphers and Keys & RSA: independent check
 
-const cxRotRow = (s) => CX_ALPHA.slice(s) + CX_ALPHA.slice(0, s);
+const cxRotRow = (s) => ALPHABET.slice(s) + ALPHABET.slice(0, s);
 function cxTabCaesar(w, k) {
   const row = cxRotRow(((k % 26) + 26) % 26);
   let out = "";
   for (const c of w) {
-    const p = CX_ALPHA.indexOf(c);
+    const p = ALPHABET.indexOf(c);
     if (p < 0) return null;
     out += row[p];
   }
@@ -1749,8 +1711,8 @@ function cxTabCaesar(w, k) {
 function cxTabVig(w, key) {
   let out = "";
   for (let i = 0; i < w.length; i++) {
-    const row = cxRotRow(CX_ALPHA.indexOf(key[i % key.length]));
-    const p = CX_ALPHA.indexOf(w[i]);
+    const row = cxRotRow(ALPHABET.indexOf(key[i % key.length]));
+    const p = ALPHABET.indexOf(w[i]);
     if (p < 0) return null;
     out += row[p];
   }
@@ -1761,7 +1723,7 @@ function cxKeyFor(plain, cipher, len) {
   let key = "";
   for (let i = 0; i < len; i++) {
     let found = null;
-    for (const c of CX_ALPHA) if (cxRotRow(CX_ALPHA.indexOf(c))[CX_ALPHA.indexOf(plain[i])] === cipher[i]) { found = c; break; }
+    for (const c of ALPHABET) if (cxRotRow(ALPHABET.indexOf(c))[ALPHABET.indexOf(plain[i])] === cipher[i]) { found = c; break; }
     if (!found) return null;
     key += found;
   }
@@ -1848,7 +1810,7 @@ function cxVerifyOne(q, answer) {
       if (d !== cxBruteInv(p.a, 26)) return false;
       // Re-encode the candidate letter with the forward rule.
       const L = cxUp(a.letter);
-      return /^[A-Z]$/.test(L) && (p.a * CX_ALPHA.indexOf(L)) % 26 === p.y;
+      return /^[A-Z]$/.test(L) && (p.a * ALPHABET.indexOf(L)) % 26 === p.y;
     }
     case "rsa-nphi": {
       const a = cxObj(answer);
@@ -2055,7 +2017,7 @@ const XP_FROB = [
 // gcd-lcm / expert, template 1: amounts you can't make from two sizes (coprime, Frobenius).
 function xpFrob(rng) {
   const ctx = rng.pick(XP_FROB);
-  const [a, b] = draw(() => [rng.int(3, 7), rng.int(4, 11)], ([x, y]) => x < y && gcd2(x, y) === 1);
+  const [a, b] = draw(() => [rng.int(3, 7), rng.int(4, 11)], ([x, y]) => x < y && gcd(x, y) === 1);
   const largest = a * b - a - b;
   const count = ((a - 1) * (b - 1)) / 2;
   return {
@@ -2090,7 +2052,7 @@ function xpSameRem(rng) {
       const ks = [rng.int(3, 30), rng.int(3, 30), rng.int(3, 30)].sort((x, y) => x - y);
       return { D, r, ks };
     },
-    (o) => o.ks[0] < o.ks[1] && o.ks[1] < o.ks[2] && gcd2(o.ks[1] - o.ks[0], o.ks[2] - o.ks[1]) === 1,
+    (o) => o.ks[0] < o.ks[1] && o.ks[1] < o.ks[2] && gcd(o.ks[1] - o.ks[0], o.ks[2] - o.ks[1]) === 1,
   );
   const N = ks.map((k) => r + D * k);
   const d1 = N[1] - N[0], d2 = N[2] - N[1];
@@ -2242,7 +2204,7 @@ function xpCongr(rng) {
       const x0 = rng.int(0, n - 1);
       return { a, n, x0, d };
     },
-    (o) => o.a < o.n && gcd2(o.a, o.n) === o.d,
+    (o) => o.a < o.n && gcd(o.a, o.n) === o.d,
   );
   const b = (a * x0) % n;
   const sols = [];
@@ -2309,15 +2271,14 @@ function xpIsbn(rng) {
 }
 
 const XP_UNITS26 = [3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25];
-const xpAff = (w, a, b) => [...w].map((ch) => cxChr(a * cxIdx(ch) + b)).join("");
 
 // ciphers / expert, template 0: decode an affine cipher (needs the inverse of a mod 26).
 function xpAffineDec(rng) {
   const a = rng.pick(XP_UNITS26);
   const b = rng.int(1, 25);
   const w = rng.pick(rng.next() < 0.5 ? CX_SHORT : CX_MID);
-  const cw = xpAff(w, a, b);
-  const inv = cxInv(a, 26);
+  const cw = affine(w, a, b);
+  const inv = modInverse(a, 26);
   return {
     prompt: `An **affine cipher** encodes letter number x (A = 0, …, Z = 25) as (${a}x + ${b}) mod 26. The word **${cw}** was encoded this way.`,
     answerType: "multi",
@@ -2330,7 +2291,7 @@ function xpAffineDec(rng) {
     explanation: [
       `Decoding reverses the steps: x = inverse × (y − ${b}) mod 26.`,
       `${a} × ${inv} = ${a * inv} = 26 × ${(a * inv - 1) / 26} + 1, so the inverse is **${inv}**.`,
-      [...cw].map((ch) => `- ${ch} (${cxIdx(ch)}): ${inv} × (${cxIdx(ch)} − ${b}) mod 26 = ${(((inv * (cxIdx(ch) - b)) % 26) + 26) % 26} → ${cxChr(inv * (cxIdx(ch) - b))}`).join("\n"),
+      [...cw].map((ch) => `- ${ch} (${letterNumber(ch)}): ${inv} × (${letterNumber(ch)} − ${b}) mod 26 = ${(((inv * (letterNumber(ch) - b)) % 26) + 26) % 26} → ${numberLetter(inv * (letterNumber(ch) - b))}`).join("\n"),
       `Decoded: **${w}**.`,
     ].join("\n\n"),
     hints: [
@@ -2345,11 +2306,11 @@ function xpAffineDec(rng) {
 function xpAffineCrack(rng) {
   const a = rng.pick(XP_UNITS26);
   const b = rng.int(0, 25);
-  const [p1, p2] = draw(() => [rng.int(0, 25), rng.int(0, 25)], ([x, y]) => x < y && gcd2(y - x, 26) === 1 && y - x !== 1 && y - x !== 25);
+  const [p1, p2] = draw(() => [rng.int(0, 25), rng.int(0, 25)], ([x, y]) => x < y && gcd(y - x, 26) === 1 && y - x !== 1 && y - x !== 25);
   const c1 = (a * p1 + b) % 26, c2 = (a * p2 + b) % 26;
-  const L = (i) => CX_ALPHA[i];
+  const L = (i) => ALPHABET[i];
   const dp = p2 - p1, dc = (((c2 - c1) % 26) + 26) % 26;
-  const invd = cxInv(dp, 26);
+  const invd = modInverse(dp, 26);
   return {
     prompt: `An affine cipher encodes x as (ax + b) mod 26 (A = 0, …, Z = 25). You know that **${L(p1)} → ${L(c1)}** and **${L(p2)} → ${L(c2)}**.`,
     answerType: "multi",
@@ -2375,9 +2336,9 @@ function xpAffineCrack(rng) {
 // ciphers / expert, template 2: frequency analysis on a Caesar cipher.
 function xpFreq(rng) {
   const k = rng.int(1, 25);
-  const top = cxChr(4 + k);
+  const top = numberLetter(4 + k);
   const w = rng.pick(rng.next() < 0.5 ? CX_MID : CX_LONG);
-  const cw = cxCaesar(w, k);
+  const cw = caesar(w, k);
   return {
     prompt: `A long message was encoded with a Caesar cipher (shift forward, wrapping from Z to A). In the ciphertext the most common letter by far is **${top}**. E is the most common letter in English. One encoded word is **${cw}**.`,
     answerType: "multi",
@@ -2388,7 +2349,7 @@ function xpFreq(rng) {
         hint: "Move every letter back by the shift, wrapping from A to Z." },
     ],
     explanation: [
-      `E is letter 4 and ${top} is letter ${cxIdx(top)}. Shift = (${cxIdx(top)} − 4) mod 26 = **${k}**.`,
+      `E is letter 4 and ${top} is letter ${letterNumber(top)}. Shift = (${letterNumber(top)} − 4) mod 26 = **${k}**.`,
       `Decode by moving each letter ${k} back: ${cxCaesarSteps(cw, k, -1)}.`,
       `Decoded: **${w}**.`,
     ].join("\n\n"),
@@ -2473,13 +2434,13 @@ function xpChooseE(rng) {
       const [p, q] = rng.shuffle(P.slice()).slice(0, 2).sort((x, y) => x - y);
       const phi = (p - 1) * (q - 1);
       const pool = rng.shuffle([3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
-      const good = pool.find((e) => gcd2(e, phi) === 1 && e < phi);
-      const bad = pool.filter((e) => gcd2(e, phi) !== 1).slice(0, 3);
+      const good = pool.find((e) => gcd(e, phi) === 1 && e < phi);
+      const bad = pool.filter((e) => gcd(e, phi) !== 1).slice(0, 3);
       return { p, q, phi, good, bad };
     },
-    (o) => o.good !== undefined && o.bad.length === 3 && cxInv(o.good, o.phi) !== o.good,
+    (o) => o.good !== undefined && o.bad.length === 3 && modInverse(o.good, o.phi) !== o.good,
   );
-  const d = cxInv(good, phi);
+  const d = modInverse(good, phi);
   const choices = rng.shuffle([good, ...bad]).map(String);
   return {
     prompt: `Toy RSA with **p = ${p}** and **q = ${q}**. The public exponent e must share no factor with φ(n) = (p − 1)(q − 1), or there is no private key d.`,
@@ -2492,7 +2453,7 @@ function xpChooseE(rng) {
     ],
     explanation: [
       `φ(n) = ${p - 1} × ${q - 1} = ${phi} = ${fmtFact(factorize(phi))}.`,
-      `${bad.map((e) => `${e} shares the factor ${gcd2(e, phi)}`).join("; ")}. Only **${good}** is coprime to ${phi}.`,
+      `${bad.map((e) => `${e} shares the factor ${gcd(e, phi)}`).join("; ")}. Only **${good}** is coprime to ${phi}.`,
       `d: try (1 + k × ${phi}) ÷ ${good}:\n\n${cxDSteps(good, phi)}`,
       `So d = **${d}**.`,
     ].join("\n\n"),
@@ -2846,7 +2807,7 @@ function xpVerifyOne(q, ans) {
       if (w.length !== p.cw.length) return false;
       // Re-encode the candidate with a lookup table and compare.
       const table = {};
-      for (let x = 0; x < 26; x++) table[CX_ALPHA[x]] = CX_ALPHA[(p.a * x + p.b) % 26];
+      for (let x = 0; x < 26; x++) table[ALPHABET[x]] = ALPHABET[(p.a * x + p.b) % 26];
       return [...w].every((ch, i) => table[ch] === p.cw[i]);
     }
     case "xp-affcrack": {

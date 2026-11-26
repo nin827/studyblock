@@ -4,6 +4,7 @@
   "description": "Energy in food, kcal and kJ, reading food labels and simple energy balance sums.",
   "icon": "apple",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "energy-from-food", "title": "Energy from food", "difficulties": ["easy", "medium", "hard"] },

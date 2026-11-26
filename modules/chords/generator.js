@@ -2,7 +2,11 @@
 //
 // Chords are spelled from letter names (stacked thirds), so the D major triad is D, F♯, A and
 // never D, G♭, A. Spelled notes are always multiple choice (the app's text check can't tell
-// "F#" from "F♯"). No double sharps or flats appear anywhere.
+// "F#" from "F♯"); "which notes make this chord?" questions are built from note blocks instead
+// (one block per note, plus wrong spellings as distractors). Double sharps and flats (𝄪, 𝄫) appear
+// only where theory needs them: Hard and Expert diminished/augmented triads (D♭ F♭ A𝄫), harmonic
+// minor keys with a double-sharp leading note (G♯ minor: F𝄪), and the notes built from those. Easy and
+// Medium, and every major-key question, keep to single accidentals.
 //
 // generate() builds chords with pitch-class arithmetic and key-signature tables (BUILD side of
 // js/lib/music.js). verify() re-derives every answer from params.check with the CHECK side:
@@ -10,12 +14,101 @@
 // identifyChord (which finds the root by letter distances).
 
 import {
-  LETTERS, note, fmt, fmtList, parseNote, parseList, plain, sameNote, pc,
-  TRIAD, SEVENTH, buildChord, noteAbove, majorTonic, minorTonic, scaleFromSignature,
+  LETTERS, note, fmt, fmtList, parseNote, parseList, plain, spellable, sameNote, pc,
+  TRIAD, SEVENTH, HALF_DIM7, buildChord, noteAbove, majorTonic, minorTonic, scaleFromSignature,
   classify, scaleByPattern, identifyChord, fourChoices, ordinal,
 } from '../../js/lib/music.js';
+import { withPlay, playChord } from '../../js/lib/audio.js';
 
 const DIFFS = ['easy', 'medium', 'hard'];
+
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns (1 to 2 when n = 2),
+// with at least one differing in 2+ columns and the answer never the most common value in every column. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Largest allowed difference from the answer: n−1 columns, or both columns when n = 2 (ticket 022).
+const segMaxDiff = (n) => (n === 2 ? 2 : n - 1);
+// Ticket 022 (mixed distances): at least one wrong option differs from the answer in 2+ columns, and
+// in at least one column the answer's value is not the strictly most common one, so the answer can't
+// be found by counting. `options` are segment arrays including the answer.
+function segMixed(correct, options) {
+  if (!options.some((t) => segDiff(t, correct) >= 2)) return false;
+  return correct.some((v, i) => {
+    const counts = new Map();
+    for (const t of options) counts.set(t[i], (counts.get(t[i]) || 0) + 1);
+    const mine = counts.get(v) || 0;
+    return [...counts].some(([k, c]) => k !== v && c >= mine);
+  });
+}
+// The right tuple plus wrong ones from `cands` (rng.shuffle order) -> `want` options, shuffled; or null.
+// A pick that breaks the mixed-distances rule is redrawn (a fresh shuffle) a few times.
+function segPick(rng, correct, cands, want) {
+  const n = correct.length;
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const seen = new Set([segKey(correct)]);
+    const out = [correct];
+    for (const c of rng.shuffle(cands.slice())) {
+      if (out.length >= want) break;
+      if (!Array.isArray(c) || c.length !== n || c.some((s) => !String(s))) continue;
+      const d = segDiff(c, correct);
+      if (d < 1 || d > segMaxDiff(n) || seen.has(segKey(c))) continue;
+      seen.add(segKey(c));
+      out.push(c);
+    }
+    if (out.length === want && segMixed(correct, out)) return rng.shuffle(out);
+  }
+  return null;
+}
+// Build-mode decoys: the [column index, value] pairs no option already shows (max 14). Indexes, not
+// labels, because labels such as TT and Tt differ only in case.
+function segExtras(cols, options, pairs) {
+  const shown = cols.map((_, i) => new Set(options.map((t) => String(t[i]))));
+  const out = [];
+  for (const [i, v] of pairs) {
+    const s = String(v ?? "");
+    if (s && !shown[i].has(s)) { shown[i].add(s); out.push([i, s]); }
+  }
+  return out.slice(0, 14);
+}
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > segMaxDiff(n)))) return false;
+  if (!segMixed(right[0], opts)) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 const art = (w) => `${/^[aeiou]/i.test(w) ? 'an' : 'a'} ${w}`;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const NATURALS = [0, 1, 2, 3, 4, 5, 6].map((l) => note(l, 0));
@@ -30,8 +123,8 @@ const enharmonics = (n) => ALL_PLAIN.filter((m) => m.l !== n.l && pc(m) === pc(n
 const QUAL_WORDS = ['major', 'minor', 'diminished', 'augmented'];
 const triadName = (root, q) => `${fmt(root)} ${q}`;
 const INV = ['root position', '1st inversion', '2nd inversion', '3rd inversion'];
-const SEV_SYMBOL = { dom7: '7', maj7: 'maj7', min7: 'm7' };
-const SEV_WORDS = { dom7: 'dominant 7th', maj7: 'major 7th', min7: 'minor 7th' };
+const SEV_SYMBOL = { dom7: '7', maj7: 'maj7', min7: 'm7', hdim7: 'm7♭5' };
+const SEV_WORDS = { dom7: 'dominant 7th', maj7: 'major 7th', min7: 'minor 7th', hdim7: 'half-diminished 7th' };
 const sevName = (root, t) => `${fmt(root)}${SEV_SYMBOL[t]}`;
 const RECIPE_WORDS = {
   major: 'a major 3rd (4 semitones) and a perfect 5th (7 semitones) above the root',
@@ -43,12 +136,24 @@ const SEV_RECIPE = {
   dom7: 'a major triad plus a minor 7th (10 semitones above the root)',
   maj7: 'a major triad plus a major 7th (11 semitones above the root)',
   min7: 'a minor triad plus a minor 7th (10 semitones above the root)',
+  hdim7: 'a diminished triad plus a minor 7th (10 semitones above the root)',
 };
+// Seventh-chord recipes including the half-diminished one (Expert diatonic sevenths only).
+const SEV7 = { ...SEVENTH, hdim7: HALF_DIM7 };
 const NUMERALS = ['I', 'ii', 'iii', 'IV', 'V', 'vi', 'vii°'];
 const DEGREE_QUALITY = ['major', 'minor', 'minor', 'major', 'major', 'minor', 'diminished'];
 
 // Roots whose chord of this recipe needs no double sharps/flats.
 const okRoots = (pool, recipe) => pool.filter((r) => buildChord(r, recipe).every(plain));
+// Diminished and augmented triads may need one (D♭ F♭ A𝄫, G♯ B♯ D𝄪): Hard and Expert allow it.
+const DOUBLE_OK = new Set(['diminished', 'augmented']);
+const triadRoots = (pool, q, allowDouble) => (allowDouble && DOUBLE_OK.has(q) ? pool.filter((r) => buildChord(r, TRIAD[q]).every(spellable)) : okRoots(pool, TRIAD[q]));
+// One sentence on any double sharp/flat in a spelled chord (explanations only).
+function doubleNote(chord) {
+  const d = chord.filter((m) => !plain(m));
+  if (!d.length) return '';
+  return ` ${d.map((m) => `${fmt(m)} is a double ${m.a > 0 ? 'sharp' : 'flat'}`).join(' and ')}: the letter is fixed by the stack of thirds, so the accidental has to go two semitones to reach the right note.`;
+}
 
 // Wrong spellings of a chord: one note respelled enharmonically (repeats/skips a letter),
 // or one note a semitone off.
@@ -58,7 +163,31 @@ function spellingDistractors(chord) {
     for (const e of enharmonics(chord[i])) { const c = chord.slice(); c[i] = e; out.push(c); }
     for (const d of [-1, 1]) { const c = chord.slice(); c[i] = note(chord[i].l, chord[i].a + d); if (plain(c[i])) out.push(c); }
   }
-  return out.filter((c) => c.every(plain));
+  // A double accidental is kept only where it is the chord's own note (single-accidental chords
+  // filter exactly as before).
+  return out.filter((c) => c.every((m) => plain(m) || chord.some((x) => sameNote(x, m))));
+}
+
+// Spell-the-chord questions are built from note blocks: the chord's notes plus distractor notes
+// taken from the wrong options the old multiple-choice builder drew (enharmonic respellings, wrong
+// 3rds/5ths/7ths), topped up from its other candidates when those give too few. fourChoices still
+// runs first, so every seed keeps its chord and answer; the one extra rng call (the block order)
+// comes last.
+const EXTRA_NOTES = { easy: [1, 1], medium: [3, 3], hard: [4, 6] };
+const ORDER_WORDS = { 3: 'root, 3rd, 5th', 4: 'root, 3rd, 5th, 7th' };
+const blocksAsk = (n) => `Place the notes from the root up (${ORDER_WORDS[n]}).`;
+function noteTiles(rng, difficulty, chord, choices, cands) {
+  const right = chord.map(fmt);
+  const ans = fmtList(chord);
+  const notesOf = (lists, skip) => {
+    const out = [];
+    for (const s of lists) for (const n of s.split(', ')) if (!right.includes(n) && !skip.includes(n) && !out.includes(n)) out.push(n);
+    return out;
+  };
+  const [min, max] = EXTRA_NOTES[difficulty];
+  let extra = notesOf(choices.filter((c) => c !== ans), []).slice(0, max);
+  if (extra.length < min) extra = [...extra, ...notesOf(cands, extra)].slice(0, min);
+  return { answer: ans, answerType: 'tiles', tiles: rng.shuffle([...right, ...extra]), joiner: ', ', useAll: false };
 }
 
 // ---------------------------------------------------------------- Triads
@@ -66,12 +195,12 @@ function spellingDistractors(chord) {
 function genTriads(difficulty, rng) {
   const quals = { easy: ['major', 'minor'], medium: ['major', 'minor', 'minor', 'major', 'diminished'], hard: ['diminished', 'augmented', 'major', 'minor'] }[difficulty];
   const q = rng.pick(quals);
-  const roots = okRoots(difficulty === 'easy' ? EASY_ROOTS : COMMON, TRIAD[q]);
+  const roots = triadRoots(difficulty === 'easy' ? EASY_ROOTS : COMMON, q, difficulty === 'hard');
   const root = rng.pick(roots);
   const chord = buildChord(root, TRIAD[q]);
   const name = triadName(root, q);
   const kind = rng.pick(difficulty === 'hard' ? ['build', 'member', 'multi'] : ['build', 'build', 'member']);
-  const explain = `${cap(art(q))} triad is the root plus ${RECIPE_WORDS[q]}. Stack two thirds on ${fmt(root)}, using every other letter name: ${LETTERS[root.l]}, ${LETTERS[chord[1].l]}, ${LETTERS[chord[2].l]}.\n\n- 3rd: ${fmt(chord[1])}\n- 5th: ${fmt(chord[2])}\n\nSo the ${name} triad is **${fmtList(chord)}**.`;
+  const explain = `${cap(art(q))} triad is the root plus ${RECIPE_WORDS[q]}. Stack two thirds on ${fmt(root)}, using every other letter name: ${LETTERS[root.l]}, ${LETTERS[chord[1].l]}, ${LETTERS[chord[2].l]}.\n\n- 3rd: ${fmt(chord[1])}\n- 5th: ${fmt(chord[2])}\n\n${doubleNote(chord).trim()}${doubleNote(chord) ? '\n\n' : ''}So the ${name} triad is **${fmtList(chord)}**.`;
   const letterHint = `Triads stack two thirds: use every other letter name starting from ${LETTERS[root.l]}, and ignore sharps and flats for now.`;
   const sizeHint = `${cap(art(q))} triad has ${RECIPE_WORDS[q]}. Choose the sharp, flat or natural on each letter that gives those sizes.`;
 
@@ -81,8 +210,8 @@ function genTriads(difficulty, rng) {
     const choices = fourChoices(rng, fmtList(chord), cands);
     if (!choices) return genTriads(difficulty, rng);
     return {
-      prompt: `Which notes make the ${name} triad?`,
-      answer: fmtList(chord), answerType: 'choice', choices,
+      prompt: `Which notes make the ${name} triad? ${blocksAsk(3)}`,
+      ...noteTiles(rng, difficulty, chord, choices, cands),
       explanation: explain,
       hints: [letterHint, sizeHint],
       params: { check: { kind: 'triad-notes', root: fmt(root), quality: q } },
@@ -186,20 +315,33 @@ function genIdentify(difficulty, rng) {
   }
 
   if (kind === 'full') {
+    // Root | Quality | Position blocks. The first candidates are the old option list (same root filter);
+    // the rest top it up to 5 options. Every option here differs from the answer in 1 or 2 columns.
     const ans = invName(root, q, inv);
+    const ansT = [fmt(root), q, INV[inv]];
+    const flip = q === 'major' ? 'minor' : q === 'minor' ? 'major' : 'minor';
     const cands = [
-      ...[0, 1, 2].filter((i) => i !== inv).map((i) => invName(root, q, i)),
-      ...(inv ? [`${triadName(voiced[0], q === 'major' ? 'minor' : 'major')}, root position`, `${triadName(voiced[0], q)}, root position`] : []),
-      invName(root, q === 'major' ? 'minor' : q === 'minor' ? 'major' : 'minor', inv),
-    ].filter((s) => plain(parseNote(s.split(' ')[0])));
-    const choices = fourChoices(rng, ans, cands);
+      ...[0, 1, 2].filter((i) => i !== inv).map((i) => [fmt(root), q, INV[i]]),
+      ...(inv ? [[fmt(voiced[0]), q === 'major' ? 'minor' : 'major', INV[0]], [fmt(voiced[0]), q, INV[0]]] : []),
+      [fmt(root), flip, INV[inv]],
+      ...[1, 2].map((i) => [fmt(chord[i]), q, INV[inv]]),
+      [fmt(root), q === 'diminished' ? 'augmented' : 'diminished', INV[inv]],
+      ...[0, 1, 2].filter((i) => i !== inv).map((i) => [fmt(root), flip, INV[i]]),
+    ].filter((t) => plain(parseNote(t[0]) || note(0, 9)));
+    const choices = segPick(rng, ansT, cands, SEG_OPTIONS[difficulty]);
     if (!choices) return genIdentify(difficulty, rng);
+    const extra = [
+      ...[...chord.slice(1), ...enharmonics(root)].filter(plain).map((m) => [0, fmt(m)]),
+      ...QUAL_WORDS.map((x) => [1, x]),
+      ...INV.map((x) => [2, x]),
+    ];
     return {
       prompt: `These notes are played from the lowest up: ${shown}. Name the triad and its position.`,
-      answer: ans, answerType: 'choice', choices,
+      answer: ansT, answerType: 'choice', choiceCols: ['Root', 'Quality', 'Position'], choices,
+      extraSegs: segExtras(['Root', 'Quality', 'Position'], choices, extra),
       explanation: `${stackLine}\n\n${qualLine}\n\n${invLine}\n\nSo it is **${ans}**.`,
       hints: [hintStack, hintQual, hintInv],
-      params: { check: { kind: 'identify', notes: shown, mode: 'full' } },
+      params: { check: { kind: 'identify', notes: shown, mode: 'full', diff: difficulty } },
     };
   }
 
@@ -307,8 +449,8 @@ function genInKey(difficulty, rng) {
   if (!notesC) return genInKey(difficulty, rng);
   if (what === 'notes') {
     return {
-      prompt: `Which notes make chord ${numeral} in ${kname}?`,
-      answer: fmtList(chord), answerType: 'choice', choices: notesC,
+      prompt: `Which notes make chord ${numeral} in ${kname}? ${blocksAsk(3)}`,
+      ...noteTiles(rng, difficulty, chord, notesC, others),
       explanation: `${scaleLine}\n\n${chordLine}\n\nSo the notes are **${fmtList(chord)}**.`,
       hints: [
         `Write out the ${kname} scale with its key signature.`,
@@ -349,14 +491,15 @@ function genSevenths(difficulty, rng) {
     if (!chord.every(plain)) return genSevenths(difficulty, rng);
     const kname = `${fmt(tonic)} major`;
     const expl = `The ${kname} scale is ${fmtList(scale)}. Its 5th note is ${fmt(root)}.\n\nV7 is the dominant 7th on that note: ${SEV_RECIPE.dom7}. Taking notes 5, 7, 2 and 4 of the scale gives **${fmtList(chord)}** (${sevName(root, 'dom7')}).`;
-    const listC = fourChoices(rng, fmtList(chord), [
+    const listCands = [
       buildChord(root, SEVENTH.maj7), buildChord(root, SEVENTH.min7), buildChord(tonic, SEVENTH.dom7), buildChord(scale[3], SEVENTH.dom7), ...spellingDistractors(chord),
-    ].filter((c) => c.every(plain)).map(fmtList));
+    ].filter((c) => c.every(plain)).map(fmtList);
+    const listC = fourChoices(rng, fmtList(chord), listCands);
     if (!listC) return genSevenths(difficulty, rng);
     if (kind === 'v7') {
       return {
-        prompt: `Which notes make the V7 chord in ${kname}?`,
-        answer: fmtList(chord), answerType: 'choice', choices: listC,
+        prompt: `Which notes make the V7 chord in ${kname}? ${blocksAsk(4)}`,
+        ...noteTiles(rng, difficulty, chord, listC, listCands),
         explanation: expl,
         hints: [
           `V is built on the 5th note of the ${kname} scale. Find that note first.`,
@@ -396,8 +539,8 @@ function genSevenths(difficulty, rng) {
     const choices = fourChoices(rng, fmtList(chord), cands);
     if (!choices) return genSevenths(difficulty, rng);
     return {
-      prompt: `Which notes make ${sym} (${fmt(root)} ${SEV_WORDS[t]})?`,
-      answer: fmtList(chord), answerType: 'choice', choices,
+      prompt: `Which notes make ${sym} (${fmt(root)} ${SEV_WORDS[t]})? ${blocksAsk(4)}`,
+      ...noteTiles(rng, difficulty, chord, choices, cands),
       explanation: expl,
       hints: [
         `A seventh chord stacks three thirds: use every other letter from ${LETTERS[root.l]}, four notes in all.`,
@@ -456,6 +599,7 @@ const MEMBER = ['root', '3rd', '5th', '7th'];
 // "a major 3rd (4 semitones)" / "a perfect 5th (7 semitones)" for member 1 or 2 of a triad.
 const memberWords = (q, which) => (which === 1 ? RECIPE_WORDS[q].split(' and ')[0] : RECIPE_WORDS[q].split(' and ')[1].replace(' above the root', ''));
 const okName = (s) => plain(parseNote(s.split(/[ ,]/)[0]) || note(0, 9));
+const okNameDouble = (s) => spellable(parseNote(s.split(/[ ,]/)[0]));
 const SEV_HELP = 'Symbols: 7 = dominant 7th, maj7 = major 7th, m7 = minor 7th.';
 
 // Triads with one note moved a semitone (same letter), and the triad that results.
@@ -473,7 +617,7 @@ function genTriadsExpert(rng) {
     // Working backwards: x is the 3rd (or 5th) of which triad?
     const q = rng.pick(QUAL_WORDS);
     const which = rng.pick([1, 2]);
-    const root = rng.pick(okRoots(COMMON, TRIAD[q]));
+    const root = rng.pick(triadRoots(COMMON, q, true));
     const chord = buildChord(root, TRIAD[q]);
     const x = chord[which];
     const [n1, q1] = TRIAD[q][which - 1];
@@ -486,7 +630,7 @@ function genTriadsExpert(rng) {
     return {
       prompt: `${fmt(x)} is the ${part} of which ${q} triad?`,
       answer: triadName(root, q), answerType: 'choice', choices,
-      explanation: `Work downwards from ${fmt(x)}.\n\n- Letter: the ${part} is ${which === 1 ? 3 : 5} letter names above the root, so the root's letter is ${LETTERS[root.l]}.\n- Size: in ${art(q)} triad the ${part} is ${memberWords(q, which)} above the root. The note on ${LETTERS[root.l]} that fits is ${fmt(root)}.\n\nCheck: the ${triadName(root, q)} triad is ${fmtList(chord)}, and its ${part} is ${fmt(x)}. So the answer is **${triadName(root, q)}**.`,
+      explanation: `Work downwards from ${fmt(x)}.\n\n- Letter: the ${part} is ${which === 1 ? 3 : 5} letter names above the root, so the root's letter is ${LETTERS[root.l]}.\n- Size: in ${art(q)} triad the ${part} is ${memberWords(q, which)} above the root. The note on ${LETTERS[root.l]} that fits is ${fmt(root)}.\n\nCheck: the ${triadName(root, q)} triad is ${fmtList(chord)}, and its ${part} is ${fmt(x)}.${doubleNote(chord)} So the answer is **${triadName(root, q)}**.`,
       hints: [
         `Work downwards: the root is ${which === 1 ? 3 : 5} letter names below ${LETTERS[x.l]} (count ${LETTERS[x.l]} as ${which === 1 ? 3 : 5} and go down to 1).`,
         `In ${art(q)} triad the ${part} is ${memberWords(q, which)} above the root. Choose the accidental on the root letter that gives that size.`,
@@ -499,7 +643,9 @@ function genTriadsExpert(rng) {
   const t = rng.pick(ALTER);
   const roots = COMMON.filter((r) => {
     const c = buildChord(r, TRIAD[t.from]);
-    return c.every(plain) && plain(note(c[t.which].l, c[t.which].a + t.d));
+    // The moved note may become a double sharp/flat (D♭ minor with its 5th lowered: A𝄫), but never the root.
+    const m = note(c[t.which].l, c[t.which].a + t.d);
+    return c.every(plain) && (t.which === 0 ? plain(m) : spellable(m));
   });
   const root = rng.pick(roots);
   const chord = buildChord(root, TRIAD[t.from]);
@@ -525,11 +671,11 @@ function genTriadsExpert(rng) {
     answerType: 'multi',
     parts: [
       { id: 'note', label: `New ${part}`, ask: `Which note replaces ${fmt(old)}?`, answerType: 'choice', answer: fmt(moved), choices: noteC,
-        hint: `Keep the letter ${LETTERS[old.l]} and ${t.d > 0 ? 'raise' : 'lower'} it by one semitone: ${t.d > 0 ? 'a flat becomes natural, a natural becomes sharp' : 'a sharp becomes natural, a natural becomes flat'}.` },
+        hint: `Keep the letter ${LETTERS[old.l]} and ${t.d > 0 ? 'raise' : 'lower'} it by one semitone: ${t.d > 0 ? 'a flat becomes natural, a natural becomes sharp, a sharp becomes a double sharp (𝄪)' : 'a sharp becomes natural, a natural becomes flat, a flat becomes a double flat (𝄫)'}.` },
       { id: 'name', label: 'New triad', ask: 'Which triad do the three new notes make?', answerType: 'choice', answer: triadName(newRoot, newQ), choices: nameC,
         hint: 'The letters still stack in thirds, so the root is still the bottom letter of the stack. Measure its 3rd (4 = major, 3 = minor) and 5th (7 = perfect, 6 = diminished, 8 = augmented).' },
     ],
-    explanation: `${verb} ${fmt(old)} to **${fmt(moved)}**: the notes are now ${fmtList(after)}.\n\nThey still stack in thirds, so ${fmt(newRoot)} is the root. ${fmt(newRoot)} up to ${fmt(after[1])} is ${semis(s3)} and up to ${fmt(after[2])} is ${semis(s5)}, which makes it **${triadName(newRoot, newQ)}**.`,
+    explanation: `${verb} ${fmt(old)} to **${fmt(moved)}**${plain(moved) ? '' : ` (a double ${moved.a > 0 ? 'sharp' : 'flat'}, because the letter stays ${LETTERS[moved.l]})`}: the notes are now ${fmtList(after)}.\n\nThey still stack in thirds, so ${fmt(newRoot)} is the root. ${fmt(newRoot)} up to ${fmt(after[1])} is ${semis(s3)} and up to ${fmt(after[2])} is ${semis(s5)}, which makes it **${triadName(newRoot, newQ)}**.`,
     hints: [
       `Change only the ${part}, keeping its letter. The other two notes stay as they are.`,
       'Then name the new triad: find its root and measure the 3rd and 5th above it.',
@@ -579,24 +725,34 @@ function genIdentifyExpert(rng) {
     const inv = rng.int(1, 3);
     const voiced = [...chord.slice(inv), ...chord.slice(0, inv)];
     const shown = fmtList(voiced);
+    // Chord | Position blocks: the old candidates (one-column changes only) topped up to 5 options.
     const ans = `${sevName(root, t)}, ${INV[inv]}`;
+    const ansT = [sevName(root, t), INV[inv]];
     const cands = [
-      ...[0, 1, 2, 3].filter((i) => i !== inv).map((i) => `${sevName(root, t)}, ${INV[i]}`),
-      `${sevName(voiced[0], t)}, root position`,
-      ...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => `${sevName(root, x)}, ${INV[inv]}`),
-    ].filter(okName);
-    const choices = fourChoices(rng, ans, cands);
+      ...[0, 1, 2, 3].filter((i) => i !== inv).map((i) => [sevName(root, t), INV[i]]),
+      [sevName(voiced[0], t), INV[0]],
+      ...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => [sevName(root, x), INV[inv]]),
+      [sevName(voiced[0], t), INV[inv]],
+    ].filter((c) => plain((parseSevName(c[0]) || {}).root || note(0, 9)));
+    const choices = segPick(rng, ansT, cands, SEG_OPTIONS.expert);
     if (!choices) return genIdentifyExpert(rng);
+    const extra = [
+      ...[...chord.slice(1), ...enharmonics(root)].filter(plain).map((m) => [0, sevName(m, t)]),
+      ...Object.keys(SEV7).map((x) => [0, sevName(root, x)]),
+      [0, `${fmt(root)}dim7`],
+      ...INV.map((x) => [1, x]),
+    ];
     return {
       prompt: `These notes are played from the lowest up: ${shown}. Name the seventh chord and its position. ${SEV_HELP}`,
-      answer: ans, answerType: 'choice', choices,
+      answer: ansT, answerType: 'choice', choiceCols: ['Chord', 'Position'], choices,
+      extraSegs: segExtras(['Chord', 'Position'], choices, extra),
       explanation: `Rearrange into stacked thirds (every other letter): ${fmtList(chord)}. The root is ${fmt(root)}.\n\n${fmt(root)} to ${fmt(chord[1])} is a ${t === 'min7' ? 'minor' : 'major'} 3rd, to ${fmt(chord[2])} a perfect 5th and to ${fmt(chord[3])} a ${t === 'maj7' ? 'major' : 'minor'} 7th: ${SEV_RECIPE[t]}, so it is ${sevName(root, t)}.\n\nThe bass is ${fmt(voiced[0])}, the ${MEMBER[inv]}, so it is in ${INV[inv]}: **${ans}**.`,
       hints: [
         'Rearrange the four notes so the letters skip one each time (stacked thirds). The bottom note of that stack is the root.',
         'Measure from the root: major triad + minor 7th = 7, major triad + major 7th = maj7, minor triad + minor 7th = m7.',
         'Then the bass: root = root position, 3rd = 1st inversion, 5th = 2nd inversion, 7th = 3rd inversion.',
       ],
-      params: { check: { kind: 'sev-identify', notes: shown } },
+      params: { check: { kind: 'sev-identify', notes: shown, diff: 'expert' } },
     };
   }
 
@@ -657,7 +813,8 @@ const NAT_QUALITY = ['minor', 'diminished', 'major', 'minor', 'minor', 'major', 
 const minorKeys = [];
 for (let k = -6; k <= 6; k++) {
   const sc = scaleFromSignature(k, 'harmonic');
-  if (sc.every(plain)) minorKeys.push({ k, scale: sc, natural: scaleFromSignature(k, 'natural') });
+  // G♯ and D♯ minor raise their 7th to a double sharp (F𝄪, C𝄪), so every key from -6 to 6 is used.
+  if (sc.every(spellable)) minorKeys.push({ k, scale: sc, natural: scaleFromSignature(k, 'natural') });
 }
 const triadOn = (scale, deg) => [scale[deg - 1], scale[(deg + 1) % 7], scale[(deg + 3) % 7]];
 const DEG_INTERVAL = ['', 'a major 2nd', 'a major 3rd', 'a perfect 4th', 'a perfect 5th', 'a major 6th', 'a major 7th'];
@@ -711,7 +868,7 @@ function genInKeyExpert(rng) {
     const ans = triadName(root1, q1);
     const natName = triadName(key.natural[d1 - 1], NAT_QUALITY[d1 - 1]);
     const cands = [natName, triadName(root1, q1 === 'major' ? 'minor' : 'major'), triadName(key.scale[d1 % 7], HM_QUALITY[d1 % 7]), triadName(key.scale[(d1 + 5) % 7], HM_QUALITY[(d1 + 5) % 7]), triadName(note(root1.l, root1.a + (root1.a > 0 ? -1 : 1)), q1)]
-      .filter((s) => okName(s) && s !== ans);
+      .filter((s) => okNameDouble(s) && s !== ans);
     const nameC = fourChoices(rng, ans, cands);
     const qualC = fourChoices(rng, q2, QUAL_WORDS.filter((x) => x !== q2));
     if (!nameC || !qualC) return genInKeyExpert(rng);
@@ -725,7 +882,7 @@ function genInKeyExpert(rng) {
         { id: 'quality', label: `Degree ${d2}`, ask: `What quality is the triad on degree ${d2}?`, answerType: 'choice', answer: q2, choices: qualC,
           hint: `Stack ${stackWords(d2)} of the scale. Major 3rd + perfect 5th = major; minor 3rd + perfect 5th = minor; minor 3rd + diminished 5th = diminished; major 3rd + augmented 5th = augmented.` },
       ],
-      explanation: `${fmt(T)} minor has ${key.k === 0 ? 'no sharps or flats' : `the key signature of ${fmt(majorTonic(key.k))} major`}. Raising the 7th gives ${fmt(T)} harmonic minor: ${fmtList(key.scale)}.\n\n- Degree ${d1}: ${fmtList(triadOn(key.scale, d1))}, which is **${ans}**.\n- Degree ${d2}: ${fmtList(triadOn(key.scale, d2))}, which is **${q2}**.\n\nIn harmonic minor the triads are i, ii°, III+, iv, V, VI, vii°: the raised 7th makes V major, vii° diminished and III augmented.`,
+      explanation: `${fmt(T)} minor has ${key.k === 0 ? 'no sharps or flats' : `the key signature of ${fmt(majorTonic(key.k))} major`}. Raising the 7th gives ${fmt(T)} harmonic minor: ${fmtList(key.scale)}.\n\n- Degree ${d1}: ${fmtList(triadOn(key.scale, d1))}, which is **${ans}**.\n- Degree ${d2}: ${fmtList(triadOn(key.scale, d2))}, which is **${q2}**.\n\nIn harmonic minor the triads are i, ii°, III+, iv, V, VI, vii°: the raised 7th makes V major, vii° diminished and III augmented.${key.scale[6].a === 2 ? ` In ${fmt(T)} minor the 7th is already sharp in the key signature, so raising it gives a double sharp, ${fmt(key.scale[6])}.` : ''}`,
       hints: [`Write out ${fmt(T)} harmonic minor first: its key signature, plus the 7th note raised by a semitone.`],
       params: { multi: true, parts: { chord: { kind: 'minor-chord', tonic: fmt(T), deg: d1 }, quality: { kind: 'minor-quality', tonic: fmt(T), deg: d2 } } },
     };
@@ -764,8 +921,9 @@ function genInKeyExpert(rng) {
   };
 }
 
-// Diatonic seventh chords of a major key, degrees 1-6 (vii is half-diminished, not used here).
-const DEG7_TYPE = ['maj7', 'min7', 'min7', 'maj7', 'dom7', 'min7'];
+// Diatonic seventh chords of a major key, degrees 1-7 (vii is half-diminished, m7♭5).
+const DEG7_TYPE = ['maj7', 'min7', 'min7', 'maj7', 'dom7', 'min7', 'hdim7'];
+const SEV_HELP7 = 'Symbols: 7 = dominant 7th, maj7 = major 7th, m7 = minor 7th, m7♭5 = half-diminished 7th (also written ø7).';
 
 function genSeventhsExpert(rng) {
   const kind = rng.pick(['diatonic7', 'seventh-of', 'v7-key']);
@@ -775,28 +933,28 @@ function genSeventhsExpert(rng) {
     const tonic = majorTonic(k);
     const scale = scaleFromSignature(k, 'major');
     const kname = `${fmt(tonic)} major`;
-    const deg = rng.int(1, 6);
+    const deg = rng.int(1, 7);
     const t = DEG7_TYPE[deg - 1];
     const root = scale[deg - 1];
-    const chord = buildChord(root, SEVENTH[t]);
+    const chord = buildChord(root, SEV7[t]);
     if (!chord.every(plain)) return genSeventhsExpert(rng);
     const sym = sevName(root, t);
     const notesC = fourChoices(rng, fmtList(chord), [...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => buildChord(root, SEVENTH[x])), ...spellingDistractors(chord)]
       .filter((c) => c.every(plain)).map(fmtList));
-    const symC = fourChoices(rng, sym, [...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => sevName(root, x)), `${fmt(root)}dim7`, sevName(note(root.l, 0), t)]
-      .filter((s) => s !== sym && /^[A-G][♯♭]?(7|maj7|m7|dim7)$/.test(s)));
+    const symC = fourChoices(rng, sym, [...Object.keys(SEVENTH).filter((x) => x !== t).map((x) => sevName(root, x)), `${fmt(root)}dim7`, sevName(note(root.l, 0), t), ...(t === 'hdim7' ? [] : [sevName(root, 'hdim7')])]
+      .filter((s) => s !== sym && /^[A-G][♯♭]?(7|maj7|m7|m7♭5|dim7)$/.test(s)));
     if (!notesC || !symC) return genSeventhsExpert(rng);
     const degs = [0, 2, 4, 6].map((i) => ((deg - 1 + i) % 7) + 1);
     return {
-      prompt: `Build the seventh chord on degree ${deg} of ${kname} (the ${ordinal(deg)} note), using only notes of the scale. ${SEV_HELP}`,
+      prompt: `Build the seventh chord on degree ${deg} of ${kname} (the ${ordinal(deg)} note), using only notes of the scale. ${SEV_HELP7}`,
       answerType: 'multi',
       parts: [
         { id: 'notes', label: 'Notes', ask: 'Which notes make the chord?', answerType: 'choice', answer: fmtList(chord), choices: notesC,
           hint: `Take scale notes ${degs.join(', ')}: every other note, keeping the key signature.` },
         { id: 'symbol', label: 'Symbol', ask: 'What is its chord symbol?', answerType: 'choice', answer: sym, choices: symC,
-          hint: 'Measure from the root: major triad + minor 7th = 7, major triad + major 7th = maj7, minor triad + minor 7th = m7.' },
+          hint: 'Measure from the root: major triad + minor 7th = 7, major triad + major 7th = maj7, minor triad + minor 7th = m7, diminished triad + minor 7th = m7♭5.' },
       ],
-      explanation: `The ${kname} scale is ${fmtList(scale)}. Taking notes ${degs.join(', ')} gives **${fmtList(chord)}**.\n\nFrom ${fmt(root)}: ${SEV_RECIPE[t]}, so the symbol is **${sym}** (${SEV_WORDS[t]}).\n\nIn every major key the seventh chords run Imaj7, ii7, iii7, IVmaj7, V7, vi7 (m7 on ii, iii and vi).`,
+      explanation: `The ${kname} scale is ${fmtList(scale)}. Taking notes ${degs.join(', ')} gives **${fmtList(chord)}**.\n\nFrom ${fmt(root)}: ${SEV_RECIPE[t]}, so the symbol is **${sym}** (${SEV_WORDS[t]}).\n\nIn every major key the seventh chords run Imaj7, ii7, iii7, IVmaj7, V7, vi7, viiø7 (m7 on ii, iii and vi; m7♭5, half-diminished, on vii).`,
       hints: [`Write out the ${kname} scale first.`],
       params: { multi: true, parts: { notes: { kind: 'diatonic7-notes', tonic: fmt(tonic), deg }, symbol: { kind: 'diatonic7-name', tonic: fmt(tonic), deg } } },
     };
@@ -844,7 +1002,7 @@ function genSeventhsExpert(rng) {
   const scale = scaleFromSignature(k, minor ? 'harmonic' : 'major');
   const root = scale[4];
   const chord = buildChord(root, SEVENTH.dom7);
-  if (!chord.every(plain) || !scale.every(plain)) return genSeventhsExpert(rng);
+  if (!chord.every(spellable) || !scale.every(spellable)) return genSeventhsExpert(rng);
   const sym = sevName(root, 'dom7');
   const ans = `${fmt(tonic)} ${mode}`;
   const keyC = fourChoices(rng, ans, [`${fmt(root)} ${mode}`, `${fmt(noteAbove(root, 5, 'perfect'))} ${mode}`, ...enharmonics(tonic).map((m) => `${fmt(m)} ${mode}`), `${fmt(note(tonic.l, tonic.a + 1))} ${mode}`, `${fmt(note(tonic.l, tonic.a - 1))} ${mode}`]
@@ -879,7 +1037,54 @@ function genExpert(subtopic, rng) {
 
 // ---------------------------------------------------------------- generate / verify
 
-export function generate({ subtopic, difficulty, rng }) {
+export function generate(args) {
+  const q = generateCore(args);
+  // Audio preview (ticket 023): derived from the finished question, so no rng and nothing else changes.
+  try { withPlay(q, playFor(q)); } catch { /* no preview */ }
+  return q;
+}
+
+// What to play after the answer is checked: the chord the question is about (null = nothing fits).
+// Inverted chords are played as asked (lowest note first); sound ignores spelling.
+function playFor(q) {
+  const checks = q.params?.check ? [q.params.check] : Object.values(q.params?.parts || {});
+  for (const c of checks) {
+    const notes = chordOfCheck(c, q);
+    if (notes && notes.every(Boolean) && notes.length >= 3) return playChord(notes);
+  }
+  return null;
+}
+
+const invert = (chord, inv) => [...chord.slice(inv), ...chord.slice(0, inv)];
+
+function chordOfCheck(c, q) {
+  const ans = typeof q.answer === 'string' ? q.answer : null;
+  const key = (t) => keyScale(t);
+  const triadAt = (tonic, deg, scale = key(tonic)) => stackOn(scale, deg);
+  const fromTriadName = (s) => { const t = parseTriadName(s); return t ? chordTones(t.root, t.quality) : null; };
+  const fromSevName = (s) => { const t = parseSevName(s); return t ? chordTones(t.root, t.type) : null; };
+  switch (c.kind) {
+    case 'triad-notes': case 'triad-member': return chordTones(parseNote(c.root), c.quality);
+    case 'triad-with': return fromTriadName(ans);
+    case 'identify': case 'identify-part': case 'sev-identify': case 'sev-name': case 'numeral-notes': return parseList(c.notes);
+    case 'bass': return invert(chordTones(parseNote(c.root), c.quality), c.inv);
+    case 'bass-back': { const t = fromTriadName(ans); return t ? invert(t, c.inv) : null; }
+    case 'sev-back': { const t = fromSevName(ans); return t ? invert(t, c.inv) : null; }
+    case 'chord-on': case 'chord-notes': return triadAt(c.tonic, c.deg);
+    case 'degree-quality': return triadAt('C', c.deg);
+    case 'numeral': return fromTriadName(c.chord);
+    case 'key-of-chord': return fromTriadName(c.chord);
+    case 'minor-chord': case 'minor-quality': return triadAt(c.tonic, c.deg, scaleByPattern(parseNote(c.tonic), 'harmonic'));
+    case 'sev-notes': case 'sev-member': return chordTones(parseNote(c.root), c.type);
+    case 'v7': case 'v7-member': return chordTones(key(c.tonic)[4], 'dom7');
+    case 'seventh-of': return fromSevName(ans);
+    case 'v7-key': case 'v7-lead': return fromSevName(c.sym);
+    case 'diatonic7-notes': case 'diatonic7-name': return stackOn(key(c.tonic), c.deg, 4);
+    default: return null;
+  }
+}
+
+function generateCore({ subtopic, difficulty, rng }) {
   if (difficulty === 'expert') return genExpert(subtopic, rng);
   if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   switch (subtopic) {
@@ -902,6 +1107,7 @@ const DEF = {
   dom7: [[3, 'major'], [5, 'perfect'], [7, 'minor']],
   maj7: [[3, 'major'], [5, 'perfect'], [7, 'major']],
   min7: [[3, 'minor'], [5, 'perfect'], [7, 'minor']],
+  hdim7: [[3, 'minor'], [5, 'diminished'], [7, 'minor']],
 };
 
 // Brute force: on the letter `num` names above root, try every accidental and keep the one
@@ -923,9 +1129,9 @@ function parseTriadName(s) {
   return root ? { root, quality: m[2], inv: m[3] ? INV.indexOf(m[3]) : null } : null;
 }
 function parseSevName(s) {
-  const m = /^([A-G][♯♭]?)(7|maj7|m7|dim7)$/.exec(String(s).trim());
+  const m = /^([A-G](?:\u{1D12A}|\u{1D12B}|[♯♭])?)(7|maj7|m7♭5|m7|dim7)$/u.exec(String(s).trim());
   if (!m) return null;
-  const type = { 7: 'dom7', maj7: 'maj7', m7: 'min7', dim7: 'dim7' }[m[2]];
+  const type = { 7: 'dom7', maj7: 'maj7', m7: 'min7', 'm7♭5': 'hdim7', dim7: 'dim7' }[m[2]];
   return { root: parseNote(m[1]), type };
 }
 const listEq = (a, b) => !!a && !!b && a.length === b.length && a.every((x, i) => sameNote(x, b[i]));
@@ -1095,6 +1301,17 @@ function isRight(c, v) {
   }
 }
 
+// Note blocks: distinct note tiles, the answer built from them (each used once, in order), and
+// the notes re-derived by the CHECK side. Distractors are other spellings, so they never pass.
+function checkTiles(c, q, value) {
+  const vals = Array.isArray(q.tiles) ? q.tiles.map((t) => String(typeof t === 'string' ? t : t && t.value)) : [];
+  if (vals.length < 2 || vals.length > 24 || new Set(vals).size !== vals.length || !vals.every((v) => parseNote(v))) return false;
+  if (q.joiner !== ', ') return false;
+  const used = String(value ?? '').split(', ');
+  if (new Set(used).size !== used.length || !used.every((u) => vals.includes(u))) return false;
+  return isRight(c, used.join(', '));
+}
+
 function checkOne(c, type, value, choices) {
   if (type === 'choice') {
     if (!Array.isArray(choices) || choices.length !== 4 || new Set(choices).size !== 4) return false;
@@ -1106,6 +1323,18 @@ function checkOne(c, type, value, choices) {
   return isRight(c, value);
 }
 
+// Segmented options: each tuple is turned back into the chord name isRight() reads
+// ("C major, 1st inversion" / "C7, 2nd inversion"), and every block combination is tried.
+const SEG_NAME = {
+  identify: (t) => (t.length === 3 ? `${t[0]} ${t[1]}, ${t[2]}` : ''),
+  'sev-identify': (t) => (t.length === 2 ? `${t[0]}, ${t[1]}` : ''),
+};
+function checkSeg(c, q, value) {
+  const name = SEG_NAME[c.kind];
+  if (!name || (c.kind === 'identify' && c.mode !== 'full')) return false;
+  return segOk(q, value, (t) => isRight(c, name(t)), SEG_OPTIONS[c.diff]);
+}
+
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
@@ -1113,5 +1342,7 @@ export function verify(question, answer) {
     if (!answer || typeof answer !== 'object' || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => p.parts[part.id] && checkOne(p.parts[part.id], part.answerType, answer[part.id], part.choices));
   }
+  if (question.answerType === 'tiles') return checkTiles(p.check, question, answer);
+  if (question.answerType === 'choice' && question.choiceCols) return checkSeg(p.check, question, answer);
   return checkOne(p.check, question.answerType, answer, question.choices);
 }

@@ -4,6 +4,7 @@
   "description": "Cells and organelles, the human body and its bones, organs and systems, genetics and ecology.",
   "icon": "leaf",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "cells", "title": "Cells", "difficulties": ["easy", "medium", "hard"] },

@@ -1,0 +1,16 @@
+{
+  "id": "role-geographer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join map scale, grid references, bearings, contours and climate tables, as a geographer meets them.",
+  "icon": "compass",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "scale-journey", "title": "Map scale and walking time", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "grid-route", "title": "Grid references and routes", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "contour-slope", "title": "Contours and gradients", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "climate-table", "title": "Climate tables and biomes", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

@@ -1,4 +1,4 @@
-subtopic,difficulty,prompt,answer,choices,explanation
+subtopic,difficulty,prompt,answer,choices,explanation,type,hints,tiles,joiner
 latin-roots,easy,What does the Latin root *port* mean?,to carry,to carry|to see|to write|to break,"Port appears in words like portable (able to be carried) and transport (carry across)."
 latin-roots,easy,What does the Latin root *dict* mean?,to say or speak,to say or speak|to carry|to write|to hear,"Dict appears in dictate, predict (say before) and dictionary."
 latin-roots,easy,What does the Latin root *scrib* (also *script*) mean?,to write,to write|to look|to throw|to carry,"Scrib and script appear in describe, scribble and manuscript."
@@ -31,9 +31,9 @@ prefixes,medium,What does the prefix *sub-* mean in *submarine*?,under or below,
 prefixes,medium,What does the prefix *mis-* mean in *misspell*?,wrongly,wrongly|again|before|across,"Mis- means wrongly or badly, as in misunderstand and misplace."
 prefixes,medium,What does the prefix *inter-* mean in *international*?,between or among,between or among|inside|without|above,"Inter- means between or among, as in interact and interstate."
 prefixes,medium,Which word has a prefix meaning after?,postwar,postwar|prewar|antiwar|rebuild,"Post- means after, as in postpone and postscript (P.S.)."
-prefixes,hard,What does the prefix *trans-* mean in *transatlantic*?,across,across|under|around|against,"Trans- means across or beyond, as in transport and transfer."
+prefixes,medium,What does the prefix *trans-* mean in *transatlantic*?,across,across|under|around|against,"Trans- means across or beyond, as in transport and transfer."
 prefixes,hard,What does the prefix *circum-* mean in *circumnavigate*?,around,around|across|under|through,"Circum- means around, as in circumference (the distance around a circle)."
-prefixes,hard,What does the prefix *semi-* mean in *semicircle*?,half,half|whole|three|many,"Semi- means half or partly, as in semifinal and semiannual."
+prefixes,medium,What does the prefix *semi-* mean in *semicircle*?,half,half|whole|three|many,"Semi- means half or partly, as in semifinal and semiannual."
 prefixes,hard,Which word has a prefix meaning many?,polygon,polygon|monologue|bicycle|unicycle,"Poly- means many, so a polygon is a shape with many angles; mono- means one, bi- two and uni- one."
 suffixes,easy,What does the suffix *-less* mean in *careless*?,without,without|full of|able to be|one who,"-less means without, as in hopeless, fearless and endless."
 suffixes,easy,What does the suffix *-ful* mean in *hopeful*?,full of,full of|without|able to be|the study of,"-ful means full of, as in joyful, careful and colorful."
@@ -47,3 +47,75 @@ suffixes,hard,What does the suffix *-cide* mean in *insecticide*?,killing or kil
 suffixes,hard,What does the suffix *-cracy* mean in *democracy*?,rule or government,rule or government|study of|fear of|love of,"-cracy means rule, so democracy is rule by the people (demos)."
 suffixes,hard,What does the suffix *-itis* mean in *tonsillitis*?,inflammation,inflammation|study of|removal|fear of,"-itis means inflammation, as in arthritis (inflamed joints) and bronchitis."
 suffixes,hard,What does the suffix *-ify* mean in *simplify*?,to make or become,to make or become|full of|the study of|without,"-ify forms verbs meaning to make or become, as in purify and clarify."
+latin-roots,easy,What does the Latin root *vis* (also *vid*) mean?,to see,to see|to hear|to carry|to write,"Vis and vid appear in vision, video and evidence."
+latin-roots,easy,What does the Latin root *ject* mean?,to throw,to throw|to carry|to pull|to see,"Ject appears in project, reject and injection."
+latin-roots,easy,What does the Latin root *tract* mean?,to pull or drag,to pull or drag|to push|to throw|to hear,"Tract appears in tractor (a machine that pulls), attract and subtract."
+latin-roots,easy,What does the Latin root *aqua* mean?,water,water|air|fire|earth,"Aqua appears in aquarium, aquatic and aqueduct."
+latin-roots,easy,*Ex-* means out and *port* means to carry. Build the word that means to carry goods out of a country to sell them.,export,,Ex- (out) + port (carry) = export. Import (im- = in) means to carry goods into a country.,,Find the block that means out.,ex|port|im,(none)
+latin-roots,easy,*Vis* means to see and *-ible* means able to be. Build the word that means able to be seen.,visible,,Vis (see) + -ible (able to be) = visible. Audible would mean able to be heard.,tiles,Start with the root that means to see.,vis|ible|aud,(none)
+latin-roots,medium,What does the Latin root *voc* mean?,voice or call,voice or call|to see|to walk|to fall,"Voc appears in vocal, vocabulary and advocate (someone who speaks up for another)."
+latin-roots,medium,What does the Latin root *ped* mean?,foot,foot|hand|head|heart,"Ped appears in pedal, pedestrian (someone on foot) and pedicure."
+latin-roots,medium,What does the Latin root *terr* mean?,earth or land,earth or land|water|sky|fire,"Terr appears in terrain, territory and terrestrial (living on land)."
+latin-roots,medium,Which word contains a Latin root meaning to say?,verdict,verdict|vision|portable|tractor,"Verdict contains dict (say): a jury's verdict is what it says is true. Vision has vis (see), portable has port (carry) and tractor has tract (pull)."
+latin-roots,medium,"Build the word that means to throw out (for example, to push out a disc from a player).",eject,,E- (out) + ject (throw) = eject. Project means to throw forward.,,The root ject means to throw; which block means out?,e|ject|pro|tract,(none)
+latin-roots,medium,"Build the word that means to pull out (for example, a tooth).",extract,,"Ex- (out) + tract (pull) = extract. Distract means to pull attention away, and retract means to pull back.",tiles,"Pick the root that means to pull, then the prefix that means out.",ex|tract|dis|re,(none)
+latin-roots,hard,What does the Latin root *bell* mean?,war,war|beauty|peace|sound,"Bell (from bellum, war) appears in belligerent (eager to fight), rebel and antebellum. It is not the bell- of beauty (bella)."
+latin-roots,hard,What does the Latin root *fid* mean?,faith or trust,faith or trust|fire|sound|fear,"Fid appears in confident, fidelity (faithfulness) and confide."
+latin-roots,hard,What does the Latin root *loqu* (also *locut*) mean?,to speak,to speak|to look|to place|to free,"Loqu and locut appear in eloquent, loquacious (very talkative) and elocution."
+latin-roots,hard,Which word contains a Latin root meaning to bend?,reflex,reflex|reject|inspect|conduct,"Reflex contains flex (bend), as do flexible and reflect. Reject has ject (throw), inspect has spect (look) and conduct has duct (lead)."
+latin-roots,hard,Build the verb that means to lead away by force (to kidnap).,abduct,,"Ab- (away) + duct (lead) = abduct. Conduct, induct and product use the same root with other prefixes.",,The root duct means to lead; which prefix means away?,ab|duct|con|in|e|pro,(none)
+latin-roots,hard,Build the word that means not able to be seen.,invisible,,In- (not) + vis (see) + -ible (able to be) = invisible. Inaudible would mean not able to be heard.,,"You need three blocks: a prefix, a root and a suffix.|The root vis means to see.",in|vis|ible|aud|re|dict|e,(none)
+greek-roots,easy,What does the Greek root *photo* mean?,light,light|life|sound|earth,Photo appears in photon (a particle of light) and photosynthesis (making food using light).
+greek-roots,easy,What does the Greek root *auto* mean?,self,self|car|many|far,Auto appears in automatic (works by itself) and autopilot.
+greek-roots,easy,What does the Greek root *scope* mean?,to look at or examine,to look at or examine|to hear|to write|to measure,"Scope appears in periscope, stethoscope and horoscope."
+greek-roots,easy,What does the Greek root *meter* (also *metr*) mean?,measure,measure|mother|sound|time,"Meter appears in thermometer, speedometer and symmetry."
+greek-roots,easy,*Thermo* means heat. Build the word for an instrument that measures heat (temperature).,thermometer,,Thermo (heat) + meter (measure) = thermometer. A micrometer measures very small distances.,tiles,Which block means measure?,thermo|meter|micro,(none)
+greek-roots,easy,"Build the word for a picture made with light, taken with a camera.",photograph,,Photo (light) + graph (write or draw) = photograph: a drawing made by light.,,Start with the root that means light.,photo|graph|tele,(none)
+greek-roots,medium,What does the Greek root *hydr* (also *hydro*) mean?,water,water|fire|air|earth,"Hydr appears in hydrant, dehydrated (with water removed) and hydroelectric."
+greek-roots,medium,What does the Greek root *astr* (also *aster*) mean?,star,star|ship|sea|flower,"Astr appears in astronomy, asteroid and asterisk (a little star)."
+greek-roots,medium,What does the Greek root *psych* mean?,mind or soul,mind or soul|body|fear|sleep,Psych appears in psychology (the study of the mind) and psychic.
+greek-roots,medium,Which word contains a Greek root meaning self?,automatic,automatic|biology|microscope|telegraph,"Automatic contains auto (self): it works by itself. Biology has bio (life), microscope has micro (small) and telegraph has tele (far)."
+greek-roots,medium,Build the word for a book that a person writes about their own life.,autobiography,,Auto (self) + bio (life) + graphy (writing) = autobiography. A biography is written by someone else.,,You need three blocks: self + life + writing.,auto|bio|graphy|tele|geo,(none)
+greek-roots,medium,*Naut* means sailor. Build the word for a person who travels into space (a sailor among the stars).,astronaut,,Astro (star) + naut (sailor) = astronaut.,tiles,Which block means star?,astro|naut|hydro|tele,(none)
+greek-roots,hard,What does the Greek root *theo* mean?,god,god|light|death|people,Theo appears in theology (the study of religion and God) and atheist.
+greek-roots,hard,What does the Greek root *pseud* (also *pseudo*) mean?,false,false|true|new|old,Pseud appears in pseudoscience (claims that look scientific but are not).
+greek-roots,hard,What does the Greek root *morph* mean?,shape or form,shape or form|sleep|sound|color,Morph appears in metamorphosis (a change of form) and amorphous (without a clear shape).
+greek-roots,hard,What does the Greek root *crypt* mean?,hidden or secret,hidden or secret|sharp|ancient|bright,Crypt appears in cryptic (with a hidden meaning) and cryptography (secret writing).
+greek-roots,hard,*Onym* means name. Build the word for a false name that a writer uses instead of their real one.,pseudonym,,"Pseud (false) + onym (name) = pseudonym. Synonym, antonym, homonym and acronym use the same onym with other roots.",,Which block means false?,pseud|onym|syn|ant|hom|acro,(none)
+greek-roots,hard,Build the word for the study of the shape and form of living things.,morphology,,Morph (shape or form) + ology (study of) = morphology. Psychology is the study of the mind and theology the study of religion.,tiles,You need two blocks: shape + study of.,morph|ology|theo|psych|bio|geo,(none)
+prefixes,easy,What does the prefix *dis-* mean in *disagree*?,not or the opposite of,not or the opposite of|again|before|under,"Dis- means not or the opposite of, as in dislike and disappear."
+prefixes,easy,What does the prefix *non-* mean in *nonstop*?,not,not|again|very|after,"Non- means not, as in nonfiction and nonsense."
+prefixes,easy,What does the prefix *bi-* mean in *bicycle*?,two,two|one|many|half,"Bi- means two, as in biweekly and binoculars (for two eyes)."
+prefixes,easy,What does the prefix *over-* mean in *overcook*?,too much,too much|under|again|not,"Over- often means too much, as in overeat and oversleep."
+prefixes,easy,Build the word that means not able to be broken.,unbreakable,,Un- (not) + break + -able (able to be) = unbreakable.,,Start with the prefix that means not.,un|break|able|re,(none)
+prefixes,easy,Build the word that means to fill again.,refill,,Re- (again) + fill = refill.,,Which prefix means again?,re|fill|un,(none)
+prefixes,medium,What does the prefix *de-* mean in *defrost*?,remove or undo,remove or undo|again|very|before,"De- can mean remove or undo, as in decode and deactivate."
+prefixes,medium,What does the prefix *im-* mean in *impossible*?,not,not|inside|very|again,"Im- means not before b, m and p, as in impolite and immature."
+prefixes,medium,Build the word that means to judge wrongly.,misjudge,,Mis- (wrongly) + judge = misjudge. Prejudge means to judge before you know the facts.,,Which prefix means wrongly?,mis|judge|pre|re,(none)
+prefixes,medium,Build the word for a heading that sits under the main heading.,subheading,,Sub- (under) + head + -ing = subheading.,tiles,Which prefix means under?,sub|head|ing|over|pre,(none)
+prefixes,hard,What does the prefix *contra-* mean in *contradict*?,against,against|with|across|under,"Contra- means against, so to contradict is to speak against; also contrast and contraband."
+prefixes,hard,What does the prefix *omni-* mean in *omnivore*?,all,all|one|meat|plant,"Omni- means all, so an omnivore eats all kinds of food, both plants and meat."
+prefixes,hard,What does the prefix *hypo-* mean in *hypothermia*?,under or below normal,under or below normal|above normal|heat|before,"Hypo- means under, so hypothermia is a body temperature below normal; hyper- means over."
+prefixes,hard,What does the prefix *ante-* mean in *antechamber*?,before,before|against|after|above,"Ante- means before, so an antechamber is a small room before a larger one; do not confuse it with anti- (against)."
+prefixes,hard,What does the prefix *retro-* mean in *retroactive*?,backward,backward|forward|again|above,"Retro- means backward, so a retroactive law applies to the past as well; also retrograde."
+prefixes,hard,What does the prefix *extra-* mean in *extraordinary*?,beyond or outside,beyond or outside|very|inside|less,"Extra- means beyond or outside, so extraordinary is beyond the ordinary; also extraterrestrial."
+prefixes,hard,"Build the word that means able to be carried across from one place to another. Use a prefix, a root and a suffix.",transportable,,"Trans- (across) + port (carry) + -able (able to be) = transportable. Exportable, importable, reportable and deportable use other prefixes.",,The root port means to carry.|Which prefix means across?,trans|port|able|ex|im|re|de,(none)
+prefixes,hard,"Build the word that means a look back at the past (as in: In ____, it was a mistake).",retrospect,,"Retro- (backward) + spect (look) = retrospect. Introspect means to look inward, and prospect is a look forward.",tiles,The root spect means to look.|Which prefix means backward?,retro|spect|intro|pro|circum|in,(none)
+suffixes,easy,What does the suffix *-ly* mean in *slowly*?,in a way or manner,in a way or manner|full of|without|a person who,-ly turns adjectives into adverbs that tell how: slowly means in a slow way.
+suffixes,easy,What does the suffix *-est* mean in *tallest*?,the most,the most|the least|without|again,"-est means the most, as in fastest and smallest."
+suffixes,easy,What does the suffix *-ed* mean in *jumped*?,it happened in the past,it happened in the past|it will happen|it is happening now|it happens again,"-ed forms the past tense of regular verbs, as in walked and played."
+suffixes,easy,What does the suffix *-y* mean in *rainy*?,having or full of,having or full of|without|a person who|in the past,"-y turns nouns into adjectives meaning having or full of, as in sunny and windy."
+suffixes,easy,Build the word that means without a home.,homeless,,Home + -less (without) = homeless.,,Which suffix means without?,home|less|ful,(none)
+suffixes,easy,Build the word for a person who paints.,painter,,Paint + -er (a person who does something) = painter.,tiles,Which suffix means a person who does something?,paint|er|less,(none)
+suffixes,medium,What does the suffix *-ment* mean in *enjoyment*?,the act or result of,the act or result of|without|full of|able to be,"-ment turns verbs into nouns, as in movement and agreement."
+suffixes,medium,What does the suffix *-ish* mean in *childish*?,like or somewhat,like or somewhat|without|the study of|against,"-ish means like or somewhat, as in foolish and reddish."
+suffixes,medium,What does the suffix *-ward* mean in *homeward*?,in the direction of,in the direction of|without|full of|a person who,"-ward means in the direction of, as in upward and backward."
+suffixes,medium,What does the suffix *-hood* mean in *childhood*?,a state or time of being,a state or time of being|a place|a tool|the study of,"-hood names a state or time of being, as in adulthood and neighborhood."
+suffixes,medium,Build the word that means the state of being without hope.,hopelessness,,Hope + -less (without) + -ness (state of) = hopelessness.,,"You need two suffixes: without, then state of.",hope|less|ness|ful|ly,(none)
+suffixes,medium,Build the word for a person who plays the violin.,violinist,,Violin + -ist (a person who practices something) = violinist.,tiles,Which suffix names a person who practices or plays something?,violin|ist|er|ology,(none)
+suffixes,hard,What does the suffix *-ectomy* mean in *appendectomy*?,surgical removal,surgical removal|inflammation|study of|fear of,"-ectomy means cutting out, as in tonsillectomy; -itis means inflammation."
+suffixes,hard,What does the suffix *-mania* mean in *kleptomania*?,an extreme urge or obsession,an extreme urge or obsession|fear of|killing|study of,"-mania means an extreme urge, so kleptomania is an urge to steal; compare -phobia (fear)."
+suffixes,hard,What does the suffix *-phile* mean in *bibliophile*?,one who loves,one who loves|one who fears|one who studies|one who kills,"-phile means one who loves, so a bibliophile loves books; also audiophile."
+suffixes,hard,What does the suffix *-esque* mean in *picturesque*?,in the style of or like,in the style of or like|without|full of|many,"-esque means in the style of, so picturesque means pretty like a picture."
+suffixes,hard,Build the word that means in a way that shows no respect.,disrespectfully,,Dis- (not) + respect + -ful (full of) + -ly (in a way) = disrespectfully.,,Start with the prefix that means not.|End with the suffix that makes an adverb.,dis|respect|ful|ly|less|ness|ion|un,(none)
+suffixes,hard,*Pluto* means wealth. Build the word for government by the wealthy.,plutocracy,,Pluto (wealth) + -cracy (rule) = plutocracy. A plutocrat is one wealthy ruler.,tiles,Which suffix means rule or government?,pluto|cracy|crat|theo|ology|ic,(none)

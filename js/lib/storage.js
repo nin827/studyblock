@@ -2,6 +2,7 @@
 
 import { requestPersistentStorage } from './pwa.js';
 import { isLang, DEFAULT_LANG } from './languages.js';
+import { parseJournal } from './journal.js';
 
 const KEY = 'studyblock:data';
 const VERSION = 1;
@@ -85,6 +86,7 @@ function validateAttempt(a, idx) {
   if (!isNum(a.score) || !isNum(a.total) || a.total < 0 || a.score < 0 || a.score > a.total + 1e-9) {
     throw new Error(`${where} has an invalid "score" or "total".`);
   }
+  if (a.guided !== undefined && typeof a.guided !== 'boolean') throw new Error(`${where} has an invalid "guided" flag.`);
   if (!Array.isArray(a.questions)) throw new Error(`${where} has no "questions" list.`);
   a.questions.forEach((q, j) => {
     if (!q || typeof q !== 'object' || Array.isArray(q)) throw new Error(`${where}, question ${j + 1} is not an object.`);
@@ -117,6 +119,75 @@ export function cleanWork(work) {
     out.push({ label: r.label, expr: r.expr, value: isNum(r.value) ? r.value : null });
   }
   return out.length ? out : null;
+}
+
+// Calculator graph saved on a question with its working: { fns: [{ slot, expr, hidden }], view }.
+// At most 6 functions (slots 1–6, unique), non-empty expressions of at most 200 characters. The view
+// must be four finite numbers with min < max (spans 1e-6 to 1e9); otherwise the default window is used.
+// Returns null when no valid function is left. Data only (expressions are parsed, never executed).
+export const GRAPH_MAX_FNS = 6;
+const GRAPH_EXPR_MAX = 200;
+const GRAPH_DEFAULT_VIEW = { xmin: -10, xmax: 10, ymin: -10, ymax: 10 };
+
+function cleanGraphView(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const { xmin, xmax, ymin, ymax } = v;
+  if (![xmin, xmax, ymin, ymax].every(isNum)) return null;
+  const okAxis = (a, b) => a < b && b - a >= 1e-6 * 0.999 && b - a <= 1e9 * 1.001 && Math.abs(a) <= 2e9 && Math.abs(b) <= 2e9;
+  return okAxis(xmin, xmax) && okAxis(ymin, ymax) ? { xmin, xmax, ymin, ymax } : null;
+}
+
+export function cleanGraph(graph) {
+  if (!graph || typeof graph !== 'object' || Array.isArray(graph) || !Array.isArray(graph.fns)) return null;
+  const fns = [];
+  const used = new Set();
+  for (const f of graph.fns.slice(0, GRAPH_MAX_FNS)) {
+    if (!f || typeof f !== 'object' || Array.isArray(f)) continue;
+    if (!isStr(f.expr) || !f.expr.trim() || f.expr.length > GRAPH_EXPR_MAX) continue;
+    if (!Number.isInteger(f.slot) || f.slot < 1 || f.slot > GRAPH_MAX_FNS || used.has(f.slot)) continue;
+    used.add(f.slot);
+    fns.push({ slot: f.slot, expr: f.expr, hidden: f.hidden === true });
+  }
+  if (!fns.length) return null;
+  fns.sort((a, b) => a.slot - b.slot);
+  return { fns, view: cleanGraphView(graph.view) || { ...GRAPH_DEFAULT_VIEW } };
+}
+
+// Segmented choices: an option made of 2–4 aligned segments ("Elastic | Price ↓ | Revenue ↑"),
+// stored as one string joined by SEG_SEP, plus the column labels (`choiceCols` on a single
+// question, `partCols: { [partId]: cols }` on a multi-part one). Labels ≤ 24 chars, segments ≤ 40.
+export const SEG_SEP = ' | ';
+export const SEG_COLS_MIN = 2;
+export const SEG_COLS_MAX = 4;
+export const SEG_COL_MAX_LEN = 24;
+export const SEG_MAX_LEN = 40;
+
+// Column labels: 2–4 non-empty trimmed strings (≤ 24 chars, no "|"), or null.
+export function cleanChoiceCols(v) {
+  if (!Array.isArray(v) || v.length < SEG_COLS_MIN || v.length > SEG_COLS_MAX) return null;
+  const out = v.map(c => (isStr(c) ? c.trim() : ''));
+  return out.every(c => c && c.length <= SEG_COL_MAX_LEN && !c.includes('|')) ? out : null;
+}
+
+// { [partId]: cols } for a multi-part question's segmented parts, or null.
+export function cleanPartCols(v) {
+  if (!isObj(v)) return null;
+  const out = {};
+  let n = 0;
+  for (const k of Object.keys(v).slice(0, PARTS_MAX)) {
+    const cols = PART_ID_RE.test(k) && k.length <= 40 ? cleanChoiceCols(v[k]) : null;
+    if (cols) { out[k] = cols; n++; }
+  }
+  return n ? out : null;
+}
+
+// A stored/joined option split back into its segments: an array of cols.length strings, or null
+// (no valid cols, or the string doesn't have exactly that many segments).
+export function splitSegs(str, cols) {
+  const c = cleanChoiceCols(cols);
+  if (!c || !isStr(str)) return null;
+  const segs = str.split('|').map(s => s.trim());
+  return segs.length === c.length && segs.every(Boolean) ? segs : null;
 }
 
 // Multi-part questions store `answer` / `userAnswer` as { [partId]: value } and
@@ -154,9 +225,34 @@ export function cleanParts(list) {
     if (!isObj(p) || !isStr(p.id) || !PART_ID_RE.test(p.id) || p.id.length > 40 || ids.has(p.id)) continue;
     if (typeof p.correct !== 'boolean') continue;
     ids.add(p.id);
-    out.push({ id: p.id, label: isStr(p.label) ? p.label.slice(0, PART_LABEL_MAX) : p.id, correct: p.correct });
+    const close = p.correct ? null : cleanClose(p.close);
+    out.push({ id: p.id, label: isStr(p.label) ? p.label.slice(0, PART_LABEL_MAX) : p.id, correct: p.correct, ...(close ? { close } : {}) });
   }
   return out.length ? out : null;
+}
+
+// Close-answer credit on a stored question (`fuzzy`) or part (`close`), factor 0-1:
+// { kind: "text", typos, factor, level } | { kind: "number", relErr, factor, level }
+// | { kind: "number", mode: "years", off, factor, level } | { kind: "date", off, factor, level }.
+// Optional fields are kept only when valid (level 0-5). Else null.
+export function cleanClose(v) {
+  if (!isObj(v) || !['text', 'number', 'date'].includes(v.kind)) return null;
+  if (!isNum(v.factor) || v.factor < 0 || v.factor > 1) return null;
+  const out = { kind: v.kind, factor: v.factor };
+  if (v.kind === 'text' && Number.isInteger(v.typos) && v.typos >= 0 && v.typos <= 50) out.typos = v.typos;
+  if (v.kind === 'number' && v.mode === 'years') out.mode = 'years';
+  if (v.kind === 'number' && isNum(v.relErr) && v.relErr >= 0) out.relErr = v.relErr;
+  if (v.kind !== 'text' && isNum(v.off) && v.off >= 0 && v.off <= 1e6) out.off = v.off;
+  if (isNum(v.level) && v.level >= 0 && v.level <= 5) out.level = v.level;
+  return out;
+}
+
+// Answer mode of a stored question: "blocks" (dual Type | Blocks question answered with blocks)
+// with its multiplier 0-1. Returns the fields to keep ({} when absent or invalid).
+// Also "choose" (a segmented-choice question answered by picking an option instead of building it).
+export function cleanMode(q) {
+  if (!isObj(q) || (q.mode !== 'blocks' && q.mode !== 'choose')) return {};
+  return { mode: q.mode, ...(isNum(q.multiplier) && q.multiplier >= 0 && q.multiplier <= 1 ? { multiplier: q.multiplier } : {}) };
 }
 
 // A stored answer: number, string, or a multi-part object; anything else becomes a string.
@@ -173,6 +269,14 @@ function dropBadLang(q) {
   return q;
 }
 
+// ---- guided attempts (saved in History, never scored) ----
+
+// Per-question outcome of a guided run: solved first try, solved after hints/tries, used the solution.
+export const GUIDED_OUTCOMES = ['first', 'after', 'solution'];
+export const isGuided = a => !!a && a.guided === true;
+// Attempts that count for stats, best scores and "Recent" scores (guided runs never do).
+const scoredOnly = list => list.filter(a => !isGuided(a));
+
 // ---- credit (partial credit for multi-part questions) ----
 
 // A question's credit, 0–1: the stored `credit` (clamped), else 1/0 from `correct` (older data).
@@ -181,7 +285,15 @@ export function creditOf(q) {
   return q && q.correct ? 1 : 0;
 }
 
-// Scores are sums of credits, kept to 2 decimals.
+// A question's weight in its attempt's score: role-only (mixed) scenario questions weigh their
+// number of parts (integer 1-6); every other question, and older data, weighs 1.
+export const MAX_WEIGHT = 6;
+export const isWeight = v => Number.isInteger(v) && v >= 1 && v <= MAX_WEIGHT;
+export function weightOf(q) {
+  return q && isWeight(q.weight) ? q.weight : 1;
+}
+
+// Scores are sums of credits (× weights), kept to 2 decimals.
 export const roundScore = n => Math.round((Number(n) || 0) * 100) / 100;
 
 // ---- attempts ----
@@ -217,15 +329,21 @@ function summarize(list) {
 }
 
 export const MIX_MODULE = 'mix';
+// Role quizzes: module "role", subtopic "<role>" or "<role>~<subrole>", difficulty = role level.
+// Like mixes, every question carries its own module/subtopic/difficulty.
+export const ROLE_MODULE = 'role';
 export const ALL_ID = 'all';
+// Attempts whose questions come from several modules (mixes and roles).
+export const isComposite = a => !!a && (a.module === MIX_MODULE || a.module === ROLE_MODULE);
+const isCompositeId = m => m === MIX_MODULE || m === ROLE_MODULE;
 
 // A whole-module attempt: subtopic and/or difficulty "all"; its questions carry their own origin.
-const isAllAttempt = a => a.module !== MIX_MODULE && (a.subtopic === ALL_ID || a.difficulty === ALL_ID);
+const isAllAttempt = a => !isComposite(a) && (a.subtopic === ALL_ID || a.difficulty === ALL_ID);
 
 /*
  * Per-module attribution rule (kept deliberately simple):
  * - A single-module attempt counts for its module as-is.
- * - A mixed attempt (module "mix") is split into one "slice" per module (optionally narrowed
+ * - A mixed or role attempt (module "mix" / "role") is split into one "slice" per module (optionally narrowed
  *   further to a subtopic/difficulty) using each question's own module/subtopic/difficulty.
  *   A slice behaves like a small attempt: { ts, score = sum of question credits, total = questions }.
  *   So it adds 1 to that module's attempt count and its percentage feeds Best/Last/Overall
@@ -237,7 +355,7 @@ const isAllAttempt = a => a.module !== MIX_MODULE && (a.subtopic === ALL_ID || a
 function slicesOf(a, match) {
   const groups = new Map();
   for (const q of a.questions) {
-    const mod = typeof q.module === 'string' ? q.module : (a.module !== MIX_MODULE ? a.module : null);
+    const mod = typeof q.module === 'string' ? q.module : (!isComposite(a) ? a.module : null);
     if (!mod) continue;
     const qq = { ...q, module: mod };
     if (!match(qq)) continue;
@@ -251,7 +369,7 @@ function slicesOf(a, match) {
 }
 
 function mixSlices(attempts, match) {
-  return attempts.filter(a => a.module === MIX_MODULE).flatMap(a => slicesOf(a, match));
+  return attempts.filter(isComposite).flatMap(a => slicesOf(a, match));
 }
 
 // Merges the per-key slices of one mixed attempt back into one slice (for module-level stats).
@@ -271,7 +389,7 @@ const matches = (filter, x) =>
 
 // Attempt-like records for a module (single attempts + mixed slices), optionally narrowed.
 function recordsFor(attempts, filter) {
-  const single = attempts.filter(a => a.module !== MIX_MODULE && matches(filter, a));
+  const single = attempts.filter(a => !isComposite(a) && matches(filter, a));
   // Whole-module attempts that don't match as stored (e.g. filter subtopic "addition", attempt "all"):
   // count the questions that do match, as one slice per attempt.
   const allSlices = attempts
@@ -285,8 +403,8 @@ function recordsFor(attempts, filter) {
 // With a real module id, mixed-quiz questions for that module are included (see rule above).
 // With no module (or module "mix"), attempts are aggregated as stored.
 export function getStats({ module, subtopic, difficulty } = {}) {
-  const attempts = load().attempts;
-  if (module === undefined || module === MIX_MODULE) {
+  const attempts = scoredOnly(load().attempts);
+  if (module === undefined || isCompositeId(module)) {
     return summarize(attempts.filter(a => matches({ module, subtopic, difficulty }, a)));
   }
   return summarize(recordsFor(attempts, { module, subtopic, difficulty }));
@@ -296,22 +414,22 @@ export function getStats({ module, subtopic, difficulty } = {}) {
 // for each mixed attempt, one slice with its questions from those modules.
 export function getStatsForModules(ids) {
   const set = new Set(ids);
-  const attempts = load().attempts;
-  const single = attempts.filter(a => a.module !== MIX_MODULE && set.has(a.module));
+  const attempts = scoredOnly(load().attempts);
+  const single = attempts.filter(a => !isComposite(a) && set.has(a.module));
   const slices = mixSlices(attempts, q => set.has(q.module)).map(s => ({ ...s, module: 'set' }));
   return summarize(single.concat(mergeSlices(slices)));
 }
 
 // Attempt-like records (newest first) for one module, including mixed slices.
 export function getModuleRecords(module) {
-  return recordsFor(load().attempts, { module }).sort((a, b) => b.ts - a.ts);
+  return recordsFor(scoredOnly(load().attempts), { module }).sort((a, b) => b.ts - a.ts);
 }
 
 // Map "subtopic|difficulty" -> stats for one module (mixed questions included).
 // Whole-module attempts count under their own key ("all|easy", "addition|all", "all|all") and
 // their questions are also attributed to the real cells they came from.
 export function getModuleCellStats(module) {
-  const attempts = load().attempts;
+  const attempts = scoredOnly(load().attempts);
   const groups = {};
   for (const a of attempts) {
     if (a.module !== module) continue;
@@ -358,6 +476,31 @@ function writeJson(key, value) {
     console.warn(`StudyBlock: could not save ${key}`, e);
     return false;
   }
+}
+
+// ---- role question counts (localStorage studyblock:roleCount) ----
+// { "<role>" | "<role>~<subrole>": { std: n, expert: n } }: the role page's count for Easy/Medium/Hard
+// runs (`std`) and for Expert runs (`expert`), each an integer 5-50. Missing or bad = default.
+const ROLE_COUNT_KEY = 'studyblock:roleCount';
+const ROLE_COUNT_KINDS = ['std', 'expert'];
+const isRoleCount = v => Number.isInteger(v) && v >= 5 && v <= 50;
+
+export function getRoleCount(key, kind) {
+  const all = readJson(ROLE_COUNT_KEY);
+  const v = isObj(all) && Object.prototype.hasOwnProperty.call(all, key) && isObj(all[key]) ? all[key][kind] : undefined;
+  return isRoleCount(v) ? v : null;
+}
+
+export function setRoleCount(key, kind, n) {
+  if (!isStr(key) || !ROLE_COUNT_KINDS.includes(kind) || !isRoleCount(n)) return false;
+  const raw = readJson(ROLE_COUNT_KEY);
+  const all = isObj(raw) ? raw : {};
+  const own = Object.prototype.hasOwnProperty.call(all, key) && isObj(all[key]) ? all[key] : {};
+  const next = {};
+  for (const k of ROLE_COUNT_KINDS) if (isRoleCount(own[k])) next[k] = own[k];
+  next[kind] = n;
+  all[key] = next;
+  return writeJson(ROLE_COUNT_KEY, all);
 }
 
 function cleanDraft(v) {
@@ -632,6 +775,8 @@ function importObject(incoming, mode) {
   const clean = incoming.attempts.map(a => ({
     id: a.id, ts: a.ts, module: a.module, subtopic: a.subtopic, difficulty: a.difficulty,
     score: a.score, total: a.total,
+    // Optional: a guided run (shown in History, never scored).
+    ...(a.guided === true ? { guided: true } : {}),
     questions: a.questions.map(q => ({
       seed: isNum(q.seed) ? q.seed : null,
       prompt: q.prompt,
@@ -640,8 +785,21 @@ function importObject(incoming, mode) {
       correct: q.correct,
       // Optional partial credit (0–1); older data has none and falls back to `correct`.
       ...(isNum(q.credit) ? { credit: Math.min(1, Math.max(0, q.credit)) } : {}),
+      // Optional score weight of a role scenario question (integer 1-6; default 1, so 1 is omitted).
+      ...(isWeight(q.weight) && q.weight > 1 ? { weight: q.weight } : {}),
       // Optional per-part results of a multi-part question.
       ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
+      // Optional segmented-choice column labels (single question / per multi-part part).
+      ...(cleanChoiceCols(q.choiceCols) ? { choiceCols: cleanChoiceCols(q.choiceCols) } : {}),
+      ...(cleanPartCols(q.partCols) ? { partCols: cleanPartCols(q.partCols) } : {}),
+      // Optional: a journal entry (answer / userAnswer are canonical "Dr … ; Cr …" strings).
+      ...(q.journal === true && isStr(q.answer) && parseJournal(q.answer) && (!isStr(q.userAnswer) || parseJournal(q.userAnswer)) ? { journal: true } : {}),
+      // Optional answer mode (Blocks + multiplier) and close-answer credit; validated, 0-1.
+      ...cleanMode(q),
+      ...(!q.correct && cleanClose(q.fuzzy) ? { fuzzy: cleanClose(q.fuzzy) } : {}),
+      // Optional: accepted by the module's grader (e.g. SQL output), and a guided run's outcome.
+      ...(q.correct && q.gradedBy === 'output' ? { gradedBy: 'output' } : {}),
+      ...(a.guided === true && GUIDED_OUTCOMES.includes(q.outcome) ? { outcome: q.outcome } : {}),
       ...(isStr(q.explanation) ? { explanation: q.explanation } : {}),
       // Optional per-question attribution (mixed quizzes); older data has none.
       ...(isStr(q.module) && /^[a-z0-9-]+$/.test(q.module) ? { module: q.module } : {}),
@@ -651,6 +809,8 @@ function importObject(incoming, mode) {
       ...(isLang(q.lang) ? { lang: q.lang } : {}),
       // Optional calculator working ("Your working"); validated and capped.
       ...(cleanWork(q.work) ? { work: cleanWork(q.work) } : {}),
+      // Optional calculator graph saved with the working; validated and capped.
+      ...(cleanGraph(q.graph) ? { graph: cleanGraph(q.graph) } : {}),
     })),
   }));
   // Optional mix fields: invalid presets are dropped individually; an invalid draft is ignored.

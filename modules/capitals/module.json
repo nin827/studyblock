@@ -4,6 +4,7 @@
   "description": "Name the capital cities of countries in Europe, Asia and the Americas.",
   "icon": "globe",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "europe", "title": "Europe", "difficulties": ["easy", "medium", "hard"] },

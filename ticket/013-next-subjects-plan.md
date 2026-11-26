@@ -1,6 +1,6 @@
 # 013 — Next subjects: plan
 
-**Status:** open (batch 3 built 2026-11-25; new domains and fact-list growth still open)
+**Status:** resolved (2026-11-26): to build
 **Raised:** 2026-11-25
 
 ## Where things stand
@@ -58,3 +58,8 @@ Notes:
 1. Build batch 3 as listed, or a subset first?
 2. Add one or both of the new domains?
 3. **Fact-list growth:** for History, Geography and Language, should agents add more checked CSV rows? It's slower and needs a careful review pass.
+
+## Resolution (cleared 2026-11-26)
+
+- **Add both new domains:** Logic & Puzzles and Everyday Math.
+- **Expand the fact lists** (History, Geography, Language) with checked rows and a review pass.

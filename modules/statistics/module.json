@@ -4,6 +4,7 @@
   "description": "Mean, median and mode, range and interquartile range, probability and weighted averages.",
   "icon": "chart-column",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "mean-median-mode", "title": "Mean, median and mode", "difficulties": ["easy", "medium", "hard", "expert"] },

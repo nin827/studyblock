@@ -1,0 +1,44 @@
+{
+  "id": "chef",
+  "title": "Chef",
+  "icon": "chef-hat",
+  "flags": ["experience_heavy", "creative_oriented", "safety_critical"],
+  "description": "Scaling recipes, yields and packs, timing a service backwards from the pass, and costing dishes, gross profit and stock waste, with every kitchen rule stated.",
+  "exclusive": "role-chef",
+  "mix": {
+    "recipes-scaling": { "weight": 5 },
+    "unit-conversion": { "weight": 1, "subtopics": ["mass-volume", "time-speed"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "shopping-money": { "weight": 2, "subtopics": ["unit-price", "discounts", "budgets"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "time-dates": { "weight": 1, "subtopics": ["clock"] }
+  },
+  "subroles": [
+    {
+      "id": "head-chef",
+      "title": "Head Chef",
+      "icon": "cooking-pot",
+      "description": "Scaling recipes, yield percentages, portions and packs to buy, and prep timing worked backwards from service.",
+      "mix": {
+        "recipes-scaling": { "weight": 5, "subtopics": ["scaling", "kitchen-units", "cooking-times"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["mass-volume"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+        "time-dates": { "weight": 2, "subtopics": ["clock"] }
+      },
+      "exclusiveSubtopics": ["recipe-scaling", "service-timing"]
+    },
+    {
+      "id": "kitchen-manager",
+      "title": "Kitchen Manager",
+      "icon": "clipboard-list",
+      "description": "Food cost per portion, gross profit, menu price from a target margin, and stock and waste.",
+      "mix": {
+        "shopping-money": { "weight": 3, "subtopics": ["unit-price", "budgets"] },
+        "business-math": { "weight": 3, "subtopics": ["percentages", "margins"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages"] },
+        "recipes-scaling": { "weight": 2, "subtopics": ["scaling"] }
+      },
+      "exclusiveSubtopics": ["dish-cost", "stock-waste"]
+    }
+  ]
+}

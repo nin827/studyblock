@@ -37,3 +37,58 @@ americas,hard,What is the capital of Belize?,Belmopan,Belmopan|Belize City|San I
 americas,hard,What is the capital of Honduras?,Tegucigalpa,,Tegucigalpa is the capital and largest city of Honduras.
 americas,hard,What is the capital of Suriname?,Paramaribo,,Paramaribo lies on the Suriname river.
 americas,hard,What is the capital of Ecuador?,Quito,Quito|Guayaquil|Cuenca|Manta,"Quito is the capital, while Guayaquil is the main port and commercial centre."
+europe,easy,What is the capital of the United Kingdom?,London,,London lies on the River Thames in southeast England.
+europe,easy,What is the capital of Greece?,Athens,Athens|Thessaloniki|Patras|Heraklion,Athens has been the capital of modern Greece since 1834.
+europe,easy,What is the capital of Russia?,Moscow,Moscow|Saint Petersburg|Novosibirsk|Kazan,Saint Petersburg was the capital of the Russian Empire until 1918.
+europe,easy,What is the capital of Ireland?,Dublin,,Dublin lies on the east coast at the mouth of the River Liffey.
+europe,easy,What is the capital of Austria?,Vienna,Vienna|Salzburg|Innsbruck|Graz,Vienna lies on the Danube.
+europe,easy,What is the capital of Sweden?,Stockholm,Stockholm|Gothenburg|Malmö|Uppsala,Stockholm is built on 14 islands where Lake Mälaren meets the Baltic Sea.
+europe,medium,What is the capital of Norway?,Oslo,Oslo|Bergen|Trondheim|Stavanger,Oslo lies at the head of the Oslofjord.
+europe,medium,What is the capital of Denmark?,Copenhagen,,Copenhagen lies on the islands of Zealand and Amager.
+europe,medium,What is the capital of Finland?,Helsinki,Helsinki|Turku|Tampere|Espoo,"Turku was the capital until 1812, when Helsinki took over."
+europe,medium,What is the capital of the Czech Republic (Czechia)?,Prague,,Prague lies on the Vltava river.
+europe,medium,What is the capital of Hungary?,Budapest,Budapest|Debrecen|Szeged|Pécs,Budapest was formed in 1873 by joining Buda and Óbuda on one bank of the Danube with Pest on the other.
+europe,medium,What is the capital of Belgium?,Brussels,Brussels|Antwerp|Ghent|Bruges,Brussels also hosts the main institutions of the European Union.
+europe,medium,What is the capital of Iceland?,Reykjavík,Reykjavík|Akureyri|Keflavík|Húsavík,Reykjavík is the most northerly capital of a sovereign state.
+europe,hard,What is the capital of Latvia?,Riga,Riga|Daugavpils|Liepāja|Jelgava,Riga lies where the Daugava river meets the Gulf of Riga.
+europe,hard,What is the capital of Lithuania?,Vilnius,Vilnius|Kaunas|Klaipėda|Šiauliai,Kaunas served as the temporary capital between the two world wars.
+europe,hard,What is the capital of Estonia?,Tallinn,,Tallinn's walled old town is a UNESCO World Heritage Site.
+europe,hard,What is the capital of North Macedonia?,Skopje,Skopje|Bitola|Ohrid|Kumanovo,Skopje lies on the Vardar river.
+europe,hard,What is the capital of Albania?,Tirana,,Tirana became the capital of Albania in 1920.
+europe,hard,What is the capital of Malta?,Valletta,Valletta|Mdina|Sliema|Birkirkara,Valletta was built by the Knights of St John after the Great Siege of 1565. Mdina was the earlier capital.
+europe,hard,What is the capital of Belarus?,Minsk,,Minsk lies on the Svislach river.
+asia,easy,What is the capital of Saudi Arabia?,Riyadh,Riyadh|Jeddah|Mecca|Medina,Riyadh lies in the centre of the Arabian Peninsula.
+asia,easy,What is the capital of Iran?,Tehran,,Tehran sits at the foot of the Alborz mountains.
+asia,easy,What is the capital of Iraq?,Baghdad,Baghdad|Basra|Mosul|Erbil,Baghdad lies on the Tigris river.
+asia,easy,What is the capital of Afghanistan?,Kabul,,Kabul lies high in a valley of the Hindu Kush mountains.
+asia,easy,What is the capital of North Korea?,Pyongyang,,Pyongyang lies on the Taedong river.
+asia,easy,What is the capital of Nepal?,Kathmandu,Kathmandu|Pokhara|Lalitpur|Biratnagar,Kathmandu lies in a valley in the Himalayan foothills.
+asia,medium,What is the capital of Pakistan?,Islamabad,Islamabad|Karachi|Lahore|Peshawar,Islamabad was built in the 1960s to replace Karachi as the capital.
+asia,medium,What is the capital of Malaysia?,Kuala Lumpur,,"Kuala Lumpur is the capital, though many government offices moved to nearby Putrajaya."
+asia,medium,What is the capital of Cambodia?,Phnom Penh,Phnom Penh|Siem Reap|Battambang|Sihanoukville,Phnom Penh lies where the Tonlé Sap river meets the Mekong.
+asia,medium,What is the capital of Bangladesh?,Dhaka,,Dhaka lies on the Buriganga river in the Ganges delta.
+asia,medium,What is the capital of the United Arab Emirates?,Abu Dhabi,Abu Dhabi|Dubai|Sharjah|Ajman,"Dubai is the largest city, but Abu Dhabi is the capital."
+asia,medium,What is the capital of Jordan?,Amman,,Amman was known in ancient times as Philadelphia.
+asia,hard,What is the capital of Mongolia?,Ulaanbaatar,Ulaanbaatar|Erdenet|Darkhan|Choibalsan,Ulaanbaatar means Red Hero in Mongolian.
+asia,hard,What is the capital of Uzbekistan?,Tashkent,Tashkent|Samarkand|Bukhara|Namangan,Samarkand and Bukhara were great cities of the Silk Road.
+asia,hard,What is the capital of Brunei?,Bandar Seri Begawan,Bandar Seri Begawan|Kuala Belait|Seria|Tutong,Brunei lies on the island of Borneo.
+asia,hard,What is the capital of Tajikistan?,Dushanbe,,"Dushanbe means Monday in Tajik, after a Monday market held there."
+asia,hard,What is the capital of Oman?,Muscat,Muscat|Salalah|Sohar|Nizwa,Muscat lies on the Gulf of Oman.
+asia,hard,What is the capital of Armenia?,Yerevan,,Yerevan is one of the oldest continuously inhabited cities in the world.
+americas,easy,What is the capital of Cuba?,Havana,Havana|Santiago de Cuba|Camagüey|Holguín,Havana lies on Cuba's northern coast.
+americas,easy,What is the capital of Jamaica?,Kingston,,Kingston has one of the largest natural harbours in the world.
+americas,easy,What is the capital of Venezuela?,Caracas,Caracas|Maracaibo|Valencia|Barquisimeto,Caracas was the birthplace of Simón Bolívar.
+americas,easy,What is the capital of Panama?,Panama City,,Panama City lies at the Pacific end of the Panama Canal.
+americas,easy,What is the capital of Guatemala?,Guatemala City,,Guatemala City lies in a highland valley in the south of the country.
+americas,easy,What is the capital of El Salvador?,San Salvador,,San Salvador lies in a valley below the San Salvador volcano.
+americas,medium,What is the capital of Uruguay?,Montevideo,Montevideo|Punta del Este|Salto|Colonia del Sacramento,"Montevideo lies on the Río de la Plata, across the water from Buenos Aires."
+americas,medium,What is the capital of Costa Rica?,San José,San José|Limón|Alajuela|Cartago,Cartago was the capital until 1823.
+americas,medium,What is the capital of the Dominican Republic?,Santo Domingo,Santo Domingo|Santiago de los Caballeros|Puerto Plata|La Romana,"Santo Domingo, founded in 1496, is the oldest European-founded city in the Americas still standing."
+americas,medium,What is the capital of Haiti?,Port-au-Prince,,Port-au-Prince lies on the Gulf of Gonâve.
+americas,medium,What is the capital of Nicaragua?,Managua,Managua|León|Granada|Masaya,Managua lies on the southern shore of Lake Managua.
+americas,medium,What is the capital of the Bahamas?,Nassau,,Nassau is on the island of New Providence.
+americas,hard,What is the capital of Guyana?,Georgetown,,Georgetown lies at the mouth of the Demerara river.
+americas,hard,Which city is the constitutional capital of Bolivia?,Sucre,Sucre|La Paz|Santa Cruz de la Sierra|Cochabamba,"Sucre is the constitutional capital, while La Paz is the seat of government."
+americas,hard,What is the capital of Trinidad and Tobago?,Port of Spain,Port of Spain|San Fernando|Chaguanas|Scarborough,Port of Spain is on the island of Trinidad; Scarborough is the main town on Tobago.
+americas,hard,What is the capital of Barbados?,Bridgetown,,Bridgetown's historic centre is a UNESCO World Heritage Site.
+americas,hard,What is the capital of Saint Lucia?,Castries,Castries|Soufrière|Vieux Fort|Gros Islet,Castries is named after a French naval minister.

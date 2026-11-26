@@ -34,7 +34,7 @@ americas,medium,Which continent is Guatemala in? (Answer North America or South 
 americas,hard,Which continent is Suriname in?,South America,South America|North America|Africa|Europe,Suriname lies on the northeastern coast of South America.
 americas,hard,Which continent is Belize in?,North America,North America|South America|Africa|Europe,Belize is in Central America on the Caribbean coast.
 americas,hard,Which continent is Paraguay in? (Answer North America or South America.),South America,,"Paraguay and Bolivia are the two landlocked countries of South America."
-americas,hard,Which continent is Uruguay in? (Answer North America or South America.),South America,,Uruguay lies on the southeastern coast of South America between Brazil and Argentina.
+americas,medium,Which continent is Uruguay in? (Answer North America or South America.),South America,,Uruguay lies on the southeastern coast of South America between Brazil and Argentina.
 oceans-seas,easy,What is the largest ocean on Earth?,Pacific Ocean,Pacific Ocean|Atlantic Ocean|Indian Ocean|Arctic Ocean,The Pacific is larger than all of Earth's land area combined.
 oceans-seas,easy,What is the smallest of Earth's oceans?,Arctic Ocean,Arctic Ocean|Indian Ocean|Atlantic Ocean|Pacific Ocean,The Arctic Ocean surrounds the North Pole and is partly covered by sea ice all year.
 oceans-seas,easy,Which ocean separates Europe and Africa from the Americas? (Leave out the word 'Ocean'.),Atlantic,,The Atlantic is the second-largest ocean on Earth.
@@ -47,3 +47,75 @@ oceans-seas,hard,Which ocean is the Bay of Bengal part of? (Leave out the word '
 oceans-seas,hard,Which ocean is the Caribbean Sea part of? (Leave out the word 'Ocean'.),Atlantic,,The Caribbean Sea is a sea of the western Atlantic Ocean.
 oceans-seas,hard,Which sea separates the Arabian Peninsula from northeast Africa?,Red Sea,Red Sea|Black Sea|Caspian Sea|Arabian Sea,The Red Sea connects to the Mediterranean through the Suez Canal.
 oceans-seas,hard,Which strait connects the Mediterranean Sea to the Atlantic Ocean?,Strait of Gibraltar,Strait of Gibraltar|Strait of Hormuz|Strait of Malacca|Bosporus,The Strait of Gibraltar separates Spain from Morocco.
+africa-europe,easy,Which continent is Italy in?,Europe,Europe|Asia|Africa|North America,Italy is a peninsula reaching into the Mediterranean Sea in southern Europe.
+africa-europe,easy,Which continent is Germany in?,Europe,,Germany lies in Central Europe.
+africa-europe,easy,Which continent is Spain in?,Europe,Europe|Asia|Africa|North America,Spain covers most of the Iberian Peninsula in southwestern Europe.
+africa-europe,easy,Which continent is Morocco in?,Africa,Africa|Asia|Europe|South America,"Morocco lies in the northwest corner of Africa, just across the Strait of Gibraltar from Spain."
+africa-europe,easy,Which continent is Ethiopia in?,Africa,,Ethiopia is a landlocked country in the Horn of Africa.
+africa-europe,easy,Which continent is Algeria in?,Africa,Africa|Asia|Europe|South America,Algeria is the largest country in Africa by area.
+africa-europe,medium,Which continent is Portugal in?,Europe,,Portugal lies on the western side of the Iberian Peninsula.
+africa-europe,medium,Which continent is Croatia in?,Europe,Europe|Asia|Africa|North America,Croatia lies on the Adriatic coast of southeastern Europe.
+africa-europe,medium,Which continent is Finland in?,Europe,,Finland lies in northern Europe between Sweden and Russia.
+africa-europe,medium,Which continent is Senegal in?,Africa,Africa|Asia|Europe|South America,Senegal is the westernmost country on the African mainland.
+africa-europe,medium,Which continent is Tanzania in?,Africa,,Tanzania lies in East Africa on the Indian Ocean coast.
+africa-europe,medium,Which continent is Cameroon in?,Africa,Africa|Asia|Europe|South America,Cameroon lies in Central Africa on the Gulf of Guinea.
+africa-europe,hard,Which continent is Eswatini in?,Africa,Africa|Asia|Europe|South America,"Eswatini, formerly Swaziland, is a small landlocked kingdom in southern Africa."
+africa-europe,hard,Which continent is Djibouti in?,Africa,,Djibouti lies in the Horn of Africa at the southern entrance to the Red Sea.
+africa-europe,hard,Which continent is Benin in?,Africa,Africa|Asia|Europe|South America,Benin is a narrow country in West Africa between Togo and Nigeria.
+africa-europe,hard,Which continent is San Marino in?,Europe,,San Marino is a tiny republic surrounded by Italy.
+africa-europe,hard,Which continent is Montenegro in?,Europe,Europe|Asia|Africa|North America,Montenegro lies on the Adriatic coast in the Balkans.
+africa-europe,hard,Which continent is Estonia in?,Europe,,Estonia is the northernmost of the three Baltic states.
+asia-oceania,easy,Which continent is China in?,Asia,,China lies in East Asia.
+asia-oceania,easy,Which continent is Thailand in?,Asia,Asia|Oceania|Africa|Europe,Thailand lies in mainland Southeast Asia.
+asia-oceania,easy,Which continent is South Korea in?,Asia,,South Korea occupies the southern half of the Korean Peninsula in East Asia.
+asia-oceania,easy,Which continent is the Philippines in?,Asia,Asia|Oceania|Africa|Europe,The Philippines is an island country in Southeast Asia.
+asia-oceania,easy,Which continent is Saudi Arabia in?,Asia,Asia|Oceania|Africa|Europe,Saudi Arabia covers most of the Arabian Peninsula in Western Asia.
+asia-oceania,easy,Which continent is Pakistan in?,Asia,,Pakistan lies in South Asia.
+asia-oceania,medium,Which continent is Bangladesh in?,Asia,,Bangladesh lies in South Asia on the Bay of Bengal.
+asia-oceania,medium,Which continent is Cambodia in?,Asia,Asia|Oceania|Africa|Europe,Cambodia lies in mainland Southeast Asia on the Gulf of Thailand.
+asia-oceania,medium,Which continent is Sri Lanka in?,Asia,Asia|Oceania|Africa|Europe,"Sri Lanka is an island country in South Asia, off the southern tip of India."
+asia-oceania,medium,Which continent is Iran in?,Asia,,Iran lies in Western Asia.
+asia-oceania,medium,Which continent is the Solomon Islands in?,Oceania,Oceania|Asia|South America|Africa,"The Solomon Islands are an island nation in the southwestern Pacific Ocean, east of Papua New Guinea."
+asia-oceania,medium,Which continent is Tonga in?,Oceania,Oceania|Asia|South America|Africa,Tonga is a Polynesian kingdom of islands in the South Pacific Ocean.
+asia-oceania,hard,Which continent is Kiribati in?,Oceania,Oceania|Asia|South America|Africa,"Kiribati is a nation of islands, mostly atolls, spread across the central Pacific Ocean."
+asia-oceania,hard,Which continent is Tuvalu in?,Oceania,,Tuvalu is a small Polynesian island nation in the Pacific Ocean.
+asia-oceania,hard,Which continent is Palau in?,Oceania,Oceania|Asia|South America|Africa,"Palau is an island nation in the western Pacific Ocean, east of the Philippines."
+asia-oceania,hard,Which continent is Brunei in?,Asia,Asia|Oceania|Africa|Europe,Brunei lies on the northern coast of the island of Borneo in Southeast Asia.
+asia-oceania,hard,Which continent is Kyrgyzstan in?,Asia,,"Kyrgyzstan is a mountainous, landlocked country in Central Asia."
+asia-oceania,hard,Which continent is Turkmenistan in?,Asia,,Turkmenistan lies in Central Asia on the eastern shore of the Caspian Sea.
+americas,easy,Which continent is the United States in?,North America,North America|South America|Europe|Africa,The United States lies in North America between Canada and Mexico.
+americas,easy,Which continent is Chile in? (Answer North America or South America.),South America,,"Chile is a long, narrow country on the Pacific coast of South America."
+americas,easy,Which continent is Venezuela in?,South America,South America|North America|Africa|Europe,Venezuela lies on the Caribbean coast of northern South America.
+americas,easy,Which continent is Bolivia in? (Answer North America or South America.),South America,,Bolivia is a landlocked country in central South America.
+americas,easy,Which continent is Ecuador in?,South America,South America|North America|Africa|Europe,Ecuador lies on the Pacific coast of South America and is crossed by the Equator.
+americas,easy,Which continent is Jamaica in?,North America,North America|South America|Europe|Africa,"Jamaica is a Caribbean island, and the Caribbean is counted as part of North America."
+americas,medium,Which continent is Costa Rica in? (Answer North America or South America.),North America,,"Costa Rica is in Central America, which is counted as part of North America."
+americas,medium,Which continent is Honduras in?,North America,North America|South America|Europe|Africa,"Honduras is in Central America, which is counted as part of North America."
+americas,medium,Which continent is Haiti in? (Answer North America or South America.),North America,,Haiti shares the Caribbean island of Hispaniola with the Dominican Republic.
+americas,medium,Which continent is the Dominican Republic in?,North America,North America|South America|Europe|Africa,"The Dominican Republic is on the Caribbean island of Hispaniola, counted as part of North America."
+americas,medium,Which continent is El Salvador in? (Answer North America or South America.),North America,,"El Salvador is in Central America, which is counted as part of North America."
+americas,hard,Which continent is Guyana in?,South America,South America|North America|Africa|Europe,"Guyana lies on the northern coast of South America, between Venezuela and Suriname."
+americas,hard,Which continent is Nicaragua in? (Answer North America or South America.),North America,,"Nicaragua is the largest country in Central America, which is counted as part of North America."
+americas,hard,Which continent is Barbados in?,North America,North America|South America|Europe|Africa,"Barbados is an island at the eastern edge of the Caribbean, counted as part of North America."
+americas,hard,Which continent is Grenada in? (Answer North America or South America.),North America,,"Grenada is a Caribbean island nation, counted as part of North America."
+americas,hard,Which continent is Saint Lucia in?,North America,North America|South America|Europe|Africa,"Saint Lucia is an island in the eastern Caribbean, counted as part of North America."
+americas,hard,Which continent is Antigua and Barbuda in? (Answer North America or South America.),North America,,"Antigua and Barbuda is a Caribbean island nation, counted as part of North America."
+americas,hard,Which continent is Dominica in?,North America,North America|South America|Europe|Africa,"Dominica is a volcanic island in the eastern Caribbean, counted as part of North America. It is a different country from the Dominican Republic."
+oceans-seas,easy,Which ocean surrounds Antarctica?,Southern Ocean,Southern Ocean|Arctic Ocean|Indian Ocean|Atlantic Ocean,The Southern Ocean is bounded by the strong Antarctic Circumpolar Current.
+oceans-seas,easy,Which ocean borders the east coast of the United States?,Atlantic Ocean,Atlantic Ocean|Pacific Ocean|Indian Ocean|Arctic Ocean,"Cities such as New York, Boston and Miami lie on the Atlantic coast."
+oceans-seas,easy,Which ocean borders the west coast of the United States? (Leave out the word 'Ocean'.),Pacific,,"Los Angeles, San Francisco and Seattle lie on the Pacific coast."
+oceans-seas,easy,Which ocean lies to the south of India? (Leave out the word 'Ocean'.),Indian,,The Indian Ocean is named after India.
+oceans-seas,easy,Which ocean lies along the northern coasts of Canada and Russia?,Arctic Ocean,Arctic Ocean|Pacific Ocean|Atlantic Ocean|Southern Ocean,Much of the Arctic Ocean is covered by sea ice for most of the year.
+oceans-seas,easy,In which ocean are the islands of Hawaii?,Pacific Ocean,Pacific Ocean|Atlantic Ocean|Indian Ocean|Arctic Ocean,The Hawaiian Islands lie near the middle of the North Pacific.
+oceans-seas,medium,Which sea lies between Great Britain and Scandinavia?,North Sea,North Sea|Baltic Sea|Irish Sea|Norwegian Sea,The North Sea is a shallow arm of the Atlantic Ocean.
+oceans-seas,medium,"Stockholm, Helsinki and Riga all lie on which sea?",Baltic Sea,Baltic Sea|North Sea|Black Sea|Adriatic Sea,The Baltic Sea is less salty than most seas because many rivers flow into it.
+oceans-seas,medium,Which sea lies between Italy and the Balkan Peninsula?,Adriatic Sea,Adriatic Sea|Aegean Sea|Tyrrhenian Sea|Ligurian Sea,Venice lies at the northern end of the Adriatic.
+oceans-seas,medium,"Which sea is bordered by Turkey, Ukraine, Romania and Georgia?",Black Sea,Black Sea|Caspian Sea|Aegean Sea|Red Sea,The Black Sea connects to the Mediterranean through the Bosporus and the Dardanelles.
+oceans-seas,medium,Which stretch of water separates southern England from northern France?,English Channel,English Channel|Irish Sea|Bay of Biscay|North Sea,"At its narrowest, the Strait of Dover, the Channel is about 33 kilometres wide."
+oceans-seas,medium,Which sea lies between Greece and Turkey?,Aegean Sea,Aegean Sea|Adriatic Sea|Tyrrhenian Sea|Ligurian Sea,The Aegean is dotted with Greek islands.
+oceans-seas,hard,Which ocean is the Gulf of Mexico part of? (Leave out the word 'Ocean'.),Atlantic,,The Gulf of Mexico opens into the Atlantic through the Straits of Florida and the Caribbean.
+oceans-seas,hard,Which strait separates Asia from North America?,Bering Strait,Bering Strait|Davis Strait|Hudson Strait|Strait of Magellan,The Bering Strait lies between Russia and Alaska.
+oceans-seas,hard,Which narrow strait running through Istanbul links the Black Sea with the Sea of Marmara?,Bosporus,Bosporus|Dardanelles|Strait of Otranto|Strait of Messina,The Dardanelles links the Sea of Marmara with the Aegean on the other side.
+oceans-seas,hard,Which sea in the North Atlantic has no coastline and is bounded only by ocean currents?,Sargasso Sea,Sargasso Sea|Labrador Sea|Caribbean Sea|Weddell Sea,It is named after the floating sargassum seaweed found there.
+oceans-seas,hard,Which strait links the Persian Gulf with the Gulf of Oman?,Strait of Hormuz,Strait of Hormuz|Strait of Malacca|Bab-el-Mandeb|Bosporus,A large share of the world's seaborne oil passes through it.
+oceans-seas,hard,Which stretch of water between South America and Antarctica connects the Atlantic and Pacific Oceans?,Drake Passage,Drake Passage|Strait of Magellan|Beagle Channel|Bass Strait,The Drake Passage is known for some of the roughest seas on Earth.

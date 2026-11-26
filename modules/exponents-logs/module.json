@@ -4,6 +4,7 @@
   "description": "Index laws, negative and fractional powers, logarithms, exponential equations, and growth and decay.",
   "icon": "superscript",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "index-laws", "title": "Index laws", "difficulties": ["easy", "medium", "hard", "expert"] },

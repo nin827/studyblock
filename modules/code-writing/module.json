@@ -1,17 +1,20 @@
 {
   "id": "code-writing",
   "title": "Code Writing",
-  "description": "Complete short programs: fill in a value, or pick the expression, condition or line that makes the code do its job.",
+  "description": "Complete short programs: fill in a value, pick the expression or line that fits, or type the missing line yourself.",
   "icon": "code",
   "type": "generator",
   "questionsPerQuiz": 10,
   "calculator": false,
+  "fuzzy": false,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
   "subtopics": [
     { "id": "expressions", "title": "Expressions", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "conditionals", "title": "Conditionals", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "loops", "title": "Loops", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "lists-strings", "title": "Lists and strings", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "functions", "title": "Functions", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "functions", "title": "Functions", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "write-line", "title": "Write the line", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

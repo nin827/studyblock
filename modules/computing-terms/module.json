@@ -4,6 +4,7 @@
   "description": "Key words for hardware, networks, units of data and staying secure online.",
   "icon": "cpu",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "hardware", "title": "Hardware", "difficulties": ["easy", "medium", "hard"] },

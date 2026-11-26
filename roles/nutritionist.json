@@ -1,0 +1,138 @@
+{
+  "id": "nutritionist",
+  "title": "Nutritionist",
+  "icon": "apple",
+  "flags": [
+    "license_oriented",
+    "authority_required",
+    "safety_critical"
+  ],
+  "startNotice": {
+    "title": "For learning only",
+    "text": "This role practises **measurement and calculation only**. All figures are made up for practice: they are worked examples, not facts, targets or advice. For anything about your own health or diet, ask a qualified professional."
+  },
+  "description": "Food energy, labels, portions and measurements: calculation practice with made-up figures, never advice.",
+  "exclusive": "role-nutritionist",
+  "mix": {
+    "nutrition": {
+      "weight": 5
+    },
+    "body-measurements": {
+      "weight": 1,
+      "subtopics": [
+        "unit-conversions",
+        "body-ratios"
+      ]
+    },
+    "ratios-percentages": {
+      "weight": 2,
+      "subtopics": [
+        "percentages",
+        "proportion"
+      ]
+    },
+    "unit-conversion": {
+      "weight": 1,
+      "subtopics": [
+        "mass-volume"
+      ]
+    },
+    "recipes-scaling": {
+      "weight": 2
+    },
+    "statistics": {
+      "weight": 1,
+      "subtopics": [
+        "mean-median-mode",
+        "weighted-average"
+      ]
+    }
+  },
+  "subroles": [
+    {
+      "id": "food-label-analyst",
+      "title": "Food Label Analyst",
+      "icon": "tag",
+      "description": "Energy from nutrients, percentages of a stated reference intake, per-100 g against per-portion, and scaling recipes.",
+      "mix": {
+        "nutrition": {
+          "weight": 6,
+          "subtopics": [
+            "energy-from-food",
+            "food-labels",
+            "energy-units"
+          ]
+        },
+        "recipes-scaling": {
+          "weight": 2,
+          "subtopics": [
+            "scaling"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "proportion"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "weighted-average"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "label-energy",
+        "label-scale"
+      ]
+    },
+    {
+      "id": "sports-nutrition-analyst",
+      "title": "Sports Nutrition Analyst",
+      "icon": "dumbbell",
+      "description": "Activity energy from MET values, kJ and kcal conversions, and fluid volumes from stated rates.",
+      "mix": {
+        "nutrition": {
+          "weight": 5,
+          "subtopics": [
+            "energy-balance",
+            "energy-units",
+            "energy-from-food"
+          ]
+        },
+        "body-measurements": {
+          "weight": 1,
+          "subtopics": [
+            "unit-conversions"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 2,
+          "subtopics": [
+            "mass-volume",
+            "time-speed"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "proportion"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "activity-energy",
+        "fluid-volume"
+      ]
+    }
+  ]
+}

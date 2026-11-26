@@ -1,0 +1,16 @@
+{
+  "id": "role-biologist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join genetic crosses, population genetics, field sampling, energy transfer, microscopy and growth, as a working biologist meets them.",
+  "icon": "dna",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "cross-counts", "title": "Crosses and counts", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "hardy-weinberg", "title": "Gene pools", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "field-ecology", "title": "Field survey and energy", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "growth-diversity", "title": "Growth, cells and diversity", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

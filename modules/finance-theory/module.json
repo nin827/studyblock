@@ -1,0 +1,15 @@
+{
+  "id": "finance-theory",
+  "title": "Finance Theory",
+  "description": "Sources of finance, risk and return, interpreting ratios, and choosing between payback, ARR and NPV.",
+  "icon": "piggy-bank",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "sources", "title": "Sources of finance", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "risk-return", "title": "Risk and return", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "ratios", "title": "Ratio interpretation", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "appraisal", "title": "Investment appraisal", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "role-business-analyst",
+  "title": "Business Analyst scenarios",
+  "description": "Multi-part cases that join SQL, ratios, investment appraisal and marketing frameworks, as a business analyst meets them.",
+  "icon": "briefcase-business",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "sales-review", "title": "Sales review", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "statement-review", "title": "Loan application review", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "investment-case", "title": "Investment case", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "campaign-pricing", "title": "Launch and pricing plan", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

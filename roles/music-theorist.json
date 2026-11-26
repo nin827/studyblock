@@ -1,0 +1,104 @@
+{
+  "id": "music-theorist",
+  "title": "Music Theorist",
+  "icon": "music",
+  "flags": [
+    "theory_heavy"
+  ],
+  "description": "Keys, chords and progressions, plus the tempo, bars and transposition work of arranging a piece.",
+  "exclusive": "role-music-theorist",
+  "mix": {
+    "intervals-scales": {
+      "weight": 3
+    },
+    "chords": {
+      "weight": 3
+    },
+    "rhythm": {
+      "weight": 3
+    },
+    "ratios-percentages": {
+      "weight": 1
+    },
+    "fractions": {
+      "weight": 1
+    }
+  },
+  "subroles": [
+    {
+      "id": "composer",
+      "title": "Composer",
+      "flags": [
+        "creative_oriented"
+      ],
+      "icon": "pen-line",
+      "description": "Key signatures, scales, chords in a key and the progressions and cadences built from them.",
+      "mix": {
+        "chords": {
+          "weight": 4
+        },
+        "intervals-scales": {
+          "weight": 4,
+          "subtopics": [
+            "scales",
+            "keys",
+            "intervals"
+          ]
+        },
+        "rhythm": {
+          "weight": 1,
+          "subtopics": [
+            "note-values",
+            "time-signatures"
+          ]
+        },
+        "fractions": {
+          "weight": 1
+        }
+      },
+      "exclusiveSubtopics": [
+        "key-chords",
+        "progression"
+      ]
+    },
+    {
+      "id": "arranger",
+      "title": "Arranger",
+      "flags": [
+        "tool_specific"
+      ],
+      "icon": "list-music",
+      "description": "Tempo, bar and piece lengths, note values, and moving parts and keys by an interval.",
+      "mix": {
+        "rhythm": {
+          "weight": 4
+        },
+        "intervals-scales": {
+          "weight": 3,
+          "subtopics": [
+            "notes",
+            "intervals",
+            "keys"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2
+        },
+        "fractions": {
+          "weight": 1
+        },
+        "chords": {
+          "weight": 1,
+          "subtopics": [
+            "triads",
+            "identify"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "bar-timing",
+        "transposition"
+      ]
+    }
+  ]
+}

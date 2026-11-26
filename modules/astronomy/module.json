@@ -4,6 +4,7 @@
   "description": "Light-years and AU, Kepler's third law, solar-system scale models, apparent sizes and surface gravity. Every constant is given.",
   "icon": "telescope",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "distances", "title": "Distances & light", "difficulties": ["easy", "medium", "hard", "expert"] },

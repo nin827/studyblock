@@ -4,6 +4,7 @@
   "description": "Simplify, add, subtract, multiply and divide fractions, and convert between fractions, decimals and percents.",
   "icon": "divide",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "calculator": false,
   "subtopics": [

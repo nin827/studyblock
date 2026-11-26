@@ -4,6 +4,7 @@
 - Split the word into prefix + root + suffix, then add the meanings: *re-* + *port* = carry back.
 - Think of two or three words you know that share the part; what they have in common is its meaning.
 - A prefix comes at the start of a word (*un*happy), a suffix at the end (care*less*).
+- **Building a word from blocks:** turn the meaning into parts in order: prefix (not, again, across), then the root, then any suffixes (able to be, without, in a way). Blocks join with no spaces, and you may not need every block. You can also type the word instead.
 
 ## Latin roots
 1. Find the root inside a familiar word, then guess the meaning from it (common roots in the table below).

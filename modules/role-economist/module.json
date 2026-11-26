@@ -1,0 +1,16 @@
+{
+  "id": "role-economist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join price indices, real wages, elasticity, taxes and compound growth, as an economist meets them.",
+  "icon": "trending-up",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "inflation-real", "title": "Inflation and real wages", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "elasticity-revenue", "title": "Elasticity and revenue", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "tax-incidence", "title": "Taxes and who pays", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "growth-doubling", "title": "Growth and doubling time", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

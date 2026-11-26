@@ -57,3 +57,27 @@ Example: species Cat, Dog, Cat with `GROUP BY species` gives 2 rows: Cat (2) and
 **Watch out:** WHERE filters rows before grouping; HAVING filters whole groups after.
 
 **Expert: long queries.** Work in this order: subquery, JOIN (unmatched rows drop out), WHERE, GROUP BY, HAVING. A subquery on the left table still averages every row of it, even rows that won't join. A name with no joined rows makes no group at all.
+
+## Write the query
+
+1. Read the task and list what it asks for: which columns (in that order), which rows, any sorting, counting or grouping.
+2. Start with `SELECT` and the columns, separated by commas, then `FROM` and the table.
+3. Add the clauses you need, always in this order: `JOIN … ON`, `WHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`.
+4. Turn the words into signs: "more than" is `>`, "less than" is `<`, "at least" is `>=`, "at most" is `<=`, "is not" is `<>`. Text goes in single quotes; numbers don't.
+5. Press **Run** to see what your query returns, and compare it with what the task wants.
+6. Use only the values the task gives. A query that picks rows by name or id, or adds a `LIMIT` the task doesn't ask for, is marked wrong even if its output matches, and so is a condition that only works on this table by chance.
+
+Example: "the name of every pet whose age is at least 5, oldest first" is `SELECT name FROM pets WHERE age >= 5 ORDER BY age DESC`.
+
+| Task words | SQL |
+| --- | --- |
+| how many rows | `COUNT(*)` |
+| total / average | `SUM(col)` / `AVG(col)` |
+| highest / lowest | `MAX(col)` / `MIN(col)`, or `ORDER BY col DESC` / `ASC` with `LIMIT` |
+| for each … | `GROUP BY col`, with col in the SELECT list too |
+| only groups where … | `HAVING` (WHERE runs before grouping, so it can't test COUNT or SUM) |
+| is A or B | `col IN ('A', 'B')` |
+
+**Watch out:** in Blocks mode, `SELECT …`, `COUNT(…)` and `IN (…)` are blocks with a space inside: place them first, then tap them and add the blocks that go inside.
+
+**Expert: joins.** With two tables, write every column as `table.column`. `INNER JOIN other ON first.key = other.key` goes straight after `FROM first`; rows with no match drop out.

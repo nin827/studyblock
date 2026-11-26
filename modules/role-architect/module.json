@@ -1,0 +1,17 @@
+{
+  "id": "role-architect",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join drawing scale, areas and cost, stair rules, daylight glazing, ramps and planting quantities, as an architect meets them.",
+  "icon": "drafting-compass",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "plan-scale", "title": "Plans at scale and cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "stair-rule", "title": "Stairs and the 2R + G rule", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "daylight-glazing", "title": "Glazing and daylight", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "ramp-access", "title": "Ramps and landings", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "planting-paving", "title": "Planting and paving quantities", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

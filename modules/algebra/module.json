@@ -4,6 +4,7 @@
   "description": "Solve linear equations and find the roots of quadratics.",
   "icon": "sigma",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "linear", "title": "Linear equations", "difficulties": ["easy", "medium", "hard", "expert"] },

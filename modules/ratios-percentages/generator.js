@@ -7,8 +7,9 @@
 //   "ratio"  text like "3:4" or "2:3:5" in simplest whole numbers, no spaces
 // Explanations list every step as a labelled calculator row, e.g. `_part = _total / _parts` → 12.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...), the
+// half-step test and the 2-dp answer string come from mathutil.
+import { fmtAnswer, isHalfStep, round2 } from "../../js/lib/mathutil.js";
 
 // Strip binary noise (0.1 * 3 = 0.30000000000000004) without changing a real value; never "-0".
 function clean(n) {
@@ -18,12 +19,11 @@ function clean(n) {
 const show = (n) => String(clean(n));
 
 // True when the exact value sits (nearly) on a half at the 2nd decimal, e.g. 1.625.
-const isTie = (x) => Math.abs(((Math.abs(x) * 100) % 1) - 0.5) < 1e-4;
+const isTie = (x) => isHalfStep(x, 2, 1e-4);
 
 function fmtAns(n, fmt) {
   if (fmt !== "2dp") return show(n);
-  const r = round2(n);
-  return (Object.is(r, -0) ? 0 : r).toFixed(2);
+  return fmtAnswer(n, true);
 }
 
 const NOTE = {
@@ -332,7 +332,9 @@ function genRatios(difficulty, rng) {
     const unit = three ? rng.int(3, difficulty === "hard" ? 60 : 25) : rng.int(2, 20);
     const P = parts.reduce((s, x) => s + x, 0);
     const total = unit * P;
-    const want = rng.pick(["largest", "smallest"]);
+    let want = rng.pick(["largest", "smallest"]);
+    // Medium: a smallest share of 1 part is just "total ÷ parts", which the hints would give away; ask for the largest.
+    if (difficulty === "medium" && want === "smallest" && Math.min(...parts) === 1) want = "largest";
     const pick = want === "largest" ? Math.max(...parts) : Math.min(...parts);
     const exact = unit * pick;
     const rs = ratioStr(parts);
@@ -732,7 +734,9 @@ function genPercentages(difficulty, rng) {
   if (kind === "of") {
     const fmt = easy ? "whole" : "2dp";
     const p = easy ? rng.pick([1, 5, 10, 20, 25, 30, 40, 50, 60, 75, 90]) : rng.pick([rng.int(1, 99), rng.int(1, 99), rng.int(1, 40) + 0.5, rng.int(1, 30) / 10 + rng.int(0, 9)]);
-    const N = easy ? rng.int(1, 40) * 20 : rng.int(15, 2000);
+    let N = easy ? rng.int(1, 40) * 20 : rng.int(15, 2000);
+    // Easy: never an original of exactly 100, where "p% of 100" is the question's own number.
+    while (easy && N === 100) N = rng.int(1, 40) * 20;
     const exact = (p * N) / 100;
     const base = {
       prompt: `What is ${show(p)}% of ${N}?${NOTE[fmt]}`,
@@ -750,7 +754,8 @@ function genPercentages(difficulty, rng) {
     const C = rng.pick(GROW);
     const p = rng.pick([5, 10, 20, 25, 30, 40, 50, 75]);
     const up = rng.next() < 0.5;
-    const v = rng.int(1, 50) * 20;
+    let v = rng.int(1, 50) * 20;
+    while (v === 100) v = rng.int(1, 50) * 20; // an original of 100 makes the new value the percentage itself
     const exact = v * (1 + ((up ? 1 : -1) * p) / 100);
     const base = {
       prompt: `${C.q(v)} It ${up ? "increases" : "decreases"} by ${p}%. What is the new ${C.noun}${C.unit ? `, in ${C.unit}` : ""}?${NOTE.whole}`,
@@ -773,7 +778,7 @@ function genPercentages(difficulty, rng) {
         A = rng.int(1, B - 1);
       } while ((100 * A) % B !== 0);
       const m = rng.int(1, 4);
-      if (B * m <= 1000) {
+      if (B * m <= 1000 && B * m !== 100) { // a whole of 100 would make the part the percentage itself
         A *= m;
         B *= m;
       }

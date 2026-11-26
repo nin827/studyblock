@@ -4,6 +4,7 @@
   "description": "Convert body measurements between units, calculate BMI and work out simple body ratios. Every formula is given.",
   "icon": "ruler",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "unit-conversions", "title": "Unit conversions", "difficulties": ["easy", "medium", "hard"] },

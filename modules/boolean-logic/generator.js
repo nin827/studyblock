@@ -27,6 +27,61 @@ const GATE_RULE = {
   NOT: "NOT flips its single input: 0 becomes 1 and 1 becomes 0.",
 };
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
 const VARS = ["A", "B", "C", "D"];
 const fmtInputs = (names, vals) => names.map((n, i) => `${n} = ${vals[i]}`).join(", ");
 const fmtRow = (names, vals) => names.map((n, i) => `${n}=${vals[i]}`).join(", ");
@@ -40,6 +95,22 @@ function allRows(n) {
     out.push(row);
   }
   return out;
+}
+
+// For a which-row question: the variables that may vary (`vary[i]`) so that, with the others fixed at
+// the answer row's values, exactly one row in that cube hits the target. All variables first, then
+// (4 inputs) leaving one fixed. Easy needs 2 varying variables, Medium and Hard 3. -> { vary } or null.
+function rowCube(rows, n, good, target, difficulty) {
+  const need = difficulty === "easy" ? 2 : 3;
+  const tries = [names => names.map(() => true), ...Array.from({ length: n }, (_, j) => (names) => names.map((_, i) => i !== j))];
+  for (const mk of tries) {
+    const vary = mk(Array.from({ length: n }));
+    const k = vary.filter(Boolean).length;
+    if (k < need) continue;
+    const hits = rows.filter((x) => x.out === target && x.r.every((v, i) => vary[i] || v === good.r[i]));
+    if (hits.length === 1) return { vary };
+  }
+  return null;
 }
 
 // 4 unique numeric choices (as strings) within [lo, hi]: correct + 3 distractors.
@@ -88,7 +159,7 @@ function whichGateHints(g, rows, choices) {
   const wrong = choices.find((h) => h !== g && gate(h, rows[0]) !== out) || choices.find((h) => h !== g);
   const r = rows.find((x) => gate(wrong, x) !== gate(g, x)) || rows[0];
   return [
-    `Test each option on ${rows.length === 1 ? "the given row" : "both given rows"} (${shown}): what would that gate output?`,
+    `Test each option on ${rows.length === 1 ? "the given row" : rows.length === 2 ? "both given rows" : `all ${rows.length} given rows`} (${shown}): what would that gate output?`,
     `Rule out options that disagree. For example, ${wrong} gives ${gate(wrong, r)} for ${fmtRow(["A", "B"], r)}, which does not match, so it is out.`,
     "Check the remaining options the same way: only one of them matches every given row.",
   ];
@@ -109,9 +180,9 @@ function evalHints(tree, names, vals) {
   return hints.slice(0, 4);
 }
 
-function whichRowHints(tree, names, expr, target, answer, choices) {
-  const wrong = choices.find((c) => c !== answer);
-  const env = Object.fromEntries(wrong.split(", ").map((kv) => kv.split("=")).map(([k, x]) => [k, Number(x)]));
+function whichRowHints(tree, names, expr, target, answerRow, wrongRow) {
+  const wrong = fmtRow(names, wrongRow);
+  const env = Object.fromEntries(names.map((n, i) => [n, wrongRow[i]]));
   return [
     `Try each option: substitute its values into \`${expr}\` and work from the innermost brackets outwards. You want the one that gives ${target}.`,
     `The outer operation is ${tree.o}. ${GATE_RULE[tree.o]} Think about what its two sides must be for a result of ${target}.`,
@@ -140,10 +211,12 @@ function genGates(difficulty, rng) {
 
   // Choice: "which gate gives this output?" Distractors disagree on at least one shown row,
   // so exactly one choice fits.
-  if (rng.next() < 0.35) {
-    const pool = difficulty === "easy" ? ["AND", "OR"] : GATES2;
+  // Easy uses AND, OR and NOT; Medium the other gates (XOR, NAND, NOR, XNOR), so the two levels
+  // never ask the same question; Hard has three-input gates.
+  if (rng.next() < (difficulty === "easy" ? 0.3 : 0.35)) {
+    const pool = difficulty === "easy" ? ["AND", "OR"] : difficulty === "medium" ? ["XOR", "NAND", "NOR", "XNOR"] : GATES2;
     const g = rng.pick(pool);
-    const rows = rng.shuffle(allRows(2)).slice(0, difficulty === "hard" ? 2 : 1);
+    const rows = rng.shuffle(allRows(2)).slice(0, difficulty === "hard" ? 3 : difficulty === "medium" ? 2 : 1);
     const fits = (h) => rows.every((r) => gate(h, r) === gate(g, r));
     const others = rng.shuffle(GATES2.filter((h) => h !== g && !fits(h))).slice(0, 3);
     if (others.length < 3) return genGates(difficulty, rng);
@@ -167,13 +240,15 @@ function genGates(difficulty, rng) {
     return { ...q, hints: whichGateHints(g, rows, q.choices) };
   }
 
-  let name, n;
+  let name, n, device = null;
   if (difficulty === "easy") {
-    name = rng.pick(["AND", "OR", "NOT"]);
-    n = name === "NOT" ? 1 : 2;
+    // Two or three inputs, asked plainly or as switches wired to a device.
+    name = rng.pick(["AND", "OR", "AND", "OR", "NOT"]);
+    n = name === "NOT" ? 1 : rng.pick([2, 2, 3]);
+    if (rng.next() < 0.5) device = rng.pick(EASY_DEVICES);
   } else if (difficulty === "medium") {
-    name = rng.pick(["AND", "OR", "NOT", "XOR", "NAND", "NOR"]);
-    n = name === "NOT" ? 1 : 2;
+    name = rng.pick(["XOR", "NAND", "NOR", "XNOR"]);
+    n = 2;
   } else {
     name = rng.pick(["AND", "OR", "XOR", "NAND", "NOR"]);
     n = 3;
@@ -186,8 +261,12 @@ function genGates(difficulty, rng) {
   const lines = [GATE_RULE[name]];
   if (n === 3) lines.push(`Here ${ones} of the 3 inputs ${ones === 1 ? "is" : "are"} 1.`);
   lines.push(`So the output is **${out}**.`);
+  const switches = names.length === 1 ? `switch ${names[0]}` : `switches ${listAnd(names)}`;
+  const prompt = device
+    ? `A ${device[0]} is wired to ${switches} through ${desc} (1 = on, 0 = off). The switches are set to ${fmtInputs(names, vals)}. Is the ${device[0]} ${device[1]}? Answer 1 (yes) or 0 (no).`
+    : `What is the output of ${desc} with input${names.length === 1 ? "" : "s"} ${fmtInputs(names, vals)}? Answer 0 or 1.`;
   return {
-    prompt: `What is the output of ${desc} with input${names.length === 1 ? "" : "s"} ${fmtInputs(names, vals)}? Answer 0 or 1.`,
+    prompt,
     answer: out,
     answerType: "number",
     tolerance: 0,
@@ -197,6 +276,8 @@ function genGates(difficulty, rng) {
     hints: gateHints(name, names, vals),
   };
 }
+
+const EASY_DEVICES = [["lamp", "on"], ["buzzer", "sounding"], ["fan", "running"], ["motor", "running"], ["warning light", "on"]];
 
 // ---- expression trees ----
 
@@ -304,9 +385,25 @@ function genExpressions(difficulty, rng) {
     let target = null;
     if (ones.length >= 1 && zeros.length >= 3) target = 1;
     else if (zeros.length >= 1 && ones.length >= 3) target = 0;
-    if (target !== null) {
-      const good = rng.pick(target === 1 ? ones : zeros);
-      const bad = rng.shuffle(target === 1 ? zeros : ones).slice(0, 3);
+    // Options are rows shown as one 0/1 block per variable. Build mode can make any row from the
+    // blocks on offer, so those rows (a "cube": the varying variables, the others fixed at the
+    // answer's values) must hit the target exactly once. Easy: 3 options; Medium and Hard: 5, so the
+    // cube needs 3+ varying variables. No such cube: an "evaluate" question instead.
+    const good = target === null ? null : rng.pick(target === 1 ? ones : zeros);
+    const pool = target === null ? [] : rng.shuffle(target === 1 ? zeros : ones);
+    const cube = good && rowCube(rows, names.length, good, target, difficulty);
+    if (cube) {
+      const want = SEG_OPTIONS[difficulty];
+      const inCube = (r) => r.every((v, i) => cube.vary[i] || v === good.r[i]);
+      const bits = (r) => r.map(String);
+      const cand = pool.filter((x) => inCube(x.r));
+      // Ticket 022: mixed distances. Draw (same rng) wrong rows until the set satisfies the rule.
+      let bad = null;
+      for (let t = 0; t < 60 && !bad; t++) {
+        const pick = rng.shuffle(cand.slice()).slice(0, want - 1);
+        if (pick.length === want - 1 && mixOk([good.r, ...pick.map((x) => x.r)].map((r) => r.map(String)), bits(good.r), t < 40)) bad = pick;
+      }
+      if (!bad) return genExpressions(difficulty, rng);
       const answer = fmtRow(names, good.r);
       const steps = [];
       evalSteps(tree, Object.fromEntries(names.map((n, i) => [n, good.r[i]])), steps);
@@ -317,13 +414,14 @@ function genExpressions(difficulty, rng) {
       ];
       const q = {
         prompt: `Which input makes \`${expr}\` equal to ${target}?`,
-        answer,
+        answer: bits(good.r),
         answerType: "choice",
-        choices: rng.shuffle([answer, ...bad.map((b) => fmtRow(names, b.r))]),
+        choiceCols: names.slice(),
+        choices: rng.shuffle([bits(good.r), ...bad.map((b) => bits(b.r))]),
         explanation: lines.join("\n\n"),
-        params: { kind: "which-row", expr, names, target },
+        params: { kind: "which-row", expr, names, target, diff: difficulty },
       };
-      return { ...q, hints: whichRowHints(tree, names, expr, target, answer, q.choices) };
+      return { ...q, hints: whichRowHints(tree, names, expr, target, good.r, bad[0].r) };
     }
   }
 
@@ -345,7 +443,7 @@ function genExpressions(difficulty, rng) {
 
 // ---- truth tables ----
 
-const ROWS_N = { easy: [1, 4], medium: [3, 6], hard: [5, 10] };
+const ROWS_N = { easy: [1, 5], medium: [3, 6], hard: [5, 10] };
 
 function genTruthTables(difficulty, rng) {
   if (!ROWS_N[difficulty]) throw new Error(`Unknown difficulty: ${difficulty}`);
@@ -370,14 +468,48 @@ function genTruthTables(difficulty, rng) {
   }
 
   let tree, names, expr;
-  if (difficulty === "easy" && rng.next() < 0.5) {
+  const easyRoll = difficulty === "easy" ? rng.next() : 1;
+  if (easyRoll < 0.6) {
     // A single two-input gate.
     const g = rng.pick(GATES2);
     names = ["A", "B"];
     tree = op(g, v("A"), v("B"));
     expr = render(tree);
+  } else if (difficulty === "hard") {
+    // Redraw expressions with a trivial part such as `B XOR B` (always 0) or `C OR NOT C`.
+    for (let t = 0; t < 50; t++) {
+      ({ tree, names, expr } = randomExpr(difficulty, rng));
+      if (!hasTrivialPart(tree, names)) break;
+    }
   } else {
     ({ tree, names, expr } = randomExpr(difficulty, rng));
+  }
+  // Easy: sometimes one row's output is missing from the table; work it out.
+  if (difficulty === "easy" && (easyRoll < 0.3 || (easyRoll >= 0.6 && easyRoll < 0.8))) {
+    const all = allRows(names.length);
+    const k = rng.int(0, all.length - 1);
+    const outs = all.map((r) => evalTree(tree, envOf(names, r)));
+    const steps = [];
+    const env = envOf(names, all[k]);
+    const out = evalSteps(tree, env, steps);
+    const table = [
+      `| ${names.join(" | ")} | out |`,
+      `| ${names.map(() => "---").join(" | ")} | --- |`,
+      ...all.map((r, i) => `| ${r.join(" | ")} | ${i === k ? "?" : outs[i]} |`),
+    ].join("\n");
+    return {
+      prompt: `Here is the truth table of \`${expr}\` with one output missing:\n\n${table}\n\nWhat is the missing output? Answer 0 or 1.`,
+      answer: out,
+      answerType: "number",
+      tolerance: 0,
+      choices: undefined,
+      explanation: `The missing row is ${fmtRow(names, all[k])}:\n\n${steps.map((s) => `- ${s}`).join("\n")}\n\nSo the missing output is **${out}**.`,
+      params: { kind: "eval", expr, names, inputs: all[k] },
+      hints: [
+        `The missing row has ${fmtInputs(names, all[k])}. The other rows don't decide it: substitute these values into \`${expr}\`.`,
+        ...evalHints(tree, names, all[k]).slice(1),
+      ].slice(0, 4),
+    };
   }
   const total = 2 ** names.length;
   const count = countTrue(tree, names);
@@ -410,6 +542,7 @@ function genTruthTables(difficulty, rng) {
 }
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (subtopic === "write") return genWrite(difficulty, rng);
   if (difficulty === "expert") return genExpert(subtopic, rng);
   if (subtopic === "gates") return genGates(difficulty, rng);
   if (subtopic === "expressions") return genExpressions(difficulty, rng);
@@ -512,9 +645,10 @@ function isBit(x) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.kind === "write") return verifyWrite(p, question, answer);
   if (typeof p.kind === "string" && p.kind.startsWith("x-")) return verifyExpert(p, question, answer);
   const isChoice = question.answerType === "choice";
-  if (isChoice) {
+  if (isChoice && !question.choiceCols) {
     const ch = question.choices;
     if (!Array.isArray(ch) || ch.length !== 4 || new Set(ch).size !== 4) return false;
     if (!ch.includes(String(answer))) return false;
@@ -552,6 +686,13 @@ export function verify(question, answer) {
     const c = countByParse(f, p.names);
     if (isChoice && question.choices.filter((x) => Number(x) === c).length !== 1) return false;
     return String(answer).trim() !== "" && Number(answer) === c;
+  }
+
+  if (p.kind === "which-row" && question.choiceCols) {
+    // Blocks: one 0/1 per variable, columns named after the variables, every block combination tried.
+    if (!isChoice || question.choiceCols.join() !== p.names.join()) return false;
+    const right = (t) => t.length === p.names.length && t.every((b) => b === "0" || b === "1") && f(Object.fromEntries(p.names.map((n, i) => [n, Number(t[i])]))) === p.target;
+    return segOk(question, answer, right, SEG_OPTIONS[p.diff]);
   }
 
   if (p.kind === "which-row") {
@@ -1049,4 +1190,463 @@ function verifyExpert(p, question, answer) {
     return ok.length === 1 && ok[0] === String(a.expr) && num01(a.count) === want.reduce((s, x) => s + x, 0);
   }
   return false;
+}
+
+// =====================================================================================
+// Write the expression (subtopic "write"): typed text with a Blocks alternative.
+// The learner writes an expression for a truth table, a described circuit or (Expert) a rule in
+// words, using AND, OR, XOR, NOT and brackets. The answer is a shortest fully bracketed form;
+// `accepts` lists its operand swaps, and grade() (gradeByOutput) accepts ANY expression with the
+// same truth table over the given inputs, read by its own small parser (wParse, no eval).
+// Blocks: one block per letter/operator, and a bracket block "( … )" that other blocks go inside.
+// Decoy blocks per level: easy 0-1, medium 2-3, hard 4-6, expert 6-10 (at most 24 blocks in all).
+
+const W_OPS = ["AND", "OR", "XOR"];
+const W_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const W_FORM =
+  "Use AND, OR, XOR, NOT and brackets. Put brackets around an operation inside another one, like `(A AND B) OR C`; NOT applies only to the letter or bracket right after it. Any expression with the same truth table counts.";
+const listAnd = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+
+// Smallest number of two-input operators (AND/OR/XOR; NOT is free) for every truth table over n
+// inputs, as a Map(mask -> ops). Row r of the mask is bit r, rows in counting order.
+const W_MIN = {};
+function wMinOps(n) {
+  if (W_MIN[n]) return W_MIN[n];
+  const size = 2 ** n, full = 2 ** size - 1;
+  const cost = new Map();
+  const levels = [[]];
+  const add = (m, c) => { if (!cost.has(m)) { cost.set(m, c); levels[c].push(m); } };
+  for (let i = 0; i < n; i++) {
+    let m = 0;
+    for (let r = 0; r < size; r++) if ((r >> (n - 1 - i)) & 1) m |= 1 << r;
+    add(m, 0);
+    add(full & ~m, 0);
+  }
+  for (let k = 1; k <= 3; k++) {
+    levels[k] = [];
+    for (let i = 0; i < k; i++) {
+      for (const a of levels[i]) for (const b of levels[k - 1 - i]) {
+        for (const r of [a & b, a | b, a ^ b]) { add(r, k); add(full & ~r, k); }
+      }
+    }
+  }
+  return (W_MIN[n] = cost);
+}
+const maskOf = (outs) => outs.reduce((m, x, r) => m | (x << r), 0);
+const opCount = (t) => (t.t === "var" ? 0 : t.t === "not" ? opCount(t.x) : 1 + opCount(t.l) + opCount(t.r));
+const leafName = (t) => (t.t === "var" ? t.n : t.t === "not" && t.x.t === "var" ? t.x.n : null);
+
+// True when the table changes with every input.
+function dependsOnAll(outs, n) {
+  for (let i = 0; i < n; i++) {
+    const bit = 1 << (n - 1 - i);
+    if (!outs.some((x, r) => x !== outs[r ^ bit])) return false;
+  }
+  return true;
+}
+// A gate fed the same input twice (`B XOR B`, `A AND NOT A`) or a part that is always 0 or 1.
+function hasTrivialPart(tree, names) {
+  let bad = false;
+  (function walk(t) {
+    if (t.t === "not") return walk(t.x);
+    if (t.t !== "op") return;
+    const a = leafName(t.l), b = leafName(t.r);
+    if (a && a === b) bad = true;
+    const outs = tableOf(t, names);
+    if (outs.every((x) => x === outs[0])) bad = true;
+    walk(t.l);
+    walk(t.r);
+  })(tree);
+  return bad;
+}
+
+// NOT on `count` random leaves that aren't negated yet.
+function leafNots(rng, tree, count) {
+  for (let c = 0; c < count; c++) {
+    const spots = [];
+    (function walk(node, parent, key) {
+      if (node.t === "not") return;
+      if (node.t === "var") { if (parent) spots.push({ parent, key }); return; }
+      walk(node.l, node, "l");
+      walk(node.r, node, "r");
+    })(tree, null, null);
+    if (!spots.length) break;
+    const { parent, key } = rng.pick(spots);
+    parent[key] = not(parent[key]);
+  }
+  return tree;
+}
+
+// Two letters under one operator in alphabetical order (`A AND NOT C`, not `NOT C AND A`).
+function tidyLeaves(t) {
+  if (t.t === "var") return t;
+  if (t.t === "not") return not(tidyLeaves(t.x));
+  const l = tidyLeaves(t.l), r = tidyLeaves(t.r);
+  const a = leafName(l), b = leafName(r);
+  return a && b && a > b ? op(t.o, r, l) : op(t.o, l, r);
+}
+
+// Every operand-swapped form of a tree (rendered), the original first.
+function swapForms(tree) {
+  const forms = (t) => {
+    if (t.t === "var") return [t];
+    if (t.t === "not") return forms(t.x).map((x) => not(x));
+    const out = [];
+    for (const l of forms(t.l)) for (const r of forms(t.r)) { out.push(op(t.o, l, r)); out.push(op(t.o, r, l)); }
+    return out;
+  };
+  return [...new Set(forms(tree).map((t) => render(t)))];
+}
+
+// Truth table in markdown (inputs in counting order).
+function wTable(names, outs) {
+  return [
+    `| ${names.join(" | ")} | out |`,
+    `| ${names.map(() => "---").join(" | ")} | --- |`,
+    ...allRows(names.length).map((r, i) => `| ${r.join(" | ")} | ${outs[i]} |`),
+  ].join("\n");
+}
+
+// Circuit description of a tree: one gate per operator, inner gates first. A NOT above an operator
+// becomes its NAND / NOR / XNOR gate; a NOT on a letter is written "NOT B" (B through a NOT gate).
+// Returns { gates: [{ n, g, a, b }], lines } where a/b are { v, neg } (v = input letter or wire).
+function wCircuit(tree) {
+  const gates = [];
+  const ref = (t) => {
+    if (t.t === "var") return { v: t.n, neg: false };
+    if (t.t === "not" && t.x.t === "var") return { v: t.x.n, neg: true };
+    const neg = t.t === "not";
+    const o = neg ? t.x : t;
+    const a = ref(o.l), b = ref(o.r);
+    const g = { n: "", g: neg ? COMPLEMENT[o.o] : o.o, a, b };
+    gates.push(g);
+    return { v: g, neg: false };
+  };
+  ref(tree);
+  gates.forEach((g, i) => (g.n = i === gates.length - 1 ? "OUT" : WIRE_NAMES[i]));
+  const name = (x) => (typeof x.v === "string" ? x.v : x.v.n);
+  const flat = gates.map((g) => ({ n: g.n, g: g.g, a: { v: name(g.a), neg: g.a.neg }, b: { v: name(g.b), neg: g.b.neg } }));
+  const side = (x) => (x.neg ? `NOT ${x.v}` : x.v);
+  const article = (g) => (/^[AEIOUX]/.test(g) ? "an" : "a");
+  const lines = flat.map((g) => `- ${g.n} is ${article(g.g)} ${g.g} gate with inputs ${side(g.a)} and ${side(g.b)}.`);
+  return { gates: flat, lines };
+}
+
+// Rules in words for Expert. `tree` builds the answer from the role letters (only AND/OR/XOR/NOT);
+// `check` is a counting form used only by verify.
+const W_RULES = [
+  { text: (p, q, r) => `at least two of ${p}, ${q} and ${r} are on`,
+    tree: (p, q, r) => op("OR", op("OR", op("AND", v(p), v(q)), op("AND", v(p), v(r))), op("AND", v(q), v(r))),
+    check: (p, q, r) => p + q + r >= 2 },
+  { text: (p, q, r) => `${p} is on and at least one of ${q} and ${r} is on`,
+    tree: (p, q, r) => op("AND", v(p), op("OR", v(q), v(r))), check: (p, q, r) => p === 1 && q + r >= 1 },
+  { text: (p, q, r) => `${p} and ${q} are different and ${r} is off`,
+    tree: (p, q, r) => op("AND", op("XOR", v(p), v(q)), not(v(r))), check: (p, q, r) => p + q === 1 && r === 0 },
+  { text: (p, q, r) => `${p}, ${q} and ${r} are all the same (all on or all off)`,
+    tree: (p, q, r) => op("AND", not(op("XOR", v(p), v(q))), not(op("XOR", v(q), v(r)))), check: (p, q, r) => p + q + r === 0 || p + q + r === 3 },
+  { text: (p, q, r) => `${p} is on, unless ${q} and ${r} are both on`,
+    tree: (p, q, r) => op("AND", v(p), not(op("AND", v(q), v(r)))), check: (p, q, r) => p === 1 && q + r < 2 },
+  { text: (p, q, r) => `at least one of ${p} and ${q} is on and ${r} is off`,
+    tree: (p, q, r) => op("AND", op("OR", v(p), v(q)), not(v(r))), check: (p, q, r) => p + q >= 1 && r === 0 },
+  { text: (p, q, r) => `an odd number of ${p}, ${q} and ${r} are on`,
+    tree: (p, q, r) => op("XOR", op("XOR", v(p), v(q)), v(r)), check: (p, q, r) => (p + q + r) % 2 === 1 },
+  { text: (p, q, r) => `${q} is on and ${p} matches ${r}`,
+    tree: (p, q, r) => op("AND", v(q), not(op("XOR", v(p), v(r)))), check: (p, q, r) => q === 1 && p - r === 0 },
+  { text: (p, q, r) => `${p} is off and ${q} and ${r} are different`,
+    tree: (p, q, r) => op("AND", not(v(p)), op("XOR", v(q), v(r))), check: (p, q, r) => p === 0 && q + r === 1 },
+  { text: (p, q, r) => `exactly one of ${p} and ${q} is on, or ${r} is on (or both)`,
+    tree: (p, q, r) => op("OR", op("XOR", v(p), v(q)), v(r)), check: (p, q, r) => p + q === 1 || r === 1 },
+  { text: (p, q, r) => `none of ${p}, ${q} and ${r} is on`,
+    tree: (p, q, r) => op("AND", op("AND", not(v(p)), not(v(q))), not(v(r))), check: (p, q, r) => p + q + r === 0 },
+  { text: (p, q, r) => `${p} is on, or ${q} and ${r} are both off`,
+    tree: (p, q, r) => op("OR", v(p), op("AND", not(v(q)), not(v(r)))), check: (p, q, r) => p === 1 || q + r === 0 },
+];
+const W_PHRASES =
+  "\"At least one of X and Y\" is `X OR Y`; \"X and Y are different\" is `X XOR Y`; \"X matches Y\" is `NOT (X XOR Y)`; \"X is off\" is `NOT X`; \"unless\" means AND NOT.";
+
+// Blocks for a tree: tiles + solution, plus `extra` decoys, shuffled. Bracket groups are slot blocks.
+const W_BRACKET = { value: "(", label: "( … )", slot: { open: "", close: ")", sep: " " } };
+function wBlocks(tree, names, extra, rng) {
+  const tiles = [];
+  const push = (t) => tiles.push(t) - 1;
+  const items = (node) => {
+    if (node.t === "var") return [push({ value: node.n, label: node.n })];
+    if (node.t === "not") return [push({ value: "NOT", label: "NOT" }), ...inner(node.x)];
+    const l = inner(node.l);
+    const o = push({ value: node.o, label: node.o });
+    return [...l, o, ...inner(node.r)];
+  };
+  const inner = (node) => {
+    if (node.t !== "op") return items(node);
+    const t = push({ ...W_BRACKET, slot: { ...W_BRACKET.slot } });
+    return [{ t, kids: items(node) }];
+  };
+  const solution = items(tree);
+  const real = tiles.length;
+  // Decoys: missing operators, NOT, unused letters, a bracket; then repeats of what's used.
+  const usedOps = new Set(tiles.filter((t) => W_OPS.includes(t.value)).map((t) => t.value));
+  const first = [
+    ...W_OPS.filter((o) => !usedOps.has(o)),
+    "NOT",
+    ...VARS.filter((x) => !names.includes(x)).slice(0, 1),
+    "(",
+  ];
+  const second = [...W_OPS, ...names, "NOT", "("];
+  const pool = [...rng.shuffle(first), ...rng.shuffle(second)];
+  const room = Math.max(0, Math.min(extra, 24 - real));
+  for (const d of pool.slice(0, room)) tiles.push(d === "(" ? { ...W_BRACKET, slot: { ...W_BRACKET.slot } } : { value: d, label: d });
+  const order = rng.shuffle(tiles.map((_, i) => i)); // order[pos] = old index
+  const pos = new Map(order.map((old, p) => [old, p]));
+  const remap = (xs) => xs.map((x) => (typeof x === "number" ? pos.get(x) : { t: pos.get(x.t), kids: remap(x.kids) }));
+  return { tiles: order.map((i) => tiles[i]), solution: remap(solution), joiner: " ", useAll: false };
+}
+
+function wHints(src, tree, names, outs, gates) {
+  const ops = [...new Set(JSON.stringify(tree).match(/"o":"[A-Z]+"/g) || [])].map((s) => s.slice(5, -1)).sort();
+  const k = opCount(tree);
+  const nots = (JSON.stringify(tree).match(/"t":"not"/g) || []).length;
+  const hasNot = nots > 0;
+  if (src === "table") {
+    const ones = allRows(names.length).filter((_, i) => outs[i] === 1).map((r) => r.join(""));
+    return [
+      `Find the rows that give 1 (${names.join("")} = ${ones.join(", ")}). What do they have in common, and how do they differ from the rows that give 0?`,
+      k === 1
+        ? `One operator between the two inputs is enough (AND, OR or XOR)${nots === 2 ? ", with a NOT on each input" : nots ? ", with a NOT on one of them" : ""}.`
+        : `A shortest answer uses ${k} two-input operators (${listAnd(ops)})${hasNot ? " and at least one NOT" : " and no NOT"}.`,
+      "Before you check, test your expression on every row of the table.",
+    ];
+  }
+  if (src === "circuit") {
+    const h = [`Work from the inputs towards OUT: write each wire as an expression in ${listAnd(names)}, then put it in brackets wherever that wire is used.`];
+    if (gates.some((g) => ["NAND", "NOR", "XNOR"].includes(g.g))) h.push("NAND is `NOT (X AND Y)`, NOR is `NOT (X OR Y)` and XNOR is `NOT (X XOR Y)`, since those words aren't allowed in the answer.");
+    if (gates.length === 1) h.push("There is only one gate, so the expression is its two inputs (keeping any NOT) with the gate's operator between them.");
+    if (gates.length > 1) {
+      const g = gates[0];
+      const side = (x) => (x.neg ? `NOT ${x.v}` : x.v);
+      const base = { NAND: "AND", NOR: "OR", XNOR: "XOR" }[g.g];
+      h.push(`For example, ${g.n} = ${bt(base ? `NOT (${side(g.a)} ${base} ${side(g.b)})` : `${side(g.a)} ${g.g} ${side(g.b)}`)}. Write that in place of ${g.n} in the next gate.`);
+    }
+    return h;
+  }
+  return [
+    "Split the sentence at its main \"and\" / \"or\" / \"unless\", and turn each piece into a small expression.",
+    W_PHRASES,
+    "Check your expression against a few rows, such as all inputs off, all on, and one row where the output should be 1.",
+  ];
+}
+
+function genWrite(difficulty, rng) {
+  const [lo, hi] = W_EXTRA[difficulty];
+  if (!W_EXTRA[difficulty]) throw new Error(`Unknown difficulty: ${difficulty}`);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    let src, tree, names, ri, roles, dev;
+    if (difficulty === "expert" && rng.next() < 0.5) {
+      src = "rule";
+      ri = rng.int(0, W_RULES.length - 1);
+      roles = rng.shuffle(["A", "B", "C"]);
+      dev = rng.pick(DEVICES);
+      names = ["A", "B", "C"];
+      tree = W_RULES[ri].tree(...roles);
+    } else {
+      // Easy: two of A-D (any pair); otherwise A, B, C.
+      names = difficulty === "easy" ? rng.pick([["A", "B"], ["A", "B"], ["A", "C"], ["B", "C"], ["A", "D"], ["B", "D"], ["C", "D"]]) : VARS.slice(0, 3);
+      const k = difficulty === "easy" ? 1 : difficulty === "medium" ? 2 : difficulty === "hard" ? rng.int(2, 3) : 4;
+      const leaves = names.slice();
+      while (leaves.length < k + 1) leaves.push(rng.pick(names));
+      tree = buildTree(rng, rng.shuffle(leaves), W_OPS, k);
+      if (difficulty === "easy") tree = leafNots(rng, tree, rng.int(0, 2));
+      else if (difficulty === "medium") tree = leafNots(rng, tree, rng.int(0, 1));
+      else {
+        tree = addNots(rng, tree, rng.int(1, 2));
+        if (rng.next() < 0.3 && tree.t === "op") tree = not(tree);
+      }
+      src = difficulty === "expert" ? "circuit" : rng.next() < (difficulty === "easy" ? 0.6 : 0.5) ? "table" : "circuit";
+    }
+    if (src !== "rule") tree = tidyLeaves(tree);
+    const outs = tableOf(tree, names);
+    if (src !== "rule") {
+      if (!dependsOnAll(outs, names.length) || hasTrivialPart(tree, names)) continue;
+      // A table must not have a shorter answer than the one shown as correct.
+      if (src === "table" && wMinOps(names.length).get(maskOf(outs)) !== opCount(tree)) continue;
+    }
+    const answer = render(tree);
+    const accepts = swapForms(tree).filter((s) => s !== answer).slice(0, 20);
+    const extra = rng.int(lo, hi);
+    const blocks = wBlocks(tree, names, extra, rng);
+    const circuit = src === "circuit" ? wCircuit(tree) : null;
+    let prompt, explanation;
+    const inputs = listAnd(names);
+    if (src === "table") {
+      prompt = `Write a Boolean expression with this truth table (inputs ${inputs}):\n\n${wTable(names, outs)}\n\n${W_FORM}`;
+      explanation = `**${bt(answer)}** gives exactly this table. Check it row by row:\n\n${wTable(names, outs)}\n\nAny other expression with the same column also counts, such as ${bt(accepts[0] || answer)}.`;
+    } else if (src === "circuit") {
+      prompt = `A circuit has inputs ${inputs}:\n\n${circuit.lines.join("\n")}\n\nWrite one expression for OUT using only ${inputs} (no wire names). ${W_FORM.replace("Any expression with the same truth table counts.", "Any expression that always gives the same OUT counts.")}`;
+      const steps = circuit.gates.map((g) => {
+        const side = (x) => (x.neg ? `NOT ${x.v}` : x.v);
+        const base = { NAND: "AND", NOR: "OR", XNOR: "XOR" }[g.g];
+        return `- ${g.n} = ${base ? `NOT (${side(g.a)} ${base} ${side(g.b)})` : `${side(g.a)} ${g.g} ${side(g.b)}`}`;
+      });
+      explanation = `Write each wire, then substitute the earlier wires (in brackets):\n\n${steps.join("\n")}\n\nSo OUT = **${bt(answer)}**. Its truth table:\n\n${wTable(names, outs)}`;
+    } else {
+      const [d, verb, what] = dev;
+      prompt = `${d} has three ${what}, A, B and C (1 = on). It ${verb} (output 1) exactly when ${W_RULES[ri].text(...roles)}.\n\nWrite a Boolean expression for the output. ${W_FORM.replace("Any expression with the same truth table counts.", "Any expression that matches the rule on all 8 rows counts.")}`;
+      explanation = `Translate piece by piece: ${W_PHRASES}\n\nThat gives **${bt(answer)}**. Check it on all 8 rows:\n\n${wTable(names, outs)}`;
+    }
+    const params = src === "rule" ? { kind: "write", src, names, outputs: outs, ri, roles } : src === "circuit" ? { kind: "write", src, names, outputs: outs, gates: circuit.gates } : { kind: "write", src, names, outputs: outs };
+    return {
+      prompt,
+      answerType: "text",
+      answer,
+      accepts,
+      blocks,
+      gradeByOutput: true,
+      explanation,
+      params,
+      meta: { names, outputs: outs },
+      hints: wHints(src, tree, names, outs, circuit ? circuit.gates : null),
+    };
+  }
+  throw new Error("write: could not build a question");
+}
+
+// ---- grade(): any expression with the same truth table (engine hook, format 1) ----
+
+// Parser for learners' expressions: operators AND, OR, XOR, NOT in any letter case, brackets, and
+// single-letter inputs from `names`. Mixing different operators at one bracket level is refused
+// (it can be read two ways); repeats of one operator are fine (AND, OR and XOR are associative).
+// Returns { f } (env -> 0/1) or { error }.
+export function wParse(text, names) {
+  const src = String(text ?? "").replace(/−/g, "-").trim();
+  if (!src) return { error: "Type an expression." };
+  const tokens = [];
+  const re = /\s*(\(|\)|[A-Za-z]+|\S)/gy;
+  let m;
+  while ((m = re.exec(src))) tokens.push(m[1]);
+  const up = tokens.map((t) => t.toUpperCase());
+  const allowed = names.map((n) => n.toUpperCase());
+  for (const t of up) {
+    if (t === "(" || t === ")" || ["AND", "OR", "XOR", "NOT"].includes(t)) continue;
+    if (["NAND", "NOR", "XNOR"].includes(t)) return { error: `Use only AND, OR, XOR and NOT (write ${t} with NOT and brackets).` };
+    if (/^[A-Z]$/.test(t) && allowed.includes(t)) continue;
+    if (/^[A-Z]$/.test(t)) return { error: `Use only the inputs ${listAnd(names)}.` };
+    return { error: `"${t.length > 12 ? t.slice(0, 12) + "…" : tokens[up.indexOf(t)]}" isn't an input or an operator here.` };
+  }
+  let i = 0;
+  let mixed = null;
+  function unary() {
+    const t = up[i];
+    if (t === "NOT") { i++; const x = unary(); return x && ((env) => 1 - x(env)); }
+    if (t === "(") {
+      i++;
+      const e = expr();
+      if (!e || up[i] !== ")") return null;
+      i++;
+      return e;
+    }
+    if (t && /^[A-Z]$/.test(t)) { i++; return (env) => env[t]; }
+    return null;
+  }
+  function expr() {
+    let left = unary();
+    if (!left) return null;
+    let first = null;
+    while (["AND", "OR", "XOR"].includes(up[i])) {
+      const o = up[i++];
+      if (first && o !== first) mixed = mixed || [first, o];
+      first = first || o;
+      const right = unary();
+      if (!right) return null;
+      const l = left;
+      left = o === "AND" ? (env) => l(env) & right(env) : o === "OR" ? (env) => l(env) | right(env) : (env) => l(env) ^ right(env);
+    }
+    return left;
+  }
+  const f = expr();
+  if (mixed) return { error: `Add brackets: ${mixed[0]} and ${mixed[1]} side by side can be read two ways.` };
+  if (!f || i !== up.length) return { error: "This expression isn't complete: check the brackets and that every operator has something on both sides." };
+  return { f };
+}
+
+export function grade(question, answerString) {
+  try {
+    const info = question && (question.meta || question.params);
+    if (!info || !Array.isArray(info.names) || !Array.isArray(info.outputs)) return null;
+    const names = info.names;
+    if (info.outputs.length !== 2 ** names.length) return null;
+    const r = wParse(answerString, names);
+    if (r.error) return { correct: false, note: r.error };
+    const rows = allRows(names.length);
+    for (let k = 0; k < rows.length; k++) {
+      const env = Object.fromEntries(names.map((n, j) => [n.toUpperCase(), rows[k][j]]));
+      const got = r.f(env);
+      if (got !== info.outputs[k]) {
+        return { correct: false, note: `For ${fmtRow(names, rows[k])} your expression gives ${got}, but the output should be ${info.outputs[k]}.` };
+      }
+    }
+    return { correct: true, note: "Same truth table as the expected answer, so it counts." };
+  } catch {
+    return null;
+  }
+}
+
+// ---- verify for "write": the truth comes from the gates (counting), the rule's counting form,
+// or the shown table; the answer, every accept and the blocks are checked against it with the
+// left-to-right parser (parseExpr), never with the generation tree or wParse.
+function wSerialise(tiles, sol, joiner) {
+  const used = new Set();
+  const one = (x) => {
+    const n = typeof x === "number" ? x : x.t;
+    const t = tiles[n];
+    if (!t || used.has(n)) return null;
+    used.add(n);
+    if (typeof x === "number") return t.slot ? null : t.value;
+    if (!t.slot) return null;
+    const kids = x.kids.map(one);
+    return kids.includes(null) ? null : t.value + t.slot.open + kids.join(t.slot.sep) + t.slot.close;
+  };
+  const parts = sol.map(one);
+  return parts.includes(null) ? null : parts.join(joiner);
+}
+
+function verifyWrite(p, question, answer) {
+  const names = p.names;
+  if (!Array.isArray(names) || !Array.isArray(p.outputs) || p.outputs.length !== 2 ** names.length) return false;
+  let want;
+  if (p.src === "circuit") {
+    want = vTable2(names, (env) => {
+      const val = { ...env };
+      for (const g of p.gates) {
+        const side = (x) => (x.neg ? 1 - val[x.v] : val[x.v]);
+        if (!(g.a.v in val) || !(g.b.v in val)) return NaN;
+        val[g.n] = gateByCount(g.g, [side(g.a), side(g.b)]);
+      }
+      return val.OUT;
+    });
+  } else if (p.src === "rule") {
+    const rule = W_RULES[p.ri];
+    if (!rule || !Array.isArray(p.roles)) return false;
+    want = vTable2(names, (env) => (rule.check(env[p.roles[0]], env[p.roles[1]], env[p.roles[2]]) ? 1 : 0));
+  } else want = p.outputs.slice();
+  if (!sameTab(want, p.outputs)) return false;
+  const okText = (s) => {
+    const f = parseExpr(String(s));
+    return !!f && sameTab(vTable2(names, f), want);
+  };
+  if (typeof answer !== "string" || !okText(answer) || answer !== question.answer) return false;
+  if (!Array.isArray(question.accepts) || !question.accepts.every(okText)) return false;
+  const b = question.blocks;
+  if (!b || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  if (wSerialise(b.tiles, b.solution, b.joiner) !== question.answer) return false;
+  return question.gradeByOutput === true;
+}
+// Table over names in counting order, rows built by bit masks.
+function vTable2(names, f) {
+  const n = names.length;
+  const out = [];
+  for (let m = 0; m < 2 ** n; m++) {
+    const env = {};
+    names.forEach((x, i) => (env[x] = (m >> (n - 1 - i)) & 1));
+    out.push(f(env));
+  }
+  return out;
 }

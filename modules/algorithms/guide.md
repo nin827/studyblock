@@ -65,3 +65,15 @@ Example: on an empty stack, `push 4`, `push 9`, `pop`, `push 2` → the pop retu
 **Watch out:** with the same operations, a queue would return 4, not 9. Check which structure the question uses.
 
 **Expert: stack orders, circular buffers, brackets.** If 1, 2, 3, … are pushed in order, a pop order is impossible when a number is needed while a smaller one sits on top of it. In a circular buffer, front moves once per dequeue and rear once per enqueue, wrapping from the last slot to 0 (count modulo the size). A bracket checker pushes openers and fails at the first closer that doesn't match the top.
+
+## Write the trace
+
+1. Type numbers in order, separated by commas: `27, 16, 9`. Spaces don't matter, and `[27, 16, 9]` also counts.
+2. **Binary search:** write down the value at every mid you look at, including the target if it is found. Stop when it is found or lo > hi.
+3. **Sort passes:** do the passes one by one on paper, exactly as in Sorting above, and type the whole list after the asked pass.
+4. **Stacks and queues:** write the structure after each operation. "Which values come out" lists the removed items in the order they leave; "what it holds" lists what is left, bottom to top (stack) or front to back (queue).
+5. **Merge sort levels (Expert):** level 1 sorts each neighbouring pair; level 2 merges pairs into sorted groups of four. Items never leave their group, so sort each group of four and write the groups one after another.
+
+Example: binary search for 3 in `[3, 10, 16, 21, 29, 32, 38, 40]` looks at index 3 (21), then index 1 (10), then index 0 (3): type `21, 10, 3`.
+
+**Watch out:** in Blocks mode some number blocks are decoys. A list item that binary search never looks at, or a value that was removed, doesn't belong in the answer.

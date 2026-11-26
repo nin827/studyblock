@@ -1,0 +1,16 @@
+{
+  "id": "role-investigator",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join timelines and alibis, one-liar statements, odd entries in records and base-rate odds, as an investigator meets them (made-up cases, practice only).",
+  "icon": "file-search",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "timeline", "title": "Timelines and alibis", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "statements", "title": "Statements and the liar", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "record-patterns", "title": "Records and patterns", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "flag-odds", "title": "Flags and base rates", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

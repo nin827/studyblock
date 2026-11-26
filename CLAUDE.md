@@ -24,6 +24,7 @@ Procedurally generated quiz app. Plain HTML/CSS/JS, runs entirely in the browser
 ## Workflow
 
 - **Main chat orchestrates; subagents implement or fetch.** The main session plans, writes contracts/instructions, reviews diffs and verifies in the browser. Implementation and web lookups go to subagents with a narrow, explicit brief. Parallel agents must never touch the same files.
+- **Agent models:** Sonnet for general coding and basic research. Opus for critical or sensitive coding, sub-orchestrating, and deeper research. Haiku only for data retrieval or querying.
 - **Don't block on questions.** Open questions/decisions go into `ticket/NNN-slug.md` (see `ticket/README.md`) and work continues with a sensible default. When the user says "clear tickets", walk through the open ones.
 - **Group commits, then push as a checkpoint.** Commit one coherent unit of work (a feature, a module, a fix set), not every small file change. Commit only finished, tested work: never half-written files a running agent still owns. After each grouped commit, push to `origin main`.
 
@@ -40,13 +41,26 @@ js/lib/csv.js           RFC4180-ish CSV parser (quotes, commas, newlines, "")
 js/lib/rng.js           seeded PRNG (mulberry32) + helpers
 js/lib/storage.js       localStorage store, cookie cache, import/export
 js/lib/engine.js        loads modules, generates + verifies questions, checks answers
+js/lib/dates.js         date parsing/formatting/distance for date answers
 js/lib/calc.js          calculator parser/evaluator + live sheet (no eval)
 js/lib/languages.js     code languages list (python, csharp, cpp, gdscript, rust)
 js/lib/codelang.js      language-neutral code AST, 5 renderers, interpreter
 js/lib/music.js         note/interval/scale/chord helpers (build + independent check) for Music Theory
+js/lib/audio.js         pitch from spelled notes (A4 = 440, equal temperament), Web Audio synth, play descriptions
+js/views/playbtn.js     Play button + Sound preference
+js/lib/journal.js       journal entries: spec check, canonical string, line matching
+js/views/journal.js     journal table + blocks, static tables for review/History
+js/lib/gamify.js        XP, levels, streaks and badges derived from attempts; sb_game preference
+js/lib/chem.js          element table (symbol, name, Z, rounded school Ar), formula parser/mass
+js/lib/sql.js           SQL: query-tree render/evaluate + executor for the taught grammar (runQuery/execQuery)
+js/lib/ciphers.js       letters A=0…Z=25, Caesar, Vigenère, affine, gcd/lcm, modular inverse
+js/lib/net.js           IPv4 octets/ints, masks, network/broadcast, usable hosts, same subnet
+js/lib/mathutil.js      gcd/lcm, round-half-away (round1/round2/roundTo), isHalfStep, fmtNum/fmtAnswer, bin8 (ciphers.js and net.js re-export them)
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
+js/views/roles.js       Roles pages (roles/ = registry)
+js/views/calcpage.js    standalone #/calc page; js/views/staticgraph.js = <sb-graph> static plot for reviews
 modules/index.json      registry: list of module ids
 modules/<id>/module.json
 modules/<id>/intro.md   optional markdown shown on the module page
@@ -55,6 +69,10 @@ modules/<id>/generator.js   (type "generator")
 modules/<id>/questions.csv  (type "csv")
 ```
 
+## Shared knowledge libraries
+
+Knowledge used by more than one module lives once in `js/lib/` (mathutil, chem, sql, ciphers, net, music, codelang, dates' calendar helpers). **Libraries hold knowledge only:** reference data and the engines that apply it. **Checks, settings and setups stay in each module:** `verify` and its check helpers (so verify stays independent of generate), settings such as constants (R = 8.31, 24 dm³/mol, g = 10), rounding, unit conventions and which subset a module uses, and the scenario setup (ranges, wording, distractors, hints). A library may export standard values, but each module picks and states its own (Role Chemist keeps Cu = 64 locally). Modules import with relative paths (`'../../js/lib/chem.js'`), and new lib files go in `sw.js` PRECACHE. Moving code into a library must keep every cell's questions identical per seed (fingerprint before and after). Only generation, hint and explanation code switches to a library; where a module's `verify` used the same helper it keeps a local copy (e.g. `round1` in role-business-analyst, `gcd` in fractions), and a module's own tolerance or rounding rule stays as a one-line wrapper (`isTie = x => isHalfStep(x, 2, 1e-4)`).
+
 ## Hierarchy
 
 **Domain** (Math, Science, Geography, Business, …) → **Subdomain** = a module (Arithmetic, Algebra, …) → **subtopic** → **difficulty**.
@@ -62,7 +80,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/results` · `#/settings`
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run · `#/badges` badges, level and streak
 
 ## Registry — `modules/index.json`
 
@@ -83,9 +101,15 @@ The `#/mix` builder lets the user:
 1. Tick domains to include (all ticked by default).
 2. Within each ticked domain, tick/untick subdomains (modules) — all ticked by default.
 3. Set a **weight** (number ≥ 0, default **1**) on every ticked domain and every ticked subdomain. 0 = excluded.
-4. Pick difficulty: `any` (default) or `easy`/`medium`/`hard`/`expert` (a module without the chosen level uses its closest one, so Expert falls back to Hard); and question count (default 10, 1–50).
+4. Pick difficulty: `any` (default) or `easy`/`medium`/`hard`/`expert` (a module without the chosen level uses its closest one, so Expert falls back to Hard); and question count (default 10, 5–50; `normalizeMixConfig` raises older drafts, presets and imports below 5 to 5).
 
 Sampling per question (seeded): pick a domain with probability ∝ domain weight, then a subdomain within it ∝ subdomain weight, then a subtopic uniformly from that module, then difficulty (the chosen one if the subtopic supports it, else the closest available; `any` = uniform over the subtopic's difficulties). Domains/subdomains whose effective weight is 0 are skipped. The builder shows each subdomain's resulting share as a percentage.
+
+**Builder layout:**
+- Each domain is a collapsed row: include checkbox, domain dot, a disclosure button (title, "n of m subjects" or "Not included", chevron, `aria-expanded`), share % and weight stepper. Opening one shows its subjects (checkbox, share, weight) in a 2-column grid on desktop and 1 column on phones. Ticking a subject in an unticked domain ticks the domain.
+- Above the list: "Find a subject" search (matches subject titles, or a domain title for all its subjects; opens domains with matches; clearing or Esc restores the open state), the tally "X of N domains · Y of M subjects", and All / None / Expand all (Collapse all). All/None tick or untick every domain and subject through the normal draft auto-save; weights are kept.
+- Which domains are open is per-tab UI state (sessionStorage `studyblock:mixOpen`), never in the draft or presets.
+- The summary ("Your mix") shows a per-domain share bar and one row per included domain (dot, title, "n subjects", share), plus Practice/Guided, Difficulty, Questions and Start.
 
 Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficulty, count }`.
 
@@ -103,7 +127,7 @@ Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficul
 - Home shows saved presets as quick-start chips next to "Start last mix".
 
 **Official presets** are maintained by hand in the repo under `presets/`:
-- `presets/index.json` → `{ "presets": ["daily-warmup", "stem-focus"] }`. Ids match `^[a-z0-9-]+$` and are loaded only if listed here.
+- `presets/index.json` → `{ "presets": ["daily-warmup", "stem-focus"] }` (today 7: daily-warmup across all domains, stem-focus, world-and-money, humanities, code-and-logic, life-sciences, everyday-skills; keep them covering the current domains). Ids match `^[a-z0-9-]+$` and are loaded only if listed here.
 - `presets/<id>.json` →
   ```json
   {
@@ -128,6 +152,55 @@ Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficul
 
 A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `difficulty: <chosen or "any">`, and **each question carries its own `module`, `subtopic`, `difficulty`** so stats can be attributed per module.
 
+## Roles and Subroles (ticket 020)
+
+A role is a hand-made weighted mix with a difficulty shift, plus role-only Expert+ scenarios. A subrole is a narrower mix under its role.
+- **Registry:**
+  - `roles/index.json` holds `{ "roles": [ids] }`, and `roles/<id>.json` holds `{ id, title, icon, description, exclusive, mix: { module: { weight, subtopics? } }, subroles: [{ id, title, description, mix?, icon?, exclusiveSubtopics }] }`.
+  - A subrole without `mix` inherits the role's. An empty `exclusiveSubtopics` means all of them.
+  - Unknown modules or subtopics are dropped with one warning per role.
+- **Levels:** `easy`, `medium`, `hard`, `expert` (`ROLE_LEVELS`). Easy draws subject Medium, Medium draws Hard, Hard draws Expert (closest level the subtopic has). The last ceil(20% × count) questions are role scenarios at tier `medium`/`hard`/`expert` (`roleScenarioTier`), limited to the subrole's `exclusiveSubtopics`; a missing tier means no scenarios that run (one warning). **Expert** is scenarios only, at tier `expert-plus` (flame pill). Old ids `normal`/`expert-plus` are aliases for easy/expert (`normalizeRoleLevel`).
+- **Count:** default 10 (Expert 5), adjustable 5–50 on the role page (one control for Easy–Hard, one for Expert), stored in localStorage `studyblock:roleCount` as `{ "<role>[~<subrole>]": { std, expert } }`. Route: `#/rq/<role>[~<subrole>]/<level>[?n=<count>]` (n omitted when default).
+- **Weighted score:** a scenario question's `weight` = its number of parts (1–6). Attempt `score` = Σ credit × weight, `total` = Σ weight. A "×N" tag shows in the quiz, review and History; the by-module breakdown is weighted. Subject stats stay unweighted; guided runs count questions. `weight` is stored only when > 1 and is optional on import (integer 1–6).
+- **Role-only modules** (`modules/role-*/`, `"roleOnly": true`, every subtopic `["medium", "hard", "expert", "expert-plus"]`: medium 2 parts, hard 3, expert 3–4 and lighter than expert-plus): `loadModule` refuses them, so they never appear on domain pages, Home, mixes, `#/m` or `#/q`. `loadRoleOnlyModule` loads them only as a listed role's `exclusive`. `expert-plus` is valid only there. They are multi-part scenarios (3–4 parts, each a different subject skill) with independent verify, hints and given rows.
+  - Business Analyst (`role-business-analyst`): sales-review, statement-review, investment-case, campaign-pricing.
+  - Software Engineer (`role-software-engineer`, language-aware: all five code languages): api-endpoint, ledger-check, hot-loop, fx-payout. Hot-loop code is built with codelang and the hot line is named by its line number; the ledger float bug uses hand-written per-language snippets in `floatcode.js` (codelang has no float type); calendar maths uses `dates.js`.
+  - Mathematician (`role-mathematician`): quality-control, claims-pricing, growth-model, check-derivation (role level only; population SD, end-of-year discounting).
+  - Data Analyst (`role-data-analyst`): ab-test, kpi-review, query-outliers, storage-cost. Lifts are percentage points; a segment's contribution is its change ÷ last period's total; outlier = more than 2 × the median of the returned rows; 1 GB = 10^9 bytes.
+  - Physicist (`role-physicist`, g = 10 m/s², constants stated): launch-motion, orbit-signals, decay-safety, heating-power.
+  - Accountant (`role-accountant`): transaction-review, audit-review, asset-review, break-even-review, budget-variance (flexed budget, price/volume/cost variances, investigate by a stated %; whole-dollar figures, 365-day year, covenant and materiality rules stated in each prompt, no country-specific law).
+  - Chemist (`role-chemist`): yield-purity, titration, gas-vessel, batch-cost (relative atomic masses, R = 8.31 and 24 dm³/mol at RTP stated in each prompt).
+  - Electrical Engineer (`role-electrical-engineer`): power-circuit, battery-energy, register-flags, sensor-data (1 kB = 1000 bytes, bits numbered from 0 at the right, fuse and cable ratings stated).
+  - Biologist (`role-biologist`): cross-counts, hardy-weinberg, field-ecology, growth-diversity (chi-square cut-offs, Lincoln–Petersen, transfer % and Simpson's formula stated).
+  - Game Developer (`role-game-developer`): move-collide, loot-odds, xp-curve, frame-budget (first frame at or past the wall, geometric XP curve where level 1 costs the base, pity cap at pull H, frame cost = fixed + per entity, pairs = n(n−1)/2).
+  - Network Engineer (`role-network-engineer`): subnet-plan, transfer-window, cipher-decode, log-flags (usable hosts 2^h − 2, /31 and /32 never, 1 MB = 8 megabits, A = 0 … Z = 25, affine keys coprime to 26, flag weights and lockout rules stated).
+  - Music Theorist (`role-music-theorist`): key-chords, progression, bar-timing, transposition (uses `js/lib/music.js` build/check toolkits; notes are choice parts; no double accidentals; cadence rule, tempo ranges and instrument transpositions stated; tempo in quarter notes per minute).
+  - Operations Manager (`role-operations-manager`): route-timing, load-planning, staffing-plan, stock-reorder (fixed UTC offsets, 15-minute break per full 2 hours of driving, counts round up, stock-count convention stated).
+  - Teacher (`role-teacher`): mark-equations, mark-fractions, diagnose-data, diagnose-moles. A student's worked answer as numbered steps with exactly one first mistake (later lines follow from it; a wrong-operation line shows the student's own working). Parts: the wrong step, corrected value, right answer, marks under a stated made-up scheme (follow-through stated), and Error type | Next step. No real exam board's rules.
+  - Nutritionist (`role-nutritionist`): label-energy, label-scale, activity-energy, fluid-volume. Calculation practice only: figures are made up and say so, 4/4/9 kcal per g, 1 kcal = 4.184 kJ, MET × kg × h and 1 kg = 1 L stated; no advice, targets, doses or "is this normal"; cut-offs are worded as rules "for this exercise". It has a `startNotice`.
+  - Economist (`role-economist`): inflation-real, elasticity-revenue, tax-incidence, growth-doubling. Real wage = wage ÷ index × 100, midpoint elasticity, linear curves with the tax on sellers, and the rule of 70 or ln 2 ÷ ln(1 + r) are stated in each prompt; made-up figures, no country-specific rules.
+  - Historian (`role-historian`): dating-sources, calendar-spans, object-labels, exhibit-timeline. Reasons from stated years and dates, no recall: BC years count down with no year 0 (`dates.js` calendar maths), year answers are year-precision date parts ("44 BC"), the Gregorian calendar, a stated 2026 opening year, whole years by anniversary, a stated weekday to count from, and gallery/room rules in each prompt.
+  - Geographer (`role-geographer`): scale-journey, grid-route, contour-slope, climate-table. 6-figure grid references (3 + 3 figures in tenths of a km), bearings clockwise from grid north, a stated "1 in R" steepness rule, stated temperature/rainfall bands and a 3×3 biome table; made-up data, no real-place facts.
+  - Linguist (`role-linguist`): agreement-edit, readability, word-building, made-up-language. Numbered words with exactly one wrong (nouns always right; collective nouns and "each of" singular; this/these near, that/those far; stated conventions); generic fixes that fit several rules so Rule | Fix isn't a giveaway; a made-up Plain Index = ASL + 10 × ASW with bands < 28, 28 to < 34, ≥ 34; word building from a stated glossary and spelling rules; a made-up language with stated word order, plural suffix, past particle (Expert+ infers them from examples), and a blocklist for generated words. British English.
+  - Civil Engineer (`role-civil-engineer`): beam-check, tie-rod, concrete-batches, setting-out. kN, m, N/mm², E = 200 GPa; allowable/yield stresses, swell 25%, waste allowances and tolerances stated in each prompt; trucks and lorry loads round up and are billed in full; RL = reduced level in m, formation = the earthworks level; no country's code.
+  - Architect (`role-architect`, 5 subtopics): plan-scale, stair-rule, daylight-glazing, ramp-access, planting-paving. Plan scales 1:50/100/200, the 2R + G 600–650 mm comfort range, pitch limits, glazing minimum/maximum %, wall piers, ramp landings, budgets and contingency are stated in each prompt; counts round up for "enough" and down for "how many fit"; paving slabs are laid in a grid from one corner (slabs per side rounded up, offcuts not reused); no country's building code.
+  - Project Manager (`role-project-manager`): delay-finish, crash-decision, earned-value, resource-plan. Uses project-scheduling's conventions (Mon–Fri with the start date as day 1, stated holidays, crash networks where greedy equals the optimum, EV formulas); tasks round up to whole days; penalty, bonus and escalation rules stated; SPI kept to 0.6–1.5 where the planned share is stated.
+  - Electrician (`role-electrician`): breaker-load, cable-drop, fault-finding, running-cost. 230 V, a stated breaker list, a made-up cable table (ratings, mV/A/m), the 80% load rule and drop limits stated; voltage drop = mV/A/m × I × L ÷ 1000. Arithmetic practice only, never real wiring; has a `startNotice`.
+  - Pilot (`role-pilot`): wind-triangle, fuel-planning, chart-work, eta-descent. kt, nm (1 nm = 1852 m), true bearings, fuel in litres; the sine rule for the wind correction angle and wind components stated; fixed UTC offsets (incl. half hours), no daylight saving; reserve, 10% contingency, curfew and clearance rules stated. Not for real flight planning; has a `startNotice`.
+  - Data Scientist (`role-data-scientist`): classifier-scores, model-training, experiment-test, regression-fit. Precision/recall/F1 (stated formulas), screening counts from prevalence/sensitivity/specificity, batches rounded up, gradient descent on (w − a)², A/B tests with pooled SE, z, a 95% interval (1.96) and the sample size 2(1.96 + 0.84)²p̄(1 − p̄)/δ² rounded up, least squares from stated sums. Distinct from Data Analyst (no SQL/KPI dashboards).
+  - Land Surveyor (`role-surveyor`): coordinates, traverse-closure, plot-area, levelling. Whole-circle bearings clockwise from grid north, ΔE = d sin θ, ΔN = d cos θ; linear accuracy 1 in N = perimeter ÷ misclosure; shoelace area, 1 ha = 10 000 m²; level books by height of instrument or rise and fall with the ΣBS − ΣFS check; allowable misclosure 10 mm × √K stated.
+  - Investigator (`role-investigator`): timeline, statements, record-patterns, flag-odds. People named by job only, no violence; one-liar statements brute-forced to a unique liar and culprit (verify refuses any other); arrival = last seen + journey, 24-hour `HH:MM` text answers; a stated first-digit rule (30% of 1s, 5% of 9s, a "more than" ±25% band); natural-frequency base rates; made-up figures.
+  - Chef (`role-chef`): recipe-scaling, service-timing, dish-cost, stock-waste. Yield % (raw = usable ÷ yield), pack sizes, plating and hold times, waste tolerance (% of stock used) and target GP are stated "for this exercise", no food-safety law; packs, eggs and batches round up, whole portions round down, target prices round up to 5 cents; times are 24-hour HH:MM text parts.
+  - Retail Manager (`role-retail-manager`): footfall-staffing, markup-margin, deal-compare, stock-shrinkage. Markup = profit ÷ cost, margin = profit ÷ price; deals (3 for 2, x% off, half-price 2nd/3rd, any 2 for $Y) with left-over items at full price; stock and sales at cost, shrinkage = opening + purchases − sales − counted closing, stock turn = sales ÷ average stock; made-up figures, generic $.
+- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary, BI and Research Analyst, Astrophysicist and Nuclear Physicist, Auditor and Management Accountant, Analytical and Industrial Chemist, Embedded and Power Engineer, Geneticist and Ecologist, Gameplay Programmer and Game Designer, Network Admin and Security Analyst, Composer and Arranger, Logistics Coordinator and Production Planner, Examiner and Tutor, Food Label Analyst and Sports Nutrition Analyst, Macroeconomist and Market Analyst, Archivist and Museum Curator, Cartographer and Climate Analyst, Editor and Translator, Structural Engineer and Site Engineer, Building Designer and Landscape Architect, Scheduler and Cost Controller, Installation and Maintenance Electrician, Flight Planner and Navigator, ML Engineer and Experiment Analyst, Boundary and Levelling Surveyor, Case Analyst and Fraud Examiner, Head Chef and Kitchen Manager, Store Manager and Merchandiser. There are no "X Teacher" subroles: Teacher is a general role, with subroles by task.
+- **Storage:** a role attempt is stored as `module: "role"`, `subtopic: "<role>"` or `"<role>~<subrole>"`, and `difficulty: <role level>`.
+  - Questions carry their own origin, and their stored difficulty is the subject level drawn (`expert-plus` for scenarios). They count toward subject stats like mixes do; role-only modules count only under the role.
+  - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.
+- **Flags and About this role:** a role and each subrole may set `"flags": [ids]` (a subrole shows the role's flags plus its own, deduped; unknown ids dropped with one warning per role; the legacy `"experience_based": true` and id `experience_based` mean `experience_heavy`). Ids and tags: `experience_heavy` (Experience-led), `safety_critical` (Safety-critical), `authority_required` (Authority required), `license_oriented` (License-oriented), `region_specific` (Varies by country), `tool_heavy` (Tool-driven), `tool_specific` (Tool-specific: questions tied to a named language, tool, standard or gear; set on Software Engineer (the chosen code language), Data Analyst (SQL), Network Engineer (IPv4) and the Arranger subrole (transposing instruments)), `creative_oriented` (Creative-oriented), `theory_heavy` (Theory-led; tag only). Tags are neutral icon + text chips on role cards and under the page title. The "About this role" card (the exclusive module's `intro.md`) opens with one callout per flag, in the fixed order safety_critical, authority_required, experience_heavy, license_oriented, region_specific, tool_specific, tool_heavy, creative_oriented (`FLAGS` in `roles.js`, which reads the role JSON itself). Practice-based roles are experience_heavy; academic ones (Mathematician, Physicist, Chemist, Biologist, Music Theorist) are theory_heavy.
+- **Start notice:** a role or subrole may set `"startNotice": { "title" (≤ 60), "text" (≤ 600, markdown) }` (strings only; invalid ignored with one warning per role; a subrole's own replaces the role's). Starting a run (`#/rq`, `#/rg`, from the role page or a direct URL) first shows a confirmation screen: the title, the text as a Warning callout, and "I understand · Start" / "Back to role". It's remembered per role in sessionStorage `studyblock:roleAck`, so it's asked once per browser session; Retry and Another set don't ask again. The role page shows the notice as the first callout in "About this role".
+- **UI:** a desktop nav link "Roles" (`briefcase-business`) and a Home card, while the phone tab bar stays at 4 tabs. Expert+ prompts keep inline code at text size (`.is-code`).
+- **Bundle:** `tools/bundle.py` includes `roles/**` and the exclusive modules of listed roles.
+
 ## Module contract
 
 `modules/<id>/module.json`:
@@ -145,7 +218,7 @@ A mixed quiz is saved as one attempt with `module: "mix"`, `subtopic: "mix"`, `d
 }
 ```
 
-**Difficulties** are `easy`, `medium`, `hard` and `expert` (`DIFFICULTY_ORDER` in `engine.js`), offered per subtopic. 35 deep subjects add Expert and the other 24 (fact lists and simple skills) stop at Hard; a subtopic may stop at Medium where Hard wouldn't be harder (none does yet, ticket 015). Unknown values and duplicates are dropped with one warning per module, and a subtopic left with none is skipped. The module grid shows only the levels a module offers.
+**Difficulties** are `easy`, `medium`, `hard` and `expert` (`DIFFICULTY_ORDER` in `engine.js`), offered per subtopic. 37 deep subjects add Expert and the other 24 (fact lists and simple skills) stop at Hard; a subtopic may stop at Medium where Hard wouldn't be harder (none does yet, ticket 015). Unknown values and duplicates are dropped with one warning per module, and a subtopic left with none is skipped. The module grid shows only the levels a module offers.
 - **Expert** means multi-step or multi-concept problems, working backwards, or a problem the learner sets up, not bigger numbers. It is added as a separate branch in `generate()`/`verify()` (dispatching on `difficulty` and `params.kind`), so existing levels never change per seed. `modules/algebra/` is the reference.
 - **UI:** Expert shows a `flame` icon plus its label (`difficultyHtml`/`difficultyTag` in `ui.js`), with a pill in the accent tokens, so it never relies on colour alone.
 - **Expert conventions:** every part states its rounding, and chained parts must not change answer when worked from an earlier rounded answer (redraw instead). Part ids stay lowercase (`multiShapeOk`); labels of 3 characters or fewer (`b`, `k`, `x1`) keep their case in the quiz (`.part-label.keep-case`), longer ones show in capitals.
@@ -179,7 +252,7 @@ export function generate({ subtopic, difficulty, rng }) {
 export function verify(question, answer) { ... }
 ```
 
-The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
+The engine does **not** shuffle generator `choices`: a generator must shuffle its own options (with the rng), or the answer sits in a fixed position. The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
 
 ### Code languages (Code Writing, Code Reviewing)
 
@@ -189,6 +262,9 @@ The engine seeds `rng` per question and stores the seed, so any question can be 
 - Generators draw **all** rng values before rendering, so one seed is the same logic in every language. Snippets are built once with `js/lib/codelang.js` (its header documents the AST, `check` rules, `render`/`lineOf`, `run`) and shown in a fence tagged `LANGUAGES[].fence`. Code choices are wrapped in backticks (choices go through `renderInline`), and the stored answer is the same string.
 - `verify` rebuilds the program from `meta`, substitutes the candidate answer and `run()`s it against plain-JS references. Number blanks are unique in a scanned range or worded "smallest (0 or more)"; exactly one choice passes all tests.
 - A stored question may carry `lang` (checked with `isLang` on save and import); `regenerate(module, subtopic, difficulty, seed, lang)` rebuilds the same snippet.
+- **Blocks for one line** (`codelang.js`): `lineTree` splits a rendered line into blocks. Calls `f(…)`, indexes `xs[…]`, C-style `for (…)`/`if (…)` headers and bare groups become slot tiles. `,` `;` and a trailing `:` stick to the previous block; C++ `(int)`, C# `!` and Rust `&` stick to the next. `blocksFor(text, { distractors, count, seed })` returns a shuffled `{ tiles, solution }` (seeded, no rng from the generator). Also exported: `serialiseBlocks`, `decoyTokens`, `spacingVariants` and `textKey`.
+- **Typed subtopics:** Code Writing *Write the line* and Code Reviewing *Rewrite the buggy line*. Both are typed with a Blocks alternative. `accepts` holds spacing variants and equivalents that were run against the tests (flipped comparisons, `i <= n`, Rust `1..=n`, a trailing `:`/`;`/`{`); the buggy line is never accepted. Both modules set `fuzzy: false` and `tilesMultiplier`.
+- **Language features** (Code Reviewing, Medium–Expert, `modules/code-reviewing/langfeatures.js`, a helper file imported by `generator.js`; module folders may hold such helpers): hand-written per-language templates instead of codelang, so a seed gives a different question in each language. They cover Python division and aliasing, C# structs, overflow and compile rules, C++ references, pointers and UB, GDScript references and typing, and Rust ownership, borrowing and overflow. `verify` rebuilds from `meta` and checks the answer with per-family semantic models or line checkers. Undefined behaviour is only ever identified, never predicted. Stated assumptions: an English culture (C#), a 32-bit int (C++), Godot 4, and a rustc debug build. Lexer: `(double)` sticks like `(int)`, and C++ `int&` keeps the `&` on the type block.
 - Code renders without ligatures (`font-variant-ligatures: none`), so `<=` never shows as ≤. Snippets aren't compiled in tests; see ticket 010.
 
 ### CSV modules — `questions.csv`
@@ -196,6 +272,9 @@ The engine seeds `rng` per question and stores the seed, so any question can be 
 Header: `subtopic,difficulty,prompt,answer,choices,explanation`
 - `choices` is `|`-separated; empty means free-text answer.
 - `difficulty` may be empty (applies to all).
+- Optional `type` column: empty = as above, `date` = a date answer (see Date answers), `tiles` = a pure blocks question.
+- Optional `hints` column: 1–4 `|`-separated hint steps (same rules as generator hints); empty = the explanation-split fallback.
+- Optional `tiles` (`|`-separated; label = value, no nesting) and `joiner` columns. An empty joiner means `" "`, and `(none)` means no joiner (`bio` + `logy`). With `type` empty and a free-text answer, `tiles` makes a dual Type | Blocks row that uses the module's `tilesMultiplier`. `useAll` is set only when the answer needs every tile. A row whose answer the tiles can't build, or that has tiles together with choices or a date, is skipped with one warning per module.
 The engine samples rows with the seeded rng and shuffles choices.
 
 ### Answer checking
@@ -206,6 +285,101 @@ The engine samples rows with the seeded rng and shuffles choices.
 
 **Answer-format notes.** Trailing sentences of a prompt that only say how to write the answer ("Give your answer as…", "Round to 2 decimal places.", "Type the number without the % sign.") are split off at display time (`splitAnswerNote` in `quiz.js`) and shown as a small muted note with an `info` icon under the question. Only the last paragraph is looked at (never code, tables or lists), and sentences that are the task itself ("Give the x-coordinate of that point.") stay in the question. Generators keep writing notes at the end of the prompt; stored prompts are unchanged.
 - choice: exact match of the chosen string.
+- tiles: the serialised blocks, then the text rules.
+- `accepts`, close-answer credit and the Blocks multiplier are described below.
+
+### Block answers (`answerType: "tiles"`)
+
+The learner builds the answer from blocks (tickets 016, 017). Generator-only; not a multi-part part type.
+```js
+{ answerType: "tiles", tiles: [{ value: "A", label: "Moon landing (1969)" }, "B"], joiner: ", ", useAll: true, answer: "B, A" }
+```
+- **Contract:** 2–24 tiles; a string is shorthand for `{ value: s, label: s }`; duplicate values are allowed. `joiner` is a string of at most 5 characters (default `" "`). `useAll: true` means every tile must be placed (no distractors); otherwise Check needs at least one placed tile. Without a `solution`, the engine rejects (and regenerates) a question whose `answer` can't be built from distinct tiles joined by `joiner`.
+- **Nested blocks:** a tile may have `slot: { open, close, sep }` (defaults `(`, `)`, `", "`; open/close ≤ 3 chars, may be empty or a space). A slot tile serialises to `value + open + kids joined by sep + close`. Any slot tile requires `solution`, a tree of tile indices (`[0, { t: 1, kids: [2] }, 3]`). Each index is used once, kids only under slot tiles, at most 3 slots deep, and the tree must serialise to `answer` (`cleanSolution`/`serialiseTree` in `engine.js`). Show solution and the "correct blocks" row use it.
+- **Distractors** scale with difficulty: easy 0–1, medium 2–3, hard 4–6, expert 6–10.
+- **UI:** a "Your answer" row above a "Blocks" bank.
+  - Tapping places a bank block into the *active target*: the answer row, or the slot of the placed slot tile last tapped (accent outline). Tapping an active slot tile again returns it with its kids.
+  - Pointer Events drag places, reorders and returns blocks, including into nested slots (6px threshold, `touch-action: none` on tiles only).
+  - Keys: Enter/Space toggle; arrows move focus; Alt/Shift+←/→ move a placed block; Delete returns it; Esc makes the answer row active. Placements are announced politely.
+  - Reset returns all blocks. A "Filter blocks" box appears when the bank holds more than 10. Number keys don't answer, and the calculator's Use is disabled. A wrong answer shows the correct blocks. In Guided mode a wrong try stays editable, and Show solution lays out the tree.
+- **Storage:** `userAnswer` is the serialised string.
+
+### Typed or Blocks (dual questions)
+
+A typed **text** question may also give `blocks: { tiles, joiner, useAll, solution }`, whose solution must serialise to `answer`.
+- **Switch:** the quiz shows a **Type | Blocks** switch (`aria-pressed`), defaulting to Type. The choice is remembered per module in sessionStorage `studyblock:answerMode`, and switching keeps the work done in the other mode.
+- **Multiplier:** `module.json` `"tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 }` (0–1; missing level = 1). It's set on SQL Queries, Code Writing and Code Reviewing. A Blocks answer earns credit × multiplier and stores `mode: "blocks"` and `multiplier`. A note reads "Blocks: up to 85% credit at Hard", and feedback reads "Correct · Blocks ×0.85". Pure tiles questions never get a multiplier.
+- **`accepts`** (any text question, ≤ 20): extra strings that also count as correct, by the text rules. Prompts pin the form (clause order, column order) so the list stays small.
+
+### Close answers (partial credit)
+
+A near miss earns part credit; `correct` stays false. This applies to single questions and to each multi-part part (whose credits are averaged). Never for choice, tiles or Blocks mode. Tickets 017 and 018.
+- **Leniency levels** (numbers, 0–5; 0 = exact, 1 = normal, higher = more lenient; fractions allowed), set in `module.json` and overridable per question or part:
+  - `"fuzzy": <level>` sets text leniency. `false` = 0; `true` or missing = 1.
+  - `"fuzzyNumber": <level>` sets relative number leniency, or `{ "mode": "years", "level": n }` for years. Missing = relative at 1, or 0 when `fuzzy` is 0.
+- **Text** (Damerau-Levenshtein after the text rules; an adjacent swap is 1 typo): up to floor(L) typos. The first typo gives a base by answer length: 4–7 chars 0.75, 8–14 chars 0.85, 15+ chars 0.90. Each extra typo costs 0.15, down to a minimum of 0.25. Answers of 1–3 characters, and any answer containing a digit, must be exact.
+- **Numbers, relative mode:** the band edges are × L. Within 0.1%·L → 0.90, 1%·L → 0.75, 2%·L → 0.50. Applies to integers and decimals; the answer must be non-zero and the sign right. Without an explicit `fuzzyNumber`, it applies only when the calculator is on.
+- **Years mode and dates:** off by d earns max(0, 1 − d/(L+1)), at 2 dp. At L = 1: 1 off 0.5. At L = 2: 1 off 0.67, 2 off 0.33. There is no year 0, so 1 BC → AD 1 is 1 off. "44 BC" and "AD 79" are read, including on CSV year answers.
+- **Per module:** `fuzzyNumber` is 1 for every Math module (number-theory keeps text exact). It is 0 for radioactivity, map-skills, elements, chemistry, number-bases, boolean-logic, algorithms, networking, data-representation, sql-queries, vocabulary, word-roots, grammar, intervals-scales, chords and rhythm (and code via `fuzzy: false`). It is `{mode: "years", level: 1}` for timelines, world-history and inventions, and 1 elsewhere. Text `fuzzy: false` is set on the exact-answer modules (bases, data representation, networking, number theory, elements, chemistry, boolean logic, rhythm, grammar, vocabulary, word roots, SQL, algorithms, code, music).
+- **Lookalikes:** an exact match for another real answer (another answer in the same CSV subtopic, or in the question's `nearMisses`) earns 0.
+- **Display and storage:**
+  - Feedback reads "Close · 85% credit" (`circle-dot`, warn colours). In Guided mode it reads "Almost", and a retry is allowed.
+  - Stored as `fuzzy` (or `parts[i].close`) in one of these shapes: `{kind:"text", typos, factor, level}`, `{kind:"number", relErr, factor, level}`, `{kind:"number", mode:"years", off, factor, level}` or `{kind:"date", off, factor, level}`.
+  - All of these are optional and validated on import.
+
+### Date answers (`answerType: "date"`)
+
+- **Shape:** `{ answerType: "date", precision: "year" | "month" | "day", answer: "20 July 1969" }`. The answer is canonical text ("1969", "July 1969", "20 July 1969"); BC is allowed only at year precision. Dates can also be multi-part parts. A malformed one regenerates.
+- **Parsing:** `js/lib/dates.js` (pure). It accepts month names and abbreviations, ordinals, `Month D, YYYY`, ISO `Y-M(-D)`, and numeric D/M/Y read **day first**. All-numeric dates need a 3–4 digit year. Real dates only: no 31 April, and leap years are honoured.
+- **Checking:** correct means the same value at the answer's precision; extra detail is ignored. Less detail is wrong, with the hint "give the month and year". Close credit uses the years formula, in units of the precision, across month and year ends.
+- **UI:** a text field with a placeholder that fits the precision. A live "Read as: …" line (aria-live) shows the parsed date, or "Not a date yet". Check needs a value that parses. Feedback repeats "Your answer read as: …". Use is disabled.
+- **CSV:** an optional `type` column. `date` makes the row a date answer, with its precision taken from the answer's format. Bad rows are skipped with one warning per module. Date rows are in World History and Inventions, and the Time and Dates generator (`calendar`) uses day-precision date answers.
+
+### Grading hook and case
+
+- **`grade()`:** a generator may export `grade(question, answerString) → { correct, note? } | null`. For text questions with `gradeByOutput: true`, in Type or Blocks mode, the engine calls it only when the text/accepts check fails.
+  - Its verdict is final: correct earns credit (with the Blocks multiplier) and stores `gradedBy: "output"`; false earns 0 with no close credit; `null` means no opinion.
+  - The `note` (≤ 300 chars, escaped) shows in feedback, guided and review.
+  - Used by SQL *Write the query* (same output by running the query, no hard-coded literals or unasked-for LIMIT, and re-run on reshuffled and shifted copies of the tables to catch chance matches) and Boolean Logic *Write the expression* (same truth table).
+- **`caseSensitive: true`** (text/tiles questions and parts): no lowercasing when checking, and no close credit. Used by Genetics *Write gametes & genotypes*.
+
+### Run (test the output)
+
+- **Module export:** `run(question, answerString) → { columns, rows } | { error }`. It must be pure and synchronous, use no eval, never throw, and return ≤ 200 rows. A question opts in with `runnable: true`, and keeps the data `run` needs in `meta`, which is in memory only and not stored.
+- **Engine:** `runAnswer(q, answer)` calls it.
+- **Quiz:** a **Run** button (Ctrl/Cmd+Enter) works in Type and Blocks modes. It shows an escaped Output table (20 rows, then "n more") or the error. It's unlimited, never scored, and allowed in Guided mode. Feedback and review also show the expected output.
+- **Used by:** SQL Queries *Write the query*. Its hand-written SQL engine covers only the grammar the subtopic teaches.
+
+### Block-list choices (segmented options) and Build | Choose
+
+Options that combine several facts show as aligned blocks under column labels (ticket 019), e.g. `Elastic | Price ↓ | Revenue ↑`.
+- **Generator shape:** `answerType: "choice"`, `choiceCols: [2–4 labels ≤ 24 chars]`, `choices: [[segment per column], …]` (segments ≤ 40 chars, no `|`), `answer` = the right array or its joined string, and optional `extraSegs: [[column label or index, value], …]` decoys.
+  - Options: exactly 3 at Easy and 5 at Medium and above (the engine warns otherwise). **Mixed distances (ticket 022):** at least one wrong option differs from the answer in 2+ columns; the answer's value is never the strict majority in every column (a tie clears it); with 3+ columns no wrong option differs in every column, with 2 columns one may. Easy (3 options): both wrong options change one shared column and one also changes a second. Generators redraw until this holds and prefer plausible combinations (the answer must not be the only option whose columns make sense together). `segMixIssues` in `engine.js` checks every question and part and warns once per module; nothing is rejected.
+  - The engine stores each option as one string joined by `" | "`, so checking, storage and History are unchanged. It keeps `choiceCols`/`choiceSegs` in memory. A bad shape regenerates.
+  - Multi-part choice parts accept the same fields; they are Choose-only, at full credit.
+- **CSV:** an optional `cols` column (labels `|`-separated) splits each choice into segments by ` ; `. An optional `extra` column holds `Column=value ; …` decoys. A mismatched row is skipped with one warning per module.
+- **Build | Choose switch** (sessionStorage `studyblock:answerMode`, default **Build**):
+  - **Build:** one slot per column. Bank blocks are tagged with their column, so `↑` under Assets and under Liabilities are different blocks. Order never matters, and a second block in a column replaces the first.
+  - Build decoys come from other options, then extras: Easy 1–2, Medium 3–5, Hard 6–9, Expert 9–14 (≤ 24 blocks). The bank is shuffled by a generator seeded from the question seed, so the question never changes.
+  - Build keeps Filter blocks (above 10), Reset, keys and ✓/✗ per column after Check. It earns full credit.
+  - **Choose:** pick an option. Credit × `chooseMultiplier` (module.json; default easy 1, medium 1, hard 0.85, expert 0.7), stored as `mode: "choose"` and `multiplier`. The note reads "Choose: up to 85% credit at Hard".
+- **Converted questions:** chords (root | quality | position), Accounting Terms equation rows, networking gateway, economics shortage/surplus, Boolean which-row, map-skills day | time, genetics ratios and parents, vectors position and turn, and biology photosynthesis. `extraSegs` should name columns by **index** when labels differ only in case (`TT`/`Tt`/`tt`), because label matching ignores case.
+- **Storage:** optional `choiceCols`/`partCols` on stored questions, validated on import, so review and History show chips. Answer chips in feedback, review and History show their column label as a caption ("Measurable: Yes"). The calculator's Use note reads "place the blocks" (Build) or "pick an option" (Choose).
+- **Case-sensitive notice:** any question or part with `caseSensitive: true` shows a warn box ("Case-sensitive: capital letters matter", `triangle-alert`), linked to the answer by `aria-describedby`.
+
+### Journal entries (`answerType: "journal"`)
+
+A table of Account | Debit | Credit lines (book entries). Generator-only; not a multi-part part type.
+```js
+{ answerType: "journal", accounts: ["Inventory", "Cash", "Capital"], amounts: [500, 800], rows: 3,
+  answer: [{ account: "Inventory", side: "dr", amount: 500 }, { account: "Cash", side: "cr", amount: 500 }],
+  accepts: { "Bank": "Cash" } }
+```
+- **Contract** (`cleanJournalSpec` in `js/lib/journal.js`): 2–6 answer lines, account+side unique, debits total = credits total, amounts positive with ≤ 2 dp, every answer account listed in `accounts` (2–12 distinct names, no `;`, ≤ 60 chars: the account blocks and the typing suggestions). `amounts` (≤ 8, optional) are the amount blocks. `rows` (2–6, ≥ lines) blank rows are shown. `accepts` (≤ 20) maps typed aliases to accounts; an alias naming a listed account or an unknown target is invalid. A bad shape regenerates.
+- **Stored:** `answer` and `userAnswer` are canonical strings, `"Dr Inventory 500; Cr Cash 500"` (debits first, then credits, each by account; gaps written `?`), plus `journal: true` (optional, validated on import: both strings must parse).
+- **Grading:** blank rows are ignored; lines match in any order by the text rules (after `accepts`), side and amount (± 0.005). Credit = matched answer lines ÷ max(answer lines, non-blank user lines); `correct` only with no extra lines. Duplicate lines are never merged. No close credit, no multiplier.
+- **UI** (`js/views/journal.js`): every cell is typeable (datalist for accounts; `inputmode="decimal"` amounts accepting `$` and thousands commas; an amount clears the other side of its row) or filled from reusable blocks: drag (Pointer Events, 6px threshold, edge auto-scroll), tap a cell then a block or a block then a cell, Enter on a block fills the last-focused cell; placements are announced. + Row / remove (2–6), Reset, and a "Debits · Credits · Balanced/Not balanced" footer (informational). Check needs one row with an account and an amount; after Check each row shows Right/Wrong (icon + text) and, when wrong, the correct entry as a table (the explanation gives the effects in words, not a second table). Guided: right lines lock, wrong ones stay editable; Show solution fills the table. The calculator's Use fills the last-focused Debit/Credit cell. Phones (< 640px) show each line as a card. Review and History draw tables from the stored strings.
+- Used by Accounting Theory *Journal entries*: Easy 2-line cash entries (rows 2), Medium 2-line credit/adjustment entries (rows 3), Hard 3-line compound entries (rows 4), Expert 3–4 line linked transactions as one compound entry (rows 5). Trade payables (goods for resale) and Other payables (anything else on credit) are never offered together; Bank is an alias of Cash.
 
 ### Multi-part questions (`answerType: "multi"`)
 
@@ -238,13 +412,44 @@ One scenario, several labelled answer fields. Used by Business Case for things l
 - **Storage:** on the stored question, `answer` and `userAnswer` become objects keyed by part id, and `parts: [{id, label, correct}]` is added. These fields are optional on import.
 - **CSV modules:** not supported; multi-part is generator-only.
 
+### Callouts (standard notices in markdown)
+
+`markdown.js` renders GitHub-style callouts: a blockquote whose first line is `[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` or `[!CAUTION]` (any case), with an optional custom title after the marker (`> [!WARNING] For learning only`). Output is `<aside class="callout callout-<kind>" role="note">` with an icon and label (never colour alone); the body is full escaped markdown. All notices in `intro.md`/`guide.md` use them: the Medical/Biology disclaimer is `> [!WARNING] For learning only`, answer-format tips are `> [!TIP]`. Tokens are `--callout-*` (light and dark); the quiz `.case-note` matches the Warning callout. A plain blockquote renders as before.
+
+### Audio previews (ticket 023)
+
+After an answer is checked, music questions show a **Play** button (`volume-2` + "Play", 44px, `aria-label` "Play the chord/interval/note/scale/chord progression") in the feedback (including guided solved/solution) and the end-of-quiz review; never before answering, and not in History (stored attempts don't keep it).
+- `js/lib/audio.js` synthesises with Web Audio: no files, works offline, a lazy AudioContext on the first click, a soft triangle with two quiet partials, one playback at a time (stopped on Next and when leaving). The button is hidden when there is no AudioContext.
+- Generators attach `play` (`{ mode: note|interval|chord|scale|progression, notes|chords, semis? }`, notes `{l, a}`, optional octave `o`) with `withPlay(q, spec)` in a thin wrapper around their old `generate`, derived from `params`: no rng, so prompts and answers are unchanged. The engine keeps `meta` but drops unknown fields, so `withPlay` mirrors it to `meta.play`; the quiz reads `q.play ?? q.meta.play`. Never stored.
+- Used by Intervals & Scales, Chords and Role Music Theorist (not bar-timing or the downward transpositions). Settings → Sound (cookie `sb_sound`, default on) hides every Play button when off.
+
+## Game elements
+
+Light gamification: icon + text only, no animations beyond existing transitions, no sounds or confetti.
+- **Logic** (`js/lib/gamify.js`, pure; the rules live only there), derived from stored attempts, so export/import carries it:
+  - XP per practice attempt: per question credit × weight × level points (easy 10, medium 15, hard 20, expert 30, expert-plus 40; the question's own difficulty, else the attempt's), +5 for finishing, ×1.2 for a perfect score, rounded. Guided attempts give 0.
+  - Levels: level L → L+1 costs 100 + 50(L − 1) XP.
+  - Streak: consecutive local calendar days with any attempt (guided counts), DST-safe; `{ current, best, today, atRisk }`.
+  - 15 badges (first quiz, flawless, expert attempt/flawless, 10/50/200 quizzes, 3/7/30-day streaks, explorer (5 domains), all-rounder (every level of one module), first role, first mix, guided learner) with `earnedAt` and `progress`.
+- **UI** (`js/views/game.js` shared pieces and the cached `gameContext()` = `{ domainOf, levelsOf }` from the registry; `js/views/badges.js`):
+  - Settings → Game elements (cookie `sb_game`, "0" = off, default on) hides everything below.
+  - Home: a "Your progress" card (level pill, XP progressbar, streak line with "Practise today to keep it" when at risk and "best N", hidden when both are 0; next badge with progress; "All badges (n of 15)"; a "New badge: …" line for earned badges not yet seen).
+  - Results (practice, mix and role runs; never guided): "+N XP" with a short "how" line (left out when more than 2 levels scored), "Level up" when it happened, and newly earned badges; then all earned ids are saved as seen.
+  - `#/badges` (History nav highlighted; not in the nav or tab bar; linked from Home and the top of History): level, streak and badge count, then badge cards (earned with date; others with "n of m" and a bar). Opening it marks earned badges as seen. When off, it says so and links to Settings.
+- **Storage:** localStorage `studyblock:seenBadges` (per-browser list of ids, never exported). The first time it is missing, badges already earned are marked seen silently, so existing users aren't shown every old badge as new.
+
 ## Guided mode
 
 - Module page: a **Practice | Guided** switch (sessionStorage `studyblock:quizMode`; opening `#/q` or `#/g` sets it). In Guided mode grid links go to `#/g/…` and cells show "Guided" instead of scores.
 - Guided runs reuse `runQuiz` with `opts.guided`: a "Guided · not scored" pill, hints in an aria-live list (**Hint n of N** or the H key), unlimited tries (a wrong choice is disabled; correct multi-part parts lock), and **Show solution** always available.
-- They never call `saveAttempt` and never touch stats, History or best scores; only the last-module/difficulty cookies update. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
+- **Saved but never scored (ticket 011):**
+  - A guided run is saved as an attempt with `guided: true`. Its `score` is the number solved first try, and each question has `outcome: "first" | "after" | "solution"`.
+  - Guided attempts are excluded from every stat, best score, summary row and Home's continue card.
+  - History and Home Recent show them with a Guided tag (`compass` icon + text). On import, `guided` must be a boolean.
+- **Guided mixes:** the Mix builder has a Practice | Guided switch (the shared `studyblock:quizMode`, never stored in the draft or presets). Guided mode opens `#/mix/guided`, where each question shows its own module's guide card.
+- **Show solution** stays `aria-disabled` ("Try once first") until the first checked wrong or close answer, or until every hint is shown. The end screen counts solved first try / solved after hints or tries / used the solution, lists the questions, and offers Another guided set and Practice for real.
 - **Generator hints (optional):** `hints: [markdown]` (1–4 progressive steps that never state the final answer) and/or `parts[i].hint` on multi-part questions. The engine keeps non-empty strings ≤ 600 chars, max 4, dropping others with one console.warn per module. Never stored.
-- **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
+- **CSV hints** come from the `hints` column. **Fallback:** with no hints, the explanation is split into steps (blank-line blocks, list items, else lines; never inside code fences) and all but the last become hints. CSV modules use this fallback.
 - **`modules/<id>/guide.md` (optional):** `## General` plus `## <Subtopic title>` sections (case-insensitive; text before the first `##` ignored). Loaded with `loadGuide` and shown as a collapsible "How to solve" card for the current question's subtopic. Every module has one. Keep tables and sub-lists after a numbered list, not inside it: markdown.js can't nest them.
 - **Every generator returns `hints`** (multi-part: a `hint` on each part), built only from values already drawn: no rng calls in hint code, so adding or editing hints never changes a question. When changing hints, fingerprint each cell's questions (hints stripped) before and after, and check that no hint states the answer.
 - Open choices are in ticket 011.
@@ -278,7 +483,7 @@ Scores per module/subtopic/difficulty are derived from attempts. On import, `cre
 The quiz screen has a calculator panel that works like a small live worksheet.
 
 **Where it appears**
-- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords, Vocabulary, Word Roots and Grammar set this, because working it out yourself is the point (or there's nothing to calculate).
+- On every question except those from modules with `"calculator": false` in `module.json`. Arithmetic, Fractions, Number Bases, Code Writing, Code Reviewing, Algorithms, Number Theory, SQL Queries, Intervals & Scales, Chords, Vocabulary, Word Roots, Grammar and the three Logic modules set this, because working it out yourself is the point (or there's nothing to calculate).
 - In mixed quizzes it follows each question's own module, so it shows and hides as you go.
 
 **Rows**
@@ -347,7 +552,10 @@ A two-button switch (`aria-pressed`) at the top of the calculator picks the mode
   - Keys on the focusable canvas: arrows pan, + / − zoom, 0 resets, and Shift+←/→ moves the trace.
   - Tapping traces the nearest curve; the readout is aria-live polite.
 - **Points:** for one function, within the visible x range: zeros, minima, maxima and intersections with the other visible functions, up to 10 of each. They are drawn as rings on the plot. **Add x / Add y** writes the value to the sheet (12 significant digits, in a trailing blank row or the next free label; "sheet is full" at 30 rows).
-- **Storage:** the optional `mode` and `graph: { fns: [{ slot, expr, hidden }], view }` fields sit in the same `studyblock:calc` record. Older records still load. `work` stays sheet-only.
+- **Storage:** the optional `mode` and `graph: { fns: [{ slot, expr, hidden }], view }` fields sit in the same `studyblock:calc` record. Older records still load.
+- **Saved with answers (ticket 009):** when an answer is checked and the graph has a non-empty function (given ones count), the question stores `graph: { fns: [{slot, expr, hidden}], view }` next to `work`. Review and History show a collapsible "Your graph": a static `<sb-graph>` plot redrawn from the functions (`_a` uses the saved working), plus the function list. On import it's optional and validated: ≤ 6 functions, unique slots 1–6, each expression 1–200 chars, and a bad view falls back to the default.
+- **Given graph functions:** a generator question may carry `graphFns: [{ expr, label? }]` (1–3, graph grammar) and an optional `graphView`. The engine validates them with calc's parser (invalid ones are dropped, one warning per module), and they are never stored in attempts. They fill the lowest free slots with a "given" tag, and are replaced on the next question unless edited. The question's view applies while it's shown. No module uses them yet.
+- **Standalone page** `#/calc`: the same Sheet | Graph panel full-page, without Use, saved in localStorage `studyblock:calcPage` with Clear all. It's reached from the desktop nav and a Home card; the phone tab bar stays at 4 tabs.
 - **Phone:** in the bottom sheet, the plot height is min(75% of width, 30% of the viewport), at least 150px.
 
 **Lifetime**
@@ -385,6 +593,9 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Music | `#FBF1D2` / `#765300` | `#B07D0A` |
   | Biology | `#DFF3E4` / `#1B5E2B` | `#2E8B47` |
   | Medical | `#DDF4F8` / `#0A5866` | `#0E8FA6` |
+  | Logic | `#E4E8EE` / `#334155` | `#52637A` |
+  | Everyday Math | `#F1E7DD` / `#5E4126` | `#8C6239` |
+  | Engineering | `#ECE8FA` / `#4C2F8F` | `#6A4BC4` |
 
   A domain can override these with `color` in `index.json`.
 - Correct and incorrect states always show an icon and a label, not colour alone.
@@ -495,9 +706,19 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Biology domain:** the fact-list `biology` module (title "Biology Basics") moved from Science into its own Biology domain; its id is unchanged, so old attempts still count.
 - **Trimmed subjects (ticket 015):** Balancing & Progression, Pixels & Colour, Collision, Vital Signs and Health Statistics are archived. Cryptography Basics was merged into Number Theory (Ciphers, Keys & RSA, worked by hand), and Anatomy into Biology Basics (Skeleton, Organs and body systems).
 - **Medical domain:** general facts and standard calculations only (Body Measurements, Nutrition). No medications or doses, symptoms, diagnosis, treatment or "is this normal?" questions. Every Medical `intro.md` opens with a "For learning only, not medical advice" note, BMI shows only numeric WHO adult ranges, and each question states its formula and factors.
-- **Music Theory:** written notation, no audio or staff images. Spelled notes/intervals/chords are always choice questions (text checks can't equate `#` with ♯); `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **Music Theory:** written notation, no staff images; sound only through the Play button after answering (below). Single spelled notes, intervals and chord names are choice questions (text checks can't equate `#` with ♯). Spelling a whole chord or scale is built from note blocks (from the root/tonic up, wrong spellings as distractors); multi-part questions keep choice parts. Double sharps/flats (𝄪/𝄫) appear only where theory needs them (Hard/Expert diminished and augmented triads, G♯ and D♯ harmonic minor); Easy, Medium and major keys stay single-accidental. Expert diatonic sevenths include viiø7 (m7♭5). 𝄪/𝄫 rely on the OS symbol font. `js/lib/music.js` has separate build and check toolkits so verify stays independent.
+- **SQL Queries:** *ORDER BY and LIMIT* row-order questions are built from blocks (same seeds). *Write the query* is typed or built from blocks (`SELECT …`, aggregate and `IN (…)` slot tiles), with `accepts`, Run, and the Blocks multiplier.
+- **Algorithms:** final stack or queue contents are built from blocks (same seeds). *Write the trace* is typed (`4, 9, 2`) with Blocks: binary-search comparisons, the list after a sort pass, stack/queue values.
+- **Boolean Logic:** *Write the expression* is typed with Blocks (letters, AND/OR/XOR/NOT, a bracket slot). Any expression with the same truth table counts (`grade()`); operators may not be mixed at one bracket level without brackets.
+- **Genetics:** *Write gametes & genotypes* is typed with Blocks, case-sensitive, in the order stated in the prompt (capital first, then alphabetical).
+- **Word Roots and Grammar:** every cell has at least 10 rows. Word Roots has build-the-word rows (dual Type | Blocks and pure blocks, joiner `(none)`). Grammar has sentence-ordering rows (capitalised first block, punctuated last block, wrong-form distractors such as is/are) and dual verb-form rows in Tenses. Both set `tilesMultiplier`. Vocabulary also has 10 rows per cell.
+- **Logic & Puzzles:** logic-puzzles (knights and knaves, ordering, whodunits), syllogisms (categorical and if-then) and number-patterns (numbers, letters, shapes). Every puzzle is brute-forced to a unique answer, and verify() re-solves it independently. Number-patterns' verify infers the rule from the shown terms, trying several rule families that must agree. Conventions: syllogisms assume every group has a member and use made-up nouns; "or" is inclusive; "A unless B" means "if not B then A"; letter wrap-around is stated. All are exact (`fuzzy: false`, `fuzzyNumber: 0`); number-patterns has `tilesMultiplier`.
+- **Everyday Math:** time-dates, recipes-scaling, shopping-money and travel. Conventions: fixed UTC offsets with no daylight saving; a generic `$`; made-up exchange rates, always stated; kitchen conversion factors stated in the question. `fuzzyNumber` is 1, and whole counts (days, minutes, servings, bags) set `fuzzyNumber: 0` per question.
+- **Project Scheduling** (Business): critical-path, float (and crashing), gantt-dates, earned-value. Networks of 5–8 activities, whole-day durations, a unique critical path (redrawn otherwise); an activity starts when all predecessors finish, times count from day 0; free float = the smallest earliest start among its successors − its earliest finish (stated). Generation uses forward/backward passes and greedy crashing; verify enumerates paths and brute-forces crash plans (a question is redrawn unless greedy equals the minimum). Working days are Mon–Fri with the start date as day 1, plus stated holidays at Hard/Expert (`dates.js` helpers; day-precision date answers). Earned value: generic `$`, CV = EV − AC, SV = EV − PV, CPI = EV ÷ AC, SPI = EV ÷ PV, EAC = BAC ÷ CPI, VAC = BAC − EAC, ETC = EAC − AC, indices exact to 2 dp, sign rule stated. Money is formatted by hand: never `toLocaleString` in a generator (its first call loads Intl data and costs ~20 ms). Whole days are exact (`fuzzyNumber: 0`).
+- **Engineering / Structures:** moments, stress-strain, beams, factor-of-safety. General textbook practice only, no design code. A light beam has no weight; a uniform beam's weight acts at its midpoint; a UDL acts as w × length at the middle of its length; shear = sum of vertical forces to the left of the section, upward positive. 1 N/mm² = 1 MPa, 1 GPa = 1000 MPa, 1 m² = 10⁶ mm², g stated as 10 or 9.81. Realistic sizes (spanners, doors, pad foundations). Counts and round up/down answers are exact (`fuzzyNumber: 0`); verify takes moments about a different point or uses inverse relations. No segmented choices.
+- **Business theory:** Marketing (4Ps, Ansoff, Boston, life cycle, pricing, segmentation), Business Theory (ownership, stakeholders, SMART, SWOT, PESTLE), Management (Maslow/Herzberg, leadership, structure, Porter), Accounting Theory (double entry, journal entries, concepts, classification, accounting equation; journal entries use the journal table, the rest block-list choices) and Finance Theory (sources, risk/return, ratios, appraisal) use block-list choices. Accounting conventions: goods bought go to Inventory, sales record revenue only, depreciation goes to Accumulated depreciation, and "Accruals (matching)" is one concept. Every rule a judgement depends on (Porter 10%/15%, Boston thresholds, life-cycle stage rules, the "achievable" rule) is stated in the prompt. Ownership forms are the general textbook versions, with no country-specific law.
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
-- **Timelines:** a fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
+- **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.
 - Open choices for these are in tickets 012–014.
 

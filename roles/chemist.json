@@ -1,0 +1,154 @@
+{
+  "id": "chemist",
+  "title": "Chemist",
+  "icon": "flask-conical",
+  "flags": [
+    "theory_heavy"
+  ],
+  "description": "Moles, concentration, yield, gases and heat, worked from the bench to the plant.",
+  "exclusive": "role-chemist",
+  "mix": {
+    "chemistry": {
+      "weight": 5
+    },
+    "elements": {
+      "weight": 1,
+      "subtopics": [
+        "atomic-numbers",
+        "groups"
+      ]
+    },
+    "gases-pressure": {
+      "weight": 2,
+      "subtopics": [
+        "gas-laws",
+        "pressure"
+      ]
+    },
+    "unit-conversion": {
+      "weight": 1,
+      "subtopics": [
+        "mass-volume",
+        "temperature"
+      ]
+    },
+    "ratios-percentages": {
+      "weight": 2,
+      "subtopics": [
+        "proportion",
+        "percentages"
+      ]
+    },
+    "thermal-physics": {
+      "weight": 1,
+      "subtopics": [
+        "specific-heat",
+        "mixing-heat"
+      ]
+    },
+    "exponents-logs": {
+      "weight": 1,
+      "subtopics": [
+        "index-laws",
+        "logarithms"
+      ]
+    }
+  },
+  "subroles": [
+    {
+      "id": "analytical-chemist",
+      "title": "Analytical Chemist",
+      "icon": "pipette",
+      "description": "Titration, concentration, composition and yield, measured and checked against a standard.",
+      "mix": {
+        "chemistry": {
+          "weight": 6,
+          "subtopics": [
+            "moles",
+            "concentration",
+            "composition"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "proportion"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "mass-volume"
+          ]
+        },
+        "elements": {
+          "weight": 1,
+          "subtopics": [
+            "atomic-numbers"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "logarithms"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "yield-purity",
+        "titration"
+      ]
+    },
+    {
+      "id": "industrial-chemist",
+      "title": "Industrial Chemist",
+      "flags": [
+        "safety_critical"
+      ],
+      "icon": "factory",
+      "description": "Gas volumes, vessel pressure, scale-up and the cost of a batch.",
+      "mix": {
+        "chemistry": {
+          "weight": 3,
+          "subtopics": [
+            "moles",
+            "balancing"
+          ]
+        },
+        "gases-pressure": {
+          "weight": 3,
+          "subtopics": [
+            "gas-laws",
+            "pressure"
+          ]
+        },
+        "thermal-physics": {
+          "weight": 2,
+          "subtopics": [
+            "specific-heat",
+            "mixing-heat"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "proportion"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "mass-volume",
+            "temperature"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "gas-vessel",
+        "batch-cost"
+      ]
+    }
+  ]
+}

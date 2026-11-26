@@ -1,0 +1,17 @@
+{
+  "id": "number-patterns",
+  "title": "Patterns & Sequences",
+  "description": "Spot the rule: number sequences, letter patterns and codes, and repeating shape patterns.",
+  "icon": "shapes",
+  "type": "generator",
+  "calculator": false,
+  "fuzzy": false,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 10,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
+  "subtopics": [
+    { "id": "numbers", "title": "Number sequences", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "letters", "title": "Letter patterns & codes", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "shapes", "title": "Shape patterns", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

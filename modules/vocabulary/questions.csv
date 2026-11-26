@@ -31,8 +31,8 @@ commonly-confused,medium,Choose the correct word: The new rules will ____ everyo
 commonly-confused,medium,Choose the correct word: The medicine had a strong ____ on her headache.,effect,effect|affect,"Effect is the noun meaning a result, as in: The new law had a big effect."
 commonly-confused,medium,Choose the correct word: That red scarf is a perfect ____ to your gray coat.,complement,complement|compliment,"A complement completes or goes well with something, while a compliment is praise."
 commonly-confused,medium,Choose the correct word: He paid her a ____ on her excellent presentation.,compliment,compliment|complement,A compliment is a polite expression of praise or admiration.
-commonly-confused,hard,Choose the correct word: The school ____ welcomed the new students.,principal,principal|principle,"Principal can mean the head of a school or the most important; a principle is a rule or belief."
-commonly-confused,hard,Choose the correct word: She stood by her ____ and refused to cheat.,principles,principles|principals,Principles are the rules or beliefs that guide someone's behavior.
+commonly-confused,medium,Choose the correct word: The school ____ welcomed the new students.,principal,principal|principle,"Principal can mean the head of a school or the most important; a principle is a rule or belief."
+commonly-confused,medium,Choose the correct word: She stood by her ____ and refused to cheat.,principles,principles|principals,Principles are the rules or beliefs that guide someone's behavior.
 commonly-confused,hard,Choose the correct word: The car remained ____ at the red light.,stationary,stationary|stationery,"Stationary means not moving, while stationery means writing materials such as paper and envelopes."
 commonly-confused,hard,Choose the correct word: Please be ____ and don't tell anyone about the surprise party.,discreet,discreet|discrete,"Discreet means careful not to reveal things, while discrete means separate and distinct."
 context,easy,Choose the word that fits: I was so ____ after the long run that I drank three glasses of water.,thirsty,thirsty|sleepy|cold|quiet,Thirsty means needing or wanting to drink.
@@ -47,3 +47,75 @@ context,hard,Choose the word that fits: The politician's ____ answer avoided the
 context,hard,"Choose the word that fits: The old bridge was ____, so engineers closed it to traffic.",dilapidated,dilapidated|pristine|robust|sturdy,Dilapidated means in a state of disrepair because of age or neglect.
 context,hard,Choose the word that fits: The detective was very ____; no detail escaped her notice.,observant,observant|oblivious|careless|indifferent,Observant means quick to notice things.
 context,hard,Choose the word that fits: The committee reached a ____ decision because every member voted yes.,unanimous,unanimous|divided|tentative|partial,Unanimous means fully agreed by everyone involved.
+meanings,easy,What does *enormous* mean?,Very large,Very large|Very bright|Very thin|Very early,Example: An enormous whale swam past the boat.
+meanings,easy,What does *timid* mean?,Shy and easily frightened,Shy and easily frightened|Loud and confident|Tall and strong|Quick and clever,Example: The timid kitten hid under the bed when visitors came.
+meanings,easy,What does *damp* mean?,Slightly wet,Slightly wet|Very hot|Completely dry|Brightly lit,Example: Hang the damp towel outside so it can dry.
+meanings,easy,What does *weary* mean?,Very tired,Very tired|Very angry|Very hungry|Very happy,Example: After the long hike we were weary and went straight to bed.
+meanings,easy,What does *vanish* mean?,To disappear suddenly,To disappear suddenly|To appear suddenly|To grow slowly|To shout loudly,Example: The magician made the coin vanish.
+meanings,easy,What does *cautious* mean?,Careful to avoid danger,Careful to avoid danger|Eager to take risks|Easily bored|Quick to laugh,Example: Be cautious when crossing a busy street.
+meanings,medium,What does *resilient* mean?,Able to recover quickly from difficulties,Able to recover quickly from difficulties|Easily broken|Unwilling to change|Very talkative,Example: The resilient team bounced back after losing the first game.
+meanings,medium,What does *tedious* mean?,Long and boring,Long and boring|Short and exciting|Easy to carry|Bright and colorful,Example: Copying the whole list by hand was a tedious job.
+meanings,medium,What does *profound* mean?,Very deep or intense,Very deep or intense|Shallow and trivial|Loud and sudden|Old and worn,Example: The book had a profound effect on how she saw the world.
+meanings,medium,What does *novice* mean?,A beginner,A beginner|An expert|A judge|A critic,"Example: As a novice skier, he stayed on the gentle slopes."
+meanings,medium,What does *inevitable* mean?,Certain to happen,Certain to happen|Unlikely to happen|Easy to avoid|Happening by mistake,"Example: With no rain for months, a water shortage was inevitable."
+meanings,medium,What does *hostile* mean?,Unfriendly and aggressive,Unfriendly and aggressive|Warm and welcoming|Calm and patient|Shy and quiet,Example: The guard dog gave the stranger a hostile growl.
+meanings,hard,What does *magnanimous* mean?,"Generous and forgiving, especially toward a rival","Generous and forgiving, especially toward a rival|Greedy and selfish|Extremely large in size|Easily frightened",Example: The magnanimous winner praised her opponent's skill.
+meanings,hard,What does *perfunctory* mean?,"Done as a routine, with little care or interest","Done as a routine, with little care or interest|Done with great enthusiasm|Done in secret|Done perfectly",Example: He gave the essay a perfunctory glance and handed it back.
+meanings,hard,What does *recalcitrant* mean?,Stubbornly uncooperative,Stubbornly uncooperative|Eager to help|Easy to calculate|Quick to forgive,Example: The recalcitrant mule refused to move another step.
+meanings,hard,What does *quixotic* mean?,Idealistic in an impractical way,Idealistic in an impractical way|Very fast|Calm and practical|Strangely quiet,"The word comes from Don Quixote, the hero of a novel who chases noble but impossible dreams."
+meanings,hard,What does *ostentatious* mean?,Showy and designed to impress,Showy and designed to impress|Modest and plain|Very old|Easily angered,Example: The ostentatious mansion had gold-plated door handles.
+meanings,hard,What does *mendacious* mean?,Untruthful or lying,Untruthful or lying|Needing repair|Very generous|Quietly sad,Example: The mendacious salesman made promises he knew were false.
+synonyms-antonyms,easy,Which word is a synonym of *happy*?,Glad,Glad|Sad|Angry|Tired,Happy and glad both describe feeling pleased.
+synonyms-antonyms,easy,Which word is an antonym of *full*?,Empty,Empty|Packed|Stuffed|Crowded,"Packed, stuffed and crowded are close to full; empty is its opposite."
+synonyms-antonyms,easy,Which word is a synonym of *quick*?,Fast,Fast|Slow|Late|Heavy,Quick and fast both mean moving or happening with speed.
+synonyms-antonyms,easy,Which word is an antonym of *noisy*?,Quiet,Quiet|Loud|Rowdy|Booming,"Loud, rowdy and booming are close to noisy; quiet is its opposite."
+synonyms-antonyms,easy,Which word is a synonym of *small*?,Little,Little|Huge|Wide|Tall,Small and little both mean not large.
+synonyms-antonyms,easy,Which word is an antonym of *strong*?,Weak,Weak|Powerful|Sturdy|Tough,"Powerful, sturdy and tough are close to strong; weak is its opposite."
+synonyms-antonyms,medium,Which word is a synonym of *courageous*?,Valiant,Valiant|Timid|Fearful|Hesitant,Courageous and valiant both mean showing great bravery.
+synonyms-antonyms,medium,Which word is an antonym of *expand*?,Contract,Contract|Enlarge|Widen|Stretch,To expand is to grow larger; to contract is to become smaller.
+synonyms-antonyms,medium,Which word is a synonym of *fatigued*?,Exhausted,Exhausted|Energetic|Alert|Lively,Fatigued and exhausted both mean extremely tired.
+synonyms-antonyms,medium,Which word is an antonym of *optimistic*?,Pessimistic,Pessimistic|Hopeful|Cheerful|Positive,An optimistic person expects things to go well; a pessimistic person expects the worst.
+synonyms-antonyms,medium,Which word is a synonym of *conceal*?,Hide,Hide|Reveal|Show|Display,"To conceal something is to hide it; reveal, show and display are opposites."
+synonyms-antonyms,medium,Which word is an antonym of *humble*?,Arrogant,Arrogant|Modest|Meek|Unassuming,A humble person does not boast; an arrogant person thinks they are better than others.
+synonyms-antonyms,hard,Which word is a synonym of *obstinate*?,Intransigent,Intransigent|Compliant|Flexible|Docile,Obstinate and intransigent both mean stubbornly refusing to change your mind.
+synonyms-antonyms,hard,Which word is an antonym of *lucid*?,Obscure,Obscure|Clear|Coherent|Intelligible,Lucid means clear and easy to understand; obscure means hard to understand.
+synonyms-antonyms,hard,Which word is a synonym of *ameliorate*?,Improve,Improve|Worsen|Ignore|Measure,To ameliorate a situation is to make it better.
+synonyms-antonyms,hard,Which word is an antonym of *zealous*?,Apathetic,Apathetic|Fervent|Passionate|Eager,Zealous means full of enthusiasm; apathetic means showing no interest or enthusiasm.
+synonyms-antonyms,hard,Which word is a synonym of *enervate*?,Weaken,Weaken|Energize|Excite|Strengthen,"Despite how it sounds, enervate means to drain of energy, so it is a synonym of weaken."
+synonyms-antonyms,hard,Which word is an antonym of *taciturn*?,Talkative,Talkative|Reserved|Silent|Reticent,"A taciturn person says very little; reserved, silent and reticent are close in meaning."
+commonly-confused,easy,Choose the correct word: ____ coat is hanging on the hook.,Your,Your|You're,Your shows possession; you're is short for you are.
+commonly-confused,easy,Choose the correct word: I can ____ the music from my room.,hear,hear|here,Hear is what you do with your ears; here means in this place.
+commonly-confused,easy,Choose the correct word: Turn left at the corner and the shop is over ____.,there,there|their|they're,"There refers to a place; their shows possession, and they're means they are."
+commonly-confused,easy,Choose the correct word: ____ backpack is this?,Whose,Whose|Who's,Whose asks who something belongs to; who's is short for who is or who has.
+commonly-confused,easy,Choose the correct word: Hold on tight so you don't ____ your balloon.,lose,lose|loose,Lose means to stop having something; loose means not tight.
+commonly-confused,easy,Choose the correct word: Our team ____ the game by two points.,won,won|one,Won is the past tense of win; one is the number 1.
+commonly-confused,medium,"Choose the correct word: Everyone came to the party ____ Tom, who was ill.",except,except|accept,Except means not including; accept means to receive or agree to.
+commonly-confused,medium,Choose the correct word: I am happy to ____ your invitation.,accept,accept|except,Accept means to receive or agree to something offered.
+commonly-confused,medium,Choose the correct word: The ____ of the story is that honesty pays.,moral,moral|morale,A moral is the lesson of a story; morale is the confidence and spirit of a group.
+commonly-confused,medium,Choose the correct word: My teacher gave me some good ____ about the test.,advice,advice|advise,Advice is the noun (a suggestion); advise is the verb (to give a suggestion).
+commonly-confused,hard,Choose the correct word: The speech ____ tears from the audience.,elicited,elicited|illicit,To elicit is to draw out a response; illicit means illegal or forbidden.
+commonly-confused,hard,Choose the correct word: The poem makes an ____ to a famous Greek myth.,allusion,allusion|illusion,An allusion is an indirect reference; an illusion is something that deceives the eye or mind.
+commonly-confused,hard,Choose the correct word: A short speech will ____ the award ceremony.,precede,precede|proceed,Precede means to come before; proceed means to go on or continue.
+commonly-confused,hard,Choose the correct word: Dark clouds warned that a storm was ____.,imminent,imminent|eminent,Imminent means about to happen; eminent means famous and respected.
+commonly-confused,hard,Choose the correct word: Remember to ____ your sources at the end of the essay.,cite,cite|site|sight,"To cite is to quote or name a source; a site is a place, and sight is the ability to see."
+commonly-confused,hard,Choose the correct word: The city ____ voted to build a new library.,council,council|counsel,"A council is a group that makes decisions; counsel is advice, or a lawyer."
+commonly-confused,hard,Choose the correct word: All ____ must wear a badge inside the lab.,personnel,personnel|personal,Personnel are the people employed by an organization; personal means belonging to one person.
+commonly-confused,hard,Choose the correct word: Her grandparents decided to ____ from Italy in 1950.,emigrate,emigrate|immigrate,You emigrate from a country you leave and immigrate to a country you move into.
+context,easy,"Choose the word that fits: The baby is ____, so please whisper.",asleep,asleep|awake|hungry|loud,"Asleep means sleeping, which is why everyone should whisper."
+context,easy,Choose the word that fits: I need ____ to cut this paper.,scissors,scissors|glue|tape|paint,Scissors are a tool for cutting.
+context,easy,Choose the word that fits: The ice cream ____ quickly in the hot sun.,melted,melted|froze|grew|shouted,Melted means turned from solid to liquid because of heat.
+context,easy,Choose the word that fits: He was so ____ that he ate two sandwiches.,hungry,hungry|tired|cold|sleepy,Hungry means needing or wanting food.
+context,easy,Choose the word that fits: We carry an umbrella to stay ____ in the rain.,dry,dry|wet|loud|late,"Dry means not wet, which is what an umbrella is for."
+context,easy,"Choose the word that fits: The music was too ____, so I turned it down.",loud,loud|soft|slow|quiet,"Loud means making a lot of noise, which is why it was turned down."
+context,medium,Choose the word that fits: The two stories were so ____ that it was hard to tell them apart.,similar,similar|different|brief|ancient,"Similar means alike, which makes things hard to tell apart."
+context,medium,Choose the word that fits: The teacher ____ the rules so that everyone understood them.,clarified,clarified|confused|hid|forgot,Clarified means made clear and easier to understand.
+context,medium,Choose the word that fits: He was always ____ and thanked everyone who helped him.,grateful,grateful|rude|selfish|lazy,Grateful means feeling or showing thanks.
+context,medium,"Choose the word that fits: Flash photography can damage old paintings, so the museum ____ it.",prohibits,prohibits|encourages|requires|celebrates,"Prohibits means forbids, which protects the paintings."
+context,medium,Choose the word that fits: The bakery was so ____ that we waited an hour for a table.,popular,popular|empty|quiet|closed,"Popular means liked by many people, which explains the long wait."
+context,medium,"Choose the word that fits: After the storm, the town worked together to ____ the damaged houses.",repair,repair|destroy|abandon|ignore,Repair means to fix something that is broken or damaged.
+context,hard,Choose the word that fits: The new evidence was so ____ that the jury quickly reached a verdict.,compelling,compelling|dubious|irrelevant|flimsy,"Compelling means convincing, so the jury could decide quickly."
+context,hard,Choose the word that fits: His ____ remarks offended many of the guests at dinner.,tactless,tactless|diplomatic|courteous|considerate,"Tactless means not sensitive to other people's feelings, which is why the guests were offended."
+context,hard,Choose the word that fits: The lecture was so ____ that even experts struggled to follow it.,abstruse,abstruse|lucid|simple|elementary,Abstruse means very difficult to understand.
+context,hard,"Choose the word that fits: The two sides reached a ____ agreement, but either side could still back out.",tentative,tentative|binding|permanent|final,"Tentative means not yet certain or fixed, so either side could still back out."
+context,hard,"Choose the word that fits: Despite many setbacks, she remained ____ and kept working toward her goal.",tenacious,tenacious|apathetic|indolent|fickle,Tenacious means holding firmly to a goal and not giving up.
+context,hard,"Choose the word that fits: The witness's account was ____ with the security footage, so the police believed her.",consistent,consistent|incompatible|contradictory|irreconcilable,"Consistent means in agreement, which is why her account was believed."

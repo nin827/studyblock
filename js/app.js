@@ -7,6 +7,9 @@ import * as mix from './views/mix.js';
 import * as quiz from './views/quiz.js';
 import * as results from './views/results.js';
 import * as settings from './views/settings.js';
+import * as calcPage from './views/calcpage.js';
+import * as roles from './views/roles.js';
+import * as badges from './views/badges.js';
 import { applyTheme } from './views/settings.js';
 import { getCookie } from './lib/storage.js';
 import { icons, errorBox, esc, icon } from './views/ui.js';
@@ -21,7 +24,7 @@ function decode(s) {
 }
 
 function match(hash) {
-  // Optional "?key=value" suffix (used only by #/mix?only=<domain>).
+  // Optional "?key=value" suffix (#/mix?only=<domain>, #/mix/play?preset=<id>, role quizzes' ?n=<count>).
   const raw = hash.replace(/^#/, '');
   const qi = raw.indexOf('?');
   const query = new URLSearchParams(qi >= 0 ? raw.slice(qi + 1) : '');
@@ -36,10 +39,11 @@ function match(hash) {
     const only = query.get('only');
     return { view: mix, nav: 'mix', params: only && ID_RE.test(only) ? { only } : {} };
   }
-  if (parts[0] === 'mix' && parts.length === 2 && parts[1] === 'play') {
+  if (parts[0] === 'mix' && parts.length === 2 && (parts[1] === 'play' || parts[1] === 'guided')) {
     // ?preset=<id> (quick-start chip). Only used to look up a preset by id, never in a path.
+    // #/mix/guided runs the same mix in guided mode.
     const preset = query.get('preset');
-    return { view: { render: mix.renderPlay }, nav: 'mix', params: preset && preset.length <= 120 ? { preset } : {} };
+    return { view: { render: parts[1] === 'guided' ? mix.renderGuidedPlay : mix.renderPlay }, nav: 'mix', params: preset && preset.length <= 120 ? { preset } : {} };
   }
   if (parts[0] === 'm' && parts.length === 2 && ID_RE.test(parts[1])) {
     return { view: moduleView, nav: 'home', params: { moduleId: parts[1] } };
@@ -51,8 +55,28 @@ function match(hash) {
   if (parts[0] === 'g' && parts.length === 4 && ID_RE.test(parts[1])) {
     return { view: guidedView, nav: 'home', params: { moduleId: parts[1], subtopic: parts[2], difficulty: parts[3] } };
   }
+  // Roles: #/roles, #/roles/<role>, #/roles/<role>/<subrole>.
+  if (parts[0] === 'roles' && parts.length === 1) return { view: roles, nav: 'roles', params: {} };
+  if (parts[0] === 'roles' && (parts.length === 2 || parts.length === 3) && parts.slice(1).every(p => ID_RE.test(p))) {
+    return { view: { render: roles.renderRole }, nav: 'roles', params: { roleId: parts[1], subroleId: parts[2] ?? null } };
+  }
+  // Role quizzes: #/rq/<role>[~<subrole>]/<level>[?n=<count>] (practice) and #/rg/… (guided).
+  // `n` = question count (5-50, clamped by the view); absent or not a number = the level's default.
+  if ((parts[0] === 'rq' || parts[0] === 'rg') && parts.length === 3) {
+    const ids = parts[1].split('~');
+    if (ids.length <= 2 && ids.every(p => ID_RE.test(p)) && ID_RE.test(parts[2])) {
+      const n = query.get('n');
+      return {
+        view: { render: parts[0] === 'rg' ? roles.renderGuidedPlay : roles.renderPlay },
+        nav: 'roles',
+        params: { roleId: ids[0], subroleId: ids[1] ?? null, level: parts[2], count: n && /^\d{1,3}$/.test(n) ? Number(n) : null },
+      };
+    }
+  }
   if (parts[0] === 'results' && parts.length === 1) return { view: results, nav: 'results', params: {} };
+  if (parts[0] === 'badges' && parts.length === 1) return { view: badges, nav: 'results', params: {} };
   if (parts[0] === 'settings' && parts.length === 1) return { view: settings, nav: 'settings', params: {} };
+  if (parts[0] === 'calc' && parts.length === 1) return { view: calcPage, nav: 'calc', params: {} };
   return null;
 }
 
@@ -173,12 +197,12 @@ bannerEl().addEventListener('click', e => {
 });
 
 // Re-render pages that show stored data when a folder merge brought in new attempts/presets.
-const REFRESH_ON_MERGE = new Set(['home', 'results']);
+const REFRESH_ON_MERGE = new Set(['home', 'results', 'roles']);
 folder.subscribe(f => {
   renderBanner(f);
   if (f.merged) {
     const r = match(location.hash);
-    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== guidedView && r.view !== mix) route();
+    if (r && REFRESH_ON_MERGE.has(r.nav) && r.view !== quiz && r.view !== guidedView && r.view !== mix && !/^#\/r[qg]\//.test(location.hash)) route();
   }
 });
 
@@ -198,7 +222,7 @@ function showUpdateToast(applyUpdate) {
     if (!b) return;
     if (b.dataset.act === 'reload') {
       // A quiz in progress would be lost on reload: ask first.
-      const inQuiz = /^#\/(q\/|g\/|mix\/play)/.test(location.hash);
+      const inQuiz = /^#\/(q\/|g\/|rq\/|rg\/|mix\/(play|guided))/.test(location.hash);
       if (inQuiz && !confirm('Reload now? The quiz in progress will be lost.')) return;
       applyUpdate();
     } else el.remove();

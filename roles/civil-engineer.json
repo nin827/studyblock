@@ -1,0 +1,45 @@
+{
+  "id": "civil-engineer",
+  "title": "Civil Engineer",
+  "icon": "hard-hat",
+  "flags": ["safety_critical", "license_oriented", "experience_heavy", "region_specific"],
+  "description": "Beams, tie rods, concrete and earthworks: loads, stresses, quantities and levels worked from the figures, with every rule stated.",
+  "exclusive": "role-civil-engineer",
+  "mix": {
+    "structures": { "weight": 5 },
+    "forces-energy": { "weight": 2, "subtopics": ["forces", "work-power"] },
+    "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] },
+    "geometry": { "weight": 2, "subtopics": ["perimeter-area", "pythagoras", "volume"] },
+    "unit-conversion": { "weight": 1, "subtopics": ["length", "mass-volume"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] }
+  },
+  "subroles": [
+    {
+      "id": "structural-engineer",
+      "title": "Structural Engineer",
+      "icon": "hard-hat",
+      "description": "Beam reactions and bending, tie-rod stress and extension, factor of safety and member sizing.",
+      "mix": {
+        "structures": { "weight": 6 },
+        "forces-energy": { "weight": 2, "subtopics": ["forces"] },
+        "trigonometry": { "weight": 1, "subtopics": ["right-sides", "right-angles"] },
+        "unit-conversion": { "weight": 1, "subtopics": ["length", "mass-volume"] }
+      },
+      "exclusiveSubtopics": ["beam-check", "tie-rod"]
+    },
+    {
+      "id": "site-engineer",
+      "title": "Site Engineer",
+      "icon": "shovel",
+      "description": "Concrete volumes and truckloads, gradients and levels, cut and fill, and setting out with trigonometry.",
+      "mix": {
+        "geometry": { "weight": 4, "subtopics": ["perimeter-area", "pythagoras", "volume"] },
+        "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+        "unit-conversion": { "weight": 2, "subtopics": ["length", "mass-volume"] },
+        "structures": { "weight": 1, "subtopics": ["moments", "factor-of-safety"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] }
+      },
+      "exclusiveSubtopics": ["concrete-batches", "setting-out"]
+    }
+  ]
+}

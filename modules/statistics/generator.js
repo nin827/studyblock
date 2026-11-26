@@ -3,8 +3,8 @@
 // Probabilities are a fraction in simplest form ("3/8", typed as text) or a decimal to 2 places;
 // the prompt says which. Data lists have at most 12 values.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Round half away from zero (the 1e-9 nudge absorbs binary error) and intermediate numbers come from mathutil.
+import { fmtNum, round2 } from "../../js/lib/mathutil.js";
 
 // Answer/choice formatter: whole numbers as-is (prompts say "round if it is not a whole number"),
 // others with exactly 2 decimals; never "-0".
@@ -15,10 +15,7 @@ function fmtAns(n, rounded) {
 }
 
 // Given values and intermediate steps: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+const num = (n) => fmtNum(n);
 
 function gcd(a, b) {
   a = Math.abs(a);

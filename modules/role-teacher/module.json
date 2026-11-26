@@ -1,0 +1,16 @@
+{
+  "id": "role-teacher",
+  "title": "Applied scenarios",
+  "description": "Marking and diagnosing a student's worked answer: find the first wrong step, give the right value, apply a mark scheme and name the misconception.",
+  "icon": "graduation-cap",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "mark-equations", "title": "Marking equation solutions", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "mark-fractions", "title": "Marking fractions, percentages and ratios", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "diagnose-data", "title": "Diagnosing data and motion errors", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "diagnose-moles", "title": "Diagnosing mole calculations", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

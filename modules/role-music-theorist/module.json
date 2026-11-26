@@ -1,0 +1,16 @@
+{
+  "id": "role-music-theorist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join keys, chords, intervals, rhythm and tempo, as a working composer or arranger meets them.",
+  "icon": "music",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "key-chords", "title": "Key and chords", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "progression", "title": "Progressions and cadences", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "bar-timing", "title": "Tempo and bars", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "transposition", "title": "Transposing parts", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

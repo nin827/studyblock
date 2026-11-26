@@ -1,0 +1,16 @@
+{
+  "id": "role-chemist",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join moles, yield, titration, gas volumes and batch costs, as a working chemist meets them.",
+  "icon": "flask-conical",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "yield-purity", "title": "Yield and purity", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "titration", "title": "Titration and strength", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "gas-vessel", "title": "Gas and vessel safety", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "batch-cost", "title": "Scale-up and batch cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

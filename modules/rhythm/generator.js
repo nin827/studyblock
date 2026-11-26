@@ -552,6 +552,14 @@ const MAIN_BEATS = { 'compound duple': 2, 'compound triple': 3, 'compound quadru
 const isNum = (v) => v !== '' && v !== null && v !== undefined && Number.isFinite(Number(v));
 const near = (v, x, tol) => isNum(v) && Math.abs(Number(v) - x) <= tol + 1e-9;
 
+// The 2-decimal value R whose error err(R) (in the answer's units) is under half a hundredth, looked for
+// next to `approx`; NaN if there is none (a tie, which generate() redraws).
+function rounded2(err, approx) {
+  const k = Math.floor(approx * 100);
+  for (const R of [k / 100, (k + 1) / 100]) if (err(R) < 0.005 - 1e-9) return R;
+  return NaN;
+}
+
 function isRight(c, v) {
   const s = String(v ?? '').trim();
   switch (c.kind) {
@@ -594,8 +602,14 @@ function isRight(c, v) {
       return near(v, (barTicks(c.sig) - used) / ticksOf(c.unit), 0);
     }
     // Tempo: reverse the formula from the answer.
-    case 'spb': return isNum(v) && Math.abs(Number(v) * c.bpm - 60) <= c.tol * c.bpm + 1e-9;
-    case 'duration': return isNum(v) && Math.abs((Number(v) * c.bpm) / 60 - c.beats) <= (c.tol * c.bpm) / 60 + 1e-9;
+    // Rounded answers are compared with the 2-decimal value the question asks for (as checkAnswer does),
+    // found by the reverse formula; unrounded ones must satisfy the formula exactly.
+    case 'spb': return c.tol
+      ? near(v, rounded2((R) => Math.abs(R * c.bpm - 60) / c.bpm, 60 / c.bpm), c.tol)
+      : isNum(v) && Math.abs(Number(v) * c.bpm - 60) <= 1e-9;
+    case 'duration': return c.tol
+      ? near(v, rounded2((R) => Math.abs((R * c.bpm) / 60 - c.beats) * 60 / c.bpm, (c.beats * 60) / c.bpm), c.tol)
+      : isNum(v) && Math.abs((Number(v) * c.bpm) / 60 - c.beats) <= 1e-9;
     case 'beats-in': return isNum(v) && Math.abs((Number(v) / c.bpm) * 60 - c.secs) <= 1e-9;
     case 'bpm': return isNum(v) && Number(v) > 0 && Math.abs((c.beats / Number(v)) * 60 - c.secs) <= 1e-9;
     default: return false;

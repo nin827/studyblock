@@ -1,0 +1,16 @@
+{
+  "id": "role-project-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join networks, working-day calendars, crashing costs, earned value and team effort, as a project manager meets them.",
+  "icon": "chart-gantt",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "delay-finish", "title": "Delays and finish dates", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "crash-decision", "title": "Crashing and cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "earned-value", "title": "Earned value and forecasts", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "resource-plan", "title": "Team effort and calendar", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

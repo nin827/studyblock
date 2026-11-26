@@ -1,0 +1,50 @@
+{
+  "id": "teacher",
+  "title": "Teacher",
+  "icon": "graduation-cap",
+  "flags": ["experience_heavy", "license_oriented", "region_specific"],
+  "description": "Marking to a mark scheme and diagnosing a student's mistakes across maths, science and language.",
+  "exclusive": "role-teacher",
+  "mix": {
+    "algebra": { "weight": 3, "subtopics": ["linear"] },
+    "arithmetic": { "weight": 1 },
+    "fractions": { "weight": 2 },
+    "ratios-percentages": { "weight": 2 },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "kinematics": { "weight": 1, "subtopics": ["speed"] },
+    "chemistry": { "weight": 2, "subtopics": ["moles", "concentration"] },
+    "grammar": { "weight": 1 },
+    "word-roots": { "weight": 1 }
+  },
+  "subroles": [
+    {
+      "id": "examiner",
+      "title": "Examiner",
+      "icon": "clipboard-check",
+      "description": "Marking a worked answer to a stated mark scheme, line by line.",
+      "mix": {
+        "algebra": { "weight": 3, "subtopics": ["linear"] },
+        "fractions": { "weight": 2 },
+        "ratios-percentages": { "weight": 2 },
+        "arithmetic": { "weight": 1 },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": ["mark-equations", "mark-fractions"]
+    },
+    {
+      "id": "tutor",
+      "title": "Tutor",
+      "icon": "book-open-check",
+      "description": "Finding why a student went wrong and choosing the next step to teach.",
+      "mix": {
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "kinematics": { "weight": 2, "subtopics": ["speed"] },
+        "chemistry": { "weight": 3, "subtopics": ["moles", "concentration"] },
+        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] },
+        "grammar": { "weight": 1 },
+        "word-roots": { "weight": 1 }
+      },
+      "exclusiveSubtopics": ["diagnose-data", "diagnose-moles"]
+    }
+  ]
+}

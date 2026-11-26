@@ -1,0 +1,16 @@
+{
+  "id": "role-network-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join subnetting, transfer times, ciphers and log analysis, as a working network engineer meets them.",
+  "icon": "network",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "subnet-plan", "title": "Subnet planning", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "transfer-window", "title": "Transfer windows", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "cipher-decode", "title": "Ciphers and keys", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "log-flags", "title": "Logs and flags", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

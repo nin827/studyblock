@@ -2,7 +2,7 @@
 
 Read short functions the way a reviewer does: work out what they do, spot the line that's wrong, and say how to fix it.
 
-**Pick your language.** Snippets can be shown in Python, C#, C++, GDScript or Rust. Choose one on this page or in Settings. Each question is the same in every language; only the spelling changes.
+**Pick your language.** Snippets can be shown in Python, C#, C++, GDScript or Rust. Choose one on this page or in Settings. Each question is the same in every language; only the spelling changes (except *Language features*, below).
 
 **Line numbers.** Every snippet has a line number on the left, before the `|`. When a question asks for a line, use that number. Brace-only lines count too, so the same bug can sit on a different line in C# than in Python.
 
@@ -16,6 +16,22 @@ Read short functions the way a reviewer does: work out what they do, spot the li
 - **Wrong index**: reading `xs[0]` where it should read `xs[i]`.
 - **Returns too early**: a `return` inside the loop, so the function stops after the first pass.
 - **Infinite loop**: the loop variable never changes, so the loop never ends.
+
+## Rewrite the buggy line
+
+Instead of picking a fix, type the corrected line yourself. The trailing `:`, `;` or `{` is optional, and so are spaces around operators. Easy and Medium tell you which line is wrong; Hard and Expert leave that to you. You can also switch to **Blocks** and build the line from blocks, including slot blocks such as `range(…)` that hold other blocks. At Hard and Expert, block answers earn a little less credit (85% and 70%) than typed ones.
+
+## Language features
+
+These questions are about what makes **your** language different, so they exist only in the language you picked. Unlike the other topics, the same question is not shown in the other languages: switch language and you get that language's questions instead.
+
+- **Python:** `/` vs `//` and `%` with negative numbers, lists shared between names, copies, slices, `==` vs `is`, and mutable default arguments.
+- **C#:** whole-number division and casts, immutable strings, `struct` (copied) vs `class` (shared), `ref`, `int` overflow and `checked`, and lines that don't compile.
+- **C++:** pass by value, by reference (`int&`) and by pointer (`int*`), integer division, references that can't be re-seated, and spotting undefined behaviour (you are never asked what it prints).
+- **GDScript:** `int` vs `float` division, Arrays and Dictionaries shared by reference, `duplicate()`, `for` loops, and typed variables (`: int`, `:=`).
+- **Rust:** moves and `clone()`, borrowing (`&` vs `&mut`), `mut`, shadowing, and `u8` overflow in debug builds.
+
+Some ask what is printed, some which line the compiler rejects and why, and some ask you to type a corrected line (or build it from blocks). Medium, Hard and Expert only.
 
 ## Levels
 

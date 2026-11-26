@@ -1,0 +1,16 @@
+{
+  "id": "role-electrical-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join circuits, batteries, binary registers and sensor data, as a working electrical engineer meets them.",
+  "icon": "zap",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "power-circuit", "title": "Circuit, power and fuse", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "battery-energy", "title": "Battery and energy cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "register-flags", "title": "Registers and flags", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "sensor-data", "title": "Sensor data and storage", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

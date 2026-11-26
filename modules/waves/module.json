@@ -4,6 +4,7 @@
   "description": "The wave equation, period and frequency, refraction with Snell's law and the critical angle, and thin lenses.",
   "icon": "audio-waveform",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "wave-equation", "title": "Wave equation", "difficulties": ["easy", "medium", "hard", "expert"] },

@@ -2,12 +2,18 @@
 // trace, and key points (zeros, minima, maxima, intersections). Mounted by calculator.js.
 // The maths lives in js/lib/graph.js and js/lib/calc.js; this file is DOM only.
 //
-// mountGraph(container, { state, getLookup, onChange, onAddValue })
-//   state       { fns: [{ slot, expr, hidden }], view: { xmin, xmax, ymin, ymax } } or null
+// mountGraph(container, { state, getLookup, onChange, onAddValue, tall })
+//   state       { fns: [{ slot, expr, hidden, given?, label? }], view: { xmin, xmax, ymin, ymax } } or null
 //   getLookup() -> lookup(nameLowerCase) for sheet rows (same rules as the sheet, see calc.sheetLookup)
 //   onChange()  the graph state changed (calculator.js saves it with the sheet)
 //   onAddValue(number) -> { ok: true, label, expr } | { ok: false, message }
-// -> { refresh(), setActive(bool), focus(), getState(), destroy() }
+//   tall        true on the standalone Calculator page (a taller plot on phones)
+// -> { refresh(), setActive(bool), focus(), getState(), snapshot(), setGiven(fns, view), hasGiven(),
+//      reset(), renameRef(old, new), destroy() }
+//
+// Given functions (a question's `graphFns`, like the sheet's given rows): setGiven() drops the
+// functions still flagged `given` and adds the new ones in the lowest free slots, with a "given"
+// tag. Editing a given function's expression clears its flag, so it stays for later questions.
 //
 // User text reaches the DOM only through textContent / attributes; canvas text uses fillText.
 
@@ -19,6 +25,8 @@ import {
 import { icon, icons } from './ui.js';
 
 export const MAX_FNS = 6;
+export const GIVEN_FNS_MAX = 3;
+export const GIVEN_LABEL_MAX = 40;
 const ZOOM = 1.5;
 const PHONE = '(max-width: 899px)';
 let uid = 0;
@@ -33,7 +41,8 @@ export function cleanGraphState(raw) {
     const slot = Number(f.slot);
     if (!Number.isInteger(slot) || slot < 1 || slot > MAX_FNS || used.has(slot)) continue;
     used.add(slot);
-    fns.push({ slot, expr: f.expr.slice(0, MAX_EXPR), hidden: f.hidden === true });
+    const label = f.given === true && typeof f.label === 'string' ? f.label.trim().slice(0, GIVEN_LABEL_MAX) : '';
+    fns.push({ slot, expr: f.expr.slice(0, MAX_EXPR), hidden: f.hidden === true, ...(f.given === true ? { given: true } : {}), ...(label ? { label } : {}) });
   }
   fns.sort((a, b) => a.slot - b.slot);
   const view = validView(raw.view) ? clampView(raw.view) : defaultView();
@@ -72,7 +81,134 @@ function refNames(ast, out = []) {
   return out;
 }
 
-export function mountGraph(container, { state, getLookup, onChange, onAddValue } = {}) {
+// Canvas colours from the theme tokens of `node` (light/dark and accent follow the page).
+export function plotColors(node) {
+  const cs = getComputedStyle(node);
+  const g = name => cs.getPropertyValue(name).trim();
+  return {
+    bg: g('--surface') || '#fff',
+    grid: g('--line') || '#ddd',
+    axis: g('--muted') || '#666',
+    text: g('--text-2') || '#444',
+    fns: [1, 2, 3, 4, 5, 6].map(i => g(`--graph-${i}`) || '#36c'),
+  };
+}
+
+/*
+ * Paints the background, grid, axes, tick labels, curves and each curve's name (y1 …) onto a
+ * 2D context sized W × H CSS pixels at `dpr`. Shared by the live graph and the static plots in
+ * the review / History (js/views/staticgraph.js).
+ *   curves: [{ slot, f }] with f(x) -> number (NaN where undefined)
+ * -> { empty: Set(slot) } curves with no value anywhere in the view.
+ */
+export function paintPlot(ctx, { W, H, dpr = 1, view, curves, c, font }) {
+  const family = font || 'system-ui, sans-serif';
+  const toPx = x => ((x - view.xmin) / (view.xmax - view.xmin)) * W;
+  const toPy = y => ((view.ymax - y) / (view.ymax - view.ymin)) * H;
+  const clampPy = py => Math.max(-4 * H, Math.min(5 * H, py));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = c.bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // grid + axes
+  const xStep = niceStep(view.xmax - view.xmin, Math.max(2, Math.floor(W / 56)));
+  const yStep = niceStep(view.ymax - view.ymin, Math.max(2, Math.floor(H / 44)));
+  const xt = ticks(view.xmin, view.xmax, xStep);
+  const yt = ticks(view.ymin, view.ymax, yStep);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = c.grid;
+  ctx.beginPath();
+  xt.forEach(x => { const px = Math.round(toPx(x)) + 0.5; ctx.moveTo(px, 0); ctx.lineTo(px, H); });
+  yt.forEach(y => { const py = Math.round(toPy(y)) + 0.5; ctx.moveTo(0, py); ctx.lineTo(W, py); });
+  ctx.stroke();
+
+  const ax = Math.round(toPx(0)) + 0.5; // y axis (x = 0)
+  const ay = Math.round(toPy(0)) + 0.5; // x axis (y = 0)
+  ctx.strokeStyle = c.axis;
+  ctx.lineWidth = 1.25;
+  ctx.beginPath();
+  if (ax >= 0 && ax <= W) { ctx.moveTo(ax, 0); ctx.lineTo(ax, H); }
+  if (ay >= 0 && ay <= H) { ctx.moveTo(0, ay); ctx.lineTo(W, ay); }
+  ctx.stroke();
+
+  // tick labels (kept inside the canvas when an axis is off-screen)
+  ctx.font = `11px ${family}`;
+  ctx.fillStyle = c.text;
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = c.bg;
+  ctx.lineJoin = 'round';
+  const labelY = Math.min(Math.max(ay + 4, 2), H - 14);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  xt.forEach(x => {
+    if (Math.abs(x) < xStep * 1e-6 && ax >= 0 && ax <= W) return; // 0 drawn once, by the y labels
+    const px = toPx(x);
+    if (px < 10 || px > W - 10) return;
+    const s = formatTick(x, xStep);
+    ctx.strokeText(s, px, labelY);
+    ctx.fillText(s, px, labelY);
+  });
+  const leftSide = ax > W - 40;
+  ctx.textAlign = leftSide ? 'right' : 'left';
+  ctx.textBaseline = 'middle';
+  const labelX = leftSide ? Math.min(ax - 4, W - 2) : Math.max(Math.min(ax + 4, W - 36), 2);
+  yt.forEach(y => {
+    const py = toPy(y);
+    if (py < 8 || py > H - 8) return;
+    const s = formatTick(y, yStep);
+    ctx.strokeText(s, labelX, py);
+    ctx.fillText(s, labelX, py);
+  });
+
+  // curves
+  const n = Math.max(50, Math.min(2000, Math.round(W * dpr)));
+  const jump = view.ymax - view.ymin;
+  const labels = [];
+  const empty = new Set();
+  for (const { slot, f } of curves) {
+    const color = c.fns[slot - 1];
+    const { xs, ys, brk } = sampleCurve(f, view.xmin, view.xmax, n, jump);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.25;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let any = false;
+    let last = null;
+    for (let i = 0; i <= n; i++) {
+      const y = ys[i];
+      if (y !== y) continue; // NaN
+      any = true;
+      const px = toPx(xs[i]);
+      const py = clampPy(toPy(y));
+      if (brk[i]) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (py >= 0 && py <= H) last = { px, py };
+    }
+    ctx.stroke();
+    if (!any) empty.add(slot);
+    if (last) labels.push({ slot, color, ...last });
+  }
+
+  // name labels near each curve's last visible point (names, not colour alone)
+  ctx.font = `600 12px ${family}`;
+  ctx.textBaseline = 'bottom';
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = c.bg;
+  const placed = [];
+  labels.forEach(l => {
+    const x = Math.max(24, Math.min(W - 4, l.px - 4));
+    let y = Math.max(16, Math.min(H - 2, l.py - 4));
+    while (placed.some(q => Math.abs(q.x - x) < 26 && Math.abs(q.y - y) < 14) && y < H - 2) y += 14;
+    placed.push({ x, y });
+    ctx.strokeText(`y${l.slot}`, x, y);
+    ctx.fillStyle = l.color;
+    ctx.fillText(`y${l.slot}`, x, y);
+  });
+  return { empty };
+}
+
+export function mountGraph(container, { state, getLookup, onChange, onAddValue, tall = false } = {}) {
   const id = `graph${++uid}`;
   const init = cleanGraphState(state) || cleanGraphState({});
   let fns = init.fns;
@@ -92,6 +228,7 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
   const notes = new Map(); // slot -> current note text (avoid DOM churn)
   let readoutText = '';
   let readoutMsg = ''; // shown when no trace is active (e.g. "No curve has a value at x = 3.")
+  let viewBeforeGiven = null; // { before, applied }: the view a question's graphView replaced
 
   // ---- static shell ----
   const root = el('div', 'graph');
@@ -261,6 +398,15 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
     main.append(name, eqv, input);
 
     const out = el('div', 'graph-fn-out');
+    if (fn.given) {
+      li.classList.add('is-given');
+      const g = el('span', 'calc-given graph-given', { title: 'Given in the question. Edit it to keep it for later questions.' });
+      g.textContent = fn.label ? `given · ${fn.label}` : 'given';
+      out.appendChild(g);
+      const sr = el('span', 'sr-only graph-given-sr');
+      sr.textContent = ' (given in the question)';
+      name.appendChild(sr);
+    }
     const msg = el('p', 'graph-fn-msg', { id: `${id}-m${fn.slot}` });
     const eye = el('button', 'btn btn-small graph-eye', { type: 'button', 'aria-pressed': fn.hidden ? 'false' : 'true' });
     setEye(eye, fn);
@@ -321,6 +467,15 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
     const fn = fnBySlot(slot);
     if (!fn) return;
     fn.expr = e.target.value.slice(0, MAX_EXPR);
+    if (fn.given) {
+      // Editing a given function makes it the user's own: it stays when the next question comes.
+      delete fn.given;
+      delete fn.label;
+      const li = e.target.closest('.graph-fn');
+      li.classList.remove('is-given');
+      li.querySelector('.graph-given')?.remove();
+      li.querySelector('.graph-given-sr')?.remove();
+    }
     setNote(slot, '');
     prepareAll();
     persist();
@@ -576,25 +731,14 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
   });
 
   // ---- drawing ----
-  function colors() {
-    const cs = getComputedStyle(root);
-    const g = name => cs.getPropertyValue(name).trim();
-    return {
-      bg: g('--surface') || '#fff',
-      grid: g('--line') || '#ddd',
-      axis: g('--muted') || '#666',
-      text: g('--text-2') || '#444',
-      fns: [1, 2, 3, 4, 5, 6].map(i => g(`--graph-${i}`) || '#36c'),
-    };
-  }
-
   const isPhone = () => !!window.matchMedia?.(PHONE).matches;
 
   function resize() {
     const w = plot.clientWidth;
     if (!w) { cssW = 0; return; }
     let h = Math.round(w * 0.75);
-    if (isPhone()) h = Math.round(Math.min(h, Math.max(150, window.innerHeight * 0.3)));
+    if (tall) h = Math.round(Math.min(h, Math.max(220, window.innerHeight * 0.6)));
+    else if (isPhone()) h = Math.round(Math.min(h, Math.max(150, window.innerHeight * 0.3)));
     const d = window.devicePixelRatio || 1;
     if (w === cssW && h === cssH && d === dpr) return;
     cssW = w; cssH = h; dpr = d;
@@ -611,116 +755,22 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
 
   const toPx = x => ((x - view.xmin) / (view.xmax - view.xmin)) * cssW;
   const toPy = y => ((view.ymax - y) / (view.ymax - view.ymin)) * cssH;
-  const clampPy = py => Math.max(-4 * cssH, Math.min(5 * cssH, py));
 
   function draw() {
     raf = 0;
     if (!active || !cssW || !cssH) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    const c = colors();
+    const c = plotColors(root);
     const W = cssW;
     const H = cssH;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = c.bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // grid + axes
-    const xStep = niceStep(view.xmax - view.xmin, Math.max(2, Math.floor(W / 56)));
-    const yStep = niceStep(view.ymax - view.ymin, Math.max(2, Math.floor(H / 44)));
-    const xt = ticks(view.xmin, view.xmax, xStep);
-    const yt = ticks(view.ymin, view.ymax, yStep);
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = c.grid;
-    ctx.beginPath();
-    xt.forEach(x => { const px = Math.round(toPx(x)) + 0.5; ctx.moveTo(px, 0); ctx.lineTo(px, H); });
-    yt.forEach(y => { const py = Math.round(toPy(y)) + 0.5; ctx.moveTo(0, py); ctx.lineTo(W, py); });
-    ctx.stroke();
-
-    const ax = Math.round(toPx(0)) + 0.5; // y axis (x = 0)
-    const ay = Math.round(toPy(0)) + 0.5; // x axis (y = 0)
-    ctx.strokeStyle = c.axis;
-    ctx.lineWidth = 1.25;
-    ctx.beginPath();
-    if (ax >= 0 && ax <= W) { ctx.moveTo(ax, 0); ctx.lineTo(ax, H); }
-    if (ay >= 0 && ay <= H) { ctx.moveTo(0, ay); ctx.lineTo(W, ay); }
-    ctx.stroke();
-
-    // tick labels (kept inside the canvas when an axis is off-screen)
-    ctx.font = `11px ${getComputedStyle(root).fontFamily || 'system-ui, sans-serif'}`;
-    ctx.fillStyle = c.text;
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = c.bg;
-    ctx.lineJoin = 'round';
-    const labelY = Math.min(Math.max(ay + 4, 2), H - 14);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    xt.forEach(x => {
-      if (Math.abs(x) < xStep * 1e-6 && ax >= 0 && ax <= W) return; // 0 drawn once, by the y labels
-      const px = toPx(x);
-      if (px < 10 || px > W - 10) return;
-      const s = formatTick(x, xStep);
-      ctx.strokeText(s, px, labelY);
-      ctx.fillText(s, px, labelY);
+    const { empty } = paintPlot(ctx, {
+      W, H, dpr, view, c, font: getComputedStyle(root).fontFamily,
+      curves: fns.filter(fn => !fn.hidden && prepared.get(fn.slot)?.f).map(fn => ({ slot: fn.slot, f: prepared.get(fn.slot).f })),
     });
-    const leftSide = ax > W - 40;
-    ctx.textAlign = leftSide ? 'right' : 'left';
-    ctx.textBaseline = 'middle';
-    const labelX = leftSide ? Math.min(ax - 4, W - 2) : Math.max(Math.min(ax + 4, W - 36), 2);
-    yt.forEach(y => {
-      const py = toPy(y);
-      if (py < 8 || py > H - 8) return;
-      const s = formatTick(y, yStep);
-      ctx.strokeText(s, labelX, py);
-      ctx.fillText(s, labelX, py);
-    });
-
-    // curves
-    const n = Math.max(50, Math.min(2000, Math.round(W * dpr)));
-    const jump = view.ymax - view.ymin;
-    const labels = [];
     for (const fn of fns) {
-      const p = prepared.get(fn.slot);
-      if (fn.hidden || !p || !p.f) continue;
-      const color = c.fns[fn.slot - 1];
-      const { xs, ys, brk } = sampleCurve(p.f, view.xmin, view.xmax, n, jump);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.25;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      let any = false;
-      let last = null;
-      for (let i = 0; i <= n; i++) {
-        const y = ys[i];
-        if (y !== y) continue; // NaN
-        any = true;
-        const px = toPx(xs[i]);
-        const py = clampPy(toPy(y));
-        if (brk[i]) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        if (py >= 0 && py <= H) last = { px, py };
-      }
-      ctx.stroke();
-      setNote(fn.slot, any ? '' : 'No values in this view.');
-      if (last) labels.push({ slot: fn.slot, color, ...last });
+      if (!fn.hidden && prepared.get(fn.slot)?.f) setNote(fn.slot, empty.has(fn.slot) ? 'No values in this view.' : '');
     }
-
-    // name labels near each curve's last visible point (names, not colour alone)
-    ctx.font = `600 12px ${getComputedStyle(root).fontFamily || 'system-ui, sans-serif'}`;
-    ctx.textBaseline = 'bottom';
-    ctx.textAlign = 'right';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = c.bg;
-    const placed = [];
-    labels.forEach(l => {
-      let x = Math.max(24, Math.min(W - 4, l.px - 4));
-      let y = Math.max(16, Math.min(H - 2, l.py - 4));
-      while (placed.some(q => Math.abs(q.x - x) < 26 && Math.abs(q.y - y) < 14) && y < H - 2) y += 14;
-      placed.push({ x, y });
-      ctx.strokeText(fnName(l.slot), x, y);
-      ctx.fillStyle = l.color;
-      ctx.fillText(fnName(l.slot), x, y);
-    });
 
     // key points of the selected function
     if (points && !points.unavailable) {
@@ -990,8 +1040,74 @@ export function mountGraph(container, { state, getLookup, onChange, onAddValue }
         || fnList.querySelector('.graph-expr');
       target?.focus();
     },
+    // Full state for the calculator's own storage (keeps the given flags).
     getState() {
-      return { fns: fns.map(f => ({ slot: f.slot, expr: f.expr, hidden: f.hidden })), view: { ...view } };
+      return {
+        fns: fns.map(f => ({ slot: f.slot, expr: f.expr, hidden: f.hidden, ...(f.given ? { given: true } : {}), ...(f.label ? { label: f.label } : {}) })),
+        view: { ...view },
+      };
+    },
+    // What is saved with an answer: the non-empty functions and the view, or null.
+    snapshot() {
+      const list = fns.filter(f => f.expr.trim()).map(f => ({ slot: f.slot, expr: f.expr, hidden: f.hidden }));
+      return list.length ? { fns: list, view: { ...view } } : null;
+    },
+    hasGiven: () => fns.some(f => f.given),
+    // Replace the untouched given functions of the previous question with these (may be empty).
+    // list: [{ expr, label? }] (already validated by the engine); givenView: a view or null.
+    setGiven(list, givenView) {
+      const fresh = (Array.isArray(list) ? list : [])
+        .filter(g => g && typeof g.expr === 'string' && g.expr.trim()).slice(0, GIVEN_FNS_MAX);
+      const gv = givenView && validView(givenView) ? clampView(givenView) : null;
+      const had = fns.some(f => f.given);
+      if (!had && !fresh.length && !gv) return;
+      // Blank functions give way to given ones, so these take y1, y2, … where free.
+      let kept = fns.filter(f => !f.given);
+      if (fresh.length) kept = kept.filter(f => f.expr.trim());
+      const used = new Set(kept.map(f => f.slot));
+      const added = [];
+      for (const g of fresh) {
+        if (kept.length + added.length >= MAX_FNS) break;
+        let slot = 1;
+        while (used.has(slot)) slot++;
+        used.add(slot);
+        const label = typeof g.label === 'string' ? g.label.trim().slice(0, GIVEN_LABEL_MAX) : '';
+        added.push({ slot, expr: g.expr.slice(0, MAX_EXPR), hidden: false, given: true, ...(label ? { label } : {}) });
+      }
+      fns = [...kept, ...added].sort((a, b) => a.slot - b.slot);
+      if (!fns.length) fns = [{ slot: 1, expr: '', hidden: false }];
+      if (trace && !fnBySlot(trace.slot)) trace = null;
+      if (pointsFor !== null && !fnBySlot(pointsFor)) closePoints();
+      // A question's window applies while it is shown; the earlier one comes back after it,
+      // unless the user moved the view in the meantime.
+      const same = (a, b) => a && b && ['xmin', 'xmax', 'ymin', 'ymax'].every(k => a[k] === b[k]);
+      if (gv) {
+        viewBeforeGiven = { before: viewBeforeGiven && same(view, viewBeforeGiven.applied) ? viewBeforeGiven.before : { ...view }, applied: gv };
+        view = gv;
+      } else if (viewBeforeGiven) {
+        if (same(view, viewBeforeGiven.applied)) view = clampView(viewBeforeGiven.before);
+        viewBeforeGiven = null;
+      }
+      setStatus('');
+      renderFns();
+      persist();
+      refreshPointsSoon(0);
+      scheduleDraw();
+    },
+    // Back to one empty y1 and the default window.
+    reset() {
+      fns = [{ slot: 1, expr: '', hidden: false }];
+      view = defaultView();
+      trace = null;
+      readoutMsg = '';
+      viewBeforeGiven = null;
+      closePoints();
+      setStatus('');
+      win.open = false;
+      winErr.hidden = true;
+      renderFns();
+      persist();
+      scheduleDraw();
     },
     destroy() {
       if (raf) cancelAnimationFrame(raf);

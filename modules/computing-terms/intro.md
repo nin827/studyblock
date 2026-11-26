@@ -38,4 +38,5 @@ Network speeds are usually given in **bits** per second (Mbps), and file sizes i
 - **Two-factor authentication (2FA)** asks for two different kinds of proof, for example a password plus a code from your phone.
 - A **firewall** allows or blocks network traffic according to its rules.
 
-**Tip:** typed answers ignore capital letters, but spelling counts. For numbers, type digits only, e.g. `1000`, not `1,000`.
+> [!TIP]
+> Typed answers ignore capital letters, but spelling counts. For numbers, type digits only, e.g. `1000`, not `1,000`.

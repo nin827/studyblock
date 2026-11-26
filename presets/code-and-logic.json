@@ -1,0 +1,17 @@
+{
+  "id": "code-and-logic",
+  "name": "Code & logic",
+  "description": "Computing and Logic puzzles at any difficulty.",
+  "config": {
+    "domains": {
+      "computing": {
+        "weight": 2
+      },
+      "logic": {
+        "weight": 1
+      }
+    },
+    "difficulty": "any",
+    "count": 12
+  }
+}

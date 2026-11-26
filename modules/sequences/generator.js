@@ -7,8 +7,9 @@
 // Explanations list every step as a labelled calculator row, e.g. `_u20 = _a + (20 - 1) * _d` → 62.
 // Infinite geometric sums appear only on hard.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...), the
+// half-step test and the 2-dp answer string come from mathutil.
+import { fmtAnswer, isHalfStep, round2 } from "../../js/lib/mathutil.js";
 
 // Strip binary noise (0.1 * 3 = 0.30000000000000004) without changing a real value; never "-0".
 function clean(n) {
@@ -18,12 +19,11 @@ function clean(n) {
 const show = (n) => String(clean(n));
 
 // True when the exact value sits (nearly) on a half at the 2nd decimal, e.g. 1.625.
-const isTie = (x) => Math.abs(((Math.abs(x) * 100) % 1) - 0.5) < 1e-4;
+const isTie = (x) => isHalfStep(x, 2, 1e-4);
 
 function fmtAns(n, fmt) {
   if (fmt !== "2dp") return show(n);
-  const r = round2(n);
-  return (Object.is(r, -0) ? 0 : r).toFixed(2);
+  return fmtAnswer(n, true);
 }
 
 const NOTE = {

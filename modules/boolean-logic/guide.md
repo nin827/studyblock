@@ -43,3 +43,17 @@ Example: with A = 1, B = 1, C = 0, `(A AND NOT B) OR C` → NOT B = 0 → 1 AND 
 **Watch out:** a letter that appears twice is still one input, so it does not add rows.
 
 **Expert: tables to expressions.** To pick the expression for a table, test each option on a few rows (000, 111, then a row with output 1): one wrong row rules it out. For a rule in words, first turn it into an 8-row table; watch "at least", "exactly" and "unless".
+
+## Write the expression
+
+1. Type the expression with `AND`, `OR`, `XOR`, `NOT` and brackets (capitals or not). NAND, NOR and XNOR aren't allowed: write `NOT (A AND B)`, `NOT (A OR B)`, `NOT (A XOR B)`.
+2. **From a truth table:** look at the rows that give 1. One row only? Join its inputs with AND, putting NOT on each 0 (`A AND NOT B`). All rows but one? Think of the opposite and use OR, or NOT around an AND. Outputs 1 when two inputs differ? That's XOR.
+3. **From a circuit:** write each wire as an expression, starting from the gates nearest the inputs. Then put it, in brackets, wherever that wire is used.
+4. **From a rule in words:** split it at the main "and" / "or" / "unless". "At least one of X and Y" is `X OR Y`, "X and Y are different" is `X XOR Y`, "X matches Y" is `NOT (X XOR Y)`, "unless" means AND NOT.
+5. Test your expression on every row before you check it.
+
+Example: rows 01 and 10 give 1 and the others 0, so the output is 1 when A and B differ: `A XOR B`.
+
+**Watch out:** bracket an operation that sits inside another one. `A AND B OR C` could mean `(A AND B) OR C` or `A AND (B OR C)`, so it isn't accepted. A chain of one operator, like `A AND B AND C`, is fine.
+
+Any expression with the right truth table counts, not only the one shown as the answer. With Blocks, place a `( … )` block and fill it with the blocks that go inside the brackets.

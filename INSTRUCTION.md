@@ -110,6 +110,20 @@ On phones the menu sits at the bottom of the screen.
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
    - **Text answers:** capital letters and extra spaces don't matter, including spaces around `:` and `,` (so `2,4` matches `2, 4`). A typed `−` counts the same as `-`.
    - **Multiple choice:** tap an option, or press keys **1–9**.
+   - **Blocks:** build the answer by tapping blocks in turn, or dragging them into the "Your answer" row. Tap a placed block (or drag it back) to remove it, drag to reorder, and use **Reset** to start again. On a keyboard, Enter places a block and Alt+←/→ moves it. When there are many blocks, type in **Filter blocks** to find one. Timelines → Ordering uses blocks.
+   - **Blocks inside blocks:** some blocks have brackets, like `COUNT(…)`. Tap one you've placed to give it an outline, and blocks you then tap go inside it. You can also drag blocks into it. Press Esc to go back to the main row.
+   - **Type or Blocks:** some questions (SQL Write the query, and the new Code Writing and Code Reviewing topics) let you choose **Type** or **Blocks**. Typing earns full credit. Blocks earn up to 85% at Hard and 70% at Expert, because the blocks give you the pieces.
+   - **Run:** in SQL *Write the query*, **Run** (or Ctrl/Cmd+Enter) runs your query on the table and shows the result or an error. Running is free and never scored.
+   - **Close answers:** a small typo or a slightly-off number earns part credit, shown as "Close · 85% credit". By default, one typo in a word of 4+ letters earns 75–90%, and two typos earn nothing. A number within 0.1%, 1% or 2% earns 90%, 75% or 50%. History years earn 50% when 1 year out. Each subject sets how lenient it is: codes, symbols, spelling subjects, code and SQL must be exact.
+   - **Typed answers with blocks:** SQL *Write the query*, Code *Write the line* and *Rewrite the buggy line*, Boolean Logic *Write the expression*, Algorithms *Write the trace* and Genetics *Write gametes & genotypes*. Equivalent SQL queries and Boolean expressions count when they give the same output or truth table. Hard-coded SQL values don't count. In Genetics, capitals matter.
+   - **Guided practice** is saved in History with a Guided tag, but never counts toward scores. **Show solution** unlocks after your first try or once you've seen every hint. The Mix builder also has a Guided mode.
+   - **Calculator page:** open **Calculator** from the top bar (or the Home card on phones) for the same Sheet and Graph outside quizzes. It's saved in this browser. Graphs you draw during a quiz are saved with your answer and show as "Your graph" in the review and History.
+   - **Block-list answers (Build or Choose):** some questions, like the Business theory ones, combine several facts, e.g. `Assets ↑ | Liabilities – | Equity ↑`. In **Build** (the default) you place one block per column from the bank; order doesn't matter. In **Choose** you pick a listed option, which earns up to 85% at Hard and 70% at Expert.
+   - **Case-sensitive questions** (Genetics) show a warning: capital letters matter.
+   - **Code Reviewing → Language features** (Medium to Expert) asks questions that only make sense in your chosen language: Python `//` and aliasing, C# structs and overflow, C++ references and undefined behaviour, GDScript references and typing, and Rust ownership and borrowing. Switching language gives you that language's questions.
+   - **Roles:** open **Roles** (top bar, or the Home card) for career-style practice: Business Analyst, Software Engineer, Mathematician, Data Analyst, Physicist, Accountant, Chemist, Electrical Engineer, Biologist, Game Developer, Network Engineer, Music Theorist, Operations Manager, Teacher, Nutritionist, Economist, Historian, Geographer, Linguist, Civil Engineer, Architect, Project Manager, Electrician, Pilot, Data Scientist, Land Surveyor, Investigator, Chef and Retail Manager, each with specialised subroles (Financial or Marketing Analyst, Backend or Fintech Engineer, Statistician or Actuary, BI or Research Analyst, Astrophysicist or Nuclear Physicist, Auditor or Management Accountant, Analytical or Industrial Chemist, Embedded or Power Engineer, Geneticist or Ecologist, Gameplay Programmer or Game Designer, Network Admin or Security Analyst, Composer or Arranger, Logistics Coordinator or Production Planner, Examiner or Tutor, Food Label Analyst or Sports Nutrition Analyst, Macroeconomist or Market Analyst, Archivist or Museum Curator, Cartographer or Climate Analyst, Editor or Translator, Structural or Site Engineer, Building Designer or Landscape Architect, Scheduler or Cost Controller, Installation or Maintenance Electrician, Flight Planner or Navigator, ML Engineer or Experiment Analyst, Boundary or Levelling Surveyor, Case Analyst or Fraud Examiner, Head Chef or Kitchen Manager, Store Manager or Merchandiser). Levels run one step harder than usual: **Easy** asks subject questions at Medium, **Medium** at Hard and **Hard** at Expert; the last 20% of questions (rounded up) are multi-part role scenarios mixing several subjects. **Expert** is scenarios only, the hardest kind (tagged Expert+). A scenario is worth one point per part, shown as "×3", so scores can read like 13.5 / 16. Set the number of questions on the role page (5–50; default 10, or 5 at Expert). Role results show under Roles in History and also count toward each subject. A role page's **About this role** card explains its scenarios; role pages also show small tags about the real job (for example Experience-led, Safety-critical, License-oriented, Tool-driven, Tool-specific), and the card opens with a box explaining each one: for example, an experience-led role depends mostly on experience and judgement, and these questions practise only the theory and knowledge part. The questions are practice, not professional advice. Some roles (such as Nutritionist, Electrician and Pilot) show a short notice before a run starts: read it and press **I understand · Start** (asked once per role each browser session), or **Back to role**. Notes, tips and warnings in subject introductions appear as boxes with an icon and a label.
+   - **Dates:** type a year (`1969`, `44 BC`), a month and year (`July 1969`, `7/1969`) or a full date (`20 July 1969`, `20/7/1969`, `July 20, 1969`). Numbers are read day first, and a "Read as" line shows how the app understood you. One month or one day out earns half credit. There is no year 0, so 1 BC to AD 1 is one year.
+   - **Journal entries (Accounting Theory):** write the whole entry in a table with Account, Debit and Credit columns. Type straight into any cell (account names are suggested as you type), or use the blocks under the table: drag an account or amount block onto a cell, or tap a cell and then a block (or a block and then a cell). Blocks can be used more than once. Put each line's amount in Debit or Credit, leave spare rows empty, and use **+ Row** for another line. Lines can be in any order, and the footer shows whether your debits and credits balance. Each line is marked Right or Wrong; you earn credit for each correct line, and extra lines cost credit. In Guided mode, correct lines lock and you can fix the rest.
    - **Fractions:** type them as `3/4`, `-7/4`, or a mixed number like `2 1/3` when the question asks for one. An equivalent fraction that isn't fully simplified, like `6/8` for `3/4`, still counts, and the feedback shows the simplest form. The one exception is Fractions → Simplifying, where simplifying is the point, so `6/8` is wrong there.
    - **Ratios:** type them like `3:4`.
    - **Percentages:** type the number without the `%` sign, with a minus for a decrease.
@@ -152,11 +166,13 @@ On a subject's page, switch **Practice | Guided** to **Guided** to practise step
 - **SQL Queries:** work out by hand what the query returns from the small table shown. No calculator.
 - **Algorithms:** lists are written like `[4, 9, 2, 7]`, with indexes starting at 0. Whole lists are picked from options; counts, values and indexes are whole numbers. Each question states the exact version of the algorithm it uses.
 - **Networking:** type addresses in dotted decimal with no leading zeros, like `192.168.1.0`. A binary octet needs all 8 bits (`00101101`); a prefix length is just the number (`26` for /26). Each data question says whether its prefixes mean 1000 (MB, Mbps) or 1024 (MiB, GiB); link speeds always use 1000.
+- **Structures (Engineering):** answers are numbers in the units each question names (N, kN, N·m, MPa, mm). Every formula and unit conversion is in the introduction, and the calculator starts with each question's numbers filled in. Expert questions have several parts: both support reactions plus the shear at a point, a rod sized for stress and stretch, or a bar chosen from a stock list.
+- **Project Scheduling:** type dates like `20 July 2027`, and money as plain numbers with no `$` or commas (a minus sign for a negative variance). Each question states its conventions, such as Monday-to-Friday work with the start date as day 1, and "a positive SV means ahead of schedule".
 - **Economics:** every formula is stated; price elasticity is given as a positive number. Countries are fictional.
 - **Map Skills:** grid references are digits with no spaces, easting first (`343176`). Bearings can be `045` or `45`. Times are 24-hour `HH:MM` with two digits each (`07:05`); time zones use the fixed UTC offsets given, with no daylight saving.
 - **Timelines:** there is no year 0, so 44 BC to AD 79 is 122 years. Centuries are a number (`15` for the 15th century) and decades their first year (`1960`). Only *Famous dates (recall)* needs memorised years; every other topic gives them.
 - **Game Dev:** vectors and positions ask for x and y in separate boxes. Angles are degrees from +x, counter-clockwise (0 to under 360); turns run from −180 to 180, left positive. Questions use y up unless they say screen coordinates (y down). Game Probability percentages are typed without `%`, to 2 decimal places.
-- **Music Theory:** written notation only, no audio. Notes, intervals, keys and chords are multiple choice, so you never type ♯ or ♭; counts are whole numbers. Rhythm treats a quarter note as one beat unless told otherwise (in 6/8, a dotted quarter).
+- **Music Theory:** written notation. After you check an answer on a note, interval, chord or scale question, a **Play** button sounds it, so you can hear what you just worked out (also in the end-of-quiz review; never before you answer). The sounds are made in your browser and work offline; turn them off in Settings → Sound. Notes, intervals, keys and chord names are multiple choice, and whole chords and scales are spelled with note blocks, so you never type ♯ or ♭; counts are whole numbers. Rhythm treats a quarter note as one beat unless told otherwise (in 6/8, a dotted quarter).
 - **Biology:** Genetics, Cells & Microscopy and Ecology build fresh crosses, micrographs and field data every time. Genotypes and ratios are picked from a list, in the order the question names; probabilities are typed as a percentage or a simplest-form fraction, as asked. Sizes use µm and nm; a magnification is a plain number (`400` for ×400).
 - **Medical:** every question states its formula and conversion factors, so nothing needs memorising. These subjects are for learning only and are **not medical advice**: they stick to general facts and standard calculations, with no medication, diagnosis or treatment.
 
@@ -230,10 +246,10 @@ Your rows stay for the whole quiz, so values from one question can be reused in 
 
 Open **Mix** to build a quiz across several domains.
 
-1. **Tick the domains** you want. Within each one, tick or untick its subdomains.
-2. **Set weights.** Each domain and subdomain has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
-3. Watch the **share bar** and the percentages update as you change things.
-4. Choose a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (1–50).
+1. **Tick the domains** you want. Each domain starts folded: tap its name to open it and tick or untick single subjects. **All** and **None** tick or untick everything, and **Expand all** opens every domain. To jump to one subject, type in **Find a subject** (for example "Chords").
+2. **Set weights** with − and +. Each domain and subject has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
+3. Watch **Your mix**: the share bar and one line per domain update as you change things.
+4. Choose **Practice** or **Guided**, a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (5–50).
 5. Press **Start**.
 
 How a question is picked: first a domain (by domain weight), then a subdomain inside it (by subdomain weight), then a random subtopic. If a subtopic doesn't have the difficulty you chose, the closest one is used.
@@ -253,13 +269,16 @@ Whatever you set up in the builder is saved automatically as your **draft**. It 
 - **Load, Rename, Delete:** from the preset chips. Deleting asks you to confirm first.
 
 ### Official presets
-Presets marked with a ✓ badge come with the app. You can load them and start from them, but not change them. To keep a changed version, use **Save as new**.
+Presets marked with a ✓ badge come with the app: Daily warm-up (every domain, Easy), STEM focus, World & money, People, places & words, Code & logic, Life sciences and Everyday skills. You can load them and start from them, but not change them. To keep a changed version, use **Save as new**.
 
 Presets also appear on Home as one-tap quick starts.
 
 ---
 
 ## 6. Your progress and data
+
+### XP, levels, streaks and badges
+StudyBlock gives XP for every practice quiz you finish: 10 per correct answer at Easy, 15 at Medium, 20 at Hard, 30 at Expert and 40 for Expert+ role questions, plus 5 for finishing, and ×1.2 for a perfect score. XP adds up to levels. Practising on days in a row builds a streak (guided runs keep a streak going but give no XP). Home shows your level, streak and next badge; the results screen shows the XP you just earned and any new badge. All 15 badges are under **History → Badges, level and streak**. Everything is worked out from your history, so nothing extra is stored and an export/import carries it. Turn it all off in **Settings → Game elements**; turning it back on shows everything again.
 
 ### Where your progress is kept
 - **In the browser:** saved automatically after every quiz.
@@ -399,7 +418,7 @@ Official presets live in `presets/`.
 Rules:
 - A domain you leave out isn't included.
 - A domain without `modules` includes all of its subdomains, each at weight 1.
-- `difficulty` is `any`, `easy`, `medium`, `hard` or `expert`; `count` is 1–50.
+- `difficulty` is `any`, `easy`, `medium`, `hard` or `expert`; `count` is 5–50 (older values below 5 are raised to 5).
 - Unknown domain or module ids are skipped, with a warning in the browser console.
 
 ---

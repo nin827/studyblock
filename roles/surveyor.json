@@ -1,0 +1,44 @@
+{
+  "id": "surveyor",
+  "title": "Land Surveyor",
+  "icon": "land-plot",
+  "flags": ["license_oriented", "tool_heavy", "experience_heavy", "region_specific"],
+  "description": "Bearings, traverses, plot areas and levelling books: coordinates and levels worked from the readings, with every rule stated.",
+  "exclusive": "role-surveyor",
+  "mix": {
+    "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+    "coordinate-geometry": { "weight": 3, "subtopics": ["points-distance", "gradient-lines"] },
+    "geometry": { "weight": 2, "subtopics": ["perimeter-area", "pythagoras", "angles"] },
+    "map-skills": { "weight": 2, "subtopics": ["scale-distance", "bearings", "grid-references"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "range-iqr"] }
+  },
+  "subroles": [
+    {
+      "id": "boundary-surveyor",
+      "title": "Boundary Surveyor",
+      "icon": "map-pinned",
+      "description": "Bearings and distances to coordinates, traverse closure and the area of a plot by the coordinate method.",
+      "mix": {
+        "coordinate-geometry": { "weight": 4, "subtopics": ["points-distance", "gradient-lines"] },
+        "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+        "map-skills": { "weight": 2, "subtopics": ["bearings", "grid-references"] },
+        "geometry": { "weight": 2, "subtopics": ["perimeter-area", "pythagoras"] }
+      },
+      "exclusiveSubtopics": ["coordinates", "traverse-closure", "plot-area"]
+    },
+    {
+      "id": "levelling-surveyor",
+      "title": "Levelling Surveyor",
+      "icon": "ruler",
+      "description": "Level books with rise and fall or height of instrument, reduced levels, the arithmetic check and misclosure against an allowance.",
+      "mix": {
+        "map-skills": { "weight": 2, "subtopics": ["scale-distance"] },
+        "coordinate-geometry": { "weight": 2, "subtopics": ["gradient-lines"] },
+        "geometry": { "weight": 2, "subtopics": ["pythagoras", "perimeter-area"] },
+        "trigonometry": { "weight": 2, "subtopics": ["right-sides"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr"] }
+      },
+      "exclusiveSubtopics": ["levelling", "traverse-closure"]
+    }
+  ]
+}

@@ -4,6 +4,7 @@
   "description": "Magnification, cell sizes and units, cell division and surface area to volume ratios.",
   "icon": "microscope",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "magnification", "title": "Magnification", "difficulties": ["easy", "medium", "hard"] },

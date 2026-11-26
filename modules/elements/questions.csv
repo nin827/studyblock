@@ -13,7 +13,7 @@ symbols,hard,Which element has the symbol Hg?,Mercury,,"Hg comes from hydrargyru
 symbols,hard,What is the chemical symbol for tin?,Sn,Sn|Ti|Tn|Si,"Sn comes from the Latin stannum. Ti is titanium and Si is silicon."
 atomic-numbers,easy,What is the atomic number of hydrogen?,1,,Hydrogen is the first element: one proton in its nucleus.
 atomic-numbers,easy,What is the atomic number of carbon?,6,6|12|8|4,"Carbon has 6 protons. 12 is the mass number of its most common isotope, carbon-12."
-atomic-numbers,easy,Which element has atomic number 2?,Helium,Helium|Hydrogen|Lithium|Neon,"Helium has 2 protons. Hydrogen is 1, lithium is 3 and neon is 10."
+atomic-numbers,easy,Which element has atomic number 2?,Helium,Helium|Hydrogen|Lithium|Neon,"Helium has 2 protons: it is the second element, right after hydrogen."
 atomic-numbers,easy,What is the atomic number of oxygen?,8,,Oxygen has 8 protons in its nucleus.
 atomic-numbers,medium,What is the atomic number of sodium?,11,11|23|12|10,"Sodium has 11 protons. 23 is its mass number, 12 is magnesium and 10 is neon."
 atomic-numbers,medium,Which element has atomic number 20?,Calcium,,Calcium has 20 protons and sits in group 2.
@@ -35,3 +35,57 @@ groups,hard,In which group (1-18) of the periodic table is krypton? Type the gro
 groups,hard,Which of these elements is an alkaline earth metal?,Strontium,Strontium|Rubidium|Scandium|Selenium,"Strontium is in group 2. Rubidium is an alkali metal, scandium a transition metal and selenium a non-metal."
 groups,hard,Which family of elements does caesium belong to?,Alkali metals,Alkali metals|Alkaline earth metals|Transition metals|Noble gases,"Caesium (spelled cesium in the US) is in group 1: the alkali metals."
 groups,hard,Which of these elements is a transition metal?,Cobalt,Cobalt|Calcium|Gallium|Germanium,"Cobalt is in group 9. Calcium is an alkaline earth metal, gallium a post-transition metal and germanium a metalloid."
+symbols,easy,What is the chemical symbol for helium? (Capital letters don't matter.),He,,Helium has the symbol He.
+symbols,easy,What is the chemical symbol for lithium?,Li,Li|La|Lu|Lr,"Lithium is Li. La is lanthanum, Lu is lutetium and Lr is lawrencium."
+symbols,easy,Which element has the symbol Cl?,Chlorine,Chlorine|Calcium|Carbon|Copper,"Cl is chlorine. Calcium is Ca, carbon is C and copper is Cu."
+symbols,easy,What is the chemical symbol for neon? (Capital letters don't matter.),Ne,,Neon has the symbol Ne.
+symbols,easy,Which element has the symbol Al?,Aluminium,Aluminium|Argon|Arsenic|Astatine,"Al is aluminium (aluminum in US spelling). Argon is Ar, arsenic is As and astatine is At."
+symbols,easy,What is the chemical symbol for fluorine?,F,F|Fl|Fu|Fr,"Fluorine is F. Fr is francium, and Fl is flerovium."
+symbols,medium,What is the chemical symbol for copper? (Capital letters don't matter.),Cu,,Cu comes from the Latin name cuprum.
+symbols,medium,What is the chemical symbol for gold?,Au,Au|Ag|Go|Gd,"Au comes from the Latin aurum. Ag is silver and Gd is gadolinium."
+symbols,medium,What is the chemical symbol for lead? (Capital letters don't matter.),Pb,,Pb comes from the Latin name plumbum.
+symbols,medium,Which element has the symbol Zn?,Zinc,Zinc|Zirconium|Xenon|Titanium,"Zn is zinc. Zirconium is Zr, xenon is Xe and titanium is Ti."
+symbols,medium,Which element has the symbol Mg?,Magnesium,Magnesium|Manganese|Mercury|Molybdenum,"Mg is magnesium. Manganese is Mn, mercury is Hg and molybdenum is Mo."
+symbols,medium,What is the chemical symbol for phosphorus?,P,P|Ph|Po|Pt,"Phosphorus is P. Po is polonium and Pt is platinum."
+symbols,hard,What is the chemical symbol for manganese?,Mn,Mn|Mg|Mo|Ma,"Manganese is Mn. Mg is magnesium and Mo is molybdenum."
+symbols,hard,What is the chemical symbol for platinum? (Capital letters don't matter.),Pt,,Platinum has the symbol Pt.
+symbols,hard,Which element has the symbol Sr?,Strontium,Strontium|Scandium|Selenium|Silicon,"Sr is strontium. Scandium is Sc, selenium is Se and silicon is Si."
+symbols,hard,Which element has the symbol Ba?,Barium,Barium|Bromine|Boron|Beryllium,"Ba is barium. Bromine is Br, boron is B and beryllium is Be."
+symbols,hard,What is the chemical symbol for chromium?,Cr,Cr|Co|Cs|Cu,"Chromium is Cr. Co is cobalt, Cs is caesium and Cu is copper."
+symbols,hard,What is the chemical symbol for nickel? (Capital letters don't matter.),Ni,,Nickel has the symbol Ni.
+atomic-numbers,easy,What is the atomic number of nitrogen?,7,7|14|8|6,"Nitrogen has 7 protons. 14 is the mass number of its common isotope, 8 is oxygen and 6 is carbon."
+atomic-numbers,easy,Which element has atomic number 3?,Lithium,Lithium|Helium|Beryllium|Boron,"Lithium has 3 protons. Helium is 2, beryllium is 4 and boron is 5."
+atomic-numbers,easy,What is the atomic number of neon?,10,,Neon has 10 protons and is the second noble gas.
+atomic-numbers,easy,Which element has atomic number 5?,Boron,Boron|Beryllium|Carbon|Bromine,"Boron has 5 protons. Beryllium is 4 and carbon is 6."
+atomic-numbers,easy,What is the atomic number of fluorine?,9,9|19|10|8,"Fluorine has 9 protons. 19 is its mass number, 10 is neon and 8 is oxygen."
+atomic-numbers,easy,What is the atomic number of beryllium?,4,,Beryllium has 4 protons.
+atomic-numbers,medium,What is the atomic number of aluminium?,13,13|27|12|14,"Aluminium has 13 protons. 27 is its mass number, 12 is magnesium and 14 is silicon."
+atomic-numbers,medium,Which element has atomic number 14?,Silicon,Silicon|Aluminium|Phosphorus|Sulfur,"Silicon has 14 protons. Aluminium is 13 and phosphorus is 15."
+atomic-numbers,medium,What is the atomic number of phosphorus?,15,,Phosphorus has 15 protons.
+atomic-numbers,medium,What is the atomic number of potassium?,19,19|39|20|18,"Potassium has 19 protons. 39 is its mass number, 20 is calcium and 18 is argon."
+atomic-numbers,medium,What is the atomic number of copper?,29,,Copper has 29 protons.
+atomic-numbers,medium,Which element has atomic number 30?,Zinc,Zinc|Copper|Gallium|Nickel,"Zinc has 30 protons. Copper is 29, nickel is 28 and gallium is 31."
+atomic-numbers,hard,What is the atomic number of tin?,50,50|82|51|49,"Tin is 50. Lead is 82, antimony is 51 and indium is 49."
+atomic-numbers,hard,What is the atomic number of platinum?,78,,Platinum has 78 protons.
+atomic-numbers,hard,What is the atomic number of tungsten?,74,74|75|73|72,"Tungsten is 74. Rhenium is 75, tantalum is 73 and hafnium is 72."
+atomic-numbers,hard,Which element has atomic number 86?,Radon,Radon|Radium|Polonium|Francium,"Radon is 86, the heaviest naturally occurring noble gas. Radium is 88, polonium is 84 and francium is 87."
+atomic-numbers,hard,Which element has atomic number 35?,Bromine,Bromine|Chlorine|Krypton|Selenium,"Bromine is 35. Chlorine is 17, selenium is 34 and krypton is 36."
+atomic-numbers,hard,Which element has atomic number 38?,Strontium,Strontium|Rubidium|Yttrium|Calcium,"Strontium is 38. Rubidium is 37, yttrium is 39 and calcium is 20."
+groups,easy,Which family of elements does lithium belong to?,Alkali metals,Alkali metals|Alkaline earth metals|Halogens|Noble gases,Lithium is in group 1: the alkali metals.
+groups,easy,Which of these elements belongs to the halogen family?,Fluorine,Fluorine|Neon|Oxygen|Nitrogen,"Fluorine is in group 17. Neon is a noble gas, while oxygen and nitrogen are in groups 16 and 15."
+groups,easy,Which of these elements is an alkali metal?,Potassium,Potassium|Calcium|Carbon|Chlorine,"Potassium is in group 1. Calcium is an alkaline earth metal, while carbon and chlorine are non-metals."
+groups,easy,Which family of elements does helium belong to?,Noble gases,Noble gases|Halogens|Alkali metals|Alkaline earth metals,Helium is an unreactive gas: a noble gas.
+groups,easy,Are the halogens metals or non-metals?,Non-metals,Non-metals|Metals,"Fluorine, chlorine, bromine and iodine are non-metals."
+groups,easy,Which of these elements is a metal?,Iron,Iron|Oxygen|Neon|Sulfur,"Iron is a metal. Oxygen, neon and sulfur are non-metals."
+groups,medium,Which family of elements does magnesium belong to?,Alkaline earth metals,Alkaline earth metals|Alkali metals|Transition metals|Halogens,Magnesium is in group 2: the alkaline earth metals.
+groups,medium,Which family of elements does fluorine belong to?,Halogens,Halogens|Noble gases|Alkali metals|Transition metals,Fluorine is in group 17: the halogens.
+groups,medium,Which family of elements does xenon belong to?,Noble gases,Noble gases|Halogens|Alkali metals|Transition metals,Xenon is in group 18: the noble gases.
+groups,medium,Which of these elements belongs to the noble gases?,Krypton,Krypton|Potassium|Chlorine|Calcium,"Krypton is in group 18. Potassium is an alkali metal, chlorine is a halogen and calcium is an alkaline earth metal."
+groups,medium,Which of these elements belongs to the transition metals?,Iron,Iron|Sodium|Sulfur|Magnesium,"Iron is a transition metal. Sodium is an alkali metal, magnesium is an alkaline earth metal and sulfur is a non-metal."
+groups,medium,In which group (1-18) of the periodic table is sodium? Type the group number.,1,,Sodium is an alkali metal: group 1.
+groups,hard,In which group (1-18) of the periodic table is calcium? Type the group number.,2,,Calcium is an alkaline earth metal: group 2.
+groups,hard,In which group (1-18) of the periodic table is chlorine? Type the group number.,17,,Chlorine is a halogen: group 17.
+groups,hard,In which group (1-18) of the periodic table is carbon? Type the group number.,14,,Carbon has four outer electrons and is in group 14.
+groups,hard,Which family of elements does radium belong to?,Alkaline earth metals,Alkaline earth metals|Alkali metals|Transition metals|Noble gases,Radium is in group 2: the alkaline earth metals.
+groups,hard,Which of these elements is in group 17?,Astatine,Astatine|Antimony|Argon|Arsenic,"Astatine is in group 17. Argon is a noble gas, while antimony and arsenic are metalloids."
+groups,hard,Which of these elements is in group 18?,Radon,Radon|Radium|Rhodium|Rubidium,"Radon is in group 18. Radium is an alkaline earth metal, rhodium a transition metal and rubidium an alkali metal."

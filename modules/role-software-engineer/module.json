@@ -1,0 +1,18 @@
+{
+  "id": "role-software-engineer",
+  "title": "Software Engineer scenarios",
+  "description": "Expert+ workplace scenarios that mix SQL, algorithms, data sizes, networking, floating point and money in one question.",
+  "icon": "code-xml",
+  "type": "generator",
+  "roleOnly": true,
+  "questionsPerQuiz": 5,
+  "fuzzy": false,
+  "fuzzyNumber": 0,
+  "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
+  "subtopics": [
+    { "id": "api-endpoint", "title": "Speed up an API endpoint", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "ledger-check", "title": "Reconcile a payment ledger", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "hot-loop", "title": "Profile a hot loop", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "fx-payout", "title": "Ship an international payout", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

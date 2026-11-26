@@ -1942,7 +1942,10 @@ const XEV_CTX = [
   { what: "the number of goals a team's score changes by in a match", unit: "goals" },
   { what: "the score from one throw at a fairground stall", unit: "points" },
 ];
-const pStr = (h) => num(h / 100);
+// Table probabilities are hundredths (multiples of 5), shown as fractions in simplest form like
+// the other levels: 35 -> "7/20". tw() writes the same value in twentieths for the working.
+const pStr = (h) => fracStr(h, 100);
+const tw = (h) => `${h / 5}/20`;
 
 // A probability table with one missing probability: find it, then E(X).
 function xTable(rng) {
@@ -1954,23 +1957,23 @@ function xTable(rng) {
   const shown = ps.map((p, i) => (i === m ? "p" : pStr(p)));
   const known = ps.filter((_, i) => i !== m);
   const steps = [
-    `Probabilities add to 1: p = 1 - (${known.map(pStr).join(" + ")}) = **${pStr(ps[m])}**.`,
+    `Probabilities add to 1. In twentieths the known ones are ${known.map(tw).join(" + ")} = ${sum(known) / 5}/20, so p = 20/20 - ${sum(known) / 5}/20 ${gcd(ps[m], 100) === 5 ? `= **${pStr(ps[m])}**` : `= ${tw(ps[m])}, which simplifies to **${pStr(ps[m])}**`}.`,
     `E(X) = ${xs.map((x, i) => `${x < 0 ? `(${x})` : x} × ${pStr(ps[i])}`).join(" + ")} = **${num(E100 / 100)}**.`,
   ];
   return {
     prompt: `X is ${ctx.what}. X takes the values ${andList(xs.map(String))} with probabilities ${andList(shown)} respectively.`,
     answerType: "multi",
     parts: [
-      numPart("p", "Missing probability", "What is p? Give it as a decimal, like 0.25.", ps[m] / 100,
-        "All the probabilities in a table must add up to 1."),
+      fracPart("p", "Missing probability", "What is p?", ps[m], 100,
+        "All the probabilities in a table must add up to 1. Write them over a common denominator first."),
       numPart("ev", "Expected value", `What is E(X), the expected value, in ${ctx.unit}? Round to 2 decimal places if needed.`, round2(E100 / 100),
         "Multiply each value by its probability (use your p), then add. Keep the signs of negative values.", 0.005),
     ],
     explanation: steps.join("\n\n"),
     hints: [
-      "The probabilities of all the outcomes add to 1, so subtract the three you know from 1.",
+      "The probabilities of all the outcomes add to 1, so subtract the three you know from 1. Twentieths work as a common denominator.",
       "E(X) = Σ x × P(X = x): one product for each value in the list.",
-      `In the calculator, add a row \`_p${m + 1}\` holding your p, then: \`${xs.map((_, i) => `_x${i + 1} * _p${i + 1}`).join(" + ")}\`.`,
+      `In the calculator, add a row \`_p${m + 1}\` holding your p (a fraction like 3/20 works as an expression), then: \`${xs.map((_, i) => `_x${i + 1} * _p${i + 1}`).join(" + ")}\`.`,
     ],
     given: [...xs.map((x, i) => ({ label: `_x${i + 1}`, value: x })), ...ps.map((p, i) => ({ label: `_p${i + 1}`, value: p / 100 })).filter((_, i) => i !== m)],
     params: { kind: "x-table", xs, ps: shown, m },
@@ -1988,7 +1991,7 @@ function xMissingValue(rng) {
   const rest = E100 - xs[m] * ps[m];
   const steps = [
     `E(X) = Σ x × P(X = x), with a in place of the unknown value: ${shownX.map((x, i) => `${x.startsWith("-") ? `(${x})` : x} × ${pStr(ps[i])}`).join(" + ")} = ${num(E100 / 100)}.`,
-    `The known products add to ${num(rest / 100)}, so ${pStr(ps[m])}a = ${num(E100 / 100)} - ${rest < 0 ? `(${num(rest / 100)})` : num(rest / 100)} = ${num((E100 - rest) / 100)}.`,
+    `The known products add to ${num(rest / 100)}, so ${pStr(ps[m])} × a = ${num(E100 / 100)} - ${rest < 0 ? `(${num(rest / 100)})` : num(rest / 100)} = ${num((E100 - rest) / 100)}.`,
     `a = ${num((E100 - rest) / 100)} ÷ ${pStr(ps[m])} = **${xs[m]}**.`,
   ];
   return {
@@ -2134,11 +2137,12 @@ function verifyExpert(p, question, answer) {
   }
   if (p.kind === "x-table") {
     // A population of 100 equally likely outcomes, built from the hundredths.
-    const ps = p.ps.map((v, i) => (i === p.m ? null : Math.round(Number(v) * 100)));
+    const hund = (v) => { const f = parseFrac(v); return f && f[1] > 0 && (100 * f[0]) % f[1] === 0 ? (100 * f[0]) / f[1] : NaN; };
+    const ps = p.ps.map((v, i) => (i === p.m ? null : hund(v)));
     const known = ps.filter((v) => v !== null);
+    if (known.some((v) => !Number.isInteger(v) || v <= 0)) return false;
     const miss = 100 - sum(known);
-    const pa = xNum(A("p"));
-    if (!Number.isFinite(pa) || Math.abs(pa * 100 - miss) > 1e-6 || miss <= 0) return false;
+    if (miss <= 0 || !fracMatches(A("p"), miss, 100)) return false;
     const pop = [];
     p.xs.forEach((x, i) => { const c = i === p.m ? miss : ps[i]; for (let t = 0; t < c; t++) pop.push(x); });
     if (pop.length !== 100) return false;

@@ -4,6 +4,7 @@
 - Hang each invention on a timeline and a place: which century, which country, which problem it solved.
 - Names often hide in words we still use: Morse code, the diesel engine, the watt, the volt, pasteurisation, the Nobel Prize.
 - For years, type the year only. Check whether the question wants a full name, a surname only, or one word.
+- Date questions say how much to give: the year, the month and year, or the full date. `July 1969`, `Jul 1969`, `20 July 1969`, `July 20, 1969` and `20/7/1969` all work; numeric dates are read day first, so check the "Read as" line. One unit off (a year, a month or a day, at the level asked) earns half credit, so a close guess is worth giving.
 
 ## Communication
 1. Put the steps in order: papyrus (ancient Egypt) → paper (China) → movable-type printing (Gutenberg, 1400s) → telegraph (Morse, 1840s) → telephone (Bell, 1876) → World Wide Web (Berners-Lee, 1989).

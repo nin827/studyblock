@@ -4,10 +4,14 @@
   "description": "Logic gates, evaluating Boolean expressions and reading truth tables.",
   "icon": "toggle-left",
   "type": "generator",
+  "fuzzyNumber": 0,
+  "fuzzy": false,
   "questionsPerQuiz": 10,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "subtopics": [
     { "id": "gates", "title": "Logic gates", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "expressions", "title": "Expressions", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "truth-tables", "title": "Truth tables", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "truth-tables", "title": "Truth tables", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "write", "title": "Write the expression", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

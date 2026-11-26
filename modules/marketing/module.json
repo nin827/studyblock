@@ -1,0 +1,16 @@
+{
+  "id": "marketing",
+  "title": "Marketing",
+  "description": "The 4Ps, the Ansoff and Boston matrices, the product life cycle, pricing strategies and market segmentation.",
+  "icon": "megaphone",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "marketing-mix", "title": "Marketing mix (4Ps)", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "ansoff", "title": "Ansoff matrix", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "boston", "title": "Boston matrix", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "life-cycle", "title": "Product life cycle", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pricing", "title": "Pricing strategies", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "segmentation", "title": "Market segmentation", "difficulties": ["easy", "medium", "hard"] }
+  ]
+}

@@ -55,8 +55,21 @@ function splitRow(line) {
 
 const isTableSep = l => /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/.test(l) && l.includes('-');
 
+// GitHub-style alerts: "> [!WARNING] optional title". Icon + label always, never colour alone.
+const CALLOUTS = {
+  note: { icon: 'info', label: 'Note' },
+  tip: { icon: 'lightbulb', label: 'Tip' },
+  important: { icon: 'circle-alert', label: 'Important' },
+  warning: { icon: 'triangle-alert', label: 'Warning' },
+  caution: { icon: 'octagon-alert', label: 'Caution' },
+};
+
 export function renderMarkdown(src) {
-  const lines = escapeHtml(String(src ?? '').replace(/\r\n?/g, '\n')).split('\n');
+  return renderLines(escapeHtml(String(src ?? '').replace(/\r\n?/g, '\n')).split('\n'));
+}
+
+// `lines` are already HTML-escaped.
+function renderLines(lines) {
   const out = [];
   let i = 0;
   while (i < lines.length) {
@@ -84,7 +97,15 @@ export function renderMarkdown(src) {
     if (/^\s*&gt;/.test(line)) {
       const buf = [];
       while (i < lines.length && /^\s*&gt;/.test(lines[i])) buf.push(lines[i++].replace(/^\s*&gt;\s?/, ''));
-      // re-render inner content: unescape is not needed, inner is already escaped; render as paragraphs
+      const co = buf[0].match(/^\s*\[!(note|tip|important|warning|caution)\][ \t]*(.*)$/i);
+      if (co) {
+        const kind = co[1].toLowerCase();
+        const def = CALLOUTS[kind];
+        const title = co[2].trim() ? formatInline(co[2].trim()) : def.label;
+        out.push(`<aside class="callout callout-${kind}" role="note"><p class="callout-head"><i data-lucide="${def.icon}" class="icon" aria-hidden="true"></i><span class="callout-title">${title}</span></p>` +
+          `<div class="callout-body">${renderLines(buf.slice(1))}</div></aside>`);
+        continue;
+      }
       out.push(`<blockquote>${buf.join(' ').trim() ? `<p>${formatInline(buf.join(' '))}</p>` : ''}</blockquote>`);
       continue;
     }

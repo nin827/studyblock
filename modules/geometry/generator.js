@@ -375,6 +375,19 @@ const TRIPLES = [
   [9, 40, 41],
   [12, 35, 37],
 ];
+// Easy (hypotenuse only) draws from more primitive triples, for a wider pool (ticket 014).
+const EASY_TRIPLES = [
+  ...TRIPLES,
+  [11, 60, 61],
+  [28, 45, 53],
+  [33, 56, 65],
+  [16, 63, 65],
+  [48, 55, 73],
+  [13, 84, 85],
+  [36, 77, 85],
+  [39, 80, 89],
+  [65, 72, 97],
+];
 
 function genPythagoras(difficulty, rng) {
   checkDifficulty(difficulty);
@@ -385,7 +398,7 @@ function genPythagoras(difficulty, rng) {
     b = dec1(rng, 2, 30);
     c = dec1(rng, Math.ceil(a) + 1, Math.ceil(a) + 25); // only used for "leg"; hypotenuse c > leg a
   } else {
-    const [p, q, r] = rng.pick(TRIPLES);
+    const [p, q, r] = rng.pick(difficulty === "easy" ? EASY_TRIPLES : TRIPLES);
     const k = rng.int(1, difficulty === "easy" ? 4 : 8);
     [a, b] = rng.next() < 0.5 ? [p * k, q * k] : [q * k, p * k];
     c = r * k;

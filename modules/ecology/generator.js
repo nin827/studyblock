@@ -109,6 +109,7 @@ function genEnergy(difficulty, rng) {
         prompt: `In the food chain ${chain}, the ${ch[0]} contain ${E}${UNIT}. Assume about 10% of the energy passes from one trophic level to the next. How much energy reaches the ${ch[1]}, in kJ/m²/year?`,
         explanation: `10% of the energy is passed on: \`${E} × 10 ÷ 100\` = **${num(exact)}${UNIT}**. The other 90% is lost as heat from respiration, in waste and in parts that aren't eaten.`,
         hints: ["Only about a tenth of the energy at one level reaches the next.", `Work out 10% of ${E} (in the calculator: \`${E} * 0.1\`).`],
+        given: [{ label: "_E", value: E }, { label: "_pct", value: 10 }],
         params: { sub: "energy", kind: "rule", E, steps: 1, pct: 10 },
       },
       exact,
@@ -128,6 +129,7 @@ function genEnergy(difficulty, rng) {
           prompt: `In the food chain ${chain}, the ${ch[0]} contain ${E}${UNIT}. ${LEVELS} Assume 10% of the energy passes from each level to the next. How much energy reaches the ${ch[steps]} (level ${steps + 1}), in kJ/m²/year?`,
           explanation: `From level 1 to level ${steps + 1} there are ${steps} transfers, each keeping 10%.\n\n\`${E} × 0.1${" × 0.1".repeat(steps - 1)}\` = **${num(exact)}${UNIT}**.`,
           hints: [`Count the transfers: from level 1 to level ${steps + 1}.`, "Each transfer keeps 10%, so multiply by 0.1 once for every transfer."],
+          given: [{ label: "_E", value: E }, { label: "_pct", value: 10 }],
           params: { sub: "energy", kind: "rule", E, steps, pct: 10 },
         },
         exact,
@@ -339,7 +341,7 @@ function genEstimates(difficulty, rng) {
   area = L * W;
   const exact = (mean / qa) * area;
   const story = `A student places ${k} ${qTxt} at random in a field ${L} m × ${W} m and counts the ${plant} in each: ${counts.join(", ")}.`;
-  const giv = [{ label: "_total", value: sum }, { label: "_k", value: k }, { label: "_L", value: L }, { label: "_W", value: W }, { label: "_quadrat", value: qa }];
+  const giv = [{ label: "_k", value: k }, { label: "_L", value: L }, { label: "_W", value: W }];
   const areaLine = qa === 1 ? "" : `Each quadrat is 0.5 m × 0.5 m = 0.25 m² (not 2500: that is in cm²).\n\n`;
   const expl =
     `Mean per quadrat: \`${sum} ÷ ${k}\` ${resultTxt(mean, 2)}.\n\n${areaLine}` +
@@ -353,12 +355,12 @@ function genEstimates(difficulty, rng) {
         {
           id: "mean", label: "Mean", ask: "What is the mean number per quadrat? Round to 2 decimal places.",
           answerType: "number", answer: roundTo(mean, 2), tolerance: 0.005,
-          hint: "Add up all the counts and divide by the number of quadrats (`_total / _k`).",
+          hint: "Add up all the counts and divide by the number of quadrats (in the calculator, put the total of the counts in a row `_total`, then `_total / _k`).",
         },
         {
           id: "total", label: "Estimate", ask: `Estimate the total number of ${plant} in the field. Use the unrounded mean and round to the nearest whole number.`,
           answerType: "number", answer: roundTo(exact, 0), tolerance: 0,
-          hint: "Find the field area in m², then how many 0.25 m² quadrats fit in it (divide by `_quadrat`). Multiply that by the mean.",
+          hint: "Find the field area in m², then how many 0.25 m² quadrats fit in it (divide by the quadrat area in m², for example in a row `_quadrat`). Multiply that by the mean.",
         },
       ],
       explanation: expl,
@@ -373,8 +375,8 @@ function genEstimates(difficulty, rng) {
       hints: [
         "Find the mean number per quadrat: add up the counts and divide by how many quadrats there are. Keep it unrounded.",
         qa === 1
-          ? "Each quadrat is 1 m², so the mean is the number per m². Multiply by the field area in m² (in the calculator: `_total / _k * _L * _W`)."
-          : "Each quadrat is 0.5 m × 0.5 m. Work out how many quadrats fit in the field (area ÷ quadrat area, both in m²), then multiply by the mean (in the calculator: `_total / _k * _L * _W / _quadrat`).",
+          ? "Each quadrat is 1 m², so the mean is the number per m². Multiply by the field area in m² (in the calculator: put the total of the counts in a row `_total`, then `_total / _k * _L * _W`)."
+          : "Each quadrat is 0.5 m × 0.5 m. Work out how many quadrats fit in the field (area ÷ quadrat area, both in m²), then multiply by the mean (in the calculator: put the total of the counts in a row `_total` and the quadrat area in m² in a row `_quadrat`, then `_total / _k * _L * _W / _quadrat`).",
       ],
       given: giv,
       params: { sub: "est", kind: "quad", counts, qa, L, W },
@@ -607,6 +609,8 @@ function genBiodiversity(difficulty, rng) {
         prompt: `A quadrat is divided into ${grid} equal squares. ${cap(plant)} covers more than half of ${covered} of the squares, so those squares count as covered. What is the percentage cover of ${plant}?`,
         explanation: `Percentage cover = covered squares ÷ total squares × 100.\n\n\`${covered} ÷ ${grid} × 100\` = **${num(exact)}%**.`,
         hints: ["Percentage cover = covered squares ÷ total squares × 100.", grid === 100 ? "With 100 squares, each square is 1% of the quadrat." : "With 25 squares, each square is 4% of the quadrat."],
+        // With 100 squares the covered count equals the answer, so no given rows then.
+        ...(grid === 25 ? { given: [{ label: "_covered", value: covered }, { label: "_grid", value: grid }] } : {}),
         params: { sub: "bio", kind: "cover", covered, grid },
       },
       exact,
@@ -632,6 +636,7 @@ function genBiodiversity(difficulty, rng) {
           "Add up all the individuals to get N. Then, for each species, work out n × (n − 1) and add those up.",
           `Divide your total by N × (N − 1) and subtract the result from 1.`,
         ],
+        given: list.map((s, i) => ({ label: `_n${i + 1}`, value: s.n })),
         params: { sub: "bio", kind: "simpson", list },
       },
       D,
@@ -653,6 +658,7 @@ function genBiodiversity(difficulty, rng) {
         prompt: `A sample from ${HABITAT_NAME[habitat]} contains: ${listTxt(list)}. ${SIMPSON}. Calculate D.${R2}`,
         explanation: `N = ${N}, Σ n(n − 1) = ${top}, N(N − 1) = ${N * (N - 1)}.\n\n\`D = 1 - ${top} ÷ ${N * (N - 1)}\` ${resultTxt(D, 2)}.`,
         hints: ["Find N (the total) and, for each species, n × (n − 1). Add those products.", "D = 1 − (sum of products) ÷ (N × (N − 1))."],
+        given: list.map((s, i) => ({ label: `_n${i + 1}`, value: s.n })),
         params: { sub: "bio", kind: "simpson", list },
       },
       D,
@@ -695,6 +701,10 @@ function genBiodiversity(difficulty, rng) {
       `**Site 1:** N = ${rA.N}, Σ n(n − 1) = ${rA.top}, \`D = 1 - ${rA.top} ÷ ${rA.N * (rA.N - 1)}\` ${resultTxt(rA.D, 2)}.\n\n` +
       `**Site 2:** N = ${rB.N}, Σ n(n − 1) = ${rB.top}, \`D = 1 - ${rB.top} ÷ ${rB.N * (rB.N - 1)}\` ${resultTxt(rB.D, 2)}.\n\n` +
       `**More diverse:** the higher D is **${more}**.`,
+    given: [
+      ...A.map((s, i) => ({ label: `_a${i + 1}`, value: s.n })),
+      ...B.map((s, i) => ({ label: `_b${i + 1}`, value: s.n })),
+    ],
     params: { sub: "bio", kind: "compare", A, B },
   };
 }
@@ -704,11 +714,17 @@ function genBiodiversity(difficulty, rng) {
 export function generate({ subtopic, difficulty, rng }) {
   if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
-  if (subtopic === "energy") return genEnergy(difficulty, rng);
-  if (subtopic === "estimates") return genEstimates(difficulty, rng);
-  if (subtopic === "growth") return genGrowth(difficulty, rng);
-  if (subtopic === "biodiversity") return genBiodiversity(difficulty, rng);
-  throw new Error(`Unknown subtopic: ${subtopic}`);
+  const gen = { energy: genEnergy, estimates: genEstimates, growth: genGrowth, biodiversity: genBiodiversity }[subtopic];
+  if (!gen) throw new Error(`Unknown subtopic: ${subtopic}`);
+  // Redraw (same rng, so still deterministic) the rare question whose own check fails, e.g. an exact
+  // rounding tie such as 42.735 to 2 decimal places.
+  let q;
+  for (let t = 0; t < 20; t++) {
+    q = gen(difficulty, rng);
+    const own = q.answerType === "multi" ? Object.fromEntries(q.parts.map((x) => [x.id, x.answer])) : q.answer;
+    if (verify(q, own)) return q;
+  }
+  return q;
 }
 
 // =====================================================================================
@@ -794,6 +810,14 @@ function expected(p, partId) {
   }
 }
 
+// The dp-decimal value next to x (x rounded, or one step either side) that passes the reverse check
+// `ok`; NaN if none does. Used so verify agrees with checkAnswer near the edges of the tolerance.
+function snapRounded(ok, x, dp) {
+  const step = 10 ** -dp, r0 = roundTo(x, dp);
+  const pass = [r0, roundTo(r0 - step, dp), roundTo(r0 + step, dp)].filter((R) => ok(R));
+  return pass.length === 1 ? pass[0] : NaN; // two passing values: the true value is a rounding tie
+}
+
 function matches(exp, answer, q, d) {
   if (!exp || answer === undefined || answer === null || answer === "") return false;
   if (q.answerType === "choice") {
@@ -803,8 +827,15 @@ function matches(exp, answer, q, d) {
   if (exp.str !== undefined) return String(answer) === exp.str;
   const x = Number(String(answer).trim());
   if (!Number.isFinite(x)) return false;
-  if (exp.rev) return exp.rev(x);
   const dd = exp.d !== undefined ? exp.d : d;
+  if (exp.rev) {
+    // A rounded answer is compared with the rounded value the question asks for, as checkAnswer does:
+    // find that value R next to x (the reverse check holds for it), then x must be within the tolerance of R.
+    const tol = q.tolerance > 0 ? q.tolerance : tolFor(dd);
+    if (!(tol > 0)) return exp.rev(x);
+    const R = snapRounded(exp.rev, x, Math.round(-Math.log10(2 * tol)));
+    return Number.isFinite(R) && Math.abs(x - R) <= tol + 1e-9;
+  }
   return Math.abs(x - roundTo(exp.num, dd)) <= tolFor(dd) + 1e-9;
 }
 
@@ -930,7 +961,10 @@ function xVerify(question, answer) {
     const x = xNumOf(a);
     if (!Number.isFinite(x)) return false;
     if (spec.int) return Number.isInteger(x) && fn(v, x, 0) === true;
-    return fn(v, x, 0.5 * 10 ** -spec.dp) === true;
+    // Compare with the rounded value the part asks for (as checkAnswer does), not the unrounded one.
+    const h = 0.5 * 10 ** -spec.dp;
+    const R = snapRounded((r) => fn(v, r, h) === true, x, spec.dp);
+    return Number.isFinite(R) && Math.abs(x - R) <= h + 1e-9;
   };
   if (question.answerType === "multi") {
     if (!Array.isArray(question.parts) || !Array.isArray(p.parts) || p.parts.length !== question.parts.length) return false;

@@ -4,6 +4,7 @@
   "description": "Specific heat capacity, latent heat, temperature scales and heat transfer when mixing and heating, with every constant given.",
   "icon": "thermometer",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "specific-heat", "title": "Specific heat capacity", "difficulties": ["easy", "medium", "hard", "expert"] },

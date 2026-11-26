@@ -12,8 +12,8 @@ Music theory on paper: no audio, just note names. You'll count semitones on a pi
 ## Answer formats
 
 - Counts (semitones, sharps or flats) are typed as whole numbers.
-- Notes, interval names, keys and scales are **multiple choice**, so spelling never depends on how you type ♯ or ♭.
-- No question needs a double sharp or a double flat.
+- Notes, interval names and keys are **multiple choice**, and whole scales are built from **note blocks**, so spelling never depends on how you type ♯ or ♭.
+- Only one kind of question needs a double sharp (𝄪): the raised 7th of G♯ and D♯ harmonic minor, which is F𝄪 and C𝄪 (Hard and Expert). It raises a note that is already sharp in the key signature.
 
 | Level | What to expect |
 | --- | --- |

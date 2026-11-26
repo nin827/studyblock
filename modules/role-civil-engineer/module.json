@@ -1,0 +1,16 @@
+{
+  "id": "role-civil-engineer",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join beam reactions, stress, concrete quantities, gradients and setting out, as a civil engineer meets them.",
+  "icon": "hard-hat",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "beam-check", "title": "Beams and section checks", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "tie-rod", "title": "Tie rods and factor of safety", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "concrete-batches", "title": "Concrete quantities and loads", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "setting-out", "title": "Levels, cut and fill, setting out", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

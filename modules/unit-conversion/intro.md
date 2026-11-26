@@ -18,4 +18,5 @@ Convert quantities between units. Going to a smaller unit gives a bigger number 
 | Medium | Two-step metric conversions, inches and feet, km/h and m/s, mixed units like 2 h 35 min |
 | Hard | Miles, feet to metres, sums of mixed units, speeds from distance and time; answers rounded to 2 decimal places |
 
-**Tip:** easy and medium answers come out exactly, so type the full value. On hard questions, round to 2 decimal places (answers within 0.005 are accepted).
+> [!TIP]
+> Easy and medium answers come out exactly, so type the full value. On hard questions, round to 2 decimal places (answers within 0.005 are accepted).

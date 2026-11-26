@@ -1,6 +1,7 @@
 # Health Statistics
 
-*For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.*
+> [!WARNING] For learning only
+> This isn't medical advice; for anything about your own health, ask a qualified professional.
 
 The arithmetic behind population health figures: how common something is, how well a screening test sorts people, how two groups' risks compare, and how to summarise a set of measurements. Every question is about groups of people, and defines the measure it asks for.
 

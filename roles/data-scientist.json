@@ -1,0 +1,45 @@
+{
+  "id": "data-scientist",
+  "title": "Data Scientist",
+  "icon": "brain-circuit",
+  "flags": ["theory_heavy", "tool_heavy"],
+  "description": "Models and experiments: classifier scores, training runs, A/B tests and fitted lines, worked from the figures.",
+  "exclusive": "role-data-scientist",
+  "mix": {
+    "statistics": { "weight": 4 },
+    "probability": { "weight": 3, "subtopics": ["basic", "combined", "expected-value"] },
+    "calculus": { "weight": 1, "subtopics": ["derivatives", "stationary"] },
+    "exponents-logs": { "weight": 1, "subtopics": ["logarithms", "growth-decay"] },
+    "sql-queries": { "weight": 1, "subtopics": ["aggregates", "group-join"] },
+    "algorithms": { "weight": 1, "subtopics": ["searching", "complexity"] }
+  },
+  "subroles": [
+    {
+      "id": "ml-engineer",
+      "title": "ML Engineer",
+      "icon": "cpu",
+      "description": "Confusion matrices, precision and recall, base rates, train/test splits and gradient descent steps.",
+      "mix": {
+        "probability": { "weight": 3, "subtopics": ["basic", "combined", "expected-value"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average", "probability"] },
+        "calculus": { "weight": 2, "subtopics": ["derivatives", "stationary"] },
+        "exponents-logs": { "weight": 1, "subtopics": ["logarithms", "growth-decay"] },
+        "algorithms": { "weight": 1, "subtopics": ["searching", "sorting", "complexity"] }
+      },
+      "exclusiveSubtopics": ["classifier-scores", "model-training"]
+    },
+    {
+      "id": "experiment-analyst",
+      "title": "Experiment Analyst",
+      "icon": "flask-conical",
+      "description": "Z-scores, A/B tests with stated cut-offs, confidence intervals, sample sizes and least-squares lines.",
+      "mix": {
+        "statistics": { "weight": 4, "subtopics": ["mean-median-mode", "range-iqr", "probability", "weighted-average"] },
+        "probability": { "weight": 2, "subtopics": ["basic", "combined"] },
+        "exponents-logs": { "weight": 1, "subtopics": ["logarithms"] },
+        "sql-queries": { "weight": 1, "subtopics": ["aggregates"] }
+      },
+      "exclusiveSubtopics": ["experiment-test", "regression-fit"]
+    }
+  ]
+}

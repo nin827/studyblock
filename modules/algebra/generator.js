@@ -1,7 +1,7 @@
 // Algebra generator. Uses only the seeded rng passed in by the engine.
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { gcd, round2 } from "../../js/lib/mathutil.js";
 
 // Number -> display string; never "-0".
 function fmtNum(n) {
@@ -114,6 +114,11 @@ function genLinear(difficulty, rng) {
     a = intWithMinAbs(rng, -15, 15, 2);
     b = rng.int(-50, 50);
     c = rng.int(-50, 50);
+    // Never land exactly on a rounding half-step (x.xx5): redraw b and c with the same rng.
+    while ((200 * (c - b)) % a === 0 && Math.abs((1000 * (c - b)) / a) % 10 === 5) {
+      b = rng.int(-50, 50);
+      c = rng.int(-50, 50);
+    }
   } else {
     throw new Error(`Unknown difficulty: ${difficulty}`);
   }
@@ -229,12 +234,6 @@ function genQuadratic(difficulty, rng) {
 // Every template draws all of its rng values first, then builds text. Hints use only values
 // already drawn (no rng), and never state a final answer.
 
-const gcd = (a, b) => {
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) [a, b] = [b, a % b];
-  return a;
-};
 const isSquare = (n) => Number.isInteger(Math.sqrt(n));
 // "3x + 5", "-x", "2x"
 const lin = (m, a, v = "x") => `${m === 1 ? v : m === -1 ? `-${v}` : `${m}${v}`}${signedTerm(a)}`;
@@ -596,7 +595,11 @@ export function verify(question, answer) {
   if (p.kind === "linear") {
     if (p.a === 0) return false;
     const residual = Math.abs(p.a * x + p.b - p.c);
-    if (p.rounded) return residual <= 0.005 * Math.abs(p.a) + 1e-6;
+    if (p.rounded) {
+      // In hundredths, with integers: |a·X + 100b − 100c| < |a|/2 strictly, so a half-step tie fails.
+      const X = Math.round(x * 100);
+      return Math.abs(x * 100 - X) < 1e-6 && 2 * Math.abs(p.a * X + 100 * (p.b - p.c)) < Math.abs(p.a);
+    }
     return Number.isInteger(x) && residual === 0;
   }
 

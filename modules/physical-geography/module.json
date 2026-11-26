@@ -4,6 +4,7 @@
   "description": "Rivers, mountains, deserts, lakes and the climate zones of the world.",
   "icon": "mountain",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "rivers", "title": "Rivers", "difficulties": ["easy", "medium", "hard"] },

@@ -7,12 +7,8 @@
 // ---------------------------------------------------------------------------------------------
 // Number helpers
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-function roundTo(n, dp) {
-  const f = 10 ** dp;
-  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
-  return Object.is(r, -0) ? 0 : r;
-}
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...): mathutil.
+import { roundTo } from "../../js/lib/mathutil.js";
 
 // True when n sits within 2% of a unit of a rounding tie at dp decimals (…5 boundary).
 function nearTie(n, dp) {
@@ -213,7 +209,8 @@ function genWaveEquation(d, rng) {
       const fM = rng.pick([1, 1.5, 2, 2.5, 3, 4, 5, 6, 7.5, 10, 12, 12.5, 15, 20, 24, 25, 30, 40, 50, 60, 75, 100, 120, 150, 200, 250, 300, 400, 500, 600, 750, 1000]);
       const lam = 300 / fM;
       if (!isClean(lam, 4)) return null;
-      intro = "Radio waves travel at the speed of light, `v = 3 × 10⁸ m/s`. Use `v = f × λ`, converting MHz to Hz (× 10⁶). In MHz the powers of ten cancel: `λ = 300 / f(MHz)`.";
+      // The "λ = 300 / f(MHz)" shortcut is the answer itself at 1 MHz (300 m), so it's left out there.
+      intro = `Radio waves travel at the speed of light, \`v = 3 × 10⁸ m/s\`. Use \`v = f × λ\`, converting MHz to Hz (× 10⁶).${fM === 1 ? "" : " In MHz the powers of ten cancel: `λ = 300 / f(MHz)`."}`;
       if (sc === "radio-lam") {
         unknown = "lam";
         scale = 1;

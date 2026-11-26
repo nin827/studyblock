@@ -121,7 +121,7 @@ export async function render(root, { moduleId }, ctx) {
           <label class="seg"><input type="radio" name="quiz-mode" value="${PRACTICE}" ${mode === GUIDED ? '' : 'checked'}><span>${icon('target')}Practice</span></label>
           <label class="seg"><input type="radio" name="quiz-mode" value="${GUIDED}" ${mode === GUIDED ? 'checked' : ''}><span>${icon('compass')}Guided</span></label>
         </div>
-        <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored.</p>
+        <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored (saved in History).</p>
       </div>
       ${isLangModule(mod) ? codeLangPickerHtml(mod.languages, effectiveLang(mod), { id: 'code-lang', label: 'Language' }) : ''}
       ${mod.subtopics.length ? `<div class="table-wrap"><table class="matrix">

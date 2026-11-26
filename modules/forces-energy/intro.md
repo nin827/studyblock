@@ -19,6 +19,7 @@ Practise the core laws of mechanics: what forces do, how much work and energy is
 | Hard | Decimal values, answers rounded to 2 decimal places, some questions in several parts |
 | Expert | Multi-step problems in two or three parts, each rounded as stated |
 
-**Tip:** convert to kg, m, s and J before you substitute. On hard questions round to 2 decimal places (answers within 0.005 are accepted). The calculator starts with the question's numbers; a label like `_m_g` means the value is in grams.
+> [!TIP]
+> Convert to kg, m, s and J before you substitute. On hard questions round to 2 decimal places (answers within 0.005 are accepted). The calculator starts with the question's numbers; a label like `_m_g` means the value is in grams.
 
 **Expert** questions link several ideas: lifts and bathroom scales, a vehicle towing a trailer (acceleration and the force in the coupling), braking from km/h (deceleration, force, time), hoists with efficiency (forwards and backwards), power at top speed (P = Fv), pulling at an angle (only F cos θ does work), slopes with friction, bouncing balls that lose energy, the start height needed for a target speed, coupling collisions with kinetic energy lost, elastic or inelastic collisions, and recoil. Use unrounded values from earlier parts.

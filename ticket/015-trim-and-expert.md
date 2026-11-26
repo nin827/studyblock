@@ -1,6 +1,6 @@
 # 015 — Trimmed subjects and the Expert difficulty
 
-**Status:** open (built with the defaults below)
+**Status:** resolved (2026-11-26): to build
 **Raised:** 2026-11-25
 
 ## Removed (archived)
@@ -68,3 +68,14 @@ Borderline cases, left as they are:
   - word-roots: semi-, trans-.
 
 **Why nothing was changed:** relabelling CSV rows or removing a level would change which questions existing seeds produce, including in all/all and mixes. Any future cap should be done together with the fact-list expansion in ticket 014.
+
+## Resolution (cleared 2026-11-26)
+
+- Keep the Medical domain.
+- Change all four judgement calls: make the gem-budget 'certain' case rarer; Probability Expert uses fractions; Geometry Expert bearings to whole degrees; Music adds half-diminished vii7 and double sharps/flats.
+- Nutrition grams-from-kcal: **make Hard harder**.
+
+**Built 2026-11-26:**
+- All four judgement calls are done (III+ naming kept), and Nutrition Hard now has a percentage step.
+- Fact-list cells now have 10+ rows.
+- "Hard easier than Medium" rows relabelled: Sputnik, Uruguay, paper, the Channel Tunnel, principal/principles, semi-, trans-.

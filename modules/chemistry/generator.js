@@ -1,3 +1,7 @@
+import {
+  parseFormula, formulaMass as molarMass, massList, massExpr, prettyFormula as pretty, elementName, ar,
+} from "../../js/lib/chem.js";
+
 // Chemistry generator: moles, concentration, balancing equations, percent composition and
 // empirical / molecular formulae. Uses only the seeded rng passed in by the engine.
 // Every prompt states the atomic masses (or molar mass) it relies on, its units and its rounding.
@@ -7,12 +11,8 @@
 // ---------------------------------------------------------------------------------------------
 // Number helpers
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-function roundTo(n, dp) {
-  const f = 10 ** dp;
-  const r = (Math.sign(n) * Math.round(Math.abs(n) * f + 1e-9)) / f;
-  return Object.is(r, -0) ? 0 : r;
-}
+// Round half away from zero (the 1e-9 nudge absorbs binary error, e.g. 2.525*100 = 252.4999...): mathutil.
+import { roundTo } from "../../js/lib/mathutil.js";
 
 // True when n sits within 2% of a unit of a rounding tie at dp decimals (…5 boundary).
 function nearTie(n, dp) {
@@ -177,67 +177,17 @@ const roundHint = (o) => (o && o.rounded ? ` Then${roundNote(o.dp).replace(" Rou
 // ---------------------------------------------------------------------------------------------
 // Chemistry data
 
-// Rounded relative atomic masses (the values used in most school data sheets).
-const A = { H: 1, C: 12, N: 14, O: 16, Na: 23, Mg: 24, Al: 27, P: 31, S: 32, Cl: 35.5, K: 39, Ca: 40, Mn: 55, Fe: 56, Cu: 63.5, Zn: 65, Ag: 108 };
-
-const EL_NAME = {
-  H: "hydrogen", C: "carbon", N: "nitrogen", O: "oxygen", Na: "sodium", Mg: "magnesium", Al: "aluminium", P: "phosphorus",
-  S: "sulfur", Cl: "chlorine", K: "potassium", Ca: "calcium", Mn: "manganese", Fe: "iron", Cu: "copper", Zn: "zinc", Ag: "silver",
-};
-
-// Parse an ASCII formula such as "Al2(SO4)3" into element counts { Al: 2, S: 3, O: 12 }.
-// Unicode subscripts (H₂O) are accepted too. Throws on anything else.
-function parseFormula(text) {
-  const f = String(text).replace(/[₀-₉]/g, (c) => String(c.charCodeAt(0) - 0x2080));
-  let i = 0;
-  function group(depth) {
-    const counts = {};
-    while (i < f.length && f[i] !== ")") {
-      let part;
-      if (f[i] === "(") {
-        i++;
-        part = group(depth + 1);
-        if (f[i] !== ")") throw new Error(`Bad formula: ${text}`);
-        i++;
-      } else {
-        const m = /^[A-Z][a-z]?/.exec(f.slice(i));
-        if (!m || !(m[0] in A)) throw new Error(`Bad formula: ${text}`);
-        i += m[0].length;
-        part = { [m[0]]: 1 };
-      }
-      const d = /^[1-9]\d*/.exec(f.slice(i));
-      const k = d ? Number(d[0]) : 1;
-      if (d) i += d[0].length;
-      for (const [el, c] of Object.entries(part)) counts[el] = (counts[el] || 0) + c * k;
-    }
-    if (depth === 0 && i !== f.length) throw new Error(`Bad formula: ${text}`);
-    return counts;
-  }
-  const counts = group(0);
-  if (!Object.keys(counts).length) throw new Error(`Bad formula: ${text}`);
-  return counts;
-}
-
-const molarMass = (counts) => Object.entries(counts).reduce((s, [el, c]) => s + c * A[el], 0);
+// Element data, formula parsing and molar masses come from the shared chemistry library.
+const EL_NAME = elementName;
 
 // Elements in order of first appearance in the formula.
 const elementsOf = (f) => Object.keys(parseFormula(f));
 
-// "H2SO4" -> "H₂SO₄"
-const pretty = (f) => f.replace(/\d/g, (d) => "₀₁₂₃₄₅₆₇₈₉"[d]);
-
-// "(H = 1, S = 32, O = 16)" for the atomic masses a list of formulas needs.
+// "the atomic masses H = 1, S = 32, O = 16" for the elements a list of formulas needs.
 function massNote(formulas) {
-  const els = [];
-  for (const f of formulas) for (const el of elementsOf(f)) if (!els.includes(el)) els.push(el);
-  return `the atomic mass${els.length === 1 ? "" : "es"} ${els.map((el) => `${el} = ${A[el]}`).join(", ")}`;
-}
-
-// Calculator expression for a molar mass: "2*1 + 32 + 4*16".
-function massExpr(f) {
-  return Object.entries(parseFormula(f))
-    .map(([el, c]) => (c === 1 ? `${A[el]}` : `${c}*${A[el]}`))
-    .join(" + ");
+  const els = new Set();
+  for (const f of formulas) for (const el of elementsOf(f)) els.add(el);
+  return `the atomic mass${els.size === 1 ? "" : "es"} ${massList(formulas)}`;
 }
 
 const COMPOUNDS = [
@@ -297,10 +247,10 @@ function genMoles(d, rng) {
       exact = n * k;
       unit = "mol";
       values = { m, f, el };
-      prompt = `${mGiven} How many moles of ${EL_NAME[el]} atoms (${el}) are in ${num(m)} g of ${what}, in mol?${EXACT}`;
+      prompt = `${mGiven} How many moles of ${EL_NAME(el)} atoms (${el}) are in ${num(m)} g of ${what}, in mol?${EXACT}`;
       intro = `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit (${k}).${mIntro}`;
       lines = [given("_mass", m, "g"), mLine, step("_n", "_mass / _M", `${num(n)} mol`), step("_n_" + el, `_n * ${k}`, final(exact, o, unit))];
-      candidates = [n, n * k * 2, m / A[el], (m * k) / A[el], n / k];
+      candidates = [n, n * k * 2, m / ar(el), (m * k) / ar(el), n / k];
       hintFn = () => [
         `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit.`,
         mHint,
@@ -406,10 +356,10 @@ function genMoles(d, rng) {
         exact = n * k;
         unit = "mol";
         values = { m, f, el };
-        prompt = `How many moles of ${EL_NAME[el]} atoms (${el}) are in ${num(m)} g of ${what}, in mol? Use ${massNote([f])}.${roundNote(3)}`;
+        prompt = `How many moles of ${EL_NAME(el)} atoms (${el}) are in ${num(m)} g of ${what}, in mol? Use ${massNote([f])}.${roundNote(3)}`;
         intro = `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit (${k}).`;
         lines = [...mLines, nLine, step("_n_" + el, `_n * ${k}`, final(exact, o, unit))];
-        candidates = [n, m / A[el], (m * k) / A[el], n / k, n * k * 2];
+        candidates = [n, m / ar(el), (m * k) / ar(el), n / k, n * k * 2];
         hintFn = () => [
           `Find the moles of ${P} with \`n = m / M\`, then multiply by the number of ${el} atoms in one formula unit.`,
           mHint,
@@ -718,6 +668,71 @@ const EQUATIONS = {
   ],
 };
 
+// More real equations per level (ticket 014: 18 a level was thin). Picked by a draw made after the
+// original question is built, so seeds that keep an EQUATIONS equation are unchanged.
+const EXTRA_EQUATIONS = {
+  easy: [
+    "2 Zn + 1 O2 = 2 ZnO",
+    "1 S + 1 O2 = 1 SO2",
+    "2 C + 1 O2 = 2 CO",
+    "2 Al + 3 Cl2 = 2 AlCl3",
+    "1 Mg + 1 Cl2 = 1 MgCl2",
+    "2 K + 1 Cl2 = 2 KCl",
+    "2 Fe + 3 Cl2 = 2 FeCl3",
+    "1 Fe + 1 S = 1 FeS",
+    "1 MgCO3 = 1 MgO + 1 CO2",
+    "1 CuCO3 = 1 CuO + 1 CO2",
+    "1 Zn + 1 CuSO4 = 1 ZnSO4 + 1 Cu",
+    "1 Fe + 1 CuSO4 = 1 FeSO4 + 1 Cu",
+    "1 Mg + 1 H2SO4 = 1 MgSO4 + 1 H2",
+    "1 Ca + 2 H2O = 1 Ca(OH)2 + 1 H2",
+    "1 CaO + 1 H2O = 1 Ca(OH)2",
+    "4 K + 1 O2 = 2 K2O",
+    "1 NaOH + 1 HCl = 1 NaCl + 1 H2O",
+    "1 Ca + 1 Cl2 = 1 CaCl2",
+  ],
+  medium: [
+    "1 CuO + 1 H2SO4 = 1 CuSO4 + 1 H2O",
+    "1 MgO + 2 HCl = 1 MgCl2 + 1 H2O",
+    "2 KOH + 1 H2SO4 = 1 K2SO4 + 2 H2O",
+    "1 CaCO3 + 2 HNO3 = 1 Ca(NO3)2 + 1 H2O + 1 CO2",
+    "1 Zn + 2 AgNO3 = 1 Zn(NO3)2 + 2 Ag",
+    "1 Cu + 2 AgNO3 = 1 Cu(NO3)2 + 2 Ag",
+    "2 ZnS + 3 O2 = 2 ZnO + 2 SO2",
+    "1 Fe3O4 + 4 CO = 3 Fe + 4 CO2",
+    "1 C2H4 + 3 O2 = 2 CO2 + 2 H2O",
+    "2 C3H6 + 9 O2 = 6 CO2 + 6 H2O",
+    "1 CuO + 2 HCl = 1 CuCl2 + 1 H2O",
+    "1 Fe + 2 HCl = 1 FeCl2 + 1 H2",
+    "2 NaOH + 1 CuSO4 = 1 Cu(OH)2 + 1 Na2SO4",
+    "1 MgCO3 + 2 HCl = 1 MgCl2 + 1 H2O + 1 CO2",
+    "1 Na2O + 2 HCl = 2 NaCl + 1 H2O",
+    "2 NH3 + 1 H2SO4 = 1 (NH4)2SO4",
+    "2 Mg + 1 CO2 = 2 MgO + 1 C",
+    "1 ZnO + 2 HNO3 = 1 Zn(NO3)2 + 1 H2O",
+  ],
+  hard: [
+    "1 C5H12 + 8 O2 = 5 CO2 + 6 H2O",
+    "2 C6H14 + 19 O2 = 12 CO2 + 14 H2O",
+    "2 C3H7OH + 9 O2 = 6 CO2 + 8 H2O",
+    "4 NH3 + 7 O2 = 4 NO2 + 6 H2O",
+    "1 Fe3O4 + 8 HCl = 1 FeCl2 + 2 FeCl3 + 4 H2O",
+    "2 KMnO4 = 1 K2MnO4 + 1 MnO2 + 1 O2",
+    "1 Mg3N2 + 6 H2O = 3 Mg(OH)2 + 2 NH3",
+    "1 PCl5 + 4 H2O = 1 H3PO4 + 5 HCl",
+    "1 P4 + 6 Cl2 = 4 PCl3",
+    "1 P4O10 + 6 H2O = 4 H3PO4",
+    "2 Fe(OH)3 = 1 Fe2O3 + 3 H2O",
+    "1 Cu + 2 H2SO4 = 1 CuSO4 + 1 SO2 + 2 H2O",
+    "2 Al(OH)3 + 3 H2SO4 = 1 Al2(SO4)3 + 6 H2O",
+    "4 Al + 3 MnO2 = 2 Al2O3 + 3 Mn",
+    "8 Al + 3 Fe3O4 = 4 Al2O3 + 9 Fe",
+    "2 Fe2O3 + 3 C = 4 Fe + 3 CO2",
+    "1 C12H22O11 + 12 O2 = 12 CO2 + 11 H2O",
+    "4 Zn + 10 HNO3 = 4 Zn(NO3)2 + 1 N2O + 5 H2O",
+  ],
+};
+
 // "2 H2 + 1 O2 = 2 H2O" -> [[{ coef: 2, f: "H2" }, …], [{ coef: 2, f: "H2O" }]]
 function parseEquation(text) {
   return text.split("=").map((side) =>
@@ -747,7 +762,7 @@ function balanced(sides, coefs) {
 const gcd = (a, b) => (b ? gcd(b, a % b) : a);
 
 // Self-check on load: every listed equation balances and is in lowest whole-number terms.
-for (const list of Object.values(EQUATIONS)) {
+for (const list of [...Object.values(EQUATIONS), ...Object.values(EXTRA_EQUATIONS)]) {
   for (const text of list) {
     const sides = parseEquation(text);
     const coefs = sides.flat().map((t) => t.coef);
@@ -757,7 +772,14 @@ for (const list of Object.values(EQUATIONS)) {
 
 function genBalancing(d, rng) {
   checkDifficulty(d);
-  const text = rng.pick(EQUATIONS[d]);
+  const q = balancingQuestion(rng.pick(EQUATIONS[d]), rng);
+  const more = EXTRA_EQUATIONS[d];
+  // Each equation in the combined pool is equally likely.
+  if (rng.next() < more.length / (more.length + EQUATIONS[d].length)) return balancingQuestion(rng.pick(more), rng);
+  return q;
+}
+
+function balancingQuestion(text, rng) {
   const sides = parseEquation(text);
   const terms = sides.flat();
   const miss = rng.int(0, terms.length - 1);
@@ -794,7 +816,7 @@ function genBalancing(d, rng) {
   const sameKnown = total(same, terms[miss]);
   const otherTotal = total(other, null);
   const intro =
-    `Count the **${el}** atoms (${EL_NAME[el]}). The missing species ${pretty(terms[miss].f)} has ${k} ${el} atom${k === 1 ? "" : "s"}, ` +
+    `Count the **${el}** atoms (${EL_NAME(el)}). The missing species ${pretty(terms[miss].f)} has ${k} ${el} atom${k === 1 ? "" : "s"}, ` +
     `so \`? × ${k}\` plus the other ${el} atoms on its side must equal the ${el} atoms on the other side.`;
   const lines = [
     step(`_${el}_other`, exprFor(other, null), `${otherTotal} atom${otherTotal === 1 ? "" : "s"} on the other side`),
@@ -861,7 +883,7 @@ const formulaOf = (order, counts) => pretty(order.map((el) => `${el}${counts[el]
 
 // Simplest whole-number ratio from masses (or percentages) per element; null if no multiplier up to 8 works.
 function simplestRatio(masses) {
-  const moles = Object.fromEntries(Object.entries(masses).map(([el, m]) => [el, m / A[el]]));
+  const moles = Object.fromEntries(Object.entries(masses).map(([el, m]) => [el, m / ar(el)]));
   const min = Math.min(...Object.values(moles));
   const ratio = Object.fromEntries(Object.entries(moles).map(([el, n]) => [el, n / min]));
   for (let k = 1; k <= 8; k++) {
@@ -932,29 +954,29 @@ function genComposition(d, rng) {
     const k = counts[el];
     const what = `${name} (${pretty(f)})`;
     const Mline = step("_M", massExpr(f), `${num(M)} g/mol`);
-    const elLine = step(`_${el}_mass`, k === 1 ? `${A[el]}` : `${k}*${A[el]}`, `${num(k * A[el])} g of ${el} per mole`);
+    const elLine = step(`_${el}_mass`, k === 1 ? `${ar(el)}` : `${k}*${ar(el)}`, `${num(k * ar(el))} g of ${el} per mole`);
     const atoms = Object.values(counts).reduce((s, c) => s + c, 0);
     let prompt, exact, unit, intro, lines, candidates, values, o, hintFn;
-    const elMass = num(k * A[el]);
+    const elMass = num(k * ar(el));
     const massHint = `Molar mass of ${pretty(f)}: \`${times(massExpr(f))}\` = ${num(M)} g/mol. ` +
-      `Mass of ${el} in one formula unit: ${k === 1 ? `${elMass} g` : `\`${k} × ${A[el]}\` = ${elMass} g`}.`;
+      `Mass of ${el} in one formula unit: ${k === 1 ? `${elMass} g` : `\`${k} × ${ar(el)}\` = ${elMass} g`}.`;
     if (kind === "percent") {
       o = { dp: 1, rounded: true };
-      exact = (100 * k * A[el]) / M;
+      exact = (100 * k * ar(el)) / M;
       unit = "%";
       values = { f, el };
-      prompt = `What is the percentage by mass of ${EL_NAME[el]} (${el}) in ${what}? Use ${massNote([f])}. Give the answer in %.${roundNote(1)}`;
+      prompt = `What is the percentage by mass of ${EL_NAME(el)} (${el}) in ${what}? Use ${massNote([f])}. Give the answer in %.${roundNote(1)}`;
       intro = `Percentage by mass = (mass of ${el} in one formula unit ÷ molar mass) × 100.`;
       // Atomic masses as their own rows, so the calculator can start from them.
       const els = Object.keys(counts);
       const term = (e2) => (counts[e2] === 1 ? `_A_${e2}` : `${counts[e2]}*_A_${e2}`);
       lines = [
-        ...els.map((e2) => given(`_A_${e2}`, A[e2])),
+        ...els.map((e2) => given(`_A_${e2}`, ar(e2))),
         step("_M", els.map(term).join(" + "), `${num(M)} g/mol`),
-        step(`_${el}_mass`, term(el), `${num(k * A[el])} g of ${el} per mole`),
+        step(`_${el}_mass`, term(el), `${num(k * ar(el))} g of ${el} per mole`),
         step("_pct", `_${el}_mass / _M * 100`, final(exact, o, unit)),
       ];
-      candidates = [(100 * A[el]) / M, (100 * k) / atoms, 100 - exact, (100 * k * A[el]) / (M - k * A[el])];
+      candidates = [(100 * ar(el)) / M, (100 * k) / atoms, 100 - exact, (100 * k * ar(el)) / (M - k * ar(el))];
       hintFn = (calc) => [
         `Percentage by mass = (mass of ${el} in one formula unit ÷ molar mass) × 100.`,
         massHint,
@@ -963,13 +985,13 @@ function genComposition(d, rng) {
     } else if (kind === "mass-el") {
       const m = rng.int(10, 500) / 10;
       o = { dp: 2, rounded: true };
-      exact = (m * k * A[el]) / M;
+      exact = (m * k * ar(el)) / M;
       unit = "g";
       values = { f, el, m };
-      prompt = `What mass of ${EL_NAME[el]} (${el}) is contained in ${num(m)} g of ${what}, in g? Use ${massNote([f])}.${roundNote(2)}`;
+      prompt = `What mass of ${EL_NAME(el)} (${el}) is contained in ${num(m)} g of ${what}, in g? Use ${massNote([f])}.${roundNote(2)}`;
       intro = `The fraction of the mass that is ${el} is (mass of ${el} per formula unit) ÷ (molar mass). Multiply the sample mass by that fraction.`;
       lines = [given("_mass", m, "g"), Mline, elLine, step(`_m_${el}`, `_mass * _${el}_mass / _M`, final(exact, o, unit))];
-      candidates = [(m * A[el]) / M, m - exact, (m * M) / (k * A[el]), (m * k) / atoms];
+      candidates = [(m * ar(el)) / M, m - exact, (m * M) / (k * ar(el)), (m * k) / atoms];
       hintFn = () => [
         `Find what fraction of the mass is ${el}: (mass of ${el} per formula unit) ÷ (molar mass). Then multiply the sample mass by it.`,
         massHint,
@@ -978,13 +1000,13 @@ function genComposition(d, rng) {
     } else {
       const mel = rng.int(10, 300) / 10;
       o = { dp: 2, rounded: true };
-      exact = (mel * M) / (k * A[el]);
+      exact = (mel * M) / (k * ar(el));
       unit = "g";
       values = { f, el, mel };
-      prompt = `What mass of ${what} contains exactly ${num(mel)} g of ${EL_NAME[el]} (${el}), in g? Use ${massNote([f])}.${roundNote(2)}`;
+      prompt = `What mass of ${what} contains exactly ${num(mel)} g of ${EL_NAME(el)} (${el}), in g? Use ${massNote([f])}.${roundNote(2)}`;
       intro = `Only part of each formula unit's mass is ${el}. Divide the mass of ${el} by that fraction (mass of ${el} per formula unit ÷ molar mass).`;
       lines = [given(`_m_${el}`, mel, "g"), Mline, elLine, step("_mass", `_m_${el} * _M / _${el}_mass`, final(exact, o, unit))];
-      candidates = [(mel * k * A[el]) / M, (mel * M) / A[el], mel + M, (mel * M) / (k * A[el] * 10)];
+      candidates = [(mel * k * ar(el)) / M, (mel * M) / ar(el), mel + M, (mel * M) / (k * ar(el) * 10)];
       hintFn = () => [
         `Only part of the compound's mass is ${el}. Divide the mass of ${el} by that fraction, (mass of ${el} per formula unit) ÷ (molar mass).`,
         massHint,
@@ -1016,7 +1038,7 @@ function genComposition(d, rng) {
       prompt,
       explanation: explain(intro, lines, outro),
       params: { kind: "comp-molecular", values: { emp, Mm } },
-      askNumber: (el) => `How many ${EL_NAME[el]} atoms (${el}) are in one molecule?`,
+      askNumber: (el) => `How many ${EL_NAME(el)} atoms (${el}) are in one molecule?`,
       hints: [
         "Find how many empirical-formula units fit into the molar mass, then multiply every subscript by that number.",
         `Empirical formula mass of ${pretty(emp)}: \`${times(massExpr(emp))}\` = ${num(Me)} g/mol.`,
@@ -1024,7 +1046,7 @@ function genComposition(d, rng) {
       ],
     };
     const formulaCands = [mult(n + 1), ce, mult(n * 2), mult(n + 2), Object.fromEntries(order.map((el, i) => [el, cm[order[(i + 1) % order.length]]]))];
-    const numberCands = [ce[askEl], n, cm[askEl] + n, cm[askEl] * 2, Math.round(Mm / A[askEl])];
+    const numberCands = [ce[askEl], n, cm[askEl] + n, cm[askEl] * 2, Math.round(Mm / ar(askEl))];
     return finishFormula(base, cm, order, askEl, formulaCands, numberCands, rng);
   }
 
@@ -1038,16 +1060,16 @@ function genComposition(d, rng) {
   const useMass = kind === "empirical-mass";
   if (useMass) {
     const sample = rng.int(20, 300) / 10;
-    data = Object.fromEntries(order.map((el) => [el, roundTo((sample * ce[el] * A[el]) / Me, 2)]));
+    data = Object.fromEntries(order.map((el) => [el, roundTo((sample * ce[el] * ar(el)) / Me, 2)]));
     prompt =
-      `A sample of a compound contains ${order.map((el) => `${num(data[el])} g of ${EL_NAME[el]} (${el})`).join(", ").replace(/, ([^,]*)$/, " and $1")} and nothing else. ` +
+      `A sample of a compound contains ${order.map((el) => `${num(data[el])} g of ${EL_NAME(el)} (${el})`).join(", ").replace(/, ([^,]*)$/, " and $1")} and nothing else. ` +
       `Use ${massNote([emp])}.`;
   } else {
-    const pct = order.map((el) => roundTo((100 * ce[el] * A[el]) / Me, 1));
+    const pct = order.map((el) => roundTo((100 * ce[el] * ar(el)) / Me, 1));
     pct[pct.length - 1] = roundTo(100 - pct.slice(0, -1).reduce((s, p) => s + p, 0), 1);
     data = Object.fromEntries(order.map((el, i) => [el, pct[i]]));
     prompt =
-      `A compound contains, by mass, ${order.map((el) => `${num(data[el])}% ${EL_NAME[el]} (${el})`).join(", ").replace(/, ([^,]*)$/, " and $1")}. ` +
+      `A compound contains, by mass, ${order.map((el) => `${num(data[el])}% ${EL_NAME(el)} (${el})`).join(", ").replace(/, ([^,]*)$/, " and $1")}. ` +
       `Use ${massNote([emp])}.`;
   }
   if (Object.values(data).some((v) => !(v > 0))) return null;
@@ -1058,8 +1080,8 @@ function genComposition(d, rng) {
   const lines = [];
   const dl = (el) => `${useMass ? "_g_" : "_pct_"}${el}`;
   order.forEach((el) => lines.push(given(dl(el), data[el], useMass ? "g" : "%")));
-  order.forEach((el) => lines.push(step(`_n_${el}`, `${dl(el)} / ${A[el]}`, `${num4(data[el] / A[el])} mol`)));
-  const minEl = order.reduce((a, b) => (data[a] / A[a] <= data[b] / A[b] ? a : b));
+  order.forEach((el) => lines.push(step(`_n_${el}`, `${dl(el)} / ${ar(el)}`, `${num4(data[el] / ar(el))} mol`)));
+  const minEl = order.reduce((a, b) => (data[a] / ar(a) <= data[b] / ar(b) ? a : b));
   order.forEach((el) => lines.push(step(`_r_${el}`, `_n_${el} / _n_${minEl}`, num4(sr.ratio[el]))));
   const intro =
     `Divide each ${useMass ? "mass" : "percentage"} by its atomic mass to get moles${useMass ? "" : " (treat each percentage as grams in a 100 g sample)"}, then divide by the smallest number of moles. ` +
@@ -1073,8 +1095,8 @@ function genComposition(d, rng) {
     askNumber: (el) => `What is the subscript of ${el} in the empirical formula? (Write 1 if ${el} has no subscript.)`,
     hints: [
       `${useMass ? "" : "Treat the percentages as grams in a 100 g sample. "}Divide each mass by its atomic mass to get moles, then divide every result by the smallest.`,
-      `Moles: ${order.map((el) => `${el} \`${num(data[el])} / ${A[el]}\` ≈ ${num4(data[el] / A[el])}`).join("; ")}.`,
-      `Divide each by the smallest (${minEl}, ≈ ${num4(data[minEl] / A[minEl])} mol). If a ratio comes out near .5, .33 or .25, multiply them all by 2, 3 or 4 to get whole numbers.`,
+      `Moles: ${order.map((el) => `${el} \`${num(data[el])} / ${ar(el)}\` ≈ ${num4(data[el] / ar(el))}`).join("; ")}.`,
+      `Divide each by the smallest (${minEl}, ≈ ${num4(data[minEl] / ar(minEl))} mol). If a ratio comes out near .5, .33 or .25, multiply them all by 2, 3 or 4 to get whole numbers.`,
     ],
   };
   const swapped = Object.fromEntries(order.map((el, i) => [el, ce[order[order.length - 1 - i]]]));
@@ -1592,7 +1614,7 @@ function xEmpMol(rng) {
   const sample = rng.int(100, 900) / 100;
   const data = {};
   for (const el of els) {
-    const frac = (c[el] * A[el]) / Mm;
+    const frac = (c[el] * ar(el)) / Mm;
     data[el] = useMass ? xr(frac * sample, 3) : xr(frac * 100, 1);
   }
   const sr = simplestRatio(data);
@@ -1600,7 +1622,7 @@ function xEmpMol(rng) {
   const Me = molarMass(sr.counts);
   const k = Mm / Me;
   if (Math.abs(k - Math.round(k)) > 1e-9 || els.some((el) => sr.counts[el] * Math.round(k) !== c[el])) return null;
-  const list = els.map((el) => (useMass ? `${xs(data[el])} g of ${EL_NAME[el]}` : `${xs(data[el])}% ${EL_NAME[el]}`));
+  const list = els.map((el) => (useMass ? `${xs(data[el])} g of ${EL_NAME(el)}` : `${xs(data[el])}% ${EL_NAME(el)}`));
   const dataText = useMass
     ? `A ${xs(sample)} g sample of ${name} contains ${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}.`
     : `By mass, ${name} is ${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}.`;
@@ -1610,10 +1632,10 @@ function xEmpMol(rng) {
     v: { data, Mm },
     prompt: `${dataText} Its relative molecular mass is ${Mm}. Use ${massNote([f])}. Find its molecular formula.`,
     parts: els.map((el) =>
-      xInt(el.toLowerCase(), `${EL_NAME[el][0].toUpperCase()}${EL_NAME[el].slice(1)} atoms`, `Number of ${el} atoms in one molecule`, c[el], el === "C" ? "Find the empirical formula first: divide each amount by the atomic mass, then by the smallest result." : "Scale the empirical formula up so its mass matches the relative molecular mass.")
+      xInt(el.toLowerCase(), `${EL_NAME(el)[0].toUpperCase()}${EL_NAME(el).slice(1)} atoms`, `Number of ${el} atoms in one molecule`, c[el], el === "C" ? "Find the empirical formula first: divide each amount by the atomic mass, then by the smallest result." : "Scale the empirical formula up so its mass matches the relative molecular mass.")
     ),
     steps: [
-      `Divide by the atomic masses: ${els.map((el) => `${el} ${xs(data[el])} ÷ ${A[el]} = ${xs(data[el] / A[el])}`).join(", ")}.`,
+      `Divide by the atomic masses: ${els.map((el) => `${el} ${xs(data[el])} ÷ ${ar(el)} = ${xs(data[el] / ar(el))}`).join(", ")}.`,
       `Divide by the smallest and round to whole numbers${sr.k > 1 ? ` (after multiplying by ${sr.k})` : ""}: empirical formula **${pretty(empF)}**, mass ${xs(Me)}.`,
       `${Mm} ÷ ${xs(Me)} = ${Math.round(k)}, so multiply every subscript by ${Math.round(k)}: **${pretty(f)}**.`,
     ],
@@ -1710,7 +1732,30 @@ function genExpert(subtopic, rng) {
 
 // Independent truth for verify. Molar masses are recomputed from the formula; coefficients are
 // checked by counting atoms for the learner's own numbers; formulas are rebuilt from the data.
-const xM = (f) => molarMass(parseFormula(f));
+// Independent check helpers (verify only): expand brackets textually, then scan "Symbol count" tokens.
+const subsToAscii = (t) => String(t).replace(/[₀-₉]/g, (c) => String(c.charCodeAt(0) - 0x2080));
+function checkCounts(text) {
+  let s = subsToAscii(text);
+  if (!/^[A-Za-z0-9()]+$/.test(s)) throw new Error(`Bad formula: ${text}`);
+  const inner = /\(([^()]*)\)([1-9]\d*)?/;
+  while (inner.test(s)) s = s.replace(inner, (_, body, k) => body.repeat(k === undefined ? 1 : Number(k)));
+  if (/[()]/.test(s)) throw new Error(`Bad formula: ${text}`);
+  const counts = {};
+  const re = /([A-Z][a-z]?)([1-9]\d*)?/g;
+  let used = 0;
+  let m;
+  while ((m = re.exec(s))) {
+    ar(m[1]); // throws for an element without a stated mass
+    counts[m[1]] = (counts[m[1]] || 0) + (m[2] === undefined ? 1 : Number(m[2]));
+    used += m[0].length;
+  }
+  if (used !== s.length || !used) throw new Error(`Bad formula: ${text}`);
+  return counts;
+}
+const checkMass = (text) => Object.entries(checkCounts(text)).reduce((t, [el, c]) => t + ar(el) * c, 0);
+const checkCount = (text, el) => checkCounts(text)[el] || 0;
+
+const xM = (f) => checkMass(f);
 const xCoef = (text, f, side) => parseEquation(text)[side].find((t) => t.f === f).coef;
 const X_TRUTH = {
   "x-react": ({ eq, r, p, m }) => {
@@ -1802,8 +1847,8 @@ export function generate({ subtopic, difficulty, rng }) {
 // Numeric answers: the defining relation, written as a residual g(x) that is monotonic in the unknown,
 // must change sign across [x - tol, x + tol]; i.e. the true value lies within the accepted band.
 
-const Mof = (f) => molarMass(parseFormula(f));
-const kOf = (f, el) => parseFormula(f)[el] || 0;
+const Mof = (f) => checkMass(f);
+const kOf = (f, el) => checkCount(f, el);
 
 const RESIDUAL = {
   "moles-n": (v, x) => x * Mof(v.f) - v.m,
@@ -1823,9 +1868,9 @@ const RESIDUAL = {
   "conc-mass-c": (v, x) => x * (v.Vc / 1000) * Mof(v.f) - v.m,
   "conc-mass-needed": (v, x) => x / Mof(v.f) / (v.Vc / 1000) - v.c,
   "conc-water-add": (v, x) => (v.V1 + x) * v.c2 - v.c1 * v.V1,
-  "comp-percent": (v, x) => (x * Mof(v.f)) / 100 - kOf(v.f, v.el) * A[v.el],
-  "comp-mass-el": (v, x) => x * Mof(v.f) - v.m * kOf(v.f, v.el) * A[v.el],
-  "comp-mass-compound": (v, x) => x * kOf(v.f, v.el) * A[v.el] - v.mel * Mof(v.f),
+  "comp-percent": (v, x) => (x * Mof(v.f)) / 100 - kOf(v.f, v.el) * ar(v.el),
+  "comp-mass-el": (v, x) => x * Mof(v.f) - v.m * kOf(v.f, v.el) * ar(v.el),
+  "comp-mass-compound": (v, x) => x * kOf(v.f, v.el) * ar(v.el) - v.mel * Mof(v.f),
 };
 
 function numericOk(p, raw, tol) {
@@ -1863,8 +1908,8 @@ function formulaAnswerOk(p, q, raw) {
   let target;
   if (p.kind === "comp-empirical") target = empiricalCounts(p.values);
   else {
-    const ce = parseFormula(p.values.emp);
-    const n = p.values.Mm / molarMass(ce);
+    const ce = checkCounts(p.values.emp);
+    const n = p.values.Mm / checkMass(p.values.emp);
     if (!Number.isInteger(Math.round(n)) || Math.abs(n - Math.round(n)) > 1e-9) return false;
     target = Object.fromEntries(Object.entries(ce).map(([el, c]) => [el, c * Math.round(n)]));
   }
@@ -1872,7 +1917,7 @@ function formulaAnswerOk(p, q, raw) {
   if (p.ask === "formula") {
     let c;
     try {
-      c = parseFormula(String(raw));
+      c = checkCounts(String(raw));
     } catch {
       return false;
     }

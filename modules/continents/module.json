@@ -4,6 +4,7 @@
   "description": "Place countries on the right continent and name the oceans and seas around them.",
   "icon": "earth",
   "type": "csv",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 4,
   "subtopics": [
     { "id": "africa-europe", "title": "Africa and Europe", "difficulties": ["easy", "medium", "hard"] },

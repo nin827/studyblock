@@ -1,0 +1,47 @@
+{
+  "id": "architect",
+  "title": "Architect",
+  "icon": "drafting-compass",
+  "flags": ["license_oriented", "creative_oriented", "experience_heavy", "region_specific"],
+  "description": "Plans at scale, stairs, daylight and ramps, worked out so that a design meets the rules it was given and the budget it was set.",
+  "exclusive": "role-architect",
+  "mix": {
+    "geometry": { "weight": 4, "subtopics": ["perimeter-area", "angles", "pythagoras", "volume"] },
+    "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] },
+    "ratios-percentages": { "weight": 3 },
+    "unit-conversion": { "weight": 2, "subtopics": ["length"] },
+    "structures": { "weight": 1, "subtopics": ["moments", "factor-of-safety"] },
+    "business-math": { "weight": 1, "subtopics": ["percentages", "margins"] }
+  },
+  "subroles": [
+    {
+      "id": "building-designer",
+      "title": "Building Designer",
+      "icon": "building-2",
+      "description": "Plans at a scale, room areas, stair rise and going, and the glazing needed for daylight.",
+      "mix": {
+        "geometry": { "weight": 3, "subtopics": ["perimeter-area", "pythagoras", "volume"] },
+        "ratios-percentages": { "weight": 3 },
+        "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] },
+        "unit-conversion": { "weight": 2, "subtopics": ["length"] },
+        "structures": { "weight": 1, "subtopics": ["moments", "factor-of-safety"] },
+        "business-math": { "weight": 1, "subtopics": ["percentages"] }
+      },
+      "exclusiveSubtopics": ["plan-scale", "stair-rule", "daylight-glazing"]
+    },
+    {
+      "id": "landscape-architect",
+      "title": "Landscape Architect",
+      "icon": "trees",
+      "description": "Site areas at a scale, ramps against a maximum gradient, planting density and paving quantities.",
+      "mix": {
+        "geometry": { "weight": 3, "subtopics": ["perimeter-area", "angles", "pythagoras"] },
+        "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+        "ratios-percentages": { "weight": 2 },
+        "unit-conversion": { "weight": 1, "subtopics": ["length"] },
+        "business-math": { "weight": 1, "subtopics": ["percentages", "margins"] }
+      },
+      "exclusiveSubtopics": ["plan-scale", "ramp-access", "planting-paving"]
+    }
+  ]
+}

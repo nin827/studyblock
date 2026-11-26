@@ -90,7 +90,13 @@
         "business-case",
         "accounting-terms",
         "finance",
-        "economics"
+        "economics",
+        "management",
+        "accounting-theory",
+        "finance-theory",
+        "marketing",
+        "business-theory",
+        "project-scheduling"
       ]
     },
     {
@@ -145,6 +151,38 @@
       "modules": [
         "body-measurements",
         "nutrition"
+      ]
+    },
+    {
+      "id": "logic",
+      "title": "Logic & Puzzles",
+      "icon": "brain",
+      "description": "Knights and knaves, ordering puzzles, whodunits, syllogisms and if-then arguments, and number, letter and shape patterns.",
+      "modules": [
+        "logic-puzzles",
+        "syllogisms",
+        "number-patterns"
+      ]
+    },
+    {
+      "id": "everyday-math",
+      "title": "Everyday Math",
+      "icon": "wallet",
+      "description": "Real-life maths: clock times, calendars and time zones, scaling recipes, shopping and budgets, and planning journeys.",
+      "modules": [
+        "time-dates",
+        "recipes-scaling",
+        "shopping-money",
+        "travel"
+      ]
+    },
+    {
+      "id": "engineering",
+      "title": "Engineering",
+      "icon": "hard-hat",
+      "description": "How structures carry load: moments, stress and strain, beams and factors of safety.",
+      "modules": [
+        "structures"
       ]
     }
   ],

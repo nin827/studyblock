@@ -1,0 +1,15 @@
+{
+  "id": "business-theory",
+  "title": "Business Theory",
+  "description": "Forms of ownership, stakeholders, SMART objectives, and SWOT and PESTLE analysis.",
+  "icon": "building-2",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "ownership", "title": "Forms of ownership", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "stakeholders", "title": "Stakeholders", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "objectives", "title": "SMART objectives", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "swot", "title": "SWOT analysis", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "pestle", "title": "PESTLE analysis", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

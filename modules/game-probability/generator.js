@@ -11,19 +11,15 @@
 // ---------------------------------------------------------------------------------------------
 // Shared helpers
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+// Rounding half away from zero and intermediate numbers (up to 4 dp, never "-0") come from mathutil.
+import { fmtNum, round2 } from "../../js/lib/mathutil.js";
 
 function fmt2(n) {
   const r = round2(n);
   return (Object.is(r, -0) ? 0 : r).toFixed(2);
 }
 
-// Intermediate values: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+const num = (n) => fmtNum(n);
 
 // True when n sits (almost) exactly on a 2-decimal rounding boundary, where float noise could flip it.
 const nearHalf = (n) => Math.abs(Math.abs(n * 100) % 1 - 0.5) < 1e-6;
@@ -1080,7 +1076,7 @@ function xBudget(rng) {
     const N = rng.int(20, 90);
     const j = rng.int(0, N - 2);
     const cost = rng.pick([150, 160, 180, 200, 300]);
-    const k = rng.int(2, 40);
+    const k = rng.int(3, 18);
     const G = cost * k + rng.int(0, cost - 1);
     const q = 1 - p / 100;
     const left = N - j; // the guaranteed pull is this many pulls away
@@ -1321,7 +1317,9 @@ function collectChain(pA, pB, pAB, n) {
       s[3] + s[0] * pAB + s[1] * pB + s[2] * pA,
     ];
     if (t === n) atN = s[3];
-    if (t >= n && 1 - s[3] < 1e-14) break;
+    // Stop on the mass still in the unfinished states: 1 − s[3] can stall near 1e-14 from rounding and never
+    // cross the cut-off (which ran this loop to 1e6 tries), while this sum decays geometrically.
+    if (t >= n && s[0] + s[1] + s[2] < 1e-14) break;
   }
   return { e, atN };
 }

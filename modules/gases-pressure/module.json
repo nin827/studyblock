@@ -4,6 +4,7 @@
   "description": "Pressure on surfaces and in liquids, the gas laws in kelvin, hydraulics and pressure at depth, in SI units.",
   "icon": "circle-gauge",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "pressure", "title": "Pressure", "difficulties": ["easy", "medium", "hard", "expert"] },

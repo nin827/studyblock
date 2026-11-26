@@ -59,4 +59,4 @@ Example: win $6 on a 6 with a fair die costs $1.50: 6 × 1/6 - 1.50 = -0.50, so 
 
 **Watch out:** a negative expected profit means the game favours the organiser. Keep the minus sign.
 
-**Expert: fair games and missing values.** A game is fair when the expected winnings equal the cost, so the expected profit is 0: write the expected winnings with the prize as X, set it equal to the cost and solve. In a table, the probabilities add to 1, which gives a missing probability; if E(X) is given and a value is missing, write E(X) = Σ x × P(x) with the unknown and solve for it.
+**Expert: fair games and missing values.** A game is fair when the expected winnings equal the cost, so the expected profit is 0: write the expected winnings with the prize as X, set it equal to the cost and solve. In a table, the probabilities add to 1, which gives a missing probability (put them over a common denominator such as 20 first, then simplify); if E(X) is given and a value is missing, write E(X) = Σ x × P(x) with the unknown and solve for it.

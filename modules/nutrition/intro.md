@@ -1,6 +1,7 @@
 # Nutrition
 
-*For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.*
+> [!WARNING] For learning only
+> This isn't medical advice; for anything about your own health, ask a qualified professional.
 
 Practise the arithmetic of food energy: how much energy comes from carbohydrate, protein and fat, switching between kcal and kJ, scaling food labels to a portion, and adding up energy in and out. Every question gives you the numbers it uses, including any reference intake. There's no diet advice here, just the sums.
 
@@ -19,4 +20,5 @@ Practise the arithmetic of food energy: how much energy comes from carbohydrate,
 | Medium | Totals, decimals, label percentages and means |
 | Hard | Several steps, reverse questions and some multi-part questions |
 
-**Tip:** every question says how to round; answers within half of the last decimal place count. For percentages, type the number without the % sign. A negative energy balance needs a minus sign.
+> [!TIP]
+> Every question says how to round; answers within half of the last decimal place count. For percentages, type the number without the % sign. A negative energy balance needs a minus sign.

@@ -15,6 +15,7 @@ Chords are stacked in **thirds**: take every other letter name. On C that gives 
 | Dominant 7th (C7) | major | perfect | minor (10) | C, E, G, B♭ |
 | Major 7th (Cmaj7) | major | perfect | major (11) | C, E, G, B |
 | Minor 7th (Cm7) | minor | perfect | minor (10) | C, E♭, G, B♭ |
+| Half-diminished 7th (Cm7♭5, also Cø7) | minor | diminished | minor (10) | C, E♭, G♭, B♭ |
 
 Spelling matters: the D major triad is **D, F♯, A**, never D, G♭, A, because each note must use the next-but-one letter.
 
@@ -32,4 +33,4 @@ The triads on each note of a major scale are **I ii iii IV V vi vii°**: capital
 
 ## Answer formats
 
-Every answer is multiple choice: notes are listed lowest first, like `D, F♯, A`. No chord needs a double sharp or flat. There's no calculator here.
+Answers are multiple choice, or built from note blocks when you spell a whole chord: notes go lowest first (from the root up), like `D, F♯, A`, and some blocks are wrong spellings to leave out. Some Hard and Expert chords need a double sharp (𝄪) or double flat (𝄫), because the letter is fixed: the D♭ diminished triad is D♭, F♭, A𝄫, and the raised 7th of G♯ minor is F𝄪. Easy and Medium never use them. There's no calculator here.

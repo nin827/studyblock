@@ -1,0 +1,17 @@
+{
+  "id": "role-accountant",
+  "title": "Accountant scenarios",
+  "description": "Multi-part cases that join double entry, ratios, depreciation, break-even and audit judgement, as an accountant meets them.",
+  "icon": "calculator",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "transaction-review", "title": "Transaction and covenant check", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "audit-review", "title": "Audit red flags", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "asset-review", "title": "Fixed asset review", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "break-even-review", "title": "Break-even and budget", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "budget-variance", "title": "Budget variance", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

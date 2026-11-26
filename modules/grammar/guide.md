@@ -4,6 +4,7 @@
 - Read the whole sentence first; the job a word does depends on its context.
 - Try each option in the sentence and say it in your head. Then check it against the rule, because "sounds right" can mislead.
 - The examples follow standard US English. The word to identify is shown in **bold**.
+- **Putting blocks in order:** the block with a capital letter starts the sentence and the one with the end mark (. or ?) finishes it. Find the subject first, then choose the verb block that agrees with it; you may not need every block.
 
 ## Parts of speech
 1. Ask what the bold word is doing in *this* sentence, and match the job (see the list below).

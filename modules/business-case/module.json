@@ -4,6 +4,7 @@
   "description": "Short business scenarios: break-even, unit economics, investment returns, pricing, inventory and hiring decisions.",
   "icon": "clipboard-list",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 8,
   "subtopics": [
     { "id": "break-even", "title": "Break-even", "difficulties": ["easy", "medium", "hard", "expert"] },

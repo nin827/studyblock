@@ -34,6 +34,149 @@ const ratioStr = (arr) => {
   return arr.map((x) => x / g).join(" : ");
 };
 
+// ---- Segmented (block-list) choices (ticket 019) ----
+// Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
+// verify() sees the raw arrays (or joined strings for stored questions). Easy has 3 options and the
+// other levels 5; every wrong option differs from the right one in 1 to n−1 columns. `extraSegs` are
+// Build-mode decoy blocks, and no combination of the available blocks other than the answer is right.
+const SEG_OPTIONS = { easy: 3, medium: 5, hard: 5, expert: 5 };
+const segsOf = (c) => (Array.isArray(c) ? c.map((s) => String(s).trim()) : String(c ?? "").split("|").map((s) => s.trim()));
+const segKey = (c) => segsOf(c).join(" | ");
+const segDiff = (a, b) => a.reduce((n, s, i) => n + (s !== b[i] ? 1 : 0), 0);
+// Ticket 022 (mixed distances): some wrong option differs in 2+ columns, the answer is not the strict
+// majority value in every column, and (3+ columns) no wrong option differs in every column.
+// `noCount`: also refuse sets where the answer has the highest summed value counts.
+function mixOk(opts, a, noCount) {
+  const n = a.length, key = a.join("\u0001");
+  const wrong = opts.filter((t) => t.join("\u0001") !== key);
+  const d = wrong.map((t) => segDiff(t, a));
+  if (!d.some((x) => x >= 2) || (n >= 3 && d.some((x) => x >= n))) return false;
+  const cnt = (j, v) => opts.filter((t) => t[j] === v).length;
+  if (a.every((v, j) => opts.every((t) => t[j] === v || cnt(j, t[j]) < cnt(j, v)))) return false;
+  if (!noCount) return true;
+  const sc = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  return wrong.some((t) => sc(t) >= sc(a));
+}
+// Checks a segmented choice: shape, option count (`want`, when given), exactly one right option and it
+// is `answer`, wrong options differ in 1..n−1 columns, and (build) exactly one right combination among
+// every block on offer (the options' segments plus extraSegs).
+function segOk(q, answer, isRight, want, build = true) {
+  const cols = q && q.choiceCols;
+  if (!Array.isArray(cols) || cols.length < 2 || cols.length > 4 || !Array.isArray(q.choices)) return false;
+  const n = cols.length;
+  const opts = q.choices.map(segsOf);
+  if ((want && opts.length !== want) || opts.length < 2 || opts.some((t) => t.length !== n || t.some((s) => !s))) return false;
+  if (new Set(opts.map((t) => t.join(" | "))).size !== opts.length) return false;
+  const right = opts.filter((t) => isRight(t));
+  if (right.length !== 1) return false;
+  const a = segsOf(answer);
+  if (a.length !== n || segDiff(a, right[0]) !== 0) return false;
+  if (opts.some((t) => t !== right[0] && (segDiff(t, right[0]) < 1 || segDiff(t, right[0]) > (n === 2 ? 2 : n - 1)))) return false;
+  if (!build) return true;
+  const pools = cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) {
+    const i = Array.isArray(e) ? (typeof e[0] === "number" ? e[0] : cols.indexOf(e[0])) : -1;
+    if (i < 0 || i >= n || !String(e[1] ?? "").trim()) return false;
+    pools[i].add(String(e[1]).trim());
+  }
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === n) { if (isRight(acc)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, v]);
+  };
+  walk(0, []);
+  return hits === 1;
+}
+
+// Ratio blocks: one whole number per class, columns labelled by genotype or phenotype. Two tuples
+// are the same ratio when proportional, so 2 : 2 : 0 would also be "1 : 1 : 0": options and decoys
+// are added one at a time and kept only while exactly one block combination is proportional to the answer.
+const propEq = (a, b) => a.length === b.length && a.some((x) => x > 0) && b.some((x) => x > 0) && a.every((x, i) => a.every((y, j) => x * b[j] === y * b[i]));
+function ratioCubeHits(pools, want) {
+  let hits = 0;
+  const walk = (i, acc) => {
+    if (hits > 1) return;
+    if (i === pools.length) { if (propEq(acc, want)) hits++; return; }
+    for (const v of pools[i]) walk(i + 1, [...acc, Number(v)]);
+  };
+  walk(0, []);
+  return hits;
+}
+const RATIO_DECOYS = { easy: 2, medium: 5, hard: 9, expert: 14 };
+// `pool`: ratio strings in rng.shuffle order (drawn by the caller, as before). Wrong options come from
+// the pool, then from the answer with one class changed (0–4); then Build decoys up to the level's
+// maximum. -> { choiceCols, choices (shuffled: the only rng draw here), answer, extraSegs }.
+function ratioSeg(rng, cols, correct, pool, diff) {
+  const ans = correct.split(" : ");
+  const want = ans.map(Number);
+  const n = cols.length;
+  const opts = [ans];
+  const pools = () => cols.map((_, i) => new Set(opts.map((t) => t[i])));
+  const cands = [];
+  const consider = (c) => {
+    if (c.length !== n || !c.map(Number).some((x) => x > 0)) return;
+    const d = segDiff(c, ans);
+    if (d < 1 || (n > 2 && d >= n) || cands.some((t) => segKey(t) === segKey(c))) return;
+    cands.push(c);
+  };
+  pool.forEach((x) => consider(x.split(" : ")));
+  for (let v = 0; v <= 4; v++) for (let j = 0; j < n; j++) { const c = ans.slice(); c[j] = String(v); consider(c); }
+  // Two classes changed (mixed distances, ticket 022).
+  for (let v = 0; v <= 4; v++) for (let w = 0; w <= 4; w++) for (let j = 0; j < n; j++) for (let k = j + 1; k < n; k++) { const c = ans.slice(); c[j] = String(v); c[k] = String(w); consider(c); }
+  const want0 = SEG_OPTIONS[diff];
+  // Greedy first (the old selection, so compliant draws are unchanged), then a search for a set that
+  // satisfies the rule; each added option must keep exactly one proportional block combination.
+  const greedy = () => {
+    for (const c of cands) {
+      if (opts.length >= want0) break;
+      opts.push(c);
+      if (ratioCubeHits(pools(), want) !== 1) opts.pop();
+    }
+  };
+  greedy();
+  if (opts.length === want0 && !mixOk(opts, ans, true)) {
+    let found = null;
+    const search = (start, noCount) => {
+      if (found) return;
+      if (opts.length === want0) { if (mixOk(opts, ans, noCount)) found = opts.slice(); return; }
+      for (let i = start; i < cands.length && !found; i++) {
+        opts.push(cands[i]);
+        if (ratioCubeHits(pools(), want) === 1) search(i + 1, noCount);
+        opts.pop();
+      }
+    };
+    const keep = opts.slice();
+    for (const nc of [true, false]) {
+      opts.length = 1;
+      search(0, nc);
+      if (found) break;
+    }
+    opts.length = 0;
+    opts.push(...(found || keep));
+  }
+  if (opts.length !== want0) throw new Error("not enough ratio options");
+  const ps = pools();
+  const extraSegs = [];
+  let decoys = ps.reduce((a, p) => a + p.size - 1, 0);
+  for (let v = 0; v <= 9 && decoys < RATIO_DECOYS[diff]; v++) {
+    for (let j = 0; j < n && decoys < RATIO_DECOYS[diff]; j++) {
+      const x = String(v);
+      if (ps[j].has(x)) continue;
+      ps[j].add(x);
+      if (ratioCubeHits(ps, want) === 1) { extraSegs.push([j, x]); decoys++; } else ps[j].delete(x);
+    }
+  }
+  return { choiceCols: cols, choices: rng.shuffle(opts), answer: ans, ...(extraSegs.length ? { extraSegs } : {}) };
+}
+// A short phenotype label for a dihybrid class ("round, yellow"), at most 24 characters.
+const diLabel = (t, aDom, bDom) => `${aDom ? t.A.dom : t.A.rec}, ${bDom ? t.B.dom : t.B.rec}`;
+// Verify-side check of ratio blocks: proportional to the expected ratio, and the answer in lowest terms.
+function ratioSegOk(q, answer, expStr, want, build) {
+  const exp = expStr.split(" : ").map(Number);
+  return segOk(q, answer, (t) => t.every((x) => /^\d+$/.test(x)) && propEq(t.map(Number), exp), want, build) && segsOf(answer).join(" : ") === expStr;
+}
+
 const PCT_NOTE = " Give your answer as a percentage, without the % sign.";
 const FRAC_NOTE = " Give your answer as a fraction in simplest form, like 3/4.";
 
@@ -151,6 +294,8 @@ const diPhen = (t, aDom, bDom) => {
   const b = bDom ? t.B.dom : t.B.rec;
   return t.phen ? t.phen(a, b) : `${a} ${b} ${t.noun}`;
 };
+// Column labels for a dihybrid phenotype ratio, in the prompt's order (both dominant first).
+const diCols = (t) => [diLabel(t, true, true), diLabel(t, true, false), diLabel(t, false, true), diLabel(t, false, false)].map(cap);
 
 // Genotype text for one gene with k dominant alleles (2 = TT, 1 = Tt, 0 = tt).
 const g1 = (L, k) => (k === 2 ? L + L : k === 1 ? L + L.toLowerCase() : L.toLowerCase() + L.toLowerCase());
@@ -236,8 +381,7 @@ function genPunnett(difficulty, rng) {
       return {
         prompt: `${intro} ${crossLine(k1, k2)} What is the expected genotype ratio ${order} among the offspring?`,
         answerType: "choice",
-        answer: correct,
-        choices: strChoices(correct, pool, rng),
+        ...ratioSeg(rng, [g1(L, 2), g1(L, 1), g1(L, 0)], correct, pool, "medium"),
         explanation: `${solution(k1, k2)}\n\nCount each genotype in the four boxes and write them in the order ${order}: **${correct}** (simplified).`,
         hints: [gametesHint(k1, k2), squareHint(k1, k2) + `\n\nCount the boxes of each genotype, in the order ${order}, and simplify.`],
         params: { sub: "punnett", kind, k1, k2 },
@@ -251,8 +395,7 @@ function genPunnett(difficulty, rng) {
       return {
         prompt: `${intro} ${crossLine(k1, k2)} What is the expected phenotype ratio ${t.dom} : ${t.rec} among the offspring?`,
         answerType: "choice",
-        answer: correct,
-        choices: strChoices(correct, pool, rng),
+        ...ratioSeg(rng, [cap(t.dom), cap(t.rec)], correct, pool, "medium"),
         explanation: `${solution(k1, k2)}\n\nBoxes with at least one ${code(L)} show ${t.dom}; ${code(g1(L, 0))} boxes show ${t.rec}. In the order ${t.dom} : ${t.rec} that is **${correct}**.`,
         hints: [gametesHint(k1, k2), squareHint(k1, k2) + `\n\nSort the boxes into ${t.dom} (at least one ${code(L)}) and ${t.rec} (${code(g1(L, 0))}), in that order.`],
         params: { sub: "punnett", kind, k1, k2 },
@@ -317,25 +460,28 @@ function genPunnett(difficulty, rng) {
     let dom, rec, p2Dom, correct, pool;
     const pair = (a, b) => `${code(g1(L, a))} × ${code(g1(L, b))}`;
     const total = 4 * rng.int(10, 40);
+    // Parent 1 | Parent 2 blocks: the wrong options change one parent's genotype.
+    const tup = (a, b) => [g1(L, a), g1(L, b)];
     if (scen === "dd") {
       rec = total / 4 + rng.int(-3, 3);
       dom = total - rec;
       p2Dom = true;
       correct = pair(1, 1);
-      pool = rng.shuffle([pair(2, 1), pair(2, 2), pair(1, 0)]);
+      pool = rng.shuffle([tup(2, 1), tup(1, 2), tup(1, 0), tup(0, 1)]);
     } else if (scen === "dr") {
       rec = total / 2 + rng.int(-4, 4);
       dom = total - rec;
       p2Dom = false;
       correct = pair(1, 0);
-      pool = rng.shuffle([pair(2, 0), pair(1, 1), pair(0, 0)]);
+      pool = rng.shuffle([tup(2, 0), tup(0, 0), tup(1, 1), tup(1, 2)]);
     } else {
       rec = 0;
       dom = total;
       p2Dom = false;
       correct = pair(2, 0);
-      pool = rng.shuffle([pair(1, 0), pair(2, 1), pair(1, 1)]);
+      pool = rng.shuffle([tup(1, 0), tup(0, 0), tup(2, 1), tup(2, 2)]);
     }
+    const correctT = { dd: tup(1, 1), dr: tup(1, 0), drAll: tup(2, 0) }[scen];
     const parents = p2Dom ? `Two ${t.many} with ${t.dom} are crossed.` : `A ${t.one} with ${t.dom} is crossed with a ${t.one} with ${t.rec}.`;
     const result = rec === 0 ? `All ${dom} offspring have ${t.dom}.` : `They have ${dom} offspring with ${t.dom} and ${rec} with ${t.rec}.`;
     const why =
@@ -344,11 +490,22 @@ function genPunnett(difficulty, rng) {
         : scen === "dr"
           ? `The ${t.rec} parent is ${code(g1(L, 0))}. Some offspring are ${t.rec}, so the other parent must also pass on ${code(l)}: it is ${code(g1(L, 1))}, which gives about 1 : 1.`
           : `The ${t.rec} parent is ${code(g1(L, 0))} and passes ${code(l)} to every offspring. No ${t.rec} offspring among ${total} means the other parent almost certainly has no ${code(l)}: it is ${code(g1(L, 2))}. (A ${code(g1(L, 1))} parent would give about half ${t.rec}.)`;
+    // Ticket 022: wrong pairs come from all 8 other genotype pairs (same rng) until the set mixes
+    // distances (some wrong pair differs in both parents, the answer is not the majority everywhere).
+    const allPairs = [];
+    for (let a = 0; a <= 2; a++) for (let b = 0; b <= 2; b++) if (segKey(tup(a, b)) !== segKey(correctT)) allPairs.push(tup(a, b));
+    let inferWrong = null;
+    for (let t = 0; t < 80 && !inferWrong; t++) {
+      const pick = rng.shuffle(allPairs.slice()).slice(0, SEG_OPTIONS.hard - 1);
+      if (mixOk([correctT, ...pick], correctT, t < 50)) inferWrong = pick;
+    }
+    if (!inferWrong) inferWrong = pool;
     return {
       prompt: `${intro} ${parents} ${result} Which parent genotypes (in the order the parents are described) best explain these results?`,
       answerType: "choice",
-      answer: correct,
-      choices: strChoices(correct, pool, rng),
+      answer: correctT,
+      choiceCols: ["Parent 1", "Parent 2"],
+      choices: rng.shuffle([correctT, ...inferWrong]),
       explanation: `${why}\n\nSo the parents are **${correct}**.`,
       hints: [
         `A ${t.rec} ${t.one} must be ${code(g1(L, 0))}. A ${t.one} with ${t.dom} could be ${code(g1(L, 2))} or ${code(g1(L, 1))}.`,
@@ -491,14 +648,14 @@ function genDihybrid(difficulty, rng) {
       };
     }
     const [p1, p2] = rng.pick(RATIO_CROSSES.slice(0, 2));
-    return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine);
+    return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, "easy");
   }
 
   if (difficulty === "medium") {
     const kind = rng.pick(["ratio", "boxes", "expected"]);
     if (kind === "ratio") {
       const [p1, p2] = rng.pick(RATIO_CROSSES);
-      return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine);
+      return ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, "medium");
     }
     const [p1, p2] = rng.pick([...RATIO_CROSSES, [[2, 1], [0, 1]], [[1, 2], [1, 0]]]);
     const probs = diPhenoProbs(p1, p2);
@@ -613,7 +770,7 @@ function genDihybrid(difficulty, rng) {
     parts: [
       {
         id: "ratio", label: "Phenotype ratio", ask: `What is the expected phenotype ratio ${order}?`,
-        answerType: "choice", answer: ratio, choices: strChoices(ratio, pool, rng),
+        answerType: "choice", ...ratioSeg(rng, diCols(t), ratio, pool, "hard"),
         hint: `${splitHint(q1, q2)} Multiply the fractions for each of the four phenotypes, in the order given.`,
       },
       {
@@ -635,20 +792,19 @@ function genDihybrid(difficulty, rng) {
   };
 }
 
-function ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine) {
+function ratioQuestion(t, p1, p2, rng, intro, cross, order, gamHint, geneLine, difficulty) {
   const correct = ratioStr(diPhenoProbs(p1, p2).map((x) => x * 16));
   const pool = rng.shuffle(["9 : 3 : 3 : 1", "1 : 1 : 1 : 1", "3 : 1 : 3 : 1", "3 : 3 : 1 : 1", "1 : 3 : 3 : 9", "3 : 1"]);
   return {
     prompt: `${intro} ${cross(p1, p2)} What is the expected phenotype ratio ${order}?`,
     answerType: "choice",
-    answer: correct,
-    choices: strChoices(correct, pool, rng),
+    ...ratioSeg(rng, diCols(t), correct, pool, difficulty),
     explanation: `${geneLine(p1, p2)}\n\nMultiply the fractions for each phenotype, in the order ${order}, and simplify: **${correct}**.`,
     hints: [
       gamHint(p1, p2),
       `Quicker: treat each gene as its own one-gene cross, then multiply the fractions for each of the four phenotypes, in the order given.`,
     ],
-    params: { sub: "dihybrid", kind: "ratio", p1, p2 },
+    params: { sub: "dihybrid", kind: "ratio", p1, p2, diff: difficulty },
   };
 }
 
@@ -1267,6 +1423,7 @@ function genPopulation(difficulty, rng) {
 // ---------- entry ----------
 
 export function generate({ subtopic, difficulty, rng }) {
+  if (subtopic === "write") return genWriteGenetics(difficulty, rng);
   if (difficulty === "expert") return xGenerate(subtopic, rng);
   if (!["easy", "medium", "hard"].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === "punnett") return genPunnett(difficulty, rng);
@@ -1484,11 +1641,14 @@ function matches(exp, answer, q) {
 export function verify(question, answer) {
   const p = question && question.params;
   if (!p) return false;
+  if (p.sub === "write") return wgVerify(p, question, answer);
   if (p.expert) return xVerify(question, answer);
   if (question.answerType === "multi") {
     if (!answer || typeof answer !== "object" || !Array.isArray(question.parts)) return false;
     return question.parts.every((part) => {
       let exp = expected(p, part.id);
+      // Ratio blocks (Choose only in a multi-part question).
+      if (part.choiceCols) return !!exp && exp.str !== undefined && ratioSegOk(part, answer[part.id], exp.str, SEG_OPTIONS.hard, false);
       if (p.sub === "sexlinked" && p.kind === "xlMulti" && part.id === "geno") {
         // The woman's father was affected and she is not: heterozygous. Check the shape of the choice.
         const s = String(answer[part.id] ?? "");
@@ -1497,6 +1657,11 @@ export function verify(question, answer) {
       }
       return matches(exp, answer[part.id], part);
     });
+  }
+  if (question.answerType === "choice" && question.choiceCols) {
+    if (p.sub === "punnett" && p.kind === "infer") return verifyInfer(p, answer, question);
+    const exp = expected(p);
+    return !!exp && exp.str !== undefined && ratioSegOk(question, answer, exp.str, SEG_OPTIONS[p.diff || "medium"], true);
   }
   if (question.answerType === "choice") {
     const ch = question.choices;
@@ -1509,13 +1674,7 @@ export function verify(question, answer) {
 // Parent genotypes that best explain the observed offspring: parents' phenotypes must match, every
 // observed phenotype must be possible, and the expected recessive share must be closest to the observed.
 function verifyInfer(p, answer, q) {
-  if (!q.choices.includes(String(answer))) return false;
-  const parse = (s) => {
-    const m = String(s).match(/^`([A-Za-z]{2})` × `([A-Za-z]{2})`$/);
-    if (!m) return null;
-    const k = (g) => [...g].filter((c) => c === c.toUpperCase()).length;
-    return [k(m[1]), k(m[2])];
-  };
+  const k = (g) => [...g].filter((c) => c === c.toUpperCase()).length;
   const score = (pair) => {
     if (!pair) return Infinity;
     const [a, b] = pair;
@@ -1524,6 +1683,23 @@ function verifyInfer(p, answer, q) {
     if (p.rec > 0 && box[0] === 0) return Infinity;
     if (p.dom > 0 && box[1] + box[2] === 0) return Infinity;
     return Math.abs(box[0] / 4 - p.rec / (p.rec + p.dom));
+  };
+  if (q.choiceCols) {
+    // Parent 1 | Parent 2 blocks ("Tt", "tt"): the best explanation over every block combination
+    // (options' genotypes plus extraSegs) must be unique, and it must be the answer.
+    const gOk = (g) => /^[A-Za-z]{2}$/.test(g) && g.toUpperCase() === p.L + p.L && !(g[0] === g[0].toLowerCase() && g[1] === g[1].toUpperCase());
+    const score1 = (t) => (t.length === 2 && t.every(gOk) ? score([k(t[0]), k(t[1])]) : Infinity);
+    const pools = [0, 1].map((i) => new Set(q.choices.map((c) => segsOf(c)[i])));
+    for (const e of Array.isArray(q.extraSegs) ? q.extraSegs : []) if (Array.isArray(e) && (e[0] === 0 || e[0] === 1)) pools[e[0]].add(String(e[1]));
+    let best = Infinity;
+    for (const a of pools[0]) for (const b of pools[1]) best = Math.min(best, score1([a, b]));
+    return Number.isFinite(best) && segOk(q, answer, (t) => score1(t) <= best + 1e-12, SEG_OPTIONS.hard);
+  }
+  if (!q.choices.includes(String(answer))) return false;
+  const parse = (s) => {
+    const m = String(s).match(/^`([A-Za-z]{2})` × `([A-Za-z]{2})`$/);
+    if (!m) return null;
+    return [k(m[1]), k(m[2])];
   };
   const scores = q.choices.map((c) => score(parse(c)));
   const mine = score(parse(answer));
@@ -1565,8 +1741,8 @@ function xInt(id, label, ask, answer, hint, check) {
   if (!Number.isInteger(answer)) throw new XRetry();
   return { part: { id, label, ask, answerType: "number", answer, tolerance: 0, hint }, spec: { id, check, int: true } };
 }
-function xPick(id, label, ask, answer, choices, hint, check) {
-  return { part: { id, label, ask, answerType: "choice", answer, choices, hint }, spec: { id, check } };
+function xPick(id, label, ask, answer, choices, hint, check, choiceCols) {
+  return { part: { id, label, ask, answerType: "choice", answer, ...(choiceCols ? { choiceCols } : {}), choices, hint }, spec: { id, check } };
 }
 function xMulti(prompt, list, steps, values, given, hints) {
   const q = {
@@ -1629,6 +1805,7 @@ function xVerify(question, answer) {
   const one = (spec, a, q) => {
     const fn = X_CHECKS[spec.check];
     if (!fn) return false;
+    if (q.answerType === "choice" && q.choiceCols) return segOk(q, a, (t) => fn(v, t.join(" | ")) === true, SEG_OPTIONS.expert, false);
     if (q.answerType === "choice") {
       if (!Array.isArray(q.choices) || q.choices.length < 2 || new Set(q.choices).size !== q.choices.length) return false;
       if (!q.choices.includes(String(a))) return false;
@@ -1801,6 +1978,8 @@ function xPunnettSelfing(rng) {
 // ---------- Dihybrid crosses ----------
 
 const X_DI_OPTS = [[[1, 1], [1, 1]], [[1, 1], [0, 0]], [[1, 1], [1, 0]], [[1, 1], [0, 1]], [[1, 2], [1, 0]]];
+// One parent's genotypes for topping the Parent 1 | Parent 2 options up to 5.
+const X_DI_GENO = [[1, 1], [0, 0], [1, 0], [0, 1], [2, 1], [1, 2], [2, 2], [2, 0], [0, 2]];
 // Product rule: share of offspring in each class [AB, Ab, aB, ab].
 function xDiShares(p1, p2) {
   const domA = 1 - (1 - p1[0] / 2) * (1 - p2[0] / 2);
@@ -1832,13 +2011,45 @@ function xDihybridInfer(rng) {
   const gtxt = (p) => code(g1(A, p[0]) + g1(B, p[1]));
   const crossTxt = (o) => `${gtxt(o[0])} × ${gtxt(o[1])}`;
   const names = [diPhen(t, 1, 1), diPhen(t, 1, 0), diPhen(t, 0, 1), diPhen(t, 0, 0)];
-  const values = { counts, opts, M, cls };
+  // Parent 1 | Parent 2 blocks (Choose only): the answer plus 4 crosses that change one parent, each
+  // fitting the counts clearly worse (4×), from the drawn options first. Shuffled with the last draw.
+  const plainG = (p) => g1(A, p[0]) + g1(B, p[1]);
+  const same = (x, y) => x[0] === y[0] && x[1] === y[1];
+  const shown = [ans];
+  for (const o of [...opts, ...X_DI_OPTS, ...X_DI_GENO.map((g) => [ans[0], g]), ...X_DI_GENO.map((g) => [g, ans[1]])]) {
+    if (shown.length >= 5 || shown.some((x) => same(x[0], o[0]) && same(x[1], o[1]))) continue;
+    if (same(o[0], ans[0]) === same(o[1], ans[1])) continue; // exactly one parent differs
+    if (!(xDiFit(counts, xDiShares(o[0], o[1])) > best * 4 + 1e-6)) continue;
+    shown.push(o);
+  }
+  if (shown.length !== 5) throw new XRetry();
+  // Ticket 022: mixed distances. If the set only changes one parent each time (or the answer is the
+  // majority in both columns), redraw the wrong crosses (same rng) from every clearly worse pair of
+  // parent genotypes until the rule holds.
+  const asSegs = (o) => [plainG(o[0]), plainG(o[1])];
+  if (!mixOk(shown.map(asSegs), asSegs(ans), true)) {
+    const worse = [];
+    for (const a of X_DI_GENO) for (const b of X_DI_GENO) {
+      const o = [a, b];
+      if (same(a, ans[0]) && same(b, ans[1])) continue;
+      if (xDiFit(counts, xDiShares(a, b)) > best * 4 + 1e-6) worse.push(o);
+    }
+    let found = null;
+    for (let tr = 0; tr < 80 && !found; tr++) {
+      const pick = rng.shuffle(worse.slice()).slice(0, 4);
+      if (pick.length === 4 && mixOk([ans, ...pick].map(asSegs), asSegs(ans), tr < 50)) found = pick;
+    }
+    if (!found) throw new XRetry();
+    shown.length = 1;
+    shown.push(...found);
+  }
+  const values = { counts, opts: shown, M, cls };
   const ratio = sh.map((s) => s * 16);
   return xMulti(
     `In ${t.many}, ${t.A.dom} (\`${A}\`) is dominant to ${t.A.rec} (\`${A.toLowerCase()}\`) and ${t.B.dom} (\`${B}\`) is dominant to ${t.B.rec} (\`${B.toLowerCase()}\`); the genes are on different chromosomes. A cross gives ${counts.map((c, i) => `${c} ${names[i]}`).join(", ")}.`,
     [
-      xPick("cross", "Parents", "Which cross fits these results best?", crossTxt(ans), opts.map(crossTxt),
-        "Turn the counts into a rough ratio (divide by the smallest non-zero count), then look at each gene on its own: is it about 3 : 1, 1 : 1, or all dominant?", "di-cross"),
+      xPick("cross", "Parents", "Which cross fits these results best?", [plainG(ans[0]), plainG(ans[1])], rng.shuffle(shown.slice()).map((o) => [plainG(o[0]), plainG(o[1])]),
+        "Turn the counts into a rough ratio (divide by the smallest non-zero count), then look at each gene on its own: is it about 3 : 1, 1 : 1, or all dominant?", "di-cross", ["Parent 1", "Parent 2"]),
       xInt("expect", "Prediction", `The same cross is repeated and gives ${M} offspring. How many would you expect to be ${names[cls]}?`, expect,
         "Use the exact expected share for that class from the cross you chose (in sixteenths), not the observed counts.", "di-expect"),
     ],
@@ -2098,7 +2309,7 @@ function xHWSelection(rng) {
       "Selection against a recessive allele gets slower and slower, because most copies hide in carriers, who aren't removed.",
     ],
     values,
-    [xG("_q0", q0), xG("_n", n), xG("_target", target)],
+    [xG("_n", n), xG("_target", target)],
     [
       "Start with q: the recessive phenotype share is q².",
       "Apply the rule `q ÷ (1 + q)` repeatedly. It is quicker to notice what happens to 1/q each generation.",
@@ -2265,7 +2476,7 @@ const X_CHECKS = {
     const i = fits.indexOf(best);
     if (fits.filter((f) => f === best).length !== 1) return false;
     const o = v.opts[i];
-    const L = /`([A-Za-z]{4})` × `([A-Za-z]{4})`/.exec(a);
+    const L = /^`([A-Za-z]{4})` × `([A-Za-z]{4})`$/.exec(a) || /^([A-Za-z]{4}) \| ([A-Za-z]{4})$/.exec(a);
     if (!L) return false;
     const k = (s, j) => [s[j * 2], s[j * 2 + 1]].filter((c) => c === c.toUpperCase()).length;
     return k(L[1], 0) === o[0][0] && k(L[1], 1) === o[0][1] && k(L[2], 0) === o[1][0] && k(L[2], 1) === o[1][1];
@@ -2342,4 +2553,221 @@ function xTriEnum(v, pred) {
     if (pred(x.map((xi, i) => xi + y[i]))) hit++;
   }
   return hit / tot;
+}
+
+// =====================================================================================
+// Write gametes & genotypes (subtopic "write"): typed lists with a Blocks alternative.
+// Answers are gametes or offspring genotypes written gene by gene (capital first within a gene)
+// and listed in alphabetical order with each capital before its lower-case letter (TT, Tt, tt),
+// separated by commas; the prompt states this order. Capitals matter, so every question sets
+// `caseSensitive: true` (the engine compares without lowercasing), and verify compares exactly.
+// Blocks: one block per gamete/genotype, joiner ", ", plus decoys (impossible gametes or
+// genotypes, a whole genotype offered as a gamete, a single gene's pair): easy 0-1, medium 2-3,
+// hard 4-6, expert 6-10.
+// Generation builds the lists gene by gene in order (dominant first); verify enumerates every
+// gamete pairing literally and sorts by gene ranks instead.
+
+const WG_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const wgText = (genes, ks) => genes.map((g, i) => g1(g.L, ks[i])).join("");
+const wgAlleles = (L, k) => (k === 2 ? [L] : k === 0 ? [L.toLowerCase()] : [L, L.toLowerCase()]);
+function wgGametes(genes, ks) {
+  let out = [""];
+  genes.forEach((g, i) => { out = out.flatMap((p) => wgAlleles(g.L, ks[i]).map((a) => p + a)); });
+  return out;
+}
+// Distinct offspring genotypes, gene by gene from most to fewest dominant alleles (= the stated order).
+function wgOffspring(genes, k1, k2) {
+  const per = genes.map((g, i) => {
+    const s = new Set();
+    for (const x of wgAlleles(g.L, k1[i])) for (const y of wgAlleles(g.L, k2[i])) s.add((x === g.L ? 1 : 0) + (y === g.L ? 1 : 0));
+    return [...s].sort((p, q) => q - p);
+  });
+  let out = [[]];
+  for (const ks of per) out = out.flatMap((pre) => ks.map((k) => [...pre, k]));
+  return out.map((ks) => wgText(genes, ks));
+}
+// Every genotype over the genes (for decoys).
+function wgAllGenos(genes) {
+  let out = [[]];
+  for (let i = 0; i < genes.length; i++) out = out.flatMap((pre) => [2, 1, 0].map((k) => [...pre, k]));
+  return out.map((ks) => wgText(genes, ks));
+}
+const WG_ORDER_GENO = "Write each genotype gene by gene with the capital first (`Dd`, not `dD`), and list them in alphabetical order with each capital before its lower-case letter, like `DDEe, DdEe, ddEe`. Separate them with commas. Capitals matter.";
+const WG_ORDER_GAM = "List the gametes in alphabetical order with each capital before its lower-case letter, like `DE, De, dE, de`. Separate them with commas. Capitals matter.";
+const wgIntro = (many, genes) =>
+  `In ${many}, ${genes.map((g) => `${code(g.L)} (${g.dom}) is dominant over ${code(g.L.toLowerCase())} (${g.rec})`).join("; ")}.` +
+  (genes.length > 1 ? ` The genes are on different chromosomes, so they assort independently.` : "");
+const diGenes = (t) => [t.A, t.B].map((g) => ({ L: g.L, dom: `${g.dom} ${t.noun}`, rec: `${g.rec} ${t.noun}` }));
+
+// Described parent for Expert: per gene "het" (dominant, mother showed the recessive), "rec"
+// (shows the recessive) or "hom" (true-breeding dominant).
+const WG_K = { hom: 2, het: 1, rec: 0 };
+function wgDescribe(genes, states, label) {
+  const look = genes.map((g, i) => (states[i] === "rec" ? g.rec : g.dom));
+  const het = genes.filter((_, i) => states[i] === "het").map((g) => g.rec);
+  const hom = genes.filter((_, i) => states[i] === "hom").map((g) => g.dom);
+  const bits = [`${label}: ${look.join(", ")}.`];
+  if (het.length) bits.push(`Its mother showed ${het.join(" and ")}.`);
+  if (hom.length) bits.push(`It comes from a line that is true-breeding for ${hom.join(" and ")}.`);
+  return bits.join(" ");
+}
+const wgWhy = (genes, states) =>
+  genes.map((g, i) => `${g.L}: ${states[i] === "het" ? `shows ${g.dom} but its mother showed ${g.rec} (${code(g1(g.L, 0))}), so ${code(g1(g.L, 1))}` : states[i] === "rec" ? `shows ${g.rec}, so ${code(g1(g.L, 0))}` : `true-breeding for ${g.dom}, so ${code(g1(g.L, 2))}`}`).join("; ");
+
+function wgDecoys(rng, count, pool, answer) {
+  const have = new Set(answer);
+  const out = [];
+  for (const d of rng.shuffle([...new Set(pool)])) if (out.length < count && !have.has(d)) { out.push(d); have.add(d); }
+  return out;
+}
+
+function genWriteGenetics(difficulty, rng) {
+  if (!WG_EXTRA[difficulty]) throw new Error(`Unknown difficulty: ${difficulty}`);
+  const roll = rng.next();
+  let q;
+  if (difficulty === "easy" && roll < 0.5) {
+    // One gene: offspring genotypes.
+    const t = rng.pick(MONO);
+    const genes = [{ L: t.L, dom: t.dom, rec: t.rec }];
+    const [k1, k2] = rng.pick([[1, 1], [1, 0], [0, 1], [2, 1], [1, 2]]);
+    q = { kind: "geno", genes, k1: [k1], k2: [k2], many: t.many, one: t.one };
+  } else if (difficulty === "easy" || (difficulty === "medium" && roll < 0.4)) {
+    // Gametes of a two-gene genotype (easy: one gene heterozygous; medium: both).
+    const t = rng.pick(DI);
+    const ks = difficulty === "easy" ? rng.pick([[1, 2], [1, 0], [2, 1], [0, 1]]) : [1, 1];
+    q = { kind: "gam", genes: diGenes(t), ks, many: t.many, one: t.one };
+  } else if (difficulty === "medium" && roll < 0.65) {
+    // Three genes, two heterozygous: four gametes.
+    const t = rng.pick(X_TRI);
+    const homo = rng.int(0, 2);
+    const ks = [0, 1, 2].map((i) => (i === homo ? rng.pick([0, 2]) : 1));
+    q = { kind: "gam", genes: t.genes, ks, many: t.many, one: t.one };
+  } else if (difficulty === "medium" || difficulty === "hard") {
+    // Two genes: offspring genotypes (medium 2-4 of them, hard 4-6).
+    const t = rng.pick(DI);
+    const genes = diGenes(t);
+    const [lo, hi] = difficulty === "medium" ? [2, 4] : [4, 6];
+    let k1, k2, n;
+    for (let i = 0; i < 100; i++) {
+      k1 = [rng.int(0, 2), rng.int(0, 2)];
+      k2 = [rng.int(0, 2), rng.int(0, 2)];
+      n = wgOffspring(genes, k1, k2).length;
+      if (n >= lo && n <= hi && !(difficulty === "medium" && k1.every((k) => k === 1) && k2.every((k) => k === 1))) break;
+    }
+    q = { kind: "geno", genes, k1, k2, many: t.many, one: t.one };
+  } else if (roll < 0.5) {
+    // Expert: work out a described parent's genotype (three genes), then its gametes.
+    const t = rng.pick(X_TRI);
+    let states;
+    do states = [0, 1, 2].map(() => rng.pick(["het", "het", "rec", "hom"]));
+    while (states.filter((s) => s === "het").length < 2);
+    q = { kind: "gam", genes: t.genes, ks: states.map((s) => WG_K[s]), many: t.many, one: t.one, states };
+  } else {
+    // Expert: two described parents (two of the three genes), then every offspring genotype.
+    const t = rng.pick(X_TRI);
+    const pair = rng.shuffle([0, 1, 2]).slice(0, 2).sort();
+    const genes = pair.map((i) => t.genes[i]);
+    let s1, s2, n;
+    for (let i = 0; i < 100; i++) {
+      s1 = genes.map(() => rng.pick(["het", "het", "rec", "hom"]));
+      s2 = genes.map(() => rng.pick(["het", "het", "rec", "hom"]));
+      n = wgOffspring(genes, s1.map((s) => WG_K[s]), s2.map((s) => WG_K[s])).length;
+      if (n >= 4) break;
+    }
+    q = { kind: "geno", genes, k1: s1.map((s) => WG_K[s]), k2: s2.map((s) => WG_K[s]), many: t.many, one: t.one, s1, s2 };
+  }
+
+  const { genes } = q;
+  const [lo, hi] = WG_EXTRA[difficulty];
+  const extra = rng.int(lo, hi);
+  const intro = wgIntro(q.many, genes);
+  let answer, decoyPool, prompt, explanation, hints, params;
+  if (q.kind === "gam") {
+    answer = wgGametes(genes, q.ks);
+    const geno = wgText(genes, q.ks);
+    // Impossible gametes, the whole genotype, single-gene pairs.
+    decoyPool = [...wgGametes(genes, genes.map(() => 1)), geno, ...genes.map((g) => g1(g.L, 1))];
+    prompt = q.states
+      ? `${intro}\n\n${wgDescribe(genes, q.states, cap(`a ${q.one}`))}\n\nWhich different gametes can this ${q.one} make?\n\n${WG_ORDER_GAM}`
+      : `${intro}\n\nWhich different gametes can a ${code(geno)} ${q.one} make?\n\n${WG_ORDER_GAM}`;
+    const perGene = genes.map((g, i) => `${code(g1(g.L, q.ks[i]))} gives ${wgAlleles(g.L, q.ks[i]).map(code).join(" or ")}`).join("; ");
+    explanation = `${q.states ? `First the genotype: ${wgWhy(genes, q.states)}. So it is ${code(geno)}.\n\n` : ""}A gamete gets one allele of each gene: ${perGene}. Combine every choice: ${answer.length} gamete${answer.length === 1 ? "" : "s"}, **${answer.join(", ")}**.`;
+    hints = [
+      ...(q.states ? [`Work out the genotype first. A ${genes[0].dom} parent whose mother was ${genes[0].rec} must carry ${code(genes[0].L.toLowerCase())}; a parent that shows the recessive trait is homozygous recessive.`] : []),
+      "A gamete gets exactly one allele of each gene, never both letters of one gene.",
+      `A heterozygous gene doubles the number of gamete types; a homozygous one gives the same letter to all of them. Expect 2^(number of heterozygous genes) gametes.`,
+    ];
+    params = { sub: "write", kind: "gam", letters: genes.map((g) => g.L), ks: q.ks, states: q.states || null };
+  } else {
+    answer = wgOffspring(genes, q.k1, q.k2);
+    const p1 = wgText(genes, q.k1), p2 = wgText(genes, q.k2);
+    decoyPool = [...wgAllGenos(genes), ...(genes.length > 1 ? wgGametes(genes, q.k1) : [])];
+    const cross = q.s1
+      ? `Two ${q.many} are crossed:\n\n- ${wgDescribe(genes, q.s1, "Parent 1")}\n- ${wgDescribe(genes, q.s2, "Parent 2")}\n\n`
+      : `A ${code(p1)} ${q.one} is crossed with a ${code(p2)} ${q.one}. `;
+    prompt = `${intro}\n\n${cross}Which different genotypes can the offspring have?\n\n${genes.length === 1 ? WG_ORDER_GENO.replace("`DDEe, DdEe, ddEe`", "`DD, Dd, dd`") : WG_ORDER_GENO}`;
+    const perGene = genes.map((g, i) => {
+      const ks = [...new Set(wgOffspring([g], [q.k1[i]], [q.k2[i]]))];
+      return `${code(g1(g.L, q.k1[i]))} × ${code(g1(g.L, q.k2[i]))} gives ${ks.map(code).join(", ")}`;
+    });
+    explanation = `${q.s1 ? `First the parents. Parent 1: ${wgWhy(genes, q.s1)}; so ${code(p1)}. Parent 2: ${wgWhy(genes, q.s2)}; so ${code(p2)}.\n\n` : ""}${genes.length > 1 ? "Take one gene at a time: " : ""}${perGene.join("; ")}.${genes.length > 1 ? " Combine every option of the first gene with every option of the second." : ""}\n\nThe ${answer.length} genotypes: **${answer.join(", ")}**.`;
+    hints = [
+      ...(q.s1 ? ["Work out each parent's genotype first: a dominant-looking parent whose mother showed the recessive trait is heterozygous; one that shows the recessive trait is homozygous recessive."] : []),
+      genes.length > 1 ? "Split the cross into one-gene crosses and list the genotypes each can give." : "Write each parent's gametes, then fill in a Punnett square.",
+      genes.length > 1 ? "Combine every genotype of the first gene with every genotype of the second, then sort them: the first gene decides the order, then the second." : "List each different box once, in the order stated.",
+    ];
+    params = { sub: "write", kind: "geno", letters: genes.map((g) => g.L), k1: q.k1, k2: q.k2, s1: q.s1 || null, s2: q.s2 || null };
+  }
+  const decoys = wgDecoys(rng, Math.min(extra, 24 - answer.length), decoyPool, answer);
+  return {
+    prompt,
+    answerType: "text",
+    answer: answer.join(", "),
+    accepts: [answer.join(" ")],
+    caseSensitive: true,
+    blocks: { tiles: rng.shuffle([...answer, ...decoys]), joiner: ", ", useAll: false },
+    explanation,
+    params,
+    hints,
+  };
+}
+
+// verify for "write": pair every gamete of one parent with every gamete of the other (or list a
+// parent's gametes allele slot by slot), then sort by gene ranks; exact, case-sensitive compare.
+function wgVerify(p, question, answer) {
+  const L = p.letters;
+  if (!Array.isArray(L) || !L.length) return false;
+  const kFrom = (states, ks) => (states ? states.map((s) => ({ hom: 2, het: 1, rec: 0 })[s]) : ks);
+  const slots = (ks) => {
+    // all 2^n slot choices, duplicates included
+    let out = [[]];
+    ks.forEach((k, i) => {
+      const two = [k >= 1 ? L[i] : L[i].toLowerCase(), k === 2 ? L[i] : L[i].toLowerCase()];
+      out = out.flatMap((pre) => two.map((a) => [...pre, a]));
+    });
+    return out;
+  };
+  const rank = (s) => [...s].map((c) => (c === c.toUpperCase() ? 0 : 1));
+  const cmp = (x, y) => { const a = rank(x), b = rank(y); for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] - b[i]; return 0; };
+  let want;
+  if (p.kind === "gam") {
+    const ks = kFrom(p.states, p.ks);
+    if (!ks || ks.length !== L.length) return false;
+    want = [...new Set(slots(ks).map((g) => g.join("")))].sort(cmp);
+  } else {
+    const k1 = kFrom(p.s1, p.k1), k2 = kFrom(p.s2, p.k2);
+    if (!k1 || !k2 || k1.length !== L.length || k2.length !== L.length) return false;
+    const set = new Set();
+    for (const a of slots(k1)) for (const b of slots(k2)) {
+      set.add(a.map((x, i) => (x === L[i] || b[i] !== L[i] ? x + b[i] : b[i] + x)).join(""));
+    }
+    want = [...set].sort(cmp);
+  }
+  const got = String(answer ?? "").split(",").map((s) => s.trim());
+  if (got.length !== want.length || !got.every((g, i) => g === want[i])) return false;
+  if (question.answer !== want.join(", ") || question.caseSensitive !== true) return false;
+  const b = question.blocks;
+  if (!b || b.joiner !== ", " || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  const vals = b.tiles.map((t) => String(typeof t === "object" ? t.value : t));
+  return new Set(vals).size === vals.length && want.every((w) => vals.includes(w));
 }

@@ -1,0 +1,16 @@
+{
+  "id": "role-chef",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join recipe scaling and yields, service timing, dish costing and stock waste, as a working kitchen meets them (made-up figures and exercise rules).",
+  "icon": "chef-hat",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "recipe-scaling", "title": "Scaling, yield and buying", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "service-timing", "title": "Service timing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "dish-cost", "title": "Dish cost and gross profit", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "stock-waste", "title": "Stock and waste", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

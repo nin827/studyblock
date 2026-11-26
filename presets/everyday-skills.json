@@ -1,0 +1,21 @@
+{
+  "id": "everyday-skills",
+  "name": "Everyday skills",
+  "description": "Time, recipes, shopping and travel, plus personal finance basics.",
+  "config": {
+    "domains": {
+      "everyday-math": {
+        "weight": 2
+      },
+      "business": {
+        "weight": 1,
+        "modules": {
+          "business-math": 1,
+          "finance": 1
+        }
+      }
+    },
+    "difficulty": "medium",
+    "count": 10
+  }
+}

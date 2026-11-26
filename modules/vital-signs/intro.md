@@ -1,6 +1,7 @@
 # Vital Signs
 
-*For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.*
+> [!WARNING] For learning only
+> This isn't medical advice; for anything about your own health, ask a qualified professional.
 
 Practise the calculations behind heart rate, blood pressure, breathing and temperature. Every question states the formula it uses. The questions are about the arithmetic only; none of them asks whether a reading is normal.
 
@@ -22,4 +23,5 @@ A blood pressure reading such as 120/80 mmHg is written systolic/diastolic.
 | Medium | Rearranged formulas and rounding |
 | Hard | Unit changes (ms, hours), dead space, and some two-part questions |
 
-**Tip:** every question says how to round; answers within half of the last decimal place count. A change in temperature is converted with × 9/5 or × 5/9 only, with no 32.
+> [!TIP]
+> Every question says how to round; answers within half of the last decimal place count. A change in temperature is converted with × 9/5 or × 5/9 only, with no 32.

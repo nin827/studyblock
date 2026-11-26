@@ -1,6 +1,6 @@
 # 014 — Follow-ups from the module review
 
-**Status:** open (not yet changed)
+**Status:** resolved (2026-11-26): to build
 **Raised:** 2026-11-25
 
 Three reviewers checked all 50 subjects. They found no wrong answers in the generated subjects and fixed every factual and wording problem that had a clear fix. The items below were left alone, either because the fix would change many seeds or because it's a judgement call.
@@ -69,3 +69,12 @@ Three reviewers checked all 50 subjects. They found no wrong answers in the gene
 ## Found later
 
 12. **Networking data-transfer/hard "Size in bits"** can need up to 12 significant digits, but the calculator's **Use** copies only 10. Typing the answer works; Use alone doesn't give it exactly. *Option:* cap sizes so the bit count stays within 10 digits, or ask in a larger unit.
+
+## Resolution (cleared 2026-11-26)
+
+Fix all of them: variety (2–3), choices and hints (4–8), rounding (9, 10, 12) and realistic numbers (11). Item 1 is covered by the fact-list expansion (ticket 013).
+
+**Built 2026-11-26:**
+- Items 2–12 are done.
+- Item 1 (fact lists) is in progress in batch 2.
+- Left as is: momentum/expert "trolleys" at up to about 19 m/s (not in this ticket).

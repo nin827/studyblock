@@ -4,8 +4,11 @@
   "description": "Parts of speech, verb tenses, punctuation and agreement in English sentences.",
   "icon": "spell-check",
   "type": "csv",
+  "fuzzyNumber": 0,
+  "fuzzy": false,
   "questionsPerQuiz": 4,
   "calculator": false,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "subtopics": [
     { "id": "parts-of-speech", "title": "Parts of speech", "difficulties": ["easy", "medium", "hard"] },
     { "id": "tenses", "title": "Verb tenses", "difficulties": ["easy", "medium", "hard"] },

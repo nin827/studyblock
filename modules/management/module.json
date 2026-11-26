@@ -1,0 +1,14 @@
+{
+  "id": "management",
+  "title": "Management",
+  "description": "Motivation theories, leadership styles, organisational structure and Porter's generic strategies.",
+  "icon": "users",
+  "type": "generator",
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "motivation", "title": "Motivation (Maslow, Herzberg)", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "leadership", "title": "Leadership and McGregor", "difficulties": ["easy", "medium", "hard"] },
+    { "id": "structure", "title": "Organisational structure", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "porter", "title": "Porter's generic strategies", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "id": "game-developer",
+  "title": "Game Developer",
+  "icon": "gamepad-2",
+  "flags": [
+    "experience_heavy",
+    "tool_heavy"
+  ],
+  "description": "Movement vectors, drop rates, XP curves and frame budgets, worked the way a game team meets them.",
+  "exclusive": "role-game-developer",
+  "mix": {
+    "vectors-movement": {
+      "weight": 4
+    },
+    "game-probability": {
+      "weight": 4
+    },
+    "trigonometry": {
+      "weight": 1,
+      "subtopics": [
+        "right-sides",
+        "right-angles"
+      ]
+    },
+    "code-writing": {
+      "weight": 1,
+      "subtopics": [
+        "expressions",
+        "conditionals",
+        "loops"
+      ]
+    },
+    "algorithms": {
+      "weight": 1,
+      "subtopics": [
+        "complexity",
+        "searching"
+      ]
+    },
+    "probability": {
+      "weight": 2,
+      "subtopics": [
+        "basic",
+        "expected-value"
+      ]
+    },
+    "sequences": {
+      "weight": 1,
+      "subtopics": [
+        "geometric",
+        "series"
+      ]
+    },
+    "exponents-logs": {
+      "weight": 1,
+      "subtopics": [
+        "logarithms",
+        "growth-decay"
+      ]
+    }
+  },
+  "subroles": [
+    {
+      "id": "gameplay-programmer",
+      "title": "Gameplay Programmer",
+      "icon": "joystick",
+      "description": "Vectors, movement, collision timing and what a frame can afford to spend.",
+      "mix": {
+        "vectors-movement": {
+          "weight": 6
+        },
+        "trigonometry": {
+          "weight": 2,
+          "subtopics": [
+            "right-sides",
+            "right-angles"
+          ]
+        },
+        "code-writing": {
+          "weight": 1,
+          "subtopics": [
+            "expressions",
+            "conditionals",
+            "loops"
+          ]
+        },
+        "algorithms": {
+          "weight": 2,
+          "subtopics": [
+            "complexity",
+            "searching"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "move-collide",
+        "frame-budget"
+      ]
+    },
+    {
+      "id": "game-designer",
+      "title": "Game Designer",
+      "flags": [
+        "creative_oriented"
+      ],
+      "icon": "dices",
+      "description": "Drop rates, expected value, balance rules and progression curves.",
+      "mix": {
+        "game-probability": {
+          "weight": 5
+        },
+        "probability": {
+          "weight": 3,
+          "subtopics": [
+            "basic",
+            "expected-value"
+          ]
+        },
+        "sequences": {
+          "weight": 2,
+          "subtopics": [
+            "geometric",
+            "series"
+          ]
+        },
+        "exponents-logs": {
+          "weight": 2,
+          "subtopics": [
+            "logarithms",
+            "growth-decay"
+          ]
+        }
+      },
+      "exclusiveSubtopics": [
+        "loot-odds",
+        "xp-curve"
+      ]
+    }
+  ]
+}

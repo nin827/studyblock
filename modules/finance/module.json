@@ -4,6 +4,7 @@
   "description": "Depreciation, loan payments and balances, and the time value of savings and annuities.",
   "icon": "landmark",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "depreciation", "title": "Depreciation", "difficulties": ["easy", "medium", "hard", "expert"] },

@@ -1,7 +1,7 @@
 // Arithmetic generator. Uses only the seeded rng passed in by the engine.
 
 // Round half away from zero; the 1e-9 nudge absorbs binary error (2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
+import { round2 } from "../../js/lib/mathutil.js";
 
 const RANGES = {
   addition: { easy: [1, 20], medium: [10, 999], hard: [1000, 99999] },
@@ -82,6 +82,11 @@ export function generate({ subtopic, difficulty, rng }) {
       } else if (difficulty === "hard") {
         a = rng.int(100, 9999);
         b = rng.int(3, 99);
+        // Never land exactly on a rounding half-step (x.xx5): redraw with the same rng.
+        while ((200 * a) % b === 0 && ((1000 * a) / b) % 10 === 5) {
+          a = rng.int(100, 9999);
+          b = rng.int(3, 99);
+        }
         answer = round2(a / b);
         tolerance = 0.005;
         rounded = true;
@@ -325,7 +330,11 @@ export function verify(question, answer) {
       return b !== 0 && Number.isInteger(x) && x % b === 0 && x / b === a;
     case "÷":
       if (b === 0) return false;
-      if (rounded) return Math.abs(x * b - a) <= 0.005 * Math.abs(b) + 1e-6;
+      if (rounded) {
+        // In hundredths, with integers: |X·b − 100a| < b/2 strictly, so an exact half-step tie fails.
+        const X = Math.round(x * 100);
+        return Math.abs(x * 100 - X) < 1e-6 && 2 * Math.abs(X * b - 100 * a) < Math.abs(b);
+      }
       return Number.isInteger(x) && x * b === a;
     default:
       return false;

@@ -405,11 +405,12 @@ function genOrdering(d, rng) {
   const plain = ids.slice().sort((i, j) => Math.abs(items[i].year) - Math.abs(items[j].year));
   const swapped = [order[1], order[0], ...order.slice(2)];
   const lastSwap = [...order.slice(0, n - 2), order[n - 1], order[n - 2]];
-  const { answer, choices } = orderChoices(items, [order.slice().reverse(), plain, swapped, lastSwap], rng);
-  // orderChoices builds the earliest-first key; flip every option for latest-first questions
+  // orderChoices still runs (it draws from the rng), so every seed keeps its events and answer;
+  // only its answer is used now that the order is built from blocks.
+  const { answer } = orderChoices(items, [order.slice().reverse(), plain, swapped, lastSwap], rng);
+  // orderChoices builds the earliest-first key (letters joined by ", "); flip for latest-first
   const flip = (s) => s.split(", ").reverse().join(", ");
   const ans = latest ? flip(answer) : answer;
-  const opts = latest ? choices.map(flip) : choices;
 
   const lines = items.map((it, i) => `- **${LETTERS[i]}:** ${cap(it.name)} (${it.shown})`).join("\n");
   const dir = latest ? "from latest to earliest" : "from earliest to latest";
@@ -420,10 +421,12 @@ function genOrdering(d, rng) {
     return `- ${it.rel.gap} years ${it.rel.after ? "after" : "before"} ${yr(a.year)} is ${yr(it.year)}.`;
   }).join("\n");
   return {
-    prompt: `Put these events in order ${dir}.${zero}\n\n${lines}`,
+    prompt: `Drag the blocks into order ${dir}, or tap them in turn.${zero}\n\n${lines}`,
     answer: ans,
-    answerType: "choice",
-    choices: opts,
+    answerType: "tiles",
+    tiles: items.map((it, i) => ({ value: LETTERS[i], label: `${cap(it.name)} (${it.shown})` })),
+    joiner: ", ",
+    useAll: true,
     explanation: `${relLines ? `First turn the relative dates into years:\n\n${relLines}\n\n` : ""}${d === "easy" ? "" : "BC years count down towards AD 1, so a bigger BC number is earlier, and every BC year is before every AD year.\n\n"}Earliest to latest: ${sorted}.\n\n${latest ? `The question asks for latest to earliest, which is the reverse: **${ans}**.` : `So the answer is **${ans}**.`}`,
     hints: [
       d === "hard" ? `First work out the actual years of the events dated relative to event ${LETTERS[items.find((it) => it.rel).rel.anchor]}. Crossing from BC to AD, remember there is no year 0.` : "Write each date on a number line, with BC dates to the left of AD 1.",
@@ -749,6 +752,13 @@ export function verify(question, answer) {
         }
         return checkNum(s, a[s.id]);
       });
+    }
+    if (p.kind === "order" && question.answerType === "tiles") {
+      // Blocks: one tile per event, values A, B, C(, D) in prompt order, all placed.
+      const t = question.tiles;
+      if (!Array.isArray(t) || t.length !== p.items.length) return false;
+      if (!t.every((x, i) => (x && typeof x === "object" ? x.value : x) === LETTERS[i])) return false;
+      return checkOrder(p, answer);
     }
     const choice = question.answerType === "choice";
     const ch = question.choices;

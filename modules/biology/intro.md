@@ -1,6 +1,7 @@
 # Biology Basics
 
-*For learning only. This isn't medical advice; for anything about your own health, ask a qualified professional.*
+> [!WARNING] For learning only
+> This isn't medical advice; for anything about your own health, ask a qualified professional.
 
 Core facts about living things: what cells are made of, how the human body works (its bones, organs, body systems and circulation), how characteristics are inherited, and how energy moves through ecosystems.
 
@@ -24,4 +25,5 @@ Core facts about living things: what cells are made of, how the human body works
 | Medium | Blood, DNA structure, food-chain roles, anatomical bone names, heart chambers |
 | Hard | Less familiar organelles, Punnett-square ratios, word equations, middle-ear bones, glands, the route through the heart |
 
-**Tip:** typed answers ignore capital letters, but spelling counts. The question says when to answer in one or two words.
+> [!TIP]
+> Typed answers ignore capital letters, but spelling counts. The question says when to answer in one or two words.

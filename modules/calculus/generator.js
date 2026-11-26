@@ -20,12 +20,7 @@ const fmt2 = (n) => {
 // True when n sits (almost) on a half-cent, where rounding to 2 decimals would be ambiguous.
 const nearHalf = (n) => Math.abs((Math.abs(n * 100) % 1) - 0.5) < 1e-6;
 
-function gcd(a, b) {
-  a = Math.abs(a);
-  b = Math.abs(b);
-  while (b) [a, b] = [b, a % b];
-  return a;
-}
+import { gcd } from "../../js/lib/mathutil.js";
 
 // Shortest decimal (up to 4 dp), "−" for negatives, never "-0".
 function num(n) {

@@ -4,6 +4,7 @@
   "description": "The odds behind games: drop rates, critical hits and DPS, weighted loot tables, and pity systems.",
   "icon": "gem",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "drop-rates", "title": "Drop rates", "difficulties": ["easy", "medium", "hard", "expert"] },

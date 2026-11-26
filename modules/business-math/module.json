@@ -4,6 +4,7 @@
   "description": "Percentages, simple and compound interest, and profit margin versus markup.",
   "icon": "chart-line",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "percentages", "title": "Percentages", "difficulties": ["easy", "medium", "hard"] },

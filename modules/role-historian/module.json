@@ -1,0 +1,16 @@
+{
+  "id": "role-historian",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that date documents, count years across BC and AD, work out reign lengths and lay out museum timelines, all from the facts stated in each question.",
+  "icon": "scroll",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "dating-sources", "title": "Dating a source", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "calendar-spans", "title": "Reigns and terms", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "object-labels", "title": "Object labels", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "exhibit-timeline", "title": "Exhibit timelines", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

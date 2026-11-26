@@ -1,0 +1,20 @@
+{
+  "id": "humanities",
+  "name": "People, places & words",
+  "description": "History, Geography and Language.",
+  "config": {
+    "domains": {
+      "history": {
+        "weight": 1
+      },
+      "geography": {
+        "weight": 1
+      },
+      "language": {
+        "weight": 1
+      }
+    },
+    "difficulty": "medium",
+    "count": 12
+  }
+}

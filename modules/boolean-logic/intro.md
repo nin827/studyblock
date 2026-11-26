@@ -32,11 +32,15 @@ A truth table lists every combination of inputs. Each input can be 0 or 1, so **
 
 To count how many rows give 1, go through the rows one by one and evaluate the expression for each.
 
-| Level | Gates | Expressions | Truth tables |
-| --- | --- | --- | --- |
-| Easy | AND, OR, NOT | 2 inputs, one AND/OR, maybe a NOT | single gates and 2-input expressions; up to 4 inputs |
-| Medium | adds XOR, NAND, NOR | 3 inputs, 2 operators including XOR | 3-input expressions; up to 6 inputs |
-| Hard | three-input gates | 3–4 inputs, 3–4 operators including NAND and NOR | 3–4 input expressions; up to 10 inputs |
-| Expert | circuits built only from NAND or NOR; when an input stops mattering | simplifying, checking a De Morgan rewrite | truth table to expression, word rules to tables |
+| Level | Gates | Expressions | Truth tables | Write the expression |
+| --- | --- | --- | --- | --- |
+| Easy | AND and OR (two or three inputs), NOT | 2 inputs, one AND/OR, maybe a NOT | single gates and 2-input expressions, a missing output; up to 5 inputs | one operator on 2 inputs |
+| Medium | XOR, NAND, NOR, XNOR | 3 inputs, 2 operators including XOR | 3-input expressions; up to 6 inputs | 3 inputs, 2 operators |
+| Hard | three-input gates | 3–4 inputs, 3–4 operators including NAND and NOR | 3–4 input expressions; up to 10 inputs | 2–3 operators, NOT on brackets, NAND/NOR gates in circuits |
+| Expert | circuits built only from NAND or NOR; when an input stops mattering | simplifying, checking a De Morgan rewrite | truth table to expression, word rules to tables | four-gate circuits, rules in words |
 
 **Expert** questions combine ideas: you build small truth tables yourself and compare them. Expressions in the options use the same bracket style, and `NOT` still applies only to the letter or bracket right after it.
+
+## Writing expressions
+
+**Write the expression** asks you to type an expression yourself, for a truth table, a circuit or a rule in words. Use `AND`, `OR`, `XOR`, `NOT` and brackets. Any expression with the right truth table counts, and the feedback names a row where a wrong one goes astray. You can also switch to **Blocks** and build it from pieces, including bracket blocks you fill. On Hard and Expert, Blocks earns a little less credit (85% and 70%), because the pieces give part of the answer away.

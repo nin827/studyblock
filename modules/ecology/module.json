@@ -4,6 +4,7 @@
   "description": "Energy transfer in food chains, estimating populations, population growth and biodiversity indices.",
   "icon": "trees",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "energy", "title": "Energy transfer", "difficulties": ["easy", "medium", "hard", "expert"] },

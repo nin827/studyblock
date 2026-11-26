@@ -1,23 +1,10 @@
 // Kinematics generator. Uses only the seeded rng passed in by the engine.
 // Units: m, s, m/s, m/s². Easy/medium answers are whole numbers; hard answers are rounded to 2 decimals.
 
-// Round half away from zero; the 1e-9 nudge absorbs binary error (e.g. 2.525*100 = 252.4999...).
-const round2 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 100 + 1e-9)) / 100;
-// One decimal place, so given values like 2.3 + 1.1 never print as 3.4000000000000004.
-const round1 = (n) => (Math.sign(n) * Math.round(Math.abs(n) * 10 + 1e-9)) / 10;
-
-// Answer/choice formatter: whole numbers as-is, rounded answers with exactly 2 decimals; never "-0".
-function fmtAns(n, rounded) {
-  const r = round2(n);
-  const v = Object.is(r, -0) ? 0 : r;
-  return rounded ? v.toFixed(2) : String(v);
-}
-
-// Given values and intermediate steps: shortest form (up to 4 decimals); never "-0".
-function num(n) {
-  const r = Math.round(n * 10000) / 10000;
-  return String(Object.is(r, -0) ? 0 : r);
-}
+// Rounding half away from zero (round1 keeps given values like 2.3 + 1.1 from printing as 3.4000000000000004),
+// answer strings (2 dp) and intermediate numbers (up to 4 dp) come from mathutil.
+import { fmtAnswer as fmtAns, fmtNum, round1, round2 } from "../../js/lib/mathutil.js";
+const num = (n) => fmtNum(n);
 
 // Negative numbers in brackets when substituted into a formula.
 const par = (n) => (n < 0 ? `(${num(n)})` : num(n));

@@ -23,6 +23,7 @@ Number theory is the study of whole numbers: which ones are prime, how numbers s
 
 **Expert** questions have two or three parts and combine ideas, still by hand: counting even and square factors, zeros at the end of n!, how far trial division must go, every pair with a given GCD and LCM, amounts you can't make from two coin sizes, Fermat's little theorem, congruences with several solutions, ISBN check digits, affine ciphers (decoding and cracking the key), frequency analysis, breaking a toy RSA key and a toy Diffie–Hellman exchange.
 
-**Tip:** GCD (greatest common divisor) and HCF (highest common factor) are two names for the same thing.
+> [!TIP]
+> GCD (greatest common divisor) and HCF (highest common factor) are two names for the same thing.
 
 Real RSA uses primes hundreds of digits long; the toy versions here use primes below 20 so every step can be done on paper.

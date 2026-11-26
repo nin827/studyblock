@@ -4,6 +4,7 @@
   "description": "Arithmetic and geometric sequences, nth terms, and sums of series.",
   "icon": "list-ordered",
   "type": "generator",
+  "fuzzyNumber": 1,
   "questionsPerQuiz": 10,
   "subtopics": [
     { "id": "arithmetic", "title": "Arithmetic sequences", "difficulties": ["easy", "medium", "hard", "expert"] },

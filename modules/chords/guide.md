@@ -18,6 +18,8 @@ Example: D major needs a major 3rd above D. D to F is only 3 semitones, so raise
 
 **Watch out:** a diminished triad has a minor 3rd **and** a diminished 5th: B, D, F.
 
+**Blocks:** "Which notes make…" questions are answered with note blocks. Place them from the root up (root, 3rd, 5th, then 7th for seventh chords). Some blocks are wrong spellings, such as G♭ instead of F♯ or a 3rd with the wrong accidental: leave those in the bank. Keep the letter even when that needs a double sharp or flat: on Hard, E♭ diminished is E♭, G♭, B𝄫 (B𝄫 sounds like A, but the 5th must be a B).
+
 **Expert: working backwards and altering.** If a note is the 3rd of a triad, the root is 3 letters below it; if it is the 5th, 5 letters below. Then choose the accidental that gives the right size (G♯ as the 3rd of a major triad: E). When one note moves a semitone with the same letter, the letters still stack in thirds, so remeasure from the bottom letter: raising the root of C major gives C♯, E, G, which is C♯ diminished.
 
 ## Identify
@@ -44,7 +46,7 @@ Example: in G major (G A B C D E F♯), vi is E, G, B: **E minor**.
 
 **Watch out:** keep the key signature: in D major the iii chord is F♯ minor, not F minor.
 
-**Expert: keys and minor keys.** To find the key of a chord with a given numeral, the chord's root is that degree of the scale: go down the letters to the tonic and check the interval (ii is a major 2nd above the tonic, vi a major 6th). An inverted chord's numeral comes from its root, not its bass. In a minor key, use the harmonic minor: i, ii°, III+, iv, V, VI, vii°.
+**Expert: keys and minor keys.** To find the key of a chord with a given numeral, the chord's root is that degree of the scale: go down the letters to the tonic and check the interval (ii is a major 2nd above the tonic, vi a major 6th). An inverted chord's numeral comes from its root, not its bass. In a minor key, use the harmonic minor: i, ii°, III+, iv, V, VI, vii°. If the 7th is already sharp in the key signature, raising it makes a double sharp: G♯ minor's leading note is F𝄪, so its V chord is D♯, F𝄪, A♯.
 
 ## Seventh chords
 
@@ -57,4 +59,4 @@ Example: G7 is G, B, D plus a minor 7th, F: **G, B, D, F**. It is V7 in C major.
 
 **Watch out:** the 7th of a dominant 7th is a whole tone below the root (G7 has F, not F♯); maj7 is only a semitone below.
 
-**Expert: diatonic sevenths and V7 backwards.** Stacking four scale notes on each degree of a major key gives Imaj7, ii7, iii7, IVmaj7, V7, vi7 (m7 on ii, iii and vi). If a chord is V7, its key's tonic is a perfect 5th below the root (D7 is V7 in G major and in G minor); the chord's 3rd is the leading note.
+**Expert: diatonic sevenths and V7 backwards.** Stacking four scale notes on each degree of a major key gives Imaj7, ii7, iii7, IVmaj7, V7, vi7, viiø7 (m7 on ii, iii and vi; on vii a diminished triad plus a minor 7th, the half-diminished m7♭5: in C major, B, D, F, A is Bm7♭5). If a chord is V7, its key's tonic is a perfect 5th below the root (D7 is V7 in G major and in G minor); the chord's 3rd is the leading note.

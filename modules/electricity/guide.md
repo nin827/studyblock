@@ -37,7 +37,9 @@ Example: a 2000 W heater for 3 h uses `2 × 3 = 6` kWh.
 
 1. Series: add the resistances, `R = R1 + R2 + …`.
 2. Two in parallel: product over sum, `R = (R1 × R2) / (R1 + R2)`.
-3. Combined circuits: work from the inside out. Simplify the inner group first, then combine it with the rest.
+3. Any number in parallel: add the conductances, `1/R = 1/R1 + 1/R2 + 1/R3 + …`, then flip the sum. For n identical resistors this is just `R / n`.
+4. Missing parallel resistor: `1/R2 = 1/R_total - 1/R1`, then flip.
+5. Combined circuits: work from the inside out. Simplify the inner group first, then combine it with the rest.
 
 Example: 6 Ω and 3 Ω in parallel give `(6 × 3) / (6 + 3) = 18 / 9 = 2` Ω.
 

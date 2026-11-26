@@ -12,8 +12,9 @@
 1. Multiply grams of carbohydrate or protein by 4, and grams of fat by 9.
 2. For a total, add the energy from each nutrient.
 3. To find grams from kcal, divide by the kcal per gram.
+4. If you're given a percentage of the total energy instead, find that share first (total × % ÷ 100), then divide by the kcal per gram.
 
-Example: 20 g of fat gives 20 × 9 = 180 kcal.
+Example: 20 g of fat gives 20 × 9 = 180 kcal. If 30% of a 600 kcal meal is fat, that's 180 kcal, so 180 ÷ 9 = 20 g of fat.
 
 **Watch out:** fat is 9 kcal per gram, not 4.
 

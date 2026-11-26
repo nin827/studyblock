@@ -18,6 +18,8 @@ Example: `1101` = 8 + 4 + 1 = 13.
 
 **Watch out:** reading the remainders top to bottom gives the bits backwards.
 
+**Easy extras:** to count up or down in binary, or to add a binary number to a decimal one, turn the binary into decimal, do the sum, and convert back if the answer must be binary. Doubling a binary number writes a 0 on the end. The number of bits a number needs is the count of places from its biggest place value (1, 2, 4, 8, …) that fits, down to the 1s place.
+
 **Expert: bitwise operations.** Write the two bytes one above the other and work each column on its own, with no carries: AND gives 1 only where both bits are 1, OR where at least one is, XOR where they differ.
 
 **Expert: binary fractions.** After the point the places are worth 1/2, 1/4, 1/8, 1/16. To convert a decimal fraction to binary, keep doubling it: each time it reaches 1, write 1 and subtract 1, otherwise write 0. Example: 0.625 → 1.25 (1), 0.5 (0), 1 (1), so 0.625 = `0.101`.

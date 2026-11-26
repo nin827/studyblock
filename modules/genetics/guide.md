@@ -58,3 +58,14 @@ Example: 16% recessive phenotype → q² = 0.16, q = 0.4, p = 0.6, carriers 2pq 
 **Watch out:** the dominant phenotype is p² + 2pq, so never take the square root of it. Work from the recessive phenotype.
 
 **Expert: risk and selection.** Among people without the recessive trait, the carrier share is `2pq ÷ (1 - q²)`; two such parents have a recessive child with probability `(that)² × 1/4`. When every recessive individual is removed before breeding, `q → q ÷ (1 + q)`, which means 1/q goes up by exactly 1 per generation.
+
+## Write gametes & genotypes
+
+1. **Gametes:** a gamete gets one allele of each gene. Each heterozygous gene doubles the number of gamete types: `RrYy` makes 4 (`RY, Ry, rY, ry`), `RRYy` makes 2 (`RY, Ry`).
+2. **Offspring genotypes:** split the cross into one-gene crosses (`Rr × rr` gives `Rr, rr`; `Yy × Yy` gives `YY, Yy, yy`), then combine every option of the first gene with every option of the second.
+3. **Writing them:** gene by gene in the order the question gives, capital first within a gene (`Rr`, not `rR`). List them in alphabetical order with each capital before its lower-case letter: the first gene decides the order, then the second. Separate them with commas.
+4. **Expert, described parents:** work out each genotype first. A parent that shows the dominant trait but whose mother showed the recessive one is heterozygous. One that shows the recessive trait is homozygous recessive. One from a true-breeding line is homozygous dominant.
+
+Example: `RrYy × rrYy` gives `Rr, rr` for the first gene and `YY, Yy, yy` for the second, so the answer is `RrYY, RrYy, Rryy, rrYY, rrYy, rryy`.
+
+**Watch out:** capitals matter here: `Rr` and `rr` are different genotypes. With Blocks, some blocks are decoys: an impossible genotype, a whole genotype offered as a gamete, or `Rr` as a "gamete" (a gamete never has two letters of one gene).

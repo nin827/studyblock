@@ -1,0 +1,14 @@
+{
+  "id": "travel",
+  "title": "Travel and Journeys",
+  "description": "Speed, distance and time, fuel and charging costs, and reading bus and train timetables.",
+  "icon": "route",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "journeys", "title": "Speed, distance and time", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "fuel-costs", "title": "Fuel and trip costs", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "timetables", "title": "Timetables", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

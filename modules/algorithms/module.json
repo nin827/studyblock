@@ -4,12 +4,16 @@
   "description": "Trace searches and sorts by hand, pick the Big-O, and run stacks and queues step by step.",
   "icon": "arrow-down-up",
   "type": "generator",
+  "fuzzyNumber": 0,
   "questionsPerQuiz": 10,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "calculator": false,
+  "fuzzy": false,
   "subtopics": [
     { "id": "searching", "title": "Searching", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "sorting", "title": "Sorting", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "complexity", "title": "Complexity", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "data-structures", "title": "Stacks and queues", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "data-structures", "title": "Stacks and queues", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "trace", "title": "Write the trace", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }
