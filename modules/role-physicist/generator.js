@@ -60,8 +60,8 @@ function genRamp(rng, tier) {
   for (let i = 0; i < TRY; i++) {
     const med = tier === "medium";
     const th = med ? 30 : rng.pick([20, 25, 30, 35, 40, 45, 50]);
-    const L = med ? rng.pick([2.5, 10, 22.5]) : rng.int(4, 24) / 2;
-    const m = rng.pick([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]);
+    const L = med ? rng.pick([2.5, 10, 22.5, 40, 62.5, 1.6, 3.6, 6.4, 14.4, 25.6, 32.4]) : rng.int(4, 24) / 2;
+    const m = med ? rng.pick([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 15, 20]) : rng.pick([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]);
     const obj = rng.pick(["block", "crate", "trolley", "sledge"]);
     const st = (rd) => {
       const a = rd("a", G * Math.sin(rad(th)));
@@ -102,7 +102,7 @@ function genProjectile(rng, tier) {
   for (let i = 0; i < TRY; i++) {
     const med = tier === "medium";
     const th = med ? 30 : rng.pick([25, 30, 35, 40, 45, 50, 55, 60]);
-    const u = med ? rng.pick([10, 20, 30, 40]) : rng.int(12, 40);
+    const u = med ? rng.pick([10, 20, 30, 40, 50, 60, 24, 36, 44]) : rng.int(12, 40);
     const ball = rng.pick(["ball", "stone", "football", "rock"]);
     const wall = tier === "expert-plus";
     const st = (rd) => {
@@ -280,9 +280,9 @@ function genKepler(rng, tier) {
 // O3 (expert+): from an observed period and the star's mass, back to the orbit, speed and signal budget.
 function genStarMass(rng) {
   for (let i = 0; i < TRY; i++) {
-    const M = rng.pick([0.5, 0.6, 0.8, 1.2, 1.5, 2, 2.5, 3, 4]);
-    const T = rng.int(2, 40);
-    const B = rng.pick([20, 30, 40, 60]);
+    const M = rng.pick([0.5, 0.6, 0.8, 1.2, 1.5, 2, 2.5, 3, 4, 0.7, 0.9, 1.1, 1.4, 1.8, 3.5]);
+    const T = rng.int(2, 60);
+    const B = rng.pick([20, 30, 40, 60, 25, 35, 45, 50, 80, 90]);
     const st = (rd) => {
       const a = rd("a", Math.cbrt(M * T * T));
       const v = rd("v", (2 * Math.PI * a * AU) / (T * YEAR));
