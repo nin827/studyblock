@@ -2,7 +2,7 @@
 
 import {
   loadDomains, loadModulesOf, normalizeMixConfig, mixShares, sanitizeWeight, sanitizeCount,
-  buildMixQuiz, loadOfficialPresets, loadGuide, DIFFICULTY_ORDER, MIX_MAX_COUNT, isValidId, OFFICIAL_PREFIX,
+  buildMixQuiz, loadOfficialPresets, loadGuide, DIFFICULTY_ORDER, MIX_MAX_COUNT, MIX_MIN_COUNT, isValidId, OFFICIAL_PREFIX,
 } from '../lib/engine.js';
 import {
   loadMixDraft, saveMixDraft, getPresets, createPreset, updatePreset, renamePreset, deletePreset,
@@ -196,7 +196,7 @@ function draw(root, available, official, only, flash) {
               <label class="field-label" for="mix-count">Questions</label>
               <span class="stepper count-stepper" role="group" aria-label="Question count">
                 <button type="button" class="step" data-count-step="-1" aria-label="Fewer questions">−</button>
-                <input type="number" id="mix-count" class="count-input" min="1" max="${MIX_MAX_COUNT}" step="1"
+                <input type="number" id="mix-count" class="count-input" min="${MIX_MIN_COUNT}" max="${MIX_MAX_COUNT}" step="1"
                   inputmode="numeric" enterkeyhint="go" value="${cfg.count}">
                 <button type="button" class="step" data-count-step="1" aria-label="More questions">+</button>
               </span>
@@ -248,7 +248,7 @@ function draw(root, available, official, only, flash) {
   root.querySelectorAll('.step[data-step]').forEach(b => b.addEventListener('click', () =>
     bump(b.parentElement.querySelector('.weight-input'), +b.dataset.step, 0, Infinity)));
   root.querySelectorAll('.step[data-count-step]').forEach(b => b.addEventListener('click', () =>
-    bump(countInput, +b.dataset.countStep, 1, MIX_MAX_COUNT)));
+    bump(countInput, +b.dataset.countStep, MIX_MIN_COUNT, MIX_MAX_COUNT)));
 
   // Read inputs into `state`; returns the config in CLAUDE.md shape.
   function readForm() {

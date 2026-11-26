@@ -1,4 +1,4 @@
-import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, parseRoleKey } from '../lib/engine.js';
+import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
 import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
 import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
@@ -178,7 +178,7 @@ export async function render(root, params, ctx) {
       const r = k && roles.find(x => x.id === k.roleId);
       const sr = r && k.subroleId ? r.subroles.find(x => x.id === k.subroleId) : null;
       chip = `<span class="tag tag-role">${icon((sr && sr.icon) || r?.icon || 'briefcase-business')}<span>Role</span></span>`;
-      title = `${r ? (sr ? sr.title : r.title) : a.subtopic} · ${difficultyLabel(a.difficulty)}`;
+      title = `${r ? (sr ? sr.title : r.title) : a.subtopic} · ${difficultyLabel(normalizeRoleLevel(a.difficulty) ?? a.difficulty)}`;
     } else if (isMix) {
       const ds = new Set(a.questions.map(q => domainOfModule.get(q.module)?.id).filter(Boolean));
       chip = tag('Mix', 'tag-mix');

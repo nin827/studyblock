@@ -23,7 +23,7 @@ function decode(s) {
 }
 
 function match(hash) {
-  // Optional "?key=value" suffix (used only by #/mix?only=<domain>).
+  // Optional "?key=value" suffix (#/mix?only=<domain>, #/mix/play?preset=<id>, role quizzes' ?n=<count>).
   const raw = hash.replace(/^#/, '');
   const qi = raw.indexOf('?');
   const query = new URLSearchParams(qi >= 0 ? raw.slice(qi + 1) : '');
@@ -59,14 +59,16 @@ function match(hash) {
   if (parts[0] === 'roles' && (parts.length === 2 || parts.length === 3) && parts.slice(1).every(p => ID_RE.test(p))) {
     return { view: { render: roles.renderRole }, nav: 'roles', params: { roleId: parts[1], subroleId: parts[2] ?? null } };
   }
-  // Role quizzes: #/rq/<role>[~<subrole>]/<level> (practice) and #/rg/… (guided).
+  // Role quizzes: #/rq/<role>[~<subrole>]/<level>[?n=<count>] (practice) and #/rg/… (guided).
+  // `n` = question count (5-50, clamped by the view); absent or not a number = the level's default.
   if ((parts[0] === 'rq' || parts[0] === 'rg') && parts.length === 3) {
     const ids = parts[1].split('~');
     if (ids.length <= 2 && ids.every(p => ID_RE.test(p)) && ID_RE.test(parts[2])) {
+      const n = query.get('n');
       return {
         view: { render: parts[0] === 'rg' ? roles.renderGuidedPlay : roles.renderPlay },
         nav: 'roles',
-        params: { roleId: ids[0], subroleId: ids[1] ?? null, level: parts[2] },
+        params: { roleId: ids[0], subroleId: ids[1] ?? null, level: parts[2], count: n && /^\d{1,3}$/.test(n) ? Number(n) : null },
       };
     }
   }

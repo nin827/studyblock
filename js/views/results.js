@@ -1,4 +1,4 @@
-import { loadAllModules, loadDomains, loadArchived, titleLookup, loadRoles, parseRoleKey } from '../lib/engine.js';
+import { loadAllModules, loadDomains, loadArchived, titleLookup, loadRoles, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
 import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
 import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml } from './quiz.js';
@@ -112,7 +112,7 @@ export async function render(root, params, ctx) {
     const chip = isRole ? `<span class="tag tag-role">${icon(rInfo.icon)}<span>Role</span></span>`
       : isMix ? tag('Mix', 'tag-mix') : tag(dom ? dom.title : archived.has(a.module) ? 'Archived' : 'Other', domClass(dom?.id));
     const title = isRole
-      ? `<strong>${esc(rInfo.title)}</strong> · ${difficultyHtml(a.difficulty)}`
+      ? `<strong>${esc(rInfo.title)}</strong> · ${difficultyHtml(normalizeRoleLevel(a.difficulty) ?? a.difficulty)}`
       : isMix
       ? `<strong>Mixed quiz</strong> · ${a.difficulty === 'any' ? 'Any difficulty' : difficultyHtml(a.difficulty)}`
       : `<strong>${esc(modTitle(a.module))}</strong> · ${esc(subTitle(a.module, a.subtopic))} · ${difficultyHtml(a.difficulty)}`;

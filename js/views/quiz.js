@@ -1,6 +1,6 @@
 import { loadModule, loadGuide, domainOf, checkAnswer, gradeAnswer, runAnswer, serialiseTree, SLOT_DEPTH_MAX, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
 import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
-import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
+import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, weightOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel, isFlameLevel } from './ui.js';
@@ -61,7 +61,14 @@ export function renderPrompt(src) {
 // All parts are optional (older stored attempts have none). `q.domain` (id) picks the tint.
 export function questionTag(q) {
   if (!q || typeof q.module !== 'string') return '';
-  return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty, q.lang)}</p>`;
+  return `<p class="q-tag tag-row">${originTags(q.domain, q.domainTitle, q.moduleTitle ?? q.module, q.subtopicTitle ?? q.subtopic, q.difficulty, q.lang)}${weightTag(q)}</p>`;
+}
+
+// "×3" pill for a weighted question (role scenarios count once per part); '' for weight 1.
+export function weightTag(q) {
+  const w = weightOf(q);
+  if (w <= 1) return '';
+  return `<span class="tag tag-weight" title="${esc(`Counts ${w} times: one per part`)}"><span aria-hidden="true">×${w}</span><span class="sr-only">Worth ${w} points</span></span>`;
 }
 
 // "Subtopic · Difficulty" tag only (whole-module quizzes, where the module is already known).
@@ -318,11 +325,15 @@ export async function runQuiz(root, ctx, opts) {
     showQuestion();
   }
 
-  // Running score = sum of credits (multi-part questions can earn part of a point).
-  const correctCount = () => fmtScore(results.reduce((s, r) => s + r.credit, 0));
+  // Running score = sum of credit × weight (multi-part questions can earn part of a point; role
+  // scenario questions weigh their number of parts). Weighted runs show "score / total points".
+  const scoreSum = () => roundScore(results.reduce((s, r) => s + r.credit * weightOf(r.q), 0));
+  const totalWeight = () => questions.reduce((s, q) => s + weightOf(q), 0);
+  const isWeighted = () => questions.some(q => weightOf(q) > 1);
+  const correctCount = () => fmtScore(scoreSum());
   const progressText = () => guided
     ? `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, guided, not scored`
-    : `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${correctCount()} correct`;
+    : `Question ${Math.min(idx + 1, questions.length)} of ${questions.length}, ${isWeighted() ? `${correctCount()} of ${totalWeight()} points` : `${correctCount()} correct`}`;
 
   // Segmented progress: one segment per question, coloured correct / wrong / current.
   // Guided: neutral "done" segments (nothing is scored).
@@ -336,7 +347,9 @@ export async function runQuiz(root, ctx, opts) {
     }).join('');
     const pill = guided
       ? `<span class="quiz-score guided-pill">${icon('compass')}<span>Guided · not scored</span></span>`
-      : `<span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> correct</span></span>`;
+      : isWeighted()
+        ? `<span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> / ${totalWeight()}<span class="sr-only"> points</span></span></span>`
+        : `<span class="quiz-score">${icon('circle-check')}<span><span id="quiz-correct">${correctCount()}</span> correct</span></span>`;
     return `${opts.crumbs}
       <div class="quiz-top">
         <div class="quiz-bar">
@@ -1675,7 +1688,7 @@ export async function runQuiz(root, ctx, opts) {
   // Questions answered with code-like blocks or run as queries: inline code in the prompt names
   // tables and columns, so it stays at text size (not the large equation style).
   // Prose-style prompts: inline code stays at text size (scenario questions name columns, functions, cells).
-  const isCodeQuestion = q => isDual(q) || !!q?.runnable || q?.difficulty === 'expert-plus'
+  const isCodeQuestion = q => isDual(q) || !!q?.runnable || q?.difficulty === 'expert-plus' || q?.scenario === true
     || (isTiles(q) && (q.tiles || []).some(t => t.slot));
 
   function showQuestion() {
@@ -2168,8 +2181,9 @@ export async function runQuiz(root, ctx, opts) {
     if (guided) { finishGuided(); return; }
     phase = 'done';
     teardownCalc();
-    const score = roundScore(results.reduce((s, r) => s + r.credit, 0));
-    const total = results.length;
+    // Weighted: score = Σ credit × weight, total = Σ weight (single questions weigh 1).
+    const score = scoreSum();
+    const total = results.reduce((s, r) => s + weightOf(r.q), 0);
     saveAttempt({ ...opts.toAttempt(results), score, total });
     const pct = total ? Math.round((score / total) * 100) : 0;
     root.innerHTML = `<div class="page-narrow">
@@ -2185,7 +2199,7 @@ export async function runQuiz(root, ctx, opts) {
           <a class="btn" href="#/results">${icon('history')} History</a>
         </div>
       </section>
-      ${(opts.breakdown ?? opts.showTags) ? moduleBreakdown(results.map(r => ({ ...r.q, correct: r.correct, credit: r.credit }))) : ''}
+      ${(opts.breakdown ?? opts.showTags) ? moduleBreakdown(results.map(r => ({ ...r.q, correct: r.correct, credit: r.credit, weight: weightOf(r.q) }))) : ''}
       <section class="card">
         <h2>Review</h2>
         <ol class="review">${results.map(r => reviewItem(r, opts.tagsFor || opts.showTags)).join('')}</ol>
@@ -2322,6 +2336,8 @@ export function storedQuestion(r, withOrigin) {
     seed: r.q.seed, prompt: r.q.prompt, answer: r.q.answer, userAnswer: r.userAnswer, correct: r.correct,
     // Partial credit 0–1 (multi-part: parts right / parts total); `correct` stays the strict flag.
     credit: typeof r.credit === 'number' ? roundScore(r.credit) : (r.correct ? 1 : 0),
+    // Role scenario questions: score weight = number of parts (stored only when above 1).
+    ...(weightOf(r.q) > 1 ? { weight: weightOf(r.q) } : {}),
     // Multi-part: answer/userAnswer are { [partId]: value } objects, plus per-part results.
     ...(Array.isArray(r.parts) ? { parts: r.parts.map(p => ({ id: p.id, label: p.label, correct: !!p.correct, ...(!p.correct && p.close ? { close: p.close } : {}) })) } : {}),
     // Segmented choices: the column labels, so review and History can show the stored string as chips.
@@ -2365,7 +2381,8 @@ export function guidedItemHtml(q, outcome, tagHtml = '', extra = []) {
     </li>`;
 }
 
-// Per-module score/total table for mixed quizzes. `qs` = [{ module, moduleTitle?, domainTitle?, correct, credit? }].
+// Per-module score/total table for mixed quizzes. `qs` = [{ module, moduleTitle?, domainTitle?, correct, credit?, weight? }].
+// Weighted questions (role scenarios) count credit × weight out of weight, so the rows add up to the attempt score.
 // `titleFor(moduleId)` optionally returns { module, domain } titles for stored questions.
 export function moduleBreakdown(qs, titleFor) {
   const groups = new Map();
@@ -2379,8 +2396,8 @@ export function moduleBreakdown(qs, titleFor) {
       });
     }
     const g = groups.get(id);
-    g.total++;
-    g.correct += creditOf(q);
+    g.total += weightOf(q);
+    g.correct += creditOf(q) * weightOf(q);
   }
   const rows = [...groups.values()].map(g => {
     const p = g.total ? Math.round((g.correct / g.total) * 100) : 0;

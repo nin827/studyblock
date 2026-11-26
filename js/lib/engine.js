@@ -260,17 +260,21 @@ export const DIFFICULTY_ORDER = ['easy', 'medium', 'hard', 'expert'];
 export const isDifficulty = d => DIFFICULTY_ORDER.includes(d);
 // Role-only questions (modules with "roleOnly": true). Valid only inside those modules.
 export const EXPERT_PLUS = 'expert-plus';
+// Scenario tiers a role-only subtopic may offer: medium (2 parts), hard (3), expert (3-4) and
+// expert-plus (the role Expert level). Role Easy/Medium/Hard runs end with medium/hard/expert ones.
+const ROLE_TIERS = ['medium', 'hard', 'expert', EXPERT_PLUS];
 
 const diffWarned = new Set();
 
 // A subtopic with its "difficulties" list cleaned: unknown values and duplicates dropped (one
 // console.warn per module), kept in the module's own order. A subtopic without a list is unchanged
 // (it counts as "medium"); one whose list has nothing valid left is skipped. Never mutates `s`.
-// Role-only modules: only "expert-plus" is valid (and every subtopic needs a list).
+// Role-only modules: only the scenario tiers "medium", "hard", "expert" and "expert-plus" are valid
+// (and every subtopic needs a list).
 function cleanDifficulties(s, moduleId, roleOnly = false) {
   if (!s || typeof s !== 'object') return s;
   if (s.difficulties === undefined && !roleOnly) return s;
-  const known = roleOnly ? [EXPERT_PLUS] : DIFFICULTY_ORDER;
+  const known = roleOnly ? ROLE_TIERS : DIFFICULTY_ORDER;
   const raw = Array.isArray(s.difficulties) ? s.difficulties : [];
   const list = [];
   const bad = [];
@@ -479,8 +483,11 @@ function csvPool(rows, subtopic, difficulty) {
 }
 
 // Every answer in one subtopic of a CSV module (any difficulty): the lookalike list for close answers.
+// Only free-text rows count: segmented rows (a `cols` column) and choice rows are skipped, so a
+// text question's nearMisses never hold "↑ Increase ; …" tuples or multiple-choice answers.
 function csvAnswers(rows, subtopic) {
-  return [...new Set(rows.filter(r => (r.subtopic || '').trim() === subtopic).map(r => (r.answer ?? '').trim()).filter(Boolean))];
+  const freeText = r => !String(r.cols ?? '').trim() && !r._seg && !String(r.choices ?? '').trim();
+  return [...new Set(rows.filter(r => (r.subtopic || '').trim() === subtopic && freeText(r)).map(r => (r.answer ?? '').trim()).filter(Boolean))];
 }
 
 // `near` (optional): the subtopic's answers; the other ones become the question's `nearMisses`.
@@ -1192,6 +1199,8 @@ export async function regenerate(moduleId, subtopic, difficulty, seed, lang) {
 // ---- multi-domain mix ----
 
 export const MIX_MAX_COUNT = 50;
+// Mixes have at least 5 questions; older drafts, presets and imports are clamped up silently.
+export const MIX_MIN_COUNT = 5;
 const MAX_WEIGHT = 1000;
 
 // Non-negative finite number (capped), else `fallback`.
@@ -1204,7 +1213,7 @@ export function sanitizeWeight(v, fallback = 1) {
 export function sanitizeCount(v, fallback = 10) {
   const n = Math.round(Number(v));
   if (!Number.isFinite(n)) return fallback;
-  return Math.min(MIX_MAX_COUNT, Math.max(1, n));
+  return Math.min(MIX_MAX_COUNT, Math.max(MIX_MIN_COUNT, n));
 }
 
 // Fills a (possibly stale or partial) mix config against the available domains:
@@ -1438,20 +1447,52 @@ export async function buildMixQuiz(config, seed = randomSeed()) {
 // ---- roles (roles/index.json + roles/<id>.json) ----
 //
 // A role is a hand-made weighted mix of subjects (modules, optionally narrowed to subtopics), with
-// subroles (narrower mixes) and one role-only module (`exclusive`, "roleOnly": true) for Expert+.
-// Role levels shift the subject difficulty up: Normal -> Medium, Hard -> Hard, Expert -> Expert
-// (closest level the subtopic has, as in mixes); Expert+ draws only role-only questions.
+// subroles (narrower mixes) and one role-only module (`exclusive`, "roleOnly": true) of scenarios.
+// Role levels shift the subject difficulty up: Easy -> Medium, Medium -> Hard, Hard -> Expert
+// (closest level the subtopic has, as in mixes), with role-only scenarios in the last 20% of the
+// run; Expert draws only role-only scenarios (tier "expert-plus", shown as "Expert+").
 
 export { ROLE_MODULE };
 // Separates role and subrole in quiz routes and the stored attempt subtopic: "<role>~<subrole>".
 export const ROLE_SEP = '~';
-export const ROLE_LEVELS = ['normal', 'hard', 'expert', EXPERT_PLUS];
+// Role levels Easy/Medium/Hard/Expert. Easy draws subject Medium, Medium -> Hard, Hard -> Expert;
+// Expert draws only role-only scenarios (tier "expert-plus", shown as "Expert+").
+export const ROLE_LEVELS = ['easy', 'medium', 'hard', 'expert'];
+export const ROLE_TOP = 'expert';
 export const isRoleLevel = l => ROLE_LEVELS.includes(l);
-const ROLE_SHIFT = { normal: 'medium', hard: 'hard', expert: 'expert' };
-export const roleSubjectLevel = level => ROLE_SHIFT[level] ?? null;
+// Older role-level ids (URLs, stored attempts): "normal" -> easy, "expert-plus" -> expert.
+// "hard" and "expert" always read with the current meaning.
+const ROLE_LEVEL_ALIASES = { normal: 'easy', [EXPERT_PLUS]: 'expert' };
+export const normalizeRoleLevel = l => (isRoleLevel(l) ? l : ROLE_LEVEL_ALIASES[l] ?? null);
+const ROLE_SHIFT = { easy: 'medium', medium: 'hard', hard: 'expert' };
+// The subject level a role level draws (null for Expert, which has no subject questions).
+export const roleSubjectLevel = level => ROLE_SHIFT[normalizeRoleLevel(level)] ?? null;
+// The role-only scenario tier a role level draws (its mixed slots; Expert: every question).
+export const roleScenarioTier = level => {
+  const l = normalizeRoleLevel(level);
+  return l === ROLE_TOP ? EXPERT_PLUS : ROLE_SHIFT[l] ?? null;
+};
 export const ROLE_COUNT = 10;
 export const ROLE_COUNT_EXPERT_PLUS = 5;
-export const roleQuestionCount = level => (level === EXPERT_PLUS ? ROLE_COUNT_EXPERT_PLUS : ROLE_COUNT);
+export const ROLE_MIN_COUNT = 5;
+export const ROLE_MAX_COUNT = 50;
+// Default question count of a role level (the role page's count control can change it, 5-50).
+export const roleQuestionCount = level => (normalizeRoleLevel(level) === ROLE_TOP ? ROLE_COUNT_EXPERT_PLUS : ROLE_COUNT);
+// A role question count: an integer 5-50 (rounded, clamped), else `fallback`.
+export function sanitizeRoleCount(v, fallback = ROLE_COUNT) {
+  if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return fallback;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(ROLE_MAX_COUNT, Math.max(ROLE_MIN_COUNT, n));
+}
+// Easy/Medium/Hard runs end with this many role-only scenario questions: ceil(20% of the count).
+export const roleMixedSlots = n => Math.ceil(n * 0.2);
+// Weight of a role-only (mixed) question in the attempt score: its number of parts (1-6).
+export const MAX_QUESTION_WEIGHT = 6;
+function scenarioWeight(q) {
+  const n = Array.isArray(q?.parts) ? q.parts.length : 1;
+  return Math.min(MAX_QUESTION_WEIGHT, Math.max(1, n));
+}
 
 // "<role>" or "<role>~<subrole>" -> { roleId, subroleId|null } or null when malformed.
 export function parseRoleKey(key) {
@@ -1557,7 +1598,7 @@ export async function loadRoles() {
       if (!isValidId(r.exclusive)) warnRole(`ex|${r.id}`, `role ${r.id}: invalid "exclusive" id`);
       else {
         try { exclusiveModule = await loadRoleOnlyModule(r.exclusive); } catch (e) {
-          warnRole(`ex|${r.id}`, `role ${r.id}: role-only module ${r.exclusive} unavailable (${e.message || e}); Expert+ is off`);
+          warnRole(`ex|${r.id}`, `role ${r.id}: role-only module ${r.exclusive} unavailable (${e.message || e}); role Expert and scenarios are off`);
         }
       }
     }
@@ -1605,9 +1646,9 @@ export async function findRole(roleId, subroleId = null) {
   return subrole ? { role, subrole } : null;
 }
 
-// Levels a role (or subrole) offers: Expert+ only when its role-only module is available.
+// Levels a role (or subrole) offers: Expert only when its role-only module is available.
 export function roleLevels(role) {
-  return role?.exclusiveModule ? ROLE_LEVELS.slice() : ROLE_LEVELS.filter(l => l !== EXPERT_PLUS);
+  return role?.exclusiveModule ? ROLE_LEVELS.slice() : ROLE_LEVELS.filter(l => l !== ROLE_TOP);
 }
 
 // Share of each subject in a role mix: [{ module, share }] (share 0-1, ∝ weight).
@@ -1616,51 +1657,81 @@ export function roleShares(mix) {
   return total > 0 ? mix.map(e => ({ module: e.module, share: e.weight / total })) : [];
 }
 
-// Role-only subtopics an Expert+ run of (role, subrole) draws from.
-function expertPlusSubtopics(role, subrole) {
-  const mod = role.exclusiveModule;
+// Role-only subtopics of (role, subrole) that offer scenario tier `tier` (subrole: only its
+// exclusiveSubtopics). Expert runs draw only from these (expert-plus); Easy/Medium/Hard runs end with them.
+export function roleScenarioSubtopics(role, subrole, tier = EXPERT_PLUS) {
+  const mod = role?.exclusiveModule;
   if (!mod) return [];
-  const has = st => Array.isArray(st.difficulties) && st.difficulties.includes(EXPERT_PLUS);
+  const has = st => Array.isArray(st.difficulties) && st.difficulties.includes(tier);
   const pick = subrole && subrole.exclusiveSubtopics.length ? subrole.exclusiveSubtopics : null;
   return mod.subtopics.filter(st => has(st) && (!pick || pick.includes(st.id)));
 }
 
+// How many questions of an n-question run at role `level` are role-only scenarios: all of them at
+// Expert, else the last ceil(20% × n), or 0 when the module has no scenarios at that tier.
+export function roleScenarioCount(role, subrole, level, n) {
+  if (normalizeRoleLevel(level) === ROLE_TOP) return n;
+  return roleScenarioSubtopics(role, subrole, roleScenarioTier(level)).length ? Math.min(n, roleMixedSlots(n)) : 0;
+}
+
+// Draws up to `n` role-only scenario questions at `tier` (seeded via `rng`/`nextSeed`), each with
+// `weight` = its number of parts. Prompts already in `seen` are avoided where possible.
+async function roleScenarios(role, subs, tier, n, rng, nextSeed, seen) {
+  const mod = role.exclusiveModule;
+  const gen = await loadGenerator(mod.id);
+  const lang = effectiveLang(mod);
+  const out = [];
+  let failures = 0, dupTries = 0;
+  while (out.length < n && failures < n * 2) {
+    const st = rng.pick(subs);
+    const q = decorate(generateVerified(gen, st.id, tier, nextSeed(), lang), mod, tier);
+    if (!q) { failures++; continue; }
+    if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
+    seen.add(q.prompt);
+    out.push({ ...annotate(q, mod, st, tier), domainTitle: role.title, weight: scenarioWeight(q), scenario: true });
+  }
+  return out;
+}
+
 /*
- * Builds a role quiz (seeded). Normal/Hard/Expert: per question a subject ∝ weight, a subtopic
- * uniformly from its allowed ones (those offering the shifted level; if none does, all of them,
- * at the closest level), then the shifted difficulty (closest available). Expert+: only the
- * role-only module (subrole: its exclusiveSubtopics), stored difficulty "expert-plus".
+ * Builds a role quiz (seeded) of `count` questions (5-50; default 10, Expert 5).
+ * Easy/Medium/Hard: per question a subject ∝ weight, a subtopic uniformly from its allowed ones
+ * (those offering the shifted level; if none does, all of them, at the closest level), then the
+ * shifted difficulty (closest available). The last ceil(20% × count) slots are role-only scenario
+ * questions at the tier matching the subject level (medium/hard/expert; subrole: its
+ * exclusiveSubtopics); when the module has none at that tier, the run has no scenarios (one
+ * warning). Expert: only role-only scenarios, stored difficulty "expert-plus". Scenario questions carry `weight` = their part count.
  * Every question carries module/subtopic/difficulty (+ titles), as in mixes.
  */
-export async function buildRoleQuiz(roleId, subroleId, level, seed = randomSeed()) {
-  if (!isRoleLevel(level)) throw new Error('Unknown role level.');
+export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSeed(), count = null) {
+  const level = normalizeRoleLevel(rawLevel);
+  if (!level) throw new Error('Unknown role level.');
   const found = await findRole(roleId, subroleId);
   if (!found) throw new Error('Unknown role.');
   const { role, subrole } = found;
   const rng = createRng(seed);
   const nextSeed = () => Math.floor(rng.next() * 0x100000000) >>> 0;
-  const n = roleQuestionCount(level);
+  const n = sanitizeRoleCount(count, roleQuestionCount(level));
   const questions = [];
   const seen = new Set();
 
-  if (level === EXPERT_PLUS) {
-    const subs = expertPlusSubtopics(role, subrole);
-    if (!subs.length) throw new Error('Expert+ questions for this role are not available yet.');
-    const mod = role.exclusiveModule;
-    const gen = await loadGenerator(mod.id);
-    const lang = effectiveLang(mod);
-    let failures = 0, dupTries = 0;
-    while (questions.length < n && failures < n * 2) {
-      const st = rng.pick(subs);
-      const q = decorate(generateVerified(gen, st.id, EXPERT_PLUS, nextSeed(), lang), mod, EXPERT_PLUS);
-      if (!q) { failures++; continue; }
-      if (seen.has(q.prompt) && dupTries < n * 10) { dupTries++; continue; }
-      seen.add(q.prompt);
-      questions.push({ ...annotate(q, mod, st, EXPERT_PLUS), domainTitle: role.title });
-    }
+  if (level === ROLE_TOP) {
+    const subs = roleScenarioSubtopics(role, subrole, EXPERT_PLUS);
+    if (!subs.length) throw new Error('Expert questions (role scenarios) for this role are not available yet.');
+    questions.push(...await roleScenarios(role, subs, EXPERT_PLUS, n, rng, nextSeed, seen));
     if (!questions.length) throw new Error('This quiz could not generate any valid questions.');
     return questions;
   }
+
+  // Scenario slots at the end of the run (0 when the role-only module lacks this tier).
+  const tier = roleScenarioTier(level);
+  const scenarioSubs = roleScenarioSubtopics(role, subrole, tier);
+  if (!scenarioSubs.length && role.exclusiveModule) {
+    warnRole(`tier|${role.id}|${subrole?.id ?? ''}|${tier}`,
+      `role ${roleKey(role.id, subrole?.id)}: role-only module ${role.exclusiveModule.id} has no "${tier}" scenarios${subrole ? ' for this subrole' : ''}; ${level} runs have no mixed questions`);
+  }
+  const nMixed = scenarioSubs.length ? Math.min(n, roleMixedSlots(n)) : 0;
+  const nSubject = n - nMixed;
 
   const target = roleSubjectLevel(level);
   const mix = (subrole ? subrole.mix : role.mix);
@@ -1682,11 +1753,11 @@ export async function buildRoleQuiz(roleId, subroleId, level, seed = randomSeed(
     }
   }));
   let pool = mix.filter(e => sources.has(e.module));
-  if (!pool.length) throw new Error('None of this role\'s subjects are available.');
+  if (!pool.length && !nMixed) throw new Error('None of this role\'s subjects are available.');
   const failures = new Map();
   let tries = 0;
-  const maxTries = n * 40;
-  while (questions.length < n && tries < maxTries && pool.length) {
+  const maxTries = nSubject * 40;
+  while (questions.length < nSubject && tries < maxTries && pool.length) {
     tries++;
     const e = weightedPick(rng, pool, x => x.weight);
     if (!e) break;
@@ -1717,6 +1788,13 @@ export async function buildRoleQuiz(roleId, subroleId, level, seed = randomSeed(
     seen.add(key);
     const d = domainOfId.get(mod.id);
     questions.push({ ...annotate(q, mod, st, difficulty), ...(d ? { domain: d.id, domainTitle: d.title } : {}) });
+  }
+  if (nMixed) {
+    try {
+      questions.push(...await roleScenarios(role, scenarioSubs, tier, nMixed, rng, nextSeed, new Set()));
+    } catch (err) {
+      console.warn(`StudyBlock: role ${role.id}: no scenario questions this run`, err);
+    }
   }
   if (!questions.length) throw new Error('The role quiz could not generate any questions.');
   return questions;

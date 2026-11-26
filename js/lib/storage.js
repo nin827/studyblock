@@ -284,7 +284,15 @@ export function creditOf(q) {
   return q && q.correct ? 1 : 0;
 }
 
-// Scores are sums of credits, kept to 2 decimals.
+// A question's weight in its attempt's score: role-only (mixed) scenario questions weigh their
+// number of parts (integer 1-6); every other question, and older data, weighs 1.
+export const MAX_WEIGHT = 6;
+export const isWeight = v => Number.isInteger(v) && v >= 1 && v <= MAX_WEIGHT;
+export function weightOf(q) {
+  return q && isWeight(q.weight) ? q.weight : 1;
+}
+
+// Scores are sums of credits (× weights), kept to 2 decimals.
 export const roundScore = n => Math.round((Number(n) || 0) * 100) / 100;
 
 // ---- attempts ----
@@ -467,6 +475,31 @@ function writeJson(key, value) {
     console.warn(`StudyBlock: could not save ${key}`, e);
     return false;
   }
+}
+
+// ---- role question counts (localStorage studyblock:roleCount) ----
+// { "<role>" | "<role>~<subrole>": { std: n, expert: n } }: the role page's count for Easy/Medium/Hard
+// runs (`std`) and for Expert runs (`expert`), each an integer 5-50. Missing or bad = default.
+const ROLE_COUNT_KEY = 'studyblock:roleCount';
+const ROLE_COUNT_KINDS = ['std', 'expert'];
+const isRoleCount = v => Number.isInteger(v) && v >= 5 && v <= 50;
+
+export function getRoleCount(key, kind) {
+  const all = readJson(ROLE_COUNT_KEY);
+  const v = isObj(all) && Object.prototype.hasOwnProperty.call(all, key) && isObj(all[key]) ? all[key][kind] : undefined;
+  return isRoleCount(v) ? v : null;
+}
+
+export function setRoleCount(key, kind, n) {
+  if (!isStr(key) || !ROLE_COUNT_KINDS.includes(kind) || !isRoleCount(n)) return false;
+  const raw = readJson(ROLE_COUNT_KEY);
+  const all = isObj(raw) ? raw : {};
+  const own = Object.prototype.hasOwnProperty.call(all, key) && isObj(all[key]) ? all[key] : {};
+  const next = {};
+  for (const k of ROLE_COUNT_KINDS) if (isRoleCount(own[k])) next[k] = own[k];
+  next[kind] = n;
+  all[key] = next;
+  return writeJson(ROLE_COUNT_KEY, all);
 }
 
 function cleanDraft(v) {
@@ -751,6 +784,8 @@ function importObject(incoming, mode) {
       correct: q.correct,
       // Optional partial credit (0–1); older data has none and falls back to `correct`.
       ...(isNum(q.credit) ? { credit: Math.min(1, Math.max(0, q.credit)) } : {}),
+      // Optional score weight of a role scenario question (integer 1-6; default 1, so 1 is omitted).
+      ...(isWeight(q.weight) && q.weight > 1 ? { weight: q.weight } : {}),
       // Optional per-part results of a multi-part question.
       ...(cleanParts(q.parts) ? { parts: cleanParts(q.parts) } : {}),
       // Optional segmented-choice column labels (single question / per multi-part part).
