@@ -296,6 +296,7 @@ function normalizePart(p, warnKey) {
     answer: p?.answer,
     choices: answerType === 'choice' && Array.isArray(p.choices) ? p.choices.map(String) : undefined,
     tolerance: typeof p?.tolerance === 'number' ? p.tolerance : undefined,
+    ...(p?.exactForm === true ? { exactForm: true } : {}),
     ...(hint ? { hint } : {}),
   };
 }
@@ -383,7 +384,10 @@ function normalizeGenerated(q, seed, warnKey, lang = null) {
   const given = sanitizeGiven(q?.given, warnKey);
   const hints = sanitizeHints(q?.hints, warnKey);
   // `lang` only on questions from language-aware modules.
-  const extra = { ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}) };
+  // `exactForm: true` (text answers): the answer must be typed in exactly this form, so an
+  // equivalent but unsimplified fraction is wrong (used where simplifying is the skill tested).
+  const extra = { ...(given ? { given } : {}), ...(hints ? { hints } : {}), ...(lang ? { lang } : {}),
+    ...(q?.exactForm === true ? { exactForm: true } : {}) };
   if (q.answerType === 'multi') {
     const parts = (Array.isArray(q.parts) ? q.parts : []).map(p => normalizePart(p, warnKey));
     return {
@@ -869,6 +873,31 @@ function checkSingle(question, userAnswer) {
     case 'choice':
       return String(userAnswer) === String(question.answer);
     default:
-      return normText(userAnswer) === normText(question.answer);
+      if (normText(userAnswer) === normText(question.answer)) return true;
+      return !question.exactForm && sameFraction(userAnswer, question.answer);
   }
+}
+
+// A plain fraction "a/b" (optional leading minus, whole numbers, b > 0) as [n, d], else null.
+// Mixed numbers ("2 1/3") and decimals are not fractions here.
+function parseFraction(s) {
+  const m = /^(-?)(\d{1,9})\/(\d{1,9})$/.exec(String(s ?? '').replace(/−/g, '-').replace(/\s+/g, ''));
+  if (!m) return null;
+  const d = Number(m[3]);
+  return d > 0 ? [(m[1] ? -1 : 1) * Number(m[2]), d] : null;
+}
+
+// Equivalent fractions count as the same answer (2/6 for 1/3), but only when the expected
+// answer is itself a fraction: "4/2" is not accepted for a whole-number answer "2".
+function sameFraction(user, answer) {
+  const a = parseFraction(answer);
+  const u = a && parseFraction(user);
+  return !!u && u[0] * a[1] === a[0] * u[1];
+}
+
+// True when `user` is a correct fraction that isn't in the same (simplest) form as the answer,
+// so feedback can add "simplest form: 1/3".
+export function unsimplifiedFraction(question, user) {
+  return question?.answerType === 'text' && !question.exactForm
+    && normText(user) !== normText(question.answer) && sameFraction(user, question.answer);
 }

@@ -1,4 +1,4 @@
-import { loadModule, loadGuide, domainOf, checkAnswer, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
+import { loadModule, loadGuide, domainOf, checkAnswer, unsimplifiedFraction, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
 import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
 import { saveAttempt, setCookie, getCookie, cleanWork, creditOf, roundScore } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
@@ -20,9 +20,47 @@ function forgetSheet() {
   try { sessionStorage.removeItem(CALC_KEY); } catch { /* ignore */ }
 }
 
-export function renderPrompt(src) {
+// Trailing sentences that only say how to write the answer ("Give your answer as…", "Round to 2
+// decimal places.") are shown as a smaller note under the question, not as part of it.
+const NOTE_RE = /^(Give|Round|Then round|Type|Enter|Answer (as|in|with)|Choose the answer|Write (your answer|the answer|it)|Keep (unrounded|full)|Use a negative)\b/;
+// …but not sentences that are the task itself ("Give the x-coordinate of that point.").
+const TASK_RE = /^Give (each team|both components|the [xy]-coordinate|pressures)\b|\b(find|work out|calculate|what|which|how)\b/i;
+// A unit reminder in brackets, like "(1 mm = 1000 µm.)", stays with the note it follows.
+const UNIT_RE = /^\d[\d.,]*\s*\S+\s*=/;
+
+function isNoteSentence(sentence) {
+  let s = sentence.trim();
+  const m = /^\((.*)\)\.?$/.exec(s);
+  if (m) s = m[1].trim();
+  return (NOTE_RE.test(s) || (m && UNIT_RE.test(s))) && !TASK_RE.test(s);
+}
+
+// Splits `src` into { body, note }. Only the last paragraph is looked at, never code, tables or
+// lists, and only whole sentences at its end, so the question itself is never cut.
+export function splitAnswerNote(src) {
   const s = String(src ?? '');
-  return s.includes('\n') ? renderMarkdown(s) : `<p>${renderInline(s)}</p>`;
+  const cut = s.lastIndexOf('\n\n');
+  const head = cut >= 0 ? s.slice(0, cut + 2) : '';
+  const last = cut >= 0 ? s.slice(cut + 2) : s;
+  if (!last.trim() || /```|^\s*([|>#]|[-*+] |\d+[.)] )/m.test(last)) return { body: s, note: '' };
+  // Sentence ends: . ! ? … or ) followed by a space and a capital or "(" (decimals like 0.25 have
+  // no space).
+  const sentences = last.split(/(?<=[.!?…)])\s+(?=[A-Z(])/);
+  let i = sentences.length;
+  while (i > 0 && isNoteSentence(sentences[i - 1])) i--;
+  // A unit reminder alone isn't a note: it needs an answer-format sentence before it.
+  while (i < sentences.length && !NOTE_RE.test(sentences[i].trim().replace(/^\(/, ''))) i++;
+  if (i === sentences.length) return { body: s, note: '' };
+  const note = sentences.slice(i).join(' ').trim();
+  const rest = sentences.slice(0, i).join(' ').trim();
+  if (!rest && !head.trim()) return { body: s, note: '' }; // nothing left to ask: keep it whole
+  return { body: (head + rest).trimEnd(), note };
+}
+
+export function renderPrompt(src) {
+  const { body, note } = splitAnswerNote(src);
+  const main = body.includes('\n') ? renderMarkdown(body) : `<p>${renderInline(body)}</p>`;
+  return note ? `${main}<p class="answer-note">${icon('info')}<span>${renderInline(note)}</span></p>` : main;
 }
 
 // "Domain › Module" + "subtopic · difficulty" tags for questions that carry their own origin.
@@ -874,7 +912,8 @@ export async function runQuiz(root, ctx, opts) {
       <div class="feedback ${state === 'correct' ? 'good' : state === 'partial' ? 'partial' : 'bad'}">
         <p class="feedback-title">${title}</p>
         ${multi ? partListHtml(q.parts, partResults, userAnswer, q.answer, 'feedback-parts')
-          : correct ? '' : `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`}
+          : !correct ? `<p>Correct answer: <strong>${renderInline(String(q.answer))}</strong></p>`
+            : unsimplifiedFraction(q, userAnswer) ? `<p>In simplest form: <strong>${renderInline(String(q.answer))}</strong></p>` : ''}
         ${q.explanation ? `<div class="prose explanation">${renderMarkdown(q.explanation)}</div>` : ''}
       </div>`;
     root.querySelector('#action-bar').innerHTML =

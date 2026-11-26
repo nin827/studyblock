@@ -202,6 +202,9 @@ The engine samples rows with the seeded rng and shuffles choices.
 
 - number: parse float, `|user - answer| <= tolerance` (default 1e-9).
 - text: `−` read as `-`, trim, collapse whitespace, case-insensitive, and spaces around `:` and `,` ignored (so `2 : 7` matches `2:7`, `2,4` matches `2, 4`).
+  - **Equivalent fractions:** when the answer is a plain fraction `a/b`, any equal plain fraction is accepted (`2/6` for `1/3`), and the feedback adds "In simplest form: 1/3". Whole-number answers don't accept `4/2`, and mixed numbers are compared as text. A generator sets `exactForm: true` on a question (or part) to require the exact form; Fractions → Simplifying does.
+
+**Answer-format notes.** Trailing sentences of a prompt that only say how to write the answer ("Give your answer as…", "Round to 2 decimal places.", "Type the number without the % sign.") are split off at display time (`splitAnswerNote` in `quiz.js`) and shown as a small muted note with an `info` icon under the question. Only the last paragraph is looked at (never code, tables or lists), and sentences that are the task itself ("Give the x-coordinate of that point.") stay in the question. Generators keep writing notes at the end of the prompt; stored prompts are unchanged.
 - choice: exact match of the chosen string.
 
 ### Multi-part questions (`answerType: "multi"`)

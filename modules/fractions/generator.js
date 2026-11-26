@@ -191,7 +191,7 @@ function genSimplify(difficulty, rng) {
       ? `Divide the top and bottom by ${k} to get the improper fraction \`${a}/${b}\`. Then ask how many whole ${b}s fit into ${a}: that is the whole number, and what is left over goes over ${b}.`
       : `Divide the top and the bottom by ${k}.`,
   ];
-  return { ...finishFrac(base, a, b, format, format === "mixed" ? NOTE.mixed : NOTE.proper, candidates, rng), hints };
+  return { ...finishFrac(base, a, b, format, format === "mixed" ? NOTE.mixed : NOTE.proper, candidates, rng), hints, exactForm: true };
 }
 
 function genAddSub(difficulty, rng) {

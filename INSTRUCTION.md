@@ -110,7 +110,7 @@ On phones the menu sits at the bottom of the screen.
    - **Number answers:** type the number. On phones the number keypad opens. If the question says "round to 2 decimal places", answers within ±0.005 count as correct. You can type `-` or `−` for negatives.
    - **Text answers:** capital letters and extra spaces don't matter, including spaces around `:` and `,` (so `2,4` matches `2, 4`). A typed `−` counts the same as `-`.
    - **Multiple choice:** tap an option, or press keys **1–9**.
-   - **Fractions:** type them exactly as the question shows, in simplest form: `3/4`, `-7/4`, or a mixed number like `2 1/3`. `6/8` counts as wrong when the answer is `3/4`.
+   - **Fractions:** type them as `3/4`, `-7/4`, or a mixed number like `2 1/3` when the question asks for one. An equivalent fraction that isn't fully simplified, like `6/8` for `3/4`, still counts, and the feedback shows the simplest form. The one exception is Fractions → Simplifying, where simplifying is the point, so `6/8` is wrong there.
    - **Ratios:** type them like `3:4`.
    - **Percentages:** type the number without the `%` sign, with a minus for a decrease.
    - **Scientific sizes:** some answers ask for a number "× 10²³" or "× 10⁸ m/s"; type just the number in front.

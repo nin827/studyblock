@@ -1369,6 +1369,15 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
 .tag-lang { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--mono); }
 .tag-lang .icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); }
 
+/* "Give your answer as…" / "Round to…" notes, split off the end of a question prompt. */
+.answer-note {
+  display: flex; gap: 6px; align-items: flex-start;
+  margin: 0.6em 0 0; font-size: 14px; font-weight: 400; line-height: 1.45; color: var(--muted);
+}
+.prompt .answer-note { margin: 0.6em 0 0; }
+.answer-note .icon { width: 15px; height: 15px; flex-shrink: 0; margin-top: 2px; }
+.prompt .answer-note code { font-size: 1em; }
+
 /* Fenced code blocks in quiz prompts and reviews: monospace, normal size and weight, and they
    scroll sideways inside the block instead of wrapping or widening the page. */
 .prompt, .review-body { min-width: 0; }
