@@ -41,7 +41,7 @@
         "finance-theory": { "weight": 1, "subtopics": ["appraisal"] },
         "accounting-terms": { "weight": 1, "subtopics": ["equation"] }
       },
-      "exclusiveSubtopics": ["asset-review", "break-even-review"]
+      "exclusiveSubtopics": ["asset-review", "break-even-review", "budget-variance"]
     }
   ]
 }

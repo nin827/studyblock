@@ -39,3 +39,14 @@
 4. **Target profit units** = (fixed costs + target profit) ÷ contribution per unit.
 5. **Working backwards:** budgeted profit = budgeted units × contribution − fixed costs, so fixed costs = units × contribution − profit.
 6. **Special order:** with spare capacity and no new fixed costs, only the extra contribution (price − variable cost) less any one-off cost matters. Ignore the average full cost.
+
+## Budget variance
+
+1. **Sign rule:** a variance that raises profit is favourable, one that lowers profit is adverse. Positive = favourable when the question asks for a signed figure.
+2. **Flex the budget** to the actual units: keep budgeted price and cost per unit, change only the volume.
+3. **Sales price variance** = (actual price − budgeted price) × actual units.
+4. **Sales volume variance** = (actual units − budgeted units) × budgeted contribution per unit.
+5. **Variable cost variance** = (budgeted cost per unit − actual cost per unit) × actual units.
+6. **Total profit variance** = actual profit − original budgeted profit. Fixed cost overspend is adverse.
+7. **Investigate or not:** divide the variance's size by its budget figure and compare with the stated %. "At least" means equal passes, and the direction does not matter.
+8. **Working backwards:** units difference = volume variance ÷ contribution per unit. Favourable means more units than budgeted, adverse means fewer.

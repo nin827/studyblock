@@ -4,6 +4,7 @@
 //   audit-review        receivable days -> current ratio -> red flags -> audit response (E+: early sale)
 //   asset-review        straight-line / reducing balance -> carrying value -> profit -> method or disposal
 //   break-even-review   break-even units -> margin of safety / target profit -> decision (E+: special order)
+//   budget-variance     flexed budget -> price/volume/cost variances -> favourable/adverse -> investigate by a stated % (E+: back from a variance)
 // Tiers: medium 2 parts, hard 3, expert 4 (3 at transaction-review hard is also 3), expert-plus 4.
 // Logic is copied from the Accounting Terms/Theory, Finance and Business Case generators (never imported).
 // All rng draws happen before any text, hint or explanation is built. Draws that would put an answer on a
@@ -615,6 +616,185 @@ function verifyBreakEvenPlus(q, answer) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// budget-variance
+// Convention (stated in every prompt): a variance that raises profit is favourable, one that lowers it is adverse;
+// the sales volume variance is valued at the budgeted contribution per unit. All figures are whole dollars.
+
+const FA = ["Favourable", "Adverse"];
+const IG = ["Investigate", "Ignore"];
+const faOf = (x) => (x >= 0 ? "Favourable" : "Adverse");
+const sgn = (x) => (x > 0 ? 1 : -1);
+const signed = (x) => (x > 0 ? "+" : x < 0 ? "−" : "") + fmt(Math.abs(x));
+const SIGN_RULE = "A variance that raises profit is favourable and one that lowers it is adverse.";
+
+function genBudgetVariance(rng, tier) {
+  const firm = rng.pick(FIRMS), prod = rng.pick(PRODUCTS);
+  if (tier === "expert-plus") return genBudgetPlus(rng, firm, prod);
+  for (let tries = 0; tries < 3000; tries++) {
+    const B = rng.int(4, 20) * 100;
+    const p = rng.int(12, 40);
+    const v = rng.int(4, p - 4);
+    const sA = rng.pick([-1, 1]), sP = rng.pick([-1, 1]), sC = rng.pick([-1, 1]);
+    const A = B + sA * rng.int(1, 8) * 50;
+    const pa = p + sP * rng.int(1, 4);
+    const va = v + sC * rng.int(1, 3);
+    const k = rng.pick([30, 40, 50, 60]);
+    const dF = rng.int(1, 6) * 100 * rng.pick([-1, 1]);
+    const M = rng.pick([10, 15, 20, 30]);
+    const want = rng.int(0, 1);
+    // No rng below in this attempt.
+    if (A <= 0 || pa <= v || va <= 0 || va >= pa) continue;
+    if (tier === "medium") return buildBudgetMedium(rng, { firm, prod, B, p, v, A, pa });
+    if (tier === "hard") return buildBudgetHard(rng, { firm, prod, B, p, v, A, pa, va });
+    const F = Math.round((B * (p - v) * k) / 100 / 100) * 100;
+    const Fa = F + dF;
+    if (F <= 0 || Fa <= 0) continue;
+    const bp = B * (p - v) - F;
+    if (bp <= 0) continue;
+    const tv = A * (pa - v) - Fa - bp;
+    if (tv === 0) continue;
+    const pct = (Math.abs(tv) / bp) * 100;
+    if (Math.abs(pct - M) < 1) continue;
+    const inv = pct >= M ? 1 : 0;
+    if (inv !== want && tries < 2500) continue;
+    return buildBudgetExpert(rng, { firm, prod, B, p, v, A, pa, F, Fa, M, bp, tv });
+  }
+  throw new Error("budget-variance: could not draw");
+}
+
+function amountOpts(correct, d, A, B) {
+  const c = [correct, B * d, d, Math.abs(A - B) * d, A * (d + 1), d > 1 ? A * (d - 1) : A * (d + 2), B * (d + 1), A * d * 2];
+  const out = [];
+  for (const x of c) if (x > 0 && !out.includes(x)) out.push(x);
+  for (let k = 1; out.length < 6; k++) { const x = correct + 100 * k; if (!out.includes(x)) out.push(x); }
+  return out.map(money);
+}
+
+function buildBudgetMedium(rng, d) {
+  const { firm, prod, B, p, v, A, pa } = d;
+  const dp = pa - p;
+  const flexRev = A * p, pv = dp * A;
+  const parts = [
+    numPart({ id: "flexrev", label: "Flexed budget", ask: "Flexed budget sales revenue, in $ (budgeted price × actual units)", answer: flexRev, hint: "Flex the budget to the actual volume: keep the budgeted selling price and multiply by the units actually sold." }),
+    segPart(rng, { id: "pricevar", label: "Price variance", ask: "The sales price variance: its size and whether it is favourable or adverse", cols: ["Variance", "Direction"], answer: [money(Math.abs(pv)), faOf(pv)], opts: [amountOpts(Math.abs(pv), Math.abs(dp), A, B), FA], hint: "Sales price variance = (actual price − budgeted price) × actual units. Selling above the budgeted price raises profit." }),
+  ];
+  return {
+    prompt: `${firm} budgeted to sell **${fmt(B)} units** of ${prod} at **${money(p)}** each, with variable costs of **${money(v)} a unit**. It actually sold **${fmt(A)} units** at **${money(pa)}** each, and variable cost per unit was as budgeted. ${SIGN_RULE}`,
+    answerType: "multi", parts,
+    explanation: `- Flexed budget revenue: ${fmt(A)} × ${p} = **${money(flexRev)}**.\n- Actual revenue: ${fmt(A)} × ${pa} = ${money(A * pa)}, so the price variance is ${money(A * pa)} − ${money(flexRev)} = ${money(Math.abs(pv))}, **${faOf(pv).toLowerCase()}** (${dp > 0 ? "sold above" : "sold below"} the budgeted price).`,
+    given: [{ label: "_budunits", value: B }, { label: "_bprice", value: p }, { label: "_actunits", value: A }, { label: "_aprice", value: pa }],
+    params: { kind: "budget-medium", B, p, v, A, pa },
+  };
+}
+
+function buildBudgetHard(rng, d) {
+  const { firm, prod, B, p, v, A, pa, va } = d;
+  const pv = (pa - p) * A, vv = (A - B) * (p - v), cv = (v - va) * A;
+  const parts = [
+    numPart({ id: "pricevar", label: "Price variance", ask: "Sales price variance, in $ (positive if favourable, negative if adverse)", answer: pv, hint: "Sales price variance = (actual price − budgeted price) × actual units." }),
+    numPart({ id: "volvar", label: "Volume variance", ask: "Sales volume variance, in $ (positive if favourable, negative if adverse)", answer: vv, hint: "Sales volume variance = (actual units − budgeted units) × budgeted contribution per unit, where contribution = budgeted price − budgeted variable cost." }),
+    segPart(rng, { id: "directions", label: "Directions", ask: "For each variance, favourable or adverse (the variable cost variance is on the actual units)", cols: ["Price", "Volume", "Variable cost"], answer: [faOf(pv), faOf(vv), faOf(cv)], opts: [FA, FA, FA], hint: "Price and volume signs are in your answers. For variable cost, compare actual cost per unit with the budgeted cost per unit: spending less per unit raises profit." }),
+  ];
+  return {
+    prompt: `${firm} budgeted to sell **${fmt(B)} units** of ${prod} at **${money(p)}** each with variable costs of **${money(v)} a unit**. Actually it sold **${fmt(A)} units** at **${money(pa)}** each, and variable cost was **${money(va)} a unit**. ${SIGN_RULE} The volume variance is valued at the budgeted contribution per unit.`,
+    answerType: "multi", parts,
+    explanation: `- Price: (${pa} − ${p}) × ${fmt(A)} = **${signed(pv)}**, ${faOf(pv).toLowerCase()}.\n- Volume: (${fmt(A)} − ${fmt(B)}) × (${p} − ${v}) = **${signed(vv)}**, ${faOf(vv).toLowerCase()}.\n- Variable cost: (${v} − ${va}) × ${fmt(A)} = ${signed(cv)}, **${faOf(cv).toLowerCase()}**.`,
+    given: [{ label: "_budunits", value: B }, { label: "_bprice", value: p }, { label: "_bvar", value: v }, { label: "_actunits", value: A }, { label: "_aprice", value: pa }, { label: "_avar", value: va }],
+    params: { kind: "budget-hard", B, p, v, A, pa, va },
+  };
+}
+
+function buildBudgetExpert(rng, d) {
+  const { firm, prod, B, p, v, A, pa, F, Fa, M, bp, tv } = d;
+  const flex = A * (p - v) - F, pv = (pa - p) * A;
+  const pct = (Math.abs(tv) / bp) * 100;
+  const OPT = ["Investigate: the variance is large enough", "No investigation needed"];
+  const parts = [
+    numPart({ id: "flexprofit", label: "Flexed budget", ask: "Flexed budget profit at the actual units, in $", answer: flex, hint: "Flexed budget profit = actual units × budgeted contribution per unit − budgeted fixed costs." }),
+    numPart({ id: "pricevar", label: "Price variance", ask: "Sales price variance, in $ (positive if favourable, negative if adverse)", answer: pv, hint: "Sales price variance = (actual price − budgeted price) × actual units." }),
+    numPart({ id: "totalvar", label: "Total variance", ask: "Total profit variance: actual profit − original budgeted profit, in $ (positive if favourable)", answer: tv, hint: "Actual profit = actual units × (actual price − budgeted variable cost) − actual fixed costs. Budgeted profit = budgeted units × budgeted contribution − budgeted fixed costs." }),
+    choicePart(rng, { id: "decision", label: "Decision", ask: "Does the total variance need investigating?", options: OPT, answer: pct >= M ? OPT[0] : OPT[1], hint: `Compare the size of the total variance, as a % of budgeted profit, with ${M}%. "At least" means equal passes. Use unrounded figures.` }),
+  ];
+  return {
+    prompt: `${firm} budgeted to sell **${fmt(B)} units** of ${prod} at **${money(p)}** each, with variable costs of **${money(v)} a unit** and fixed costs of **${money(F)}**. It actually sold **${fmt(A)} units** at **${money(pa)}** each. Variable cost per unit was as budgeted, and fixed costs were **${money(Fa)}**. ${SIGN_RULE} Management investigates any total profit variance whose size is **at least ${M}%** of budgeted profit, favourable or adverse.`,
+    answerType: "multi", parts,
+    explanation: `- Flexed budget profit: ${fmt(A)} × (${p} − ${v}) − ${fmt(F)} = **${money(flex)}**.\n- Price variance: (${pa} − ${p}) × ${fmt(A)} = **${signed(pv)}**.\n- Budgeted profit: ${fmt(B)} × ${p - v} − ${fmt(F)} = ${money(bp)}. Actual profit: ${fmt(A)} × (${pa} − ${v}) − ${fmt(Fa)} = ${money(A * (pa - v) - Fa)}. Total variance = **${signed(tv)}**.\n- ${fmt(Math.abs(tv))} ÷ ${fmt(bp)} = ${r1(pct).toFixed(1)}% is ${pct >= M ? "at least" : "below"} ${M}%: **${pct >= M ? OPT[0] : OPT[1]}**.`,
+    given: [{ label: "_budunits", value: B }, { label: "_bprice", value: p }, { label: "_bvar", value: v }, { label: "_bfixed", value: F }, { label: "_actunits", value: A }, { label: "_aprice", value: pa }, { label: "_afixed", value: Fa }],
+    params: { kind: "budget-expert", B, p, v, F, A, pa, Fa, M },
+  };
+}
+
+function genBudgetPlus(rng, firm, prod) {
+  for (let tries = 0; tries < 4000; tries++) {
+    const B = rng.int(4, 20) * 100;
+    const p = rng.int(12, 40);
+    const v = rng.int(4, p - 4);
+    const A = B + rng.pick([-1, 1]) * rng.int(1, 8) * 50;
+    const pa = p + rng.pick([-1, 1]) * rng.int(1, 4);
+    const va = v + rng.pick([-1, 1]) * rng.int(1, 3);
+    const M = rng.pick([3, 5, 8, 10]);
+    const want = rng.int(1, 2);
+    // No rng below in this attempt.
+    if (A <= 0 || pa <= v || va <= 0 || va >= pa) continue;
+    const pcts = [(Math.abs(pa - p) / p) * 100, (Math.abs(A - B) / B) * 100, (Math.abs(v - va) / v) * 100];
+    if (pcts.some((x) => Math.abs(x - M) < 1)) continue;
+    const flags = pcts.map((x) => x >= M);
+    if (flags.filter(Boolean).length !== want && tries < 3500) continue;
+    const vv = (A - B) * (p - v), pv = (pa - p) * A, cv = (v - va) * A;
+    const parts = [
+      numPart({ id: "units", label: "Actual units", ask: "The actual units sold", answer: A, hint: "The volume variance = (actual units − budgeted units) × budgeted contribution per unit. Work backwards: divide by the contribution, then add to or take from the budgeted units, using the sign (favourable means more units)." }),
+      numPart({ id: "pricevar", label: "Price variance", ask: "Sales price variance, in $ (positive if favourable, negative if adverse)", answer: pv, hint: "Sales price variance = (actual price − budgeted price) × the actual units you found." }),
+      numPart({ id: "costvar", label: "Cost variance", ask: "Variable cost variance, in $ (positive if favourable, negative if adverse)", answer: cv, hint: "Variable cost variance = (budgeted cost per unit − actual cost per unit) × actual units." }),
+      segPart(rng, { id: "review", label: "Review", ask: "For each variance, investigate or ignore", cols: ["Price", "Volume", "Variable cost"], answer: flags.map((f) => IG[f ? 0 : 1]), opts: [IG, IG, IG], hint: `Express each variance as a % of its budget figure and compare with ${M}%. "At least" means equal passes. Price: budgeted price × actual units. Volume: budgeted contribution on the budgeted units. Cost: budgeted cost per unit × actual units.` }),
+    ];
+    return {
+      prompt: `${firm} budgeted to sell **${fmt(B)} units** of ${prod} at **${money(p)}** each with variable costs of **${money(v)} a unit**. The sales volume variance was **${money(Math.abs(vv))} ${faOf(vv).toLowerCase()}** (valued at the budgeted contribution per unit). Actual price was **${money(pa)}** and actual variable cost was **${money(va)} a unit**. ${SIGN_RULE} Management investigates any variance whose size is **at least ${M}%** of its budget figure: price against flexed budget revenue (budgeted price × actual units), volume against budgeted contribution, and variable cost against flexed budget variable cost (budgeted cost × actual units).`,
+      answerType: "multi", parts,
+      explanation: `- Contribution per unit: ${p} − ${v} = ${p - v}. Units difference: ${fmt(Math.abs(vv))} ÷ ${p - v} = ${fmt(Math.abs(A - B))}, so actual units = ${fmt(B)} ${A > B ? "+" : "−"} ${fmt(Math.abs(A - B))} = **${fmt(A)}**.\n- Price: (${pa} − ${p}) × ${fmt(A)} = **${signed(pv)}**.\n- Variable cost: (${v} − ${va}) × ${fmt(A)} = **${signed(cv)}**.\n- Price ${r1(pcts[0]).toFixed(1)}%, volume ${r1(pcts[1]).toFixed(1)}%, cost ${r1(pcts[2]).toFixed(1)}% against ${M}%: **${flags.map((f, i) => ["price", "volume", "variable cost"][i] + " " + (f ? "investigate" : "ignore")).join(", ")}**.`,
+      given: [{ label: "_budunits", value: B }, { label: "_bprice", value: p }, { label: "_bvar", value: v }, { label: "_volvar", value: Math.abs(vv) }, { label: "_aprice", value: pa }, { label: "_avar", value: va }],
+      params: { kind: "budget-plus", B, p, v, vvAbs: Math.abs(vv), vvSign: sgn(vv), pa, va, M },
+    };
+  }
+  throw new Error("budget-variance: could not draw expert-plus");
+}
+
+function verifyBudgetMedium(q, answer) {
+  const x = q.params;
+  if (!numOk(part(answer, "flexrev"), x.A * x.p, 0)) return false;
+  const pv = (x.pa - x.p) * x.A;
+  return segChoiceOk(q, "pricevar", [money(Math.abs(pv)), pv >= 0 ? "Favourable" : "Adverse"], part(answer, "pricevar"));
+}
+
+function verifyBudgetHard(q, answer) {
+  const x = q.params;
+  const pv = x.A * x.pa - x.A * x.p, vv = x.A * (x.p - x.v) - x.B * (x.p - x.v), cv = x.A * x.v - x.A * x.va;
+  if (!numOk(part(answer, "pricevar"), pv, 0) || !numOk(part(answer, "volvar"), vv, 0)) return false;
+  return segChoiceOk(q, "directions", [pv >= 0 ? "Favourable" : "Adverse", vv >= 0 ? "Favourable" : "Adverse", cv >= 0 ? "Favourable" : "Adverse"], part(answer, "directions"));
+}
+
+function verifyBudgetExpert(q, answer) {
+  const x = q.params;
+  const flex = x.A * x.p - x.A * x.v - x.F;
+  const actual = x.A * x.pa - x.A * x.v - x.Fa, budget = x.B * x.p - x.B * x.v - x.F;
+  if (!numOk(part(answer, "flexprofit"), flex, 0)) return false;
+  if (!numOk(part(answer, "pricevar"), x.A * x.pa - x.A * x.p, 0)) return false;
+  if (!numOk(part(answer, "totalvar"), actual - budget, 0)) return false;
+  const big = Math.abs(actual - budget) * 100 >= x.M * budget;
+  return plainChoiceOk(q, "decision", big ? "Investigate: the variance is large enough" : "No investigation needed", part(answer, "decision"));
+}
+
+function verifyBudgetPlus(q, answer) {
+  const x = q.params;
+  const c = x.p - x.v;
+  const A = x.B + (x.vvSign * x.vvAbs) / c;
+  if (!numOk(part(answer, "units"), A, 0)) return false;
+  if (!numOk(part(answer, "pricevar"), A * x.pa - A * x.p, 0)) return false;
+  if (!numOk(part(answer, "costvar"), A * x.v - A * x.va, 0)) return false;
+  const big = [Math.abs(x.pa - x.p) * A * 100 >= x.M * (A * x.p), x.vvAbs * 100 >= x.M * (x.B * c), Math.abs(x.v - x.va) * A * 100 >= x.M * (A * x.v)];
+  return segChoiceOk(q, "review", big.map((b) => (b ? "Investigate" : "Ignore")), part(answer, "review"));
+}
+
+// ---------------------------------------------------------------------------------------------
 
 export function generate({ subtopic, difficulty, rng }) {
   const tier = ["medium", "hard", "expert", "expert-plus"].includes(difficulty) ? difficulty : "expert-plus";
@@ -623,6 +803,7 @@ export function generate({ subtopic, difficulty, rng }) {
     case "audit-review": return genAudit(rng, tier);
     case "asset-review": return genAsset(rng, tier);
     case "break-even-review": return genBreakEven(rng, tier);
+    case "budget-variance": return genBudgetVariance(rng, tier);
     default: throw new Error(`Unknown subtopic: ${subtopic}`);
   }
 }
@@ -641,6 +822,10 @@ export function verify(question, answer) {
       case "asset-disposal": return verifyAssetDisposal(question, answer);
       case "breakeven": return verifyBreakEven(question, answer);
       case "breakeven-plus": return verifyBreakEvenPlus(question, answer);
+      case "budget-medium": return verifyBudgetMedium(question, answer);
+      case "budget-hard": return verifyBudgetHard(question, answer);
+      case "budget-expert": return verifyBudgetExpert(question, answer);
+      case "budget-plus": return verifyBudgetPlus(question, answer);
       default: return false;
     }
   } catch {

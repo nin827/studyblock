@@ -3,7 +3,7 @@
 **Status:** open (parked by the user; build when asked)
 **Raised:** 2026-11-26
 
-Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**. Accountant has no actual-vs-budget variance part yet; it could be added later.
+Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**. Accountant now includes Budget variance.
 
 ## Teacher (general role)
 - Accepted as a general role. No "X Teacher" subroles (ticket 020).

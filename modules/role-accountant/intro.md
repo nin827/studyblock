@@ -19,3 +19,7 @@ Charge **straight-line or reducing-balance depreciation**, find the carrying val
 ## Break-even and budget
 
 Find **break-even units**, the margin of safety and the units needed for a target profit, then decide. Expert+ works backwards from a budgeted profit to the fixed costs and judges a special order.
+
+## Budget variance
+
+Flex a budget to the actual volume, work out the **price, volume and cost variances**, mark each favourable or adverse, and apply a stated rule to decide what to investigate. Expert+ works backwards from a volume variance to the actual units.
