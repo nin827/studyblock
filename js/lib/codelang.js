@@ -715,6 +715,235 @@ export function run(prog, { entry, args = [], maxSteps = 10000 } = {}) {
   return { output, returned, steps, timedOut };
 }
 
+// ── Blocks (tiles) for one line of code ────────────────────────────────────────────────────────
+// Turns ONE rendered line or expression (any language) into answer blocks for a "type it or build it"
+// question. Blocks are joined by single spaces; a call `f(…)`, an index `xs[…]` and a C-style
+// keyword header `for (…)` / `if (…)` / `while (…)` become slot tiles that hold their inner blocks
+// (`{ value, label, slot: { open, close, sep } }`); a bare bracket group `(a + b)` is a slot tile with
+// value "(", open "" and close ")". `,` `;` and a `:` with no space before it stick to the block
+// before them ("1," in `range(1, n + 1)`); only a call with a slot block before a comma
+// (`f(xs[0], y)`) uses sep ", " instead, which needs every argument to be one block. A C++ `(int)`
+// cast, a C# `!` and a Rust `&` stick to the following block. Lines that do not fit this shape
+// (a comma after a slot inside mixed arguments, nesting deeper than 3) give null, so a generator
+// can redraw.
+//   lineTree(text)                → [item…] | null   item: { v } or { v, open, close, sep, kids:[item…] }
+//   serialiseTree(items, joiner=' ')   back to text (lineTree(t) serialises to exactly t, or is null)
+//   blocksFor(text, { distractors=[texts], count=0, seed=1 }) → { tiles, solution, joiner:' ', useAll:false } | null
+//        tiles shuffled with `seed`; up to `count` extra blocks (all different) taken in order from the
+//        distractor texts' blocks that the answer does not already use; solution = tree of tile indices.
+//   decoyTokens(text)             spare one-block distractors: sibling operators, numbers ± 1
+//   serialiseBlocks(tiles, solution, joiner=' ')  the text a solution tree builds (null if malformed)
+//   textKey(text)                 the engine's text normalisation (for accepts lists)
+//   spacingVariants(text)         the line with every subset of `a + b` operator gaps written as `a+b`
+//        (all subsets for up to 4 operators, else spaced + fully compact + one-at-a-time), spaced first.
+
+const LX_OPS = ['..=', '==', '!=', '<=', '>=', '&&', '||', '+=', '-=', '*=', '/=', '%=', '//', '->', '<', '>', '+', '-', '*', '/', '%', '='];
+const LX_WORD = /^(?:\(int\))?[&!]?(?:-?[A-Za-z0-9_]+(?:(?:\.\.=?|\.|::)[A-Za-z0-9_]+)*(?:\(\))?(?:\+\+|--)?|"[^"]*"|'[^']*')/;
+const KW_SLOT = new Set(['for', 'if', 'while', 'foreach']);
+
+function lexLine(text) {
+  const toks = [];
+  let i = 0, sp = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === ' ') { sp = true; i++; continue; }
+    const rest = text.slice(i);
+    let m = rest.match(LX_WORD);
+    // A leading '-' is only a negative literal when it is glued to a digit (binary minus is spaced).
+    if (m && m[0].startsWith('-') && !/^-\d/.test(m[0])) m = null;
+    if (m) { toks.push({ k: 'w', t: m[0], sp }); i += m[0].length; sp = false; continue; }
+    if ('()[],;:{}'.includes(ch)) { toks.push({ k: ch, t: ch, sp }); i++; sp = false; continue; }
+    const op = LX_OPS.find(o => rest.startsWith(o));
+    if (!op) return null;
+    toks.push({ k: 'w', t: op, sp }); i += op.length; sp = false;
+  }
+  return toks;
+}
+
+export function lineTree(text) {
+  if (typeof text !== 'string' || !text.trim() || /\s{2}|^\s|\s$/.test(text)) return null;
+  const toks = lexLine(text);
+  if (!toks) return null;
+  let i = 0;
+  const glue = (items, t) => {
+    const prev = items[items.length - 1];
+    if (!prev || prev.kids) return false;
+    prev.v += t; return true;
+  };
+  // Parses until `closer`; returns items, with ',' markers when `args` (inside a call's brackets).
+  const seq = (closer, args) => {
+    const items = [];
+    while (i < toks.length) {
+      const t = toks[i];
+      if (t.k === closer) { i++; return items; }
+      if (t.k === '(') {
+        // A bare bracket group, e.g. Rust `xs[(i - 1) as usize]`: a slot tile "(" whose open text is empty.
+        i++;
+        const kids = seq(')', false);
+        if (!kids || !kids.length) return null;
+        items.push({ v: '(', open: '', close: ')', sep: ' ', kids });
+        continue;
+      }
+      if (t.k === ')' || t.k === ']' || t.k === '{' || t.k === '}' || t.k === '[') return null;
+      if (t.k === ',' || t.k === ';' || (t.k === ':' && !t.sp)) {
+        if (t.sp) return null;
+        i++;
+        if (args && t.k === ',') { items.push({ comma: true }); continue; }
+        if (!glue(items, t.t)) return null;
+        continue;
+      }
+      if (t.k === ':') { items.push({ v: ':' }); i++; continue; }
+      i++;
+      const nx = toks[i];
+      if (nx && (nx.k === '(' || nx.k === '[') && (!nx.sp || (nx.k === '(' && KW_SLOT.has(t.t)))) {
+        const kw = nx.sp;
+        i++;
+        const kids = seq(nx.k === '(' ? ')' : ']', nx.k === '(' && !kw);
+        if (!kids) return null;
+        const slot = settle(kids);
+        if (!slot) return null;
+        items.push({ v: t.t, open: kw ? ' (' : nx.k, close: nx.k === '(' ? ')' : ']', sep: slot.sep, kids: slot.kids });
+        continue;
+      }
+      items.push({ v: t.t });
+    }
+    return closer ? null : items;
+  };
+  // Decide how a slot's children are separated: commas stick to the block before them ("1,") and the
+  // children are space-separated; only when a comma follows a slot block (which cannot take it) and
+  // every argument is a single block, the slot uses sep ", " instead.
+  const settle = kids => {
+    if (!kids.some(k => k.comma)) return kids.length ? { sep: ' ', kids } : null;
+    const out = [];
+    let glued = true;
+    for (const k of kids) if (k.comma ? !glue(out, ',') : !out.push(k)) { glued = false; break; }
+    if (glued) return { sep: ' ', kids: out };
+    const groups = [[]];
+    kids.forEach(k => (k.comma ? groups.push([]) : groups[groups.length - 1].push(k)));
+    if (groups.every(g => g.length === 1)) return { sep: ', ', kids: groups.map(g => g[0]) };
+    return null;
+  };
+  const items = seq(null, false);
+  if (!items || !items.length) return null;
+  const depth = xs => Math.max(0, ...xs.map(x => (x.kids ? 1 + depth(x.kids) : 0)));
+  if (depth(items) > 3) return null;
+  return serialiseTree(items) === text ? items : null;
+}
+
+export const serialiseTree = (items, joiner = ' ') =>
+  items.map(x => (x.kids ? x.v + x.open + serialiseTree(x.kids, x.sep) + x.close : x.v)).join(joiner);
+
+const tileOf = x => (x.kids
+  ? { value: x.v, label: `${x.v}${x.open}…${x.close}`, slot: { open: x.open, close: x.close, sep: x.sep } }
+  : { value: x.v, label: x.v });
+const tileKey = t => JSON.stringify([t.value, t.slot ? [t.slot.open, t.slot.close, t.slot.sep] : null]);
+const flatTiles = (items, out = []) => { for (const x of items) { out.push(tileOf(x)); if (x.kids) flatTiles(x.kids, out); } return out; };
+
+// Fisher-Yates with a local mulberry32, so the order depends only on `seed`.
+function seededShuffle(arr, seed) {
+  let s = seed >>> 0;
+  const next = () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(next() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+  return out;
+}
+
+export function blocksFor(text, { distractors = [], count = 0, seed = 1 } = {}) {
+  const items = lineTree(text);
+  if (!items) return null;
+  // Number every answer block in tree order.
+  const real = [];
+  const number = xs => xs.map(x => { const n = real.push(tileOf(x)) - 1; return x.kids ? { t: n, kids: number(x.kids) } : n; });
+  const tree = number(items);
+  const have = new Map();
+  real.forEach(t => have.set(tileKey(t), (have.get(tileKey(t)) || 0) + 1));
+  const extra = [], taken = new Set(), looks = new Map(real.map(t => [t.label, tileKey(t)]));
+  for (const d of distractors) {
+    if (extra.length >= count) break;
+    const di = lineTree(d);
+    if (!di) continue;
+    const need = new Map();
+    for (const t of flatTiles(di)) {
+      const k = tileKey(t);
+      need.set(k, (need.get(k) || 0) + 1);
+      // (a block that looks like another one but serialises differently would be a trap: skip it)
+      if (looks.has(t.label) && looks.get(t.label) !== k) continue;
+      if (need.get(k) > (have.get(k) || 0) && extra.length < count && !taken.has(k)) { extra.push(t); taken.add(k); looks.set(t.label, k); have.set(k, (have.get(k) || 0) + 1); }
+    }
+  }
+  const all = [...real, ...extra];
+  if (all.length < 2 || all.length > 24) return null;
+  const order = seededShuffle(all.map((_, k) => k), seed); // order[pos] = original index
+  const pos = new Map(order.map((orig, p) => [orig, p]));
+  const remap = xs => xs.map(x => (typeof x === 'number' ? pos.get(x) : { t: pos.get(x.t), kids: remap(x.kids) }));
+  return { tiles: order.map(k => all[k]), solution: remap(tree), joiner: ' ', useAll: false };
+}
+
+// Extra single blocks for a line when its wrong versions run out: the other operators of each
+// operator's family and each whole number ± 1. In a fixed order (no rng).
+const OP_FAMILIES = [['+', '-', '*', '/', '%'], ['//', '+', '-', '*', '%'], ['<', '<=', '>', '>=', '==', '!='], ['=', '+=', '-=', '*=', '/=', '%='], ['&&', '||'], ['and', 'or']]; // first family holding the operator wins
+export function decoyTokens(text) {
+  const items = lineTree(text) || [];
+  const out = [];
+  const walk = xs => xs.forEach(x => {
+    if (x.kids) return walk(x.kids);
+    const fam = OP_FAMILIES.find(f => f.includes(x.v));
+    if (fam) out.push(...fam.filter(o => o !== x.v));
+    const n = /^-?\d+[,;:]?$/.test(x.v) ? parseInt(x.v, 10) : NaN;
+    if (Number.isInteger(n)) out.push(String(n + 1), ...(n > 0 ? [String(n - 1)] : []));
+  });
+  walk(items);
+  return [...new Set(out)];
+}
+
+export function serialiseBlocks(tiles, solution, joiner = ' ') {
+  if (!Array.isArray(tiles) || !Array.isArray(solution)) return null;
+  const used = new Set();
+  const ser = (xs, sep, depth) => {
+    if (depth > 4) return null;
+    const parts = [];
+    for (const x of xs) {
+      const n = typeof x === 'number' ? x : x && typeof x === 'object' ? x.t : NaN;
+      const t = tiles[n];
+      if (!t || used.has(n)) return null;
+      used.add(n);
+      if (typeof x === 'number') { parts.push(t.value); continue; }
+      if (!t.slot || !Array.isArray(x.kids)) return null;
+      const inner = ser(x.kids, t.slot.sep ?? ', ', depth + 1);
+      if (inner === null) return null;
+      parts.push(t.value + t.slot.open + inner + t.slot.close);
+    }
+    return parts.join(sep);
+  };
+  return ser(solution, joiner, 1);
+}
+
+// The engine's text rule (− as -, trim, collapse spaces, no spaces around ':', ', ' after commas,
+// case-insensitive), for building and checking `accepts` lists.
+export const textKey = s => String(s ?? '').replace(/−/g, '-').trim().replace(/\s+/g, ' ').replace(/ ?: ?/g, ':').replace(/ ?, ?/g, ', ').toLowerCase();
+
+const GAP = /(?<=\S) (==|!=|<=|>=|&&|\|\||\+=|-=|\*=|\/=|%=|\/\/|[-+*\/%<>=]) (?=\S)/g;
+export function spacingVariants(text) {
+  const hits = [...String(text).matchAll(GAP)];
+  const k = hits.length;
+  const build = mask => {
+    let out = '', at = 0;
+    hits.forEach((h, j) => { out += text.slice(at, h.index); out += (mask >> j) & 1 ? h[1] : h[0]; at = h.index + h[0].length; });
+    return out + text.slice(at);
+  };
+  const full = (1 << k) - 1;
+  const masks = k <= 4 ? Array.from({ length: full + 1 }, (_, m) => m) : hits.map((_, j) => 1 << j);
+  // spaced first, then fully compact, then the mixes
+  const ordered = [0, ...(k ? [full] : []), ...masks.filter(m => m !== 0 && m !== full)];
+  return [...new Set(ordered.map(build))];
+}
+
 // ── Language notes for explanations ───────────────────────────────────────────────────────────
 const NOTES = {
   python: { range: 'range(a, b) counts from a up to b, stopping before b', len: 'len(xs)', append: 'xs.append(x)',

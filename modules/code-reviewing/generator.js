@@ -1,4 +1,5 @@
-// Code Reviewing generator: predict the output, find the bug, fix the bug, name the bug.
+// Code Reviewing generator: predict the output, find the bug, fix the bug, name the bug, and
+// rewrite the buggy line (typed, with a Blocks alternative; see "rewrite the buggy line" below).
 //
 // Every snippet is a language-neutral codelang program. plan*() draws everything random (template,
 // names, numbers, bug, example, tests, choice order) WITHOUT seeing `lang`; present*() then renders
@@ -9,7 +10,8 @@
 // codelang interpreter and compares against plain-JS reference functions (tpl.ref / predictRef),
 // so every answer is recomputed independently of how generate() produced it.
 
-import { S, E, program, render, run, lineAt, fence, ident, rangeText } from '../../js/lib/codelang.js';
+import { S, E, program, render, run, lineAt, fence, ident, rangeText, renderExpr,
+  blocksFor, serialiseBlocks, spacingVariants, textKey, decoyTokens } from '../../js/lib/codelang.js';
 
 const V = E.var, B = E.bin, IX = E.index, LEN = E.len;
 const MAX_STEPS = 3000;
@@ -603,9 +605,9 @@ const BUG_POOL = {
 // Does this run count as "wrong" (fails the spec) without crashing?
 const fails = (r, want) => r.timedOut || (r.ok && r.value !== want);
 
-function planBug(rng, diff, { needFix }) {
+function planBug(rng, diff, { needFix, pool }) {
   for (let attempt = 0; attempt < 60; attempt++) {
-    const tplId = rng.pick(BUG_POOL[diff]);
+    const tplId = rng.pick(pool || BUG_POOL[diff]);
     const tpl = T[tplId];
     const c = tpl.make(rng, diff);
     const slots = tpl.slots(c);
@@ -1452,11 +1454,193 @@ function verifyBugX(q, m, answer) {
   });
 }
 
+// ---- rewrite the buggy line (typed, or built from blocks) ----
+// Uses planBug (fixable bugs only). The answer is the correct line as rendered, without its trailing
+// `:` / `;` / `{`. `accepts` holds genuine equivalents: the line with its trailing mark, other
+// spacing around operators, flipped comparisons / swapped operands (each equivalent line is put back
+// into the function and must pass every test), `total = total + x` for `total += x`, `i <= n` for
+// `i < n + 1` in a C-style loop header, `a..=n` for `a..n + 1` in Rust, and C++ without `(int)`.
+// Blocks come from the same line; extra blocks are the buggy line's blocks first, then the blocks of
+// the other wrong fixes for that line.
+const RW_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const trailOf = line => (line.match(/(?: \{|:|;)$/) || [''])[0];
+const stripTrail = line => line.slice(0, line.length - trailOf(line).length);
+
+function replaceStmt(stmts, id, s) {
+  return stmts.map(x => {
+    if (x.id === id) return { ...s, id };
+    const y = { ...x };
+    for (const k of ['then', 'body', 'els']) if (x[k]) y[k] = replaceStmt(x[k], id, s);
+    if (x.elifs) y.elifs = x.elifs.map(a => ({ ...a, body: replaceStmt(a.body, id, s) }));
+    return y;
+  });
+}
+function findStmt(stmts, id) {
+  for (const x of stmts) {
+    if (x.id === id) return x;
+    for (const b of [x.then, x.body, x.els, ...(x.elifs || []).map(a => a.body)]) { const r = b && findStmt(b, id); if (r) return r; }
+  }
+  return null;
+}
+const withStmt = (good, s, id) => program([{ ...good.fns[0], body: replaceStmt(good.fns[0].body, id, s) }], []);
+
+// Equivalent versions of one expression: flipped comparisons, swapped + / * operands, reordered
+// and/or parts. (No bound shifting: a fixed line should read like the original.)
+function exprVariants(e) {
+  const out = [e];
+  if (!e || typeof e !== 'object') return out;
+  if (e.k === 'bin') {
+    for (const a of exprVariants(e.a)) for (const b of exprVariants(e.b)) {
+      if (a !== e.a || b !== e.b) out.push({ ...e, a, b });
+      if (FLIP[e.op] || e.op === '==' || e.op === '!=') out.push({ ...e, op: FLIP[e.op] || e.op, a: b, b: a });
+      if (e.op === '+' || e.op === '*') out.push({ ...e, a: b, b: a });
+    }
+  } else if ((e.k === 'and' || e.k === 'or') && e.xs.length === 2) {
+    for (const a of exprVariants(e.xs[0])) for (const b of exprVariants(e.xs[1])) {
+      if (a !== e.xs[0] || b !== e.xs[1]) out.push({ ...e, xs: [a, b] });
+      out.push({ ...e, xs: [b, a] });
+    }
+  }
+  return out.slice(0, 64);
+}
+function stmtVariants(s) {
+  const out = [];
+  for (const k of ['cond', 'value', 'end', 'start', 'i']) {
+    if (!s[k] || typeof s[k] !== 'object') continue;
+    for (const v of exprVariants(s[k]).slice(1)) out.push({ ...s, [k]: v });
+  }
+  if (s.k === 'augAssign') out.push({ k: 'assign', name: s.name, value: B(s.op, V(s.name), s.value) });
+  return out;
+}
+
+// Everything about a rewrite question in one language, from the plan alone.
+function rewriteView(p, L) {
+  const tpl = T[p.tpl], c = p.c;
+  const good = fnProg(tpl, c), bad = fnProg(tpl, c, { [p.slot]: p.key });
+  const R = render(bad, L, { lineNumbers: true }), Rg = render(good, L);
+  const fullLine = lineAt(Rg, p.slot), answer = stripTrail(fullLine), trail = trailOf(fullLine);
+  const lineOfStmt = s => stripTrail(lineAt(render(withStmt(good, s, p.slot), L), p.slot));
+  const okStmt = s => passesAll(tpl, c, withStmt(good, s, p.slot), p.tests);
+  const goodStmt = findStmt(good.fns[0].body, p.slot);
+  // equivalent lines (checked by running)
+  const sems = [];
+  for (const s of stmtVariants(goodStmt)) {
+    try { if (okStmt(s)) sems.push(lineOfStmt(s)); } catch { /* not a valid program */ }
+  }
+  const cand = [...spacingVariants(answer).slice(1, 2)];
+  if (trail) cand.push(answer + trail);
+  for (const t of sems) cand.push(t, spacingVariants(t)[1] ?? t);
+  if (goodStmt.k === 'forRange' && goodStmt.step === 1 && goodStmt.end.k === 'bin' && goodStmt.end.op === '+' && goodStmt.end.b.k === 'int' && goodStmt.end.b.v === 1) {
+    const endText = renderExpr(goodStmt.end, L, { program: good, fn: c.f });
+    const less = renderExpr(goodStmt.end.a, L, { program: good, fn: c.f });
+    if (L === 'rust' && answer.endsWith(`..${endText}`)) cand.push(answer.slice(0, -endText.length - 2) + `..=${less}`);
+    if (['csharp', 'cpp'].includes(L) && answer.includes(` < ${endText};`)) cand.push(answer.replace(` < ${endText};`, ` <= ${less};`));
+  }
+  if (L === 'cpp' && answer.includes('(int)')) cand.push(answer.replace(/\(int\)/g, ''));
+  cand.push(...spacingVariants(answer).slice(2));
+  const keys = new Set([textKey(answer)]), accepts = [];
+  for (const t of cand) {
+    const k = textKey(t);
+    if (!t || keys.has(k) || accepts.length >= 20) continue;
+    keys.add(k); accepts.push(t);
+  }
+  const badLine = stripTrail(lineAt(R, p.slot));
+  const wrongLines = [badLine, ...(p.fixKeys || []).filter(k => k !== 'ok' && k !== p.key)
+    .map(k => stripTrail(lineAt(render(fnProg(tpl, c, { [p.slot]: k }), L), p.slot)))];
+  // Spare blocks when the wrong lines run out: the slot's other variants, sibling operators and
+  // numbers, then the function's own names.
+  const others = Object.keys(tpl.slots(c)[p.slot] || {}).filter(k => k !== p.key && !(p.fixKeys || []).includes(k))
+    .map(k => { try { return stripTrail(lineAt(render(fnProg(tpl, c, { [p.slot]: k }), L), p.slot)); } catch { return ''; } }).filter(Boolean);
+  const names = [...paramNames(tpl, c), ...trackNames(p.tpl, c)].map(n => ident(n, L));
+  const blocks = blocksFor(answer, { distractors: [...wrongLines, ...others, ...decoyTokens(answer), ...names], count: p.extra, seed: p.seed });
+  return { tpl, c, good, bad, R, Rg, answer, trail, accepts, badLine, wrongLines, blocks, bugLine: R.lineOf.get(p.slot) };
+}
+
+const solSize = xs => xs.reduce((n, x) => n + (typeof x === 'number' ? 1 : 1 + solSize(x.kids)), 0);
+function rewriteOk(v, p) {
+  if (!v.blocks || serialiseBlocks(v.blocks.tiles, v.blocks.solution) !== v.answer) return false;
+  const real = solSize(v.blocks.solution);
+  if (real < 2 || v.blocks.tiles.length - real !== p.extra) return false;
+  const ok = new Set([v.answer, ...v.accepts].map(textKey));
+  return !v.wrongLines.some(w => ok.has(textKey(w)) || spacingVariants(w).some(x => ok.has(textKey(x))));
+}
+
+const TRAIL_NOTE = {
+  python: 'The `:` at the end is optional.', gdscript: 'The `:` at the end is optional.',
+  csharp: 'The `;` at the end is optional.', cpp: 'The `;` or `{` at the end is optional.', rust: 'The `;` or `{` at the end is optional.',
+};
+
+function planRewrite(rng, diff) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const p = diff === 'expert' ? planBug(rng, 'hard', { needFix: true, pool: X_BUG_POOL }) : planBug(rng, diff, { needFix: true });
+    const [lo, hi] = RW_EXTRA[diff];
+    p.extra = rng.int(lo, hi);
+    p.seed = rng.int(1, 2147483646);
+    if (p.kind === 'early') continue;
+    if (['python', 'csharp', 'cpp', 'gdscript', 'rust'].every(L => { try { return rewriteOk(rewriteView(p, L), p); } catch { return false; } })) return p;
+  }
+  throw new Error('could not plan a rewrite question');
+}
+
+function presentRewrite(p, diff, L) {
+  const v = rewriteView(p, L), { tpl, c } = v;
+  const codeBlock = '```' + fence(L) + '\n' + v.R.code + '\n```';
+  const spec = `${sig(tpl, c, L)} should return ${tpl.desc(c, L)}. For example, ${exampleText(tpl, c, p.ex, L)} should return **${p.want}**.`;
+  const given = diff === 'easy' || diff === 'medium';
+  const isRange = v.bad.fns[0].body.some(s => s.id === p.slot && s.k === 'forRange') || findStmt(v.bad.fns[0].body, p.slot)?.k === 'forRange';
+  const ask = given ? `Line ${v.bugLine} has a bug. Type the corrected line.` : 'One line has a bug. Type the corrected version of that line.';
+  const H = bugHints(p, bugView(p, L), L);
+  const hints = given
+    ? [H.line[0], `Line ${v.bugLine} is \`${v.badLine}\`. Work out what it does on each pass and compare that with what the spec needs.`,
+      'Change only the part that is wrong and keep the rest of the line as it is. Then trace the example again with your line in place.']
+    : [H.line[0], H.line[1], 'The first line where your trace stops matching the spec is the one to rewrite. Change only the part that is wrong and keep the rest of the line as it is.'];
+  return {
+    prompt: `${spec}\n\n${codeBlock}\n\n${ask} ${TRAIL_NOTE[L]} Spaces around operators are optional.`,
+    answerType: 'text', answer: v.answer, accepts: v.accepts, blocks: v.blocks, lang: L,
+    explanation: [
+      `The bug is on line ${v.bugLine}: \`${v.badLine}\`. It should be \`${v.answer}\`.`,
+      WHY[p.kind](L, isRange),
+      `For the example the function should return **${p.want}** (${tpl.work(c, p.ex)}). ` +
+        (p.kind === 'infinite' ? 'The buggy version never finishes.' : `The buggy version returns **${p.actual}** instead.`),
+    ].join('\n\n'),
+    hints,
+    meta: { mode: 'rewrite', diff, ...p },
+  };
+}
+
+// verify: re-check the plan (as for the other bug questions), recompute the line, its accepted forms
+// (each one run in place of the bug) and the blocks, then compare.
+function verifyRewrite(q, m, answer) {
+  const L = q.lang, tpl = T[m.tpl], c = m.c;
+  if (!tpl || tpl.slots(c)[m.slot]?.[m.key] !== m.kind || ['other', 'early'].includes(m.kind)) return false;
+  const good = fnProg(tpl, c), bad = fnProg(tpl, c, { [m.slot]: m.key });
+  if (!m.tests.length || JSON.stringify(m.tests[0]) !== JSON.stringify(m.ex) || tpl.ref(c, m.ex) !== m.want) return false;
+  if (!passesAll(tpl, c, good, m.tests)) return false;
+  const rb = exec(bad, c.f, m.ex);
+  if (m.kind === 'infinite' ? !rb.timedOut : !(rb.ok && rb.value !== m.want)) return false;
+  const v = rewriteView(m, L);
+  if (!rewriteOk(v, m) || v.answer !== q.answer) return false;
+  // Only the bug line differs between the buggy and the fixed program (ignoring Rust `mut`).
+  const norm = l => l.replace(/\bmut /g, '');
+  if (v.R.lines.length !== v.Rg.lines.length) return false;
+  const diff = v.R.lines.map((l, j) => (norm(l) !== norm(v.Rg.lines[j]) ? j + 1 : 0)).filter(Boolean);
+  if (diff.length !== 1 || diff[0] !== v.bugLine) return false;
+  const b = q.blocks;
+  if (!b || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  if (serialiseBlocks(b.tiles, b.solution, b.joiner ?? ' ') !== q.answer) return false;
+  const ok = new Set([v.answer, ...v.accepts].map(textKey));
+  return typeof answer === 'string' && ok.has(textKey(answer));
+}
+
 // ---- generate ----
-const SUBS = ['predict-output', 'find-the-bug', 'fix-the-bug', 'bug-types'];
+const SUBS = ['predict-output', 'find-the-bug', 'fix-the-bug', 'bug-types', 'rewrite-line'];
 
 export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
   if (!SUBS.includes(subtopic)) throw new Error(`Unknown subtopic: ${subtopic}`);
+  if (subtopic === 'rewrite-line') {
+    if (!['easy', 'medium', 'hard', 'expert'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
+    return presentRewrite(planRewrite(rng, difficulty), difficulty, lang);
+  }
   if (difficulty === 'expert') return generateExpert(subtopic, rng, lang);
   if (!['easy', 'medium', 'hard'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
   if (subtopic === 'predict-output') return presentPredict(planPredict(rng, difficulty), lang);
@@ -1544,6 +1728,7 @@ export function verify(question, answer) {
     if (m.mode === 'predict') return verifyPredict(question, m, answer);
     if (m.mode === 'bug') return verifyBug(question, m, answer);
     if (m.mode === 'bug2' || m.mode === 'fix2') return verifyBugX(question, m, answer);
+    if (m.mode === 'rewrite') return verifyRewrite(question, m, answer);
     return false;
   } catch {
     return false;

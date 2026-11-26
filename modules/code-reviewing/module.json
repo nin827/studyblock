@@ -1,16 +1,19 @@
 {
   "id": "code-reviewing",
   "title": "Code Reviewing",
-  "description": "Read short functions in your language: predict what they print, then find, fix and name the bug.",
+  "description": "Read short functions in your language: predict what they print, then find, fix, rewrite and name the bug.",
   "icon": "bug",
   "type": "generator",
   "questionsPerQuiz": 10,
   "calculator": false,
+  "fuzzy": false,
+  "tilesMultiplier": { "easy": 1, "medium": 1, "hard": 0.85, "expert": 0.7 },
   "languages": ["python", "csharp", "cpp", "gdscript", "rust"],
   "subtopics": [
     { "id": "predict-output", "title": "Predict the output", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "find-the-bug", "title": "Find the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
     { "id": "fix-the-bug", "title": "Fix the bug", "difficulties": ["easy", "medium", "hard", "expert"] },
-    { "id": "bug-types", "title": "Bug types", "difficulties": ["easy", "medium", "hard", "expert"] }
+    { "id": "bug-types", "title": "Bug types", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "rewrite-line", "title": "Rewrite the buggy line", "difficulties": ["easy", "medium", "hard", "expert"] }
   ]
 }

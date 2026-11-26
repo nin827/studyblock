@@ -2,7 +2,8 @@
 // Every snippet is built ONCE as a language-neutral codelang program and rendered in the user's
 // language. All rng draws happen before any rendering, so a seed gives the same logic and the same
 // answer in every language. Answers are auto-checkable: a number for a blank, a choice of
-// expression or line, or a two-part question (blank + output).
+// expression or line, a two-part question (blank + output), or (Write the line) a typed expression
+// with a Blocks alternative; see that section for how its equivalents are accepted.
 //
 // How a question is checked:
 //   - Number blanks: the template computes the expected output with plain JS arithmetic; generation
@@ -13,7 +14,8 @@
 //   - verify() rebuilds the program from `meta` (template id + params) with the candidate answer
 //     substituted and runs it again. It never trusts the stored answer.
 
-import { S, E, program, render, lineAt, renderExpr, renderStmtLine, fence, ident, run, langNotes, rangeText } from '../../js/lib/codelang.js';
+import { S, E, program, render, lineAt, renderExpr, renderStmtLine, fence, ident, run, langNotes, rangeText,
+  blocksFor, serialiseBlocks, spacingVariants, textKey, decoyTokens } from '../../js/lib/codelang.js';
 import { LANG_IDS } from '../../js/lib/languages.js';
 
 const BLANK = '___';
@@ -100,6 +102,7 @@ export function verify(question, answer) {
     if (!answer || typeof answer !== 'object' || !Array.isArray(question.parts)) return false;
     return question.parts.every(p => m.parts[p.id] && partOk(m, m.parts[p.id], p.choices, answer[p.id]));
   }
+  if (m.main && m.main.kind === 'line') { try { return lineOk(question, m, answer); } catch { return false; } }
   return partOk(m, m.main, question.choices, answer);
 }
 
@@ -1534,6 +1537,541 @@ function fnHelper(rng, lang) {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
+// Write the line: type the missing expression (or build it from blocks)
+// ═════════════════════════════════════════════════════════════════════════════════════════════
+//
+// Each template is a short function with ONE blank expression (a return value or a condition).
+// plan(rng) draws everything (names, numbers, test inputs) without `lang`. Tests carry only inputs;
+// the expected result always comes from the template's plain-JS `want`, never from codelang.
+// The answer is the reference expression as rendered in the user's language (cut out of the
+// rendered line, so context-dependent spellings such as Rust `as i64` match the full program).
+// `accepts` lists genuine equivalents: other spacing around operators (`a+b`), flipped comparisons
+// (`0 < n`), swapped `+`/`*` operands or `and` parts, `> 9` for `>= 10`, plus template `alts`
+// (e.g. swapped helper arguments). Every equivalent is run against the tests before it is accepted,
+// so a reordered `and` that would read past the end of a list is never accepted.
+// The Blocks alternative is built from the same rendered answer (codelang blocksFor), with extra
+// blocks taken from wrong versions (wrong operator, off-by-one, wrong function or variable).
+
+const WL = {};
+const WL_POOL = {
+  easy: ['cmpLimit', 'pickItem', 'scale'],
+  medium: ['lastItem', 'between', 'helperCall', 'divisible'],
+  hard: ['endsCall', 'findWhile', 'countRise'],
+  expert: ['clamp', 'digitRule', 'safeIndex'],
+};
+const WL_EXTRA = { easy: [0, 1], medium: [2, 3], hard: [4, 6], expert: [6, 10] };
+const LIST_NAMES = ['xs', 'nums', 'items', 'values'];
+const boolText = (b, L) => (L === 'python' ? (b ? 'True' : 'False') : String(b));
+const FLIPOP = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '==': '==', '!=': '!=' };
+const andWord = L => tk(langNotes(L).and);
+const lenWord = (L, xs) => tk(langNotes(L).len.split(' (')[0].replace('xs', vn(xs, L)));
+
+// helpers shared by templates: bigger(a, b) / smaller(a, b)
+const pickFn = (name, op) => S.fn(name, ['a', 'b'], [S.if(E.bin(op, V('a'), V('b')), [S.return(V('a'))], [], [S.return(V('b'))])], 'int');
+
+WL.cmpLimit = {
+  plan(rng) {
+    const th = rng.pick(THEMES), op = rng.pick(['>', '>=', '<', '<=']), K = rng.int(th.lo, th.hi);
+    const up = op[0] === '>';
+    const fn = `is_${up ? th.yes : th.no}`;
+    return { fn, par: th.par, op, K, args: [K - 1, K, K + 1, K - rng.int(3, 9), K + rng.int(3, 9)].map(a => [a]) };
+  },
+  build: (p, X) => program([S.fn(p.fn, [p.par], [S.return(X, 'fill')], 'bool')], []),
+  want: (p, [n]) => cmpJs(p.op, n, p.K),
+  ref: p => E.bin(p.op, V(p.par), p.K),
+  wrongs: p => [...['>', '>=', '<', '<='].filter(o => o !== p.op).map(o => E.bin(o, V(p.par), p.K)),
+    E.bin(p.op, V(p.par), p.K + 1), E.bin(p.op, V(p.par), p.K - 1), E.bin(p.op, E.int(p.K), V(p.par))],
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.par, L)})`)} should return ${tk(boolText(true, L))} when ${tk(vn(p.par, L))} is ${CMP_WORDS[p.op]} ${p.K}, and ${tk(boolText(false, L))} otherwise.`,
+  form: (p, L) => `Write one comparison of ${tk(vn(p.par, L))} with ${p.K}.`,
+  hints: (p, L) => [
+    `The value after ${tk('return')} is a comparison: it is ${tk(boolText(true, L))} or ${tk(boolText(false, L))} by itself, so no ${tk('if')} is needed.`,
+    `"${CMP_WORDS[p.op]}" decides whether ${p.K} itself counts: "more than" and "less than" leave ${p.K} out, "at least" and "at most" include it. Check your comparison with ${tk(vn(p.par, L))} = ${p.K}.`,
+  ],
+};
+
+WL.pickItem = {
+  plan(rng) {
+    const k = rng.int(0, 2), xs = rng.pick(LIST_NAMES);
+    return { k, xs, fn: ['first_item', 'second_item', 'third_item'][k], args: [[distinctInts(rng, rng.int(4, 6), 10, 99)], [distinctInts(rng, rng.int(4, 6), 10, 99)]] };
+  },
+  build: (p, X) => program([S.fn(p.fn, [{ name: p.xs, type: 'list' }], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [xs]) => xs[p.k],
+  ref: p => E.index(p.xs, p.k),
+  wrongs: p => [E.index(p.xs, p.k + 1), ...[0, 1, 2, 3].filter(j => j !== p.k && j !== p.k + 1).map(j => E.index(p.xs, j)), E.len(p.xs)],
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.xs, L)})`)} should return the ${['first', 'second', 'third'][p.k]} item of the list ${tk(vn(p.xs, L))} (it always has at least 4 items).`,
+  form: (p, L) => `Read the item by its position (index) in ${tk(vn(p.xs, L))}.`,
+  hints: (p, L) => [
+    'Positions (indexes) start at 0, not 1: the first item is at position 0.',
+    `Count along: which position holds the ${['first', 'second', 'third'][p.k]} item? Put that position in square brackets after the list name.`,
+  ],
+};
+
+WL.scale = {
+  plan(rng) {
+    const kind = rng.int(0, 2), K = rng.int(2, 12);
+    const [fn, par] = rng.pick([['cost_of', 'n'], ['score_for', 'hits'], ['seats_for', 'rows'], ['pay_for', 'hours']]);
+    return { kind, K, fn, par, op: ['*', '+', '-'][kind], args: [rng.int(15, 40), rng.int(41, 90)].map(a => [a]) };
+  },
+  build: (p, X) => program([S.fn(p.fn, [p.par], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [n]) => (p.op === '*' ? n * p.K : p.op === '+' ? n + p.K : n - p.K),
+  ref: p => E.bin(p.op, V(p.par), p.K),
+  wrongs: p => [...['*', '+', '-', '/'].filter(o => o !== p.op).map(o => E.bin(o, V(p.par), p.K)), E.bin(p.op, V(p.par), p.K + 1)],
+  ask: (p, L) => {
+    const P = tk(vn(p.par, L));
+    const words = p.op === '*' ? `${P} times ${p.K}` : p.op === '+' ? `${p.K} more than ${P}` : `${p.K} less than ${P}`;
+    return `${tk(`${fnName(p.fn, L)}(${vn(p.par, L)})`)} should return ${words}.`;
+  },
+  form: (p, L) => `Use ${tk(vn(p.par, L))}, one operator and ${p.K}.`,
+  hints: (p, L) => [
+    `Work out one example by hand: with ${tk(vn(p.par, L))} = ${p.args[0][0]} the function must return ${WL.scale.want(p, p.args[0])}.`,
+    'Which arithmetic operator turns that input into that result: `+`, `-`, `*` or `/`?',
+  ],
+};
+
+WL.lastItem = {
+  plan(rng) {
+    const back = rng.int(1, 2), xs = rng.pick(LIST_NAMES);
+    return { back, xs, fn: back === 1 ? 'last_item' : 'next_to_last',
+      args: [[distinctInts(rng, rng.int(3, 4), 10, 99)], [distinctInts(rng, rng.int(5, 7), 10, 99)]] };
+  },
+  build: (p, X) => program([S.fn(p.fn, [{ name: p.xs, type: 'list' }], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [xs]) => xs[xs.length - p.back],
+  ref: p => E.index(p.xs, E.bin('-', E.len(p.xs), p.back)),
+  wrongs: p => [E.index(p.xs, E.len(p.xs)), E.index(p.xs, E.bin('-', E.len(p.xs), 3 - p.back)), E.bin('-', E.len(p.xs), p.back),
+    E.index(p.xs, p.back), E.index(p.xs, E.bin('+', E.len(p.xs), p.back)), E.index(p.xs, E.bin('-', E.len(p.xs), 3))],
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.xs, L)})`)} should return the ${p.back === 1 ? 'last' : 'second-to-last'} item of any list ${tk(vn(p.xs, L))} (lists have at least 3 items, but any length).`,
+  form: (p, L) => `Read the item by its index, worked out from the list's length.`,
+  hints: (p, L) => [
+    `Indexes run from 0 to length − 1. In this language the length is ${lenWord(L, p.xs)}.`,
+    `The answer must work for ${p.args[0][0].length} items and for ${p.args[1][0].length} items, so you cannot write a fixed number: start from the length and take something away.`,
+  ],
+};
+
+WL.between = {
+  plan(rng) {
+    const th = rng.pick(THEMES), A = rng.int(th.lo, th.hi), B = A + rng.int(4, 15), incl = rng.next() < 0.5;
+    const fn = rng.pick(['in_range', 'is_valid', 'fits', 'is_ok']);
+    return { fn, par: th.par, A, B, incl, args: [A - 1, A, A + 1, B - 1, B, B + 1, rng.int(A + 1, B - 1)].map(a => [a]) };
+  },
+  build: (p, X) => program([S.fn(p.fn, [p.par], [S.return(X, 'fill')], 'bool')], []),
+  want: (p, [n]) => (p.incl ? n >= p.A && n <= p.B : n > p.A && n < p.B),
+  ref: p => E.and(E.bin(p.incl ? '>=' : '>', V(p.par), p.A), E.bin(p.incl ? '<=' : '<', V(p.par), p.B)),
+  wrongs: p => {
+    const lo = p.incl ? '>=' : '>', hi = p.incl ? '<=' : '<', P = V(p.par);
+    const lo2 = p.incl ? '>' : '>=', hi2 = p.incl ? '<' : '<=';
+    return [E.or(E.bin(lo, P, p.A), E.bin(hi, P, p.B)), E.and(E.bin(lo2, P, p.A), E.bin(hi, P, p.B)), E.and(E.bin(lo, P, p.A), E.bin(hi2, P, p.B)),
+      E.and(E.bin(lo, P, p.B), E.bin(hi, P, p.A)), E.and(E.bin(hi, P, p.A), E.bin(lo, P, p.B))];
+  },
+  extra: (p, L) => (L === 'python' ? [`${p.A} ${p.incl ? '<=' : '<'} ${p.par} ${p.incl ? '<=' : '<'} ${p.B}`] : []),
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.par, L)})`)} should return ${tk(boolText(true, L))} when ${tk(vn(p.par, L))} is ${p.incl ? `between ${p.A} and ${p.B}, including ${p.A} and ${p.B}` : `strictly between ${p.A} and ${p.B} (not ${p.A} or ${p.B} themselves)`}, and ${tk(boolText(false, L))} otherwise.`,
+  form: (p, L) => `Write two comparisons joined with ${andWord(L)}, the ${p.A} check first.`,
+  hints: (p, L) => [
+    `Both things must be true at once: ${tk(vn(p.par, L))} is not too small AND not too big. In this language "and" is written ${andWord(L)}.`,
+    `${p.incl ? `${p.A} and ${p.B} themselves count, so each comparison must include its limit` : `${p.A} and ${p.B} themselves do not count, so neither comparison may include its limit`}. Check your answer with ${tk(vn(p.par, L))} = ${p.A} and ${tk(vn(p.par, L))} = ${p.B}.`,
+  ],
+};
+
+WL.helperCall = {
+  plan(rng) {
+    const A = rng.int(3, 9), Bv = rng.int(2, 9), K = rng.int(2, 15), par = rng.pick(['n', 'items', 'count']);
+    return { A, B: Bv === A ? A + 1 : Bv, K, par, args: [rng.int(2, 6), rng.int(7, 12), rng.int(13, 20)].map(a => [a]) };
+  },
+  build: (p, X) => program([
+    S.fn('price_of', [p.par], [S.return(E.bin('*', V(p.par), p.A))], 'int'),
+    S.fn('weight_of', [p.par], [S.return(E.bin('*', V(p.par), p.B))], 'int'),
+    S.fn('total_for', [p.par], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [n]) => n * p.A + p.K,
+  ref: p => E.bin('+', E.call('price_of', [V(p.par)]), p.K),
+  wrongs: p => {
+    const P = V(p.par), pr = x => E.call('price_of', [x]);
+    return [E.bin('+', E.call('weight_of', [P]), p.K), E.bin('-', pr(P), p.K), E.bin('+', pr(E.int(p.K)), P), E.bin('*', pr(P), p.K),
+      E.call('price_of', [E.bin('+', P, p.K)]), E.bin('+', pr(P), P)];
+  },
+  ask: (p, L) => `${tk(`${fnName('total_for', L)}(${vn(p.par, L)})`)} should return the price of ${tk(vn(p.par, L))} items plus a delivery fee of ${p.K}. ${tk(fnName('price_of', L))} already works out the price of the items.`,
+  form: (p, L) => `Call ${tk(fnName('price_of', L))}, then add the fee.`,
+  hints: (p, L) => [
+    `A call is the function name with the value it needs in brackets. Inside ${tk(fnName('total_for', L))}, the number of items is ${tk(vn(p.par, L))}.`,
+    `Check with ${tk(vn(p.par, L))} = ${p.args[0][0]}: the items cost ${p.args[0][0]} × ${p.A} = ${p.args[0][0] * p.A}, and the total must be ${WL.helperCall.want(p, p.args[0])}.`,
+  ],
+};
+
+WL.divisible = {
+  plan(rng) {
+    const K = rng.int(2, 9), fn = rng.pick(['is_multiple', 'splits_evenly', 'fits_rows']), par = rng.pick(['n', 'total', 'seats']);
+    const args = [K * rng.int(2, 9), K * rng.int(10, 20), K * rng.int(2, 9) + 1, K * rng.int(2, 9) + K - 1, K];
+    return { K, fn, par, args: args.map(a => [a]) };
+  },
+  build: (p, X) => program([S.fn(p.fn, [p.par], [S.return(X, 'fill')], 'bool')], []),
+  want: (p, [n]) => n % p.K === 0,
+  ref: p => E.bin('==', E.bin('%', V(p.par), p.K), 0),
+  wrongs: p => {
+    const P = V(p.par);
+    return [E.bin('==', E.bin('%', P, p.K), 1), E.bin('==', E.bin('/', P, p.K), 0), E.bin('!=', E.bin('%', P, p.K), 0),
+      E.bin('==', E.bin('%', P, p.K + 1), 0), E.bin('==', E.bin('%', P, p.K), p.K), E.bin('==', E.bin('-', P, p.K), 0)];
+  },
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.par, L)})`)} should return ${tk(boolText(true, L))} when ${tk(vn(p.par, L))} divides exactly by ${p.K} (no remainder), and ${tk(boolText(false, L))} otherwise. ${tk(vn(p.par, L))} is never negative.`,
+  form: (p, L) => `Use the remainder operator ${tk('%')} and compare the result.`,
+  hints: (p, L) => [
+    `${tk('a % b')} is the remainder after dividing a by b; for example ${p.K * 3 + 1} % ${p.K} is 1.`,
+    `What is the remainder when a number divides exactly? Compare the remainder with that value using ${tk('==')}.`,
+  ],
+};
+
+// Hard
+const endsLists = rng => {
+  const a = distinctInts(rng, rng.int(3, 5), 1, 99), b = distinctInts(rng, rng.int(5, 7), 1, 99);
+  return [a, b];
+};
+WL.endsCall = {
+  plan(rng) {
+    const big = rng.next() < 0.5, xs = rng.pick(LIST_NAMES);
+    let [a, b] = endsLists(rng);
+    // the first list has the bigger value first, the second the bigger value last (and the reverse for smaller)
+    if ((a[0] > a[a.length - 1]) !== big) a = a.slice().reverse();
+    if ((b[0] < b[b.length - 1]) !== big) b = b.slice().reverse();
+    return { big, xs, fn: big ? 'ends_max' : 'ends_min', args: [[a], [b]] };
+  },
+  build: (p, X) => program([pickFn('bigger', '>'), pickFn('smaller', '<'),
+    S.fn(p.fn, [{ name: p.xs, type: 'list' }], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [xs]) => (p.big ? Math.max : Math.min)(xs[0], xs[xs.length - 1]),
+  ref: p => E.call(p.big ? 'bigger' : 'smaller', [E.index(p.xs, 0), E.index(p.xs, E.bin('-', E.len(p.xs), 1))]),
+  alts: p => [E.call(p.big ? 'bigger' : 'smaller', [E.index(p.xs, E.bin('-', E.len(p.xs), 1)), E.index(p.xs, 0)])],
+  wrongs: p => {
+    const f = p.big ? 'bigger' : 'smaller', g = p.big ? 'smaller' : 'bigger', xs = p.xs, L = E.len(xs);
+    return [E.call(g, [E.index(xs, 0), E.index(xs, E.bin('-', L, 1))]), E.call(f, [E.index(xs, 0), E.index(xs, L)]),
+      E.call(f, [E.index(xs, 1), E.index(xs, E.bin('-', L, 1))]), E.call(f, [E.index(xs, 0), E.index(xs, E.bin('-', L, 2))]),
+      E.call(f, [E.index(xs, 0), E.bin('-', L, 1)]), E.call(f, [E.int(0), E.index(xs, E.bin('-', L, 1))])];
+  },
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.xs, L)})`)} should return the ${p.big ? 'larger' : 'smaller'} of the first and the last item of any list ${tk(vn(p.xs, L))} (at least 3 items, any length).`,
+  form: (p, L) => `Make one call to ${tk(fnName(p.big ? 'bigger' : 'smaller', L))} with the first item, then the last item.`,
+  hints: (p, L) => [
+    `${tk(fnName('bigger', L))} and ${tk(fnName('smaller', L))} each take two numbers. You need two list items as the arguments, separated by a comma.`,
+    `The first item is at index 0. The last is at length − 1, where the length is ${lenWord(L, p.xs)}; a fixed number would only fit one list length.`,
+  ],
+};
+
+WL.findWhile = {
+  plan(rng) {
+    const xs = rng.pick(LIST_NAMES), i = rng.pick(['i', 'pos', 'k']), t = rng.pick(['target', 'wanted', 'goal']);
+    const a = distinctInts(rng, rng.int(5, 7), 1, 60), b = distinctInts(rng, rng.int(4, 6), 1, 60);
+    const hit = rng.int(1, a.length - 1), dup = a.slice(); dup[a.length - 1] = a[hit];
+    const miss = rng.int(61, 99);
+    return { xs, i, t, args: [[a, a[hit]], [dup, a[hit]], [b, miss], [b, b[0]]] };
+  },
+  build: (p, X) => program([S.fn('find_index', [{ name: p.xs, type: 'list' }, p.t], [
+    S.decl(p.i, 0), S.while(X, [S.augAssign(p.i, '+', 1)], 'fill'), S.return(V(p.i)),
+  ], 'int')], []),
+  want: (p, [xs, t]) => (xs.indexOf(t) < 0 ? xs.length : xs.indexOf(t)),
+  ref: p => E.and(E.bin('<', V(p.i), E.len(p.xs)), E.bin('!=', E.index(p.xs, V(p.i)), V(p.t))),
+  wrongs: p => {
+    const I = V(p.i), L = E.len(p.xs), it = E.index(p.xs, I), T = V(p.t);
+    return [E.or(E.bin('<', I, L), E.bin('!=', it, T)), E.and(E.bin('<=', I, L), E.bin('!=', it, T)), E.and(E.bin('<', I, L), E.bin('==', it, T)),
+      E.and(E.bin('!=', it, T), E.bin('<', I, L)), E.and(E.bin('<', I, E.bin('-', L, 1)), E.bin('!=', it, T)), E.and(E.bin('>', I, L), E.bin('!=', it, T)),
+      E.and(E.bin('<', I, L), E.bin('!=', I, T))];
+  },
+  ask: (p, L) => `${tk(`${fnName('find_index', L)}(${vn(p.xs, L)}, ${vn(p.t, L)})`)} should return the position of the first ${tk(vn(p.t, L))} in ${tk(vn(p.xs, L))}, or the length of the list when ${tk(vn(p.t, L))} is not in it. The loop keeps moving ${tk(vn(p.i, L))} on while the search should go on.`,
+  form: (p, L) => `Write the loop condition: two checks joined with ${andWord(L)}, the position check first.`,
+  hints: (p, L) => [
+    `The loop must stop in two cases: ${tk(vn(p.i, L))} has run off the end of the list, or the item at ${tk(vn(p.i, L))} is the one wanted. So it keeps going while neither has happened.`,
+    `Order matters: ${andWord(L)} stops at the first false part, so checking the position first means the list is never read past its end. The length is ${lenWord(L, p.xs)}.`,
+  ],
+};
+
+WL.countRise = {
+  plan(rng) {
+    const up = rng.next() < 0.5, xs = rng.pick(LIST_NAMES), i = rng.pick(['i', 'k', 'pos']), c = rng.pick(['count', 'found', 'hits']);
+    const mk = n => { const a = Array.from({ length: n }, () => rng.int(1, 30)); a[2] = a[1]; return a; };
+    return { up, xs, i, c, fn: up ? 'rises' : 'drops', args: [[mk(6)], [mk(7)], [mk(5)]] };
+  },
+  build: (p, X) => program([S.fn(p.fn, [{ name: p.xs, type: 'list' }], [
+    S.decl(p.c, 0), S.forRange(p.i, 1, E.len(p.xs), 1, [S.if(X, [S.augAssign(p.c, '+', 1)], [], null, 'fill')]), S.return(V(p.c)),
+  ], 'int')], []),
+  want: (p, [xs]) => xs.slice(1).filter((x, j) => (p.up ? x > xs[j] : x < xs[j])).length,
+  ref: p => E.bin(p.up ? '>' : '<', E.index(p.xs, V(p.i)), E.index(p.xs, E.bin('-', V(p.i), 1))),
+  wrongs: p => {
+    const op = p.up ? '>' : '<', back = p.up ? '<' : '>', at = j => E.index(p.xs, j), I = V(p.i);
+    return [E.bin(op, at(I), at(E.bin('+', I, 1))), E.bin(op + '=', at(I), at(E.bin('-', I, 1))), E.bin(back, at(I), at(E.bin('-', I, 1))),
+      E.bin(op, at(I), at(0)), E.bin(op, at(I), E.bin('-', I, 1)), E.bin(op, I, at(E.bin('-', I, 1))), E.bin(op, at(E.bin('-', I, 1)), at(E.bin('-', I, 2)))];
+  },
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.xs, L)})`)} should count how many items are ${p.up ? 'bigger' : 'smaller'} than the item just before them. Equal neighbours do not count.`,
+  form: (p, L) => `Write the ${tk('if')} condition: compare the item at ${tk(vn(p.i, L))} with the one before it (the item at ${tk(vn(p.i, L))} first).`,
+  hints: (p, L) => [
+    `The loop starts at 1 so that every ${tk(vn(p.i, L))} has an item before it. "The item before" is one position back from ${tk(vn(p.i, L))}.`,
+    `Try the example ${p.args[0][0].join(', ')}: it should count ${WL.countRise.want(p, p.args[0])}. Equal neighbours must not count, so pick a comparison that leaves equality out.`,
+  ],
+};
+
+// Expert
+WL.clamp = {
+  plan(rng) {
+    const LO = rng.int(1, 20), HI = LO + rng.int(10, 40), par = rng.pick(['n', 'level', 'speed']);
+    return { LO, HI, par, args: [LO - rng.int(1, 5), LO, rng.int(LO + 1, HI - 1), HI, HI + rng.int(1, 9)].map(a => [a]) };
+  },
+  build: (p, X) => program([pickFn('bigger', '>'), pickFn('smaller', '<'), S.fn('clamp', [p.par], [S.return(X, 'fill')], 'int')], []),
+  want: (p, [n]) => Math.min(Math.max(n, p.LO), p.HI),
+  ref: p => E.call('smaller', [E.call('bigger', [V(p.par), p.LO]), p.HI]),
+  alts: p => {
+    const P = V(p.par), out = [];
+    for (const inner of [[P, E.int(p.LO)], [E.int(p.LO), P]]) for (const sw of [false, true]) {
+      const c = E.call('bigger', inner); out.push(E.call('smaller', sw ? [E.int(p.HI), c] : [c, E.int(p.HI)]));
+    }
+    for (const inner of [[P, E.int(p.HI)], [E.int(p.HI), P]]) for (const sw of [false, true]) {
+      const c = E.call('smaller', inner); out.push(E.call('bigger', sw ? [E.int(p.LO), c] : [c, E.int(p.LO)]));
+    }
+    return out;
+  },
+  wrongs: p => {
+    const P = V(p.par), b = (...a) => E.call('bigger', a), s = (...a) => E.call('smaller', a);
+    return [b(s(P, p.LO), p.HI), s(b(P, p.HI), p.LO), b(b(P, p.LO), p.HI), s(s(P, p.LO), p.HI), s(P, p.HI), b(P, p.LO),
+      s(b(P, p.LO), p.HI + 1), s(b(P, p.LO - 1), p.HI), b(s(P, p.HI), p.HI)];
+  },
+  ask: (p, L) => `${tk(`${fnName('clamp', L)}(${vn(p.par, L)})`)} should keep ${tk(vn(p.par, L))} between ${p.LO} and ${p.HI}: below ${p.LO} it returns ${p.LO}, above ${p.HI} it returns ${p.HI}, otherwise ${tk(vn(p.par, L))} itself.`,
+  form: (p, L) => `Use ${tk(fnName('bigger', L))} and ${tk(fnName('smaller', L))}, one call inside the other.`,
+  hints: (p, L) => [
+    `Split the job in two. Which helper turns anything below ${p.LO} into ${p.LO} (and leaves bigger numbers alone)? Which one turns anything above ${p.HI} into ${p.HI}?`,
+    `Apply one limit, then pass that result to the other helper. Check your answer with ${tk(vn(p.par, L))} = ${p.args[0][0]}, ${p.args[2][0]} and ${p.args[4][0]}: it should give ${p.args.filter((_, j) => j % 2 === 0).map(a => WL.clamp.want(p, a)).join(', ')}.`,
+  ],
+};
+
+WL.digitRule = {
+  plan(rng) {
+    const D = rng.int(1, 9), digits = rng.int(2, 3), TH = 10 ** (digits - 1), par = rng.pick(['n', 'code', 'ticket']);
+    const fn = rng.pick(['is_lucky', 'is_winner', 'matches']);
+    const args = [TH + D, TH - 10 + D < 0 ? D : TH - 10 + D, TH * 3 + D, TH * 3 + ((D + 1) % 10), D, TH, TH + D + 10, TH * 9 + 10 + D];
+    return { D, digits, TH, par, fn, args: [...new Set(args)].map(a => [a]) };
+  },
+  build: (p, X) => program([S.fn(p.fn, [p.par], [S.return(X, 'fill')], 'bool')], []),
+  want: (p, [n]) => n % 10 === p.D && n >= p.TH,
+  ref: p => E.and(E.bin('==', E.bin('%', V(p.par), 10), p.D), E.bin('>=', V(p.par), p.TH)),
+  wrongs: p => {
+    const P = V(p.par), last = E.bin('==', E.bin('%', P, 10), p.D), size = E.bin('>=', P, p.TH);
+    return [E.or(last, size), E.and(E.bin('==', E.bin('/', P, 10), p.D), size), E.and(E.bin('!=', E.bin('%', P, 10), p.D), size),
+      E.and(last, E.bin('>=', P, p.TH * 10)), E.and(last, E.bin('<', P, p.TH)), E.and(E.bin('==', E.bin('%', P, p.D), 0), size),
+      E.and(E.bin('==', E.bin('%', P, 100), p.D), size), E.and(last, E.bin('>=', P, p.digits))];
+  },
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.par, L)})`)} should return ${tk(boolText(true, L))} when ${tk(vn(p.par, L))} ends in the digit ${p.D} AND has at least ${p.digits} digits, and ${tk(boolText(false, L))} otherwise. ${tk(vn(p.par, L))} is never negative.`,
+  form: (p, L) => `Write two checks joined with ${andWord(L)}: the last digit first (with ${tk('%')}), then the size check with ${tk('>=')}.`,
+  hints: (p, L) => [
+    `The last digit of a whole number is the remainder after dividing by 10: ${p.TH * 4 + p.D + 30} % 10 is ${p.D}.`,
+    `"At least ${p.digits} digits" means the number is at least the smallest ${p.digits}-digit number. What is that number?`,
+  ],
+};
+
+WL.safeIndex = {
+  plan(rng) {
+    const xs = rng.pick(LIST_NAMES), i = rng.pick(['i', 'pos', 'k']);
+    const a = Array.from({ length: rng.int(4, 6) }, () => rng.int(1, 20)), z = rng.int(1, a.length - 2);
+    a[z] = 0;
+    const args = [[a, -1], [a, 0], [a, z], [a, a.length - 1], [a, a.length], [a, a.length + rng.int(1, 3)], [a, rng.int(1, a.length - 1)]];
+    return { xs, i, fn: rng.pick(['safe_at', 'can_use', 'is_good']), args };
+  },
+  build: (p, X) => program([S.fn(p.fn, [{ name: p.xs, type: 'list' }, p.i], [S.return(X, 'fill')], 'bool')], []),
+  want: (p, [xs, i]) => i >= 0 && i < xs.length && xs[i] > 0,
+  ref: p => E.and(E.bin('>=', V(p.i), 0), E.bin('<', V(p.i), E.len(p.xs)), E.bin('>', E.index(p.xs, V(p.i)), 0)),
+  wrongs: p => {
+    const I = V(p.i), L = E.len(p.xs), it = E.index(p.xs, I);
+    const lo = E.bin('>=', I, 0), hi = E.bin('<', I, L), pos = E.bin('>', it, 0);
+    return [E.and(E.bin('>', I, 0), hi, pos), E.and(lo, E.bin('<=', I, L), pos), E.or(lo, hi, pos), E.and(pos, lo, hi),
+      E.and(lo, hi, E.bin('>=', it, 0)), E.and(lo, E.bin('<', I, E.bin('-', L, 1)), pos), E.and(lo, hi, E.bin('>', I, 0)), E.and(lo, hi)];
+  },
+  ask: (p, L) => `${tk(`${fnName(p.fn, L)}(${vn(p.xs, L)}, ${vn(p.i, L)})`)} should return ${tk(boolText(true, L))} only when ${tk(vn(p.i, L))} is a valid position in ${tk(vn(p.xs, L))} AND the item there is more than 0. ${tk(vn(p.i, L))} can be any whole number, even negative or too big.`,
+  form: (p, L) => `Write three checks joined with ${andWord(L)}: the lowest valid position, then the highest, then the item.`,
+  hints: (p, L) => [
+    `Valid positions run from 0 to length − 1, and the length is ${lenWord(L, p.xs)}. Anything outside that must give ${tk(boolText(false, L))} without reading the list.`,
+    `${andWord(L)} stops at the first false part, so both position checks must come before the part that reads the item.`,
+  ],
+};
+
+for (const [id, tpl] of Object.entries(WL)) MAKE[`wl:${id}`] = tpl.build;
+
+// ── equivalents ──
+// All variants of an expression reachable by flipping comparisons, swapping +/* operands, reordering
+// and/or parts and moving a literal bound by one (`> 9` ↔ `>= 10`). Each with its number of changes.
+function eqVariants(e, cap = 400) {
+  const one = x => {
+    const out = [[x, 0]];
+    if (x.k === 'bin') {
+      const as = eqVariants(x.a, cap), bs = eqVariants(x.b, cap);
+      const cmp = x.op in FLIPOP, comm = x.op === '+' || x.op === '*';
+      for (const [a, ca] of as) for (const [b, cb] of bs) {
+        const n = ca + cb;
+        if (n) out.push([{ ...x, a, b }, n]);
+        if (cmp || comm) out.push([{ ...x, op: cmp ? FLIPOP[x.op] : x.op, a: b, b: a }, n + 1]);
+        if (b.k === 'int') {
+          const nb = { '>': ['>=', 1], '>=': ['>', -1], '<': ['<=', -1], '<=': ['<', 1] }[x.op];
+          if (nb) out.push([{ ...x, op: nb[0], a, b: E.int(b.v + nb[1]) }, n + 1]);
+        }
+      }
+    } else if (x.k === 'and' || x.k === 'or') {
+      const parts = x.xs.map(y => eqVariants(y, cap));
+      const perms = x.xs.length <= 3 ? permutations(x.xs.map((_, j) => j)) : [x.xs.map((_, j) => j)];
+      const combos = cartesian(parts, cap);
+      for (const perm of perms) {
+        const moved = perm.some((v, j) => v !== j) ? 1 : 0;
+        for (const combo of combos) {
+          const n = combo.reduce((s, [, c]) => s + c, 0) + moved;
+          if (n) out.push([{ ...x, xs: perm.map(j => combo[j][0]) }, n]);
+        }
+      }
+    } else if (x.k === 'not') {
+      for (const [y, c] of eqVariants(x.x, cap)) if (c) out.push([{ ...x, x: y }, c]);
+    }
+    return out.slice(0, cap);
+  };
+  return one(e);
+}
+function permutations(xs) {
+  if (xs.length <= 1) return [xs];
+  return xs.flatMap((x, j) => permutations([...xs.slice(0, j), ...xs.slice(j + 1)]).map(r => [x, ...r]));
+}
+function cartesian(lists, cap) {
+  let out = [[]];
+  for (const l of lists) { out = out.flatMap(o => l.map(v => [...o, v])).slice(0, cap); }
+  return out;
+}
+
+// ── the core: everything about a planned question that does not depend on the language ──
+function wlTests(tplId, p) {
+  const tpl = WL[tplId];
+  return p.args.map(args => ({ entry: wlEntry(tplId, p), args, expect: tpl.want(p, args) }));
+}
+const wlEntry = (tplId, p) => (p.fn || { helperCall: 'total_for', findWhile: 'find_index', clamp: 'clamp' }[tplId]);
+// Correct expressions: the reference first, then template alts and automatic equivalents, each
+// passing every test. Wrong ones: the template's wrong versions that fail at least one test.
+function wlCore(tplId, p) {
+  const tpl = WL[tplId], m = { t: `wl:${tplId}`, p }, spec = { tests: wlTests(tplId, p) };
+  const passes = x => { const prog = buildWith(m, x); return !!prog && meets(prog, spec); };
+  const ref = tpl.ref(p);
+  if (!passes(ref)) return null;
+  const seen = new Set(), right = [];
+  const add = (x, n) => { const k = JSON.stringify(x); if (!seen.has(k)) { seen.add(k); if (passes(x)) right.push([x, n]); } };
+  add(ref, 0);
+  for (const a of tpl.alts ? tpl.alts(p) : []) for (const [v, n] of eqVariants(a)) add(v, n + 1);
+  for (const [v, n] of eqVariants(ref)) add(v, n);
+  right.sort((a, b) => a[1] - b[1]);
+  const wrongs = tpl.wrongs(p).filter(x => !passes(x) && !seen.has(JSON.stringify(x)));
+  return { m, spec, right: right.map(r => r[0]), wrongs };
+}
+
+// The text that fills the blank in one language: render the line with the blank and with the
+// expression, and cut out the difference.
+function fillText(m, x, L) {
+  const withBlank = render(buildWith(m, bl()), L), filled = buildWith(m, x);
+  if (!filled) return null;
+  const line = lineAt(withBlank, 'fill'), full = lineAt(render(filled, L), 'fill');
+  const at = line.indexOf(BLANK);
+  if (at < 0 || line.indexOf(BLANK, at + 1) >= 0) return null;
+  const pre = line.slice(0, at), post = line.slice(at + BLANK.length);
+  if (!full.startsWith(pre) || !full.endsWith(post) || full.length < pre.length + post.length) return null;
+  return full.slice(pre.length, full.length - post.length);
+}
+
+// Accepted texts besides the answer, in priority order, at most 20, deduplicated by the text rule.
+function wlAccepts(core, tpl, L) {
+  const texts = core.right.map(x => fillText(core.m, x, L));
+  if (texts.some(t => !t)) return null;
+  const [answer, ...others] = texts;
+  const cand = [];
+  const sv = spacingVariants(answer);
+  cand.push(...sv.slice(1, 2));
+  for (const t of others) cand.push(t, spacingVariants(t)[1] ?? t);
+  if (tpl.extra) cand.push(...tpl.extra(core.m.p, L));
+  if (L === 'cpp' && answer.includes('(int)')) { const s = answer.replace(/\(int\)/g, ''); cand.push(s, ...spacingVariants(s).slice(1, 2)); }
+  cand.push(...sv.slice(2));
+  const keys = new Set([textKey(answer)]), out = [];
+  for (const t of cand) {
+    const k = textKey(t);
+    if (!t || keys.has(k) || out.length >= 20) continue;
+    keys.add(k); out.push(t);
+  }
+  return { answer, accepts: out };
+}
+
+function wlLang(core, tplId, extra, seed, L) {
+  const tpl = WL[tplId];
+  const acc = wlAccepts(core, tpl, L);
+  if (!acc) return null;
+  const wrongTexts = core.wrongs.map(x => fillText(core.m, x, L)).filter(Boolean);
+  const entry = wlEntry(tplId, core.m.p);
+  const names = buildWith(core.m, bl()).fns.find(f => f.name === entry).params.map(q => vn(q.name, L));
+  const blocks = blocksFor(acc.answer, { distractors: [...wrongTexts, ...decoyTokens(acc.answer), ...names], count: extra, seed });
+  if (!blocks || solutionSize(blocks.solution) < 2 || blocks.tiles.length - solutionSize(blocks.solution) !== extra) return null;
+  if (serialiseBlocks(blocks.tiles, blocks.solution) !== acc.answer) return null;
+  // No wrong version may count as correct.
+  const ok = new Set([acc.answer, ...acc.accepts].map(textKey));
+  if (wrongTexts.some(t => ok.has(textKey(t)))) return null;
+  return { ...acc, blocks, wrongTexts };
+}
+
+const solutionSize = xs => xs.reduce((n, x) => n + (typeof x === 'number' ? 1 : 1 + solutionSize(x.kids)), 0);
+
+// Why a wrong version fails: the first test it gets wrong.
+function wlWhy(m, x, spec, L, show) {
+  const prog = buildWith(m, x);
+  for (const t of spec.tests) {
+    const r = exec(prog, t);
+    const fmt = y => (typeof y === 'boolean' ? boolText(y, L) : String(y));
+    if (!r.ok) return `${L === 'cpp' && r.index ? 'reads past the end of the list' : 'causes an error'} for ${show(t)}`;
+    if (r.returned !== t.expect) return `gives ${tk(fmt(r.returned))} for ${show(t)}, not ${tk(fmt(t.expect))}`;
+  }
+  return 'does not match';
+}
+
+function writeLine(rng, difficulty, lang) {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const tplId = rng.pick(WL_POOL[difficulty]);
+    const p = WL[tplId].plan(rng);
+    const [lo, hi] = WL_EXTRA[difficulty];
+    const extra = rng.int(lo, hi), seed = rng.int(1, 2147483646);
+    const core = wlCore(tplId, p);
+    if (!core || core.wrongs.length < 2) continue;
+    // Decide on every language, so the rng stream never depends on `lang`.
+    const per = {};
+    for (const L of LANG_IDS) { per[L] = wlLang(core, tplId, extra, seed, L); if (!per[L]) break; }
+    if (LANG_IDS.some(L => !per[L])) continue;
+    return presentWriteLine({ tplId, p, extra, seed }, core, per[lang], lang);
+  }
+  throw new Error('could not plan a write-the-line question');
+}
+
+function presentWriteLine(plan, core, v, L) {
+  const tpl = WL[plan.tplId], p = plan.p, m = core.m;
+  const prog = buildWith(m, bl());
+  const entry = wlEntry(plan.tplId, p), params = prog.fns.find(f => f.name === entry).params;
+  const showArgs = t => (t.args.some(Array.isArray)
+    ? `${tk(fnName(entry, L))} with ${params.map((q, j) => `${tk(vn(q.name, L))} = ${Array.isArray(t.args[j]) ? `[${t.args[j].join(', ')}]` : t.args[j]}`).join(' and ')}`
+    : tk(callText(prog, entry, t.args, L)));
+  const fmt = x => (typeof x === 'boolean' ? boolText(x, L) : String(x));
+  const ex = core.spec.tests.slice(0, 2).map(t => `${showArgs(t)} → ${tk(fmt(t.expect))}`).join('; ');
+  const wrongNotes = core.wrongs.slice(0, 2).map((x, j) => `${tk(v.wrongTexts[j] ?? '')} ${wlWhy(m, x, core.spec, L, showArgs)}.`);
+  return {
+    prompt: `${tpl.ask(p, L)} For example: ${ex}.\n\n${code(prog, L)}\n\nType the code that replaces ${tk(BLANK)}: just the expression, without the keyword or brackets around it. ${tpl.form(p, L)} Spaces around operators are optional.`,
+    answerType: 'text', answer: v.answer, accepts: v.accepts,
+    blocks: v.blocks,
+    explanation: `The line needs ${tk(v.answer)}. ` + wrongNotes.join(' '),
+    lang: L,
+    hints: tpl.hints(p, L),
+    meta: { t: m.t, p, lang: L, main: { kind: 'line', tpl: plan.tplId, extra: plan.extra, seed: plan.seed } },
+  };
+}
+
+// verify for write-the-line: rebuild from the plan, rerun the tests (expected values from the
+// template's plain-JS `want`), recompute the accepted texts and the blocks.
+function lineOk(q, m, answer) {
+  const part = m.main, L = q.lang;
+  if (!WL[part.tpl] || m.t !== `wl:${part.tpl}`) return false;
+  const core = wlCore(part.tpl, m.p);
+  if (!core) return false;
+  const v = wlLang(core, part.tpl, part.extra, part.seed, L);
+  if (!v || v.answer !== q.answer) return false;
+  const b = q.blocks;
+  if (!b || !Array.isArray(b.tiles) || b.tiles.length < 2 || b.tiles.length > 24) return false;
+  if (serialiseBlocks(b.tiles, b.solution, b.joiner ?? ' ') !== q.answer) return false;
+  const ok = new Set([v.answer, ...v.accepts].map(textKey));
+  return typeof answer === 'string' && ok.has(textKey(answer));
+}
+
+// ═════════════════════════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═════════════════════════════════════════════════════════════════════════════════════════════
 
@@ -1572,8 +2110,9 @@ const CELLS = {
 
 export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
   const cell = CELLS[subtopic];
-  if (!cell) throw new Error(`Unknown subtopic: ${subtopic}`);
+  if (!cell && subtopic !== 'write-line') throw new Error(`Unknown subtopic: ${subtopic}`);
   if (!DIFFS.includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
+  if (subtopic === 'write-line') return writeLine(rng, difficulty, lang);
   const makers = cell[difficulty];
   let last;
   // Retries continue the same rng stream, so a seed still means the same question in every language.

@@ -68,3 +68,21 @@ Example: a function returns `n * ___ + 2`, and calling it with 4 prints 14. So 4
 **Watch out:** a blank inside the function is the same value on every call, so the second call uses it too.
 
 **Expert (recursion and helpers):** for a function that calls itself, start at the stopping case and build the values upwards: f(stop), f(stop + 1), … For a helper called inside a loop, work out the helper's result for each value first, then count.
+
+## Write the line
+
+1. Read what the function should return, and both examples.
+2. Look at where the blank sits: after `return` it is a value; after `if` or `while` it is a condition that is true or false.
+3. Use the pieces the question names (a variable, a number, a helper function) and nothing else.
+4. Check your expression with each example before you submit it.
+
+Example: "true when `age` is at least 18" is the comparison `age >= 18`. It is already true or false, so it needs no `if`.
+
+**Watch out:** write only the expression, without `if`, `while`, `return` or the brackets around a C# or C++ condition. In C# and C++ "and" is `&&`; in Python and GDScript it is `and`.
+
+**Lengths and calls:** the length of a list is `len(xs)` in Python, `xs.Count` in C#, `xs.size()` in C++ and GDScript, and `xs.len()` in Rust (`xs.len() as i64` when it is used as a number). A call is the function name followed by its arguments in brackets, separated by commas.
+
+**Expert (several checks):** when one check guards another, such as "the position is valid" before "the item there is positive", put the guard first: `and` stops at the first false part, so the item is never read outside the list.
+
+**Blocks:** a block with `(…)` or `[…]` holds other blocks. Place it first, then fill its slot.
+

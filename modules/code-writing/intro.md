@@ -1,6 +1,6 @@
 # Code Writing
 
-Each question shows a short program with a gap marked `___`. Your job is to complete it so the program does what the question asks. You never type whole programs: you either **type a number** for the blank or **pick** the expression, condition or line that fits.
+Each question shows a short program with a gap marked `___`. Your job is to complete it so the program does what the question asks. You never type whole programs: you **type a number** for the blank, **pick** the expression, condition or line that fits, or, in *Write the line*, **type the missing expression** yourself.
 
 ## Your language
 
@@ -12,6 +12,12 @@ Code is shown in the language you pick: **Python, C#, C++, GDScript or Rust**. C
 - Then trace the code line by line with the numbers from the question.
 - When a question asks for the **smallest** number, several values would work. Give the lowest one (0 or more).
 - Two-part questions ask for the blank **and** what the finished program prints.
+
+## Write the line
+
+Type the code that replaces `___`: just the expression, such as a condition or the value after `return`, not the keyword or brackets around it. Spaces around operators are optional (`n % 2 == 0` and `n%2==0` both count), and genuinely equal forms count too, such as `0 < n` for `n > 0`. The question tells you which pieces to use, for example which helper function to call.
+
+If you would rather not type, switch to **Blocks** and build the expression from blocks. A block like `len(…)` or `xs[…]` has a slot: tap it, then tap the blocks that go inside. At Hard and Expert some blocks are spares that don't belong, and an answer built from blocks earns a little less credit (85% at Hard, 70% at Expert) than a typed one.
 
 ## Levels
 

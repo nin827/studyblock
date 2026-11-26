@@ -17,6 +17,10 @@ Read short functions the way a reviewer does: work out what they do, spot the li
 - **Returns too early**: a `return` inside the loop, so the function stops after the first pass.
 - **Infinite loop**: the loop variable never changes, so the loop never ends.
 
+## Rewrite the buggy line
+
+Instead of picking a fix, type the corrected line yourself. The trailing `:`, `;` or `{` is optional, and so are spaces around operators. Easy and Medium tell you which line is wrong; Hard and Expert leave that to you. You can also switch to **Blocks** and build the line from blocks, including slot blocks such as `range(…)` that hold other blocks. At Hard and Expert, block answers earn a little less credit (85% and 70%) than typed ones.
+
 ## Levels
 
 - **Easy** to **Hard**: one bug per function, with short programs to predict.

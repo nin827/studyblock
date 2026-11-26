@@ -63,3 +63,18 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 **Watch out:** a changed loop *end* is usually an off-by-one error, even though it is written with a comparison or a `+ 1`.
 
 **Expert (two bugs):** name each bug on its own line. A changed inner-loop start (such as `j` starting at `i` instead of `i + 1`) is an off-by-one error too.
+
+## Rewrite the buggy line
+
+1. Read the spec and the example result.
+2. Trace the example and find the first line where the trace goes wrong (Easy and Medium tell you the line).
+3. Work out what that line should do, and change only the part that is wrong.
+4. Type the whole corrected line. The trailing `:`, `;` or `{` is optional.
+5. Trace the example again with your line in place.
+
+Example: the spec is "1 + 2 + … + n" and the loop line is `for i in range(1, n):`. It stops before `n`, so the fix is `for i in range(1, n + 1)`.
+
+**Watch out:** keep the rest of the line exactly as it was: the same names and the same order. In C# and C++ a loop that should include `n` can end with `i < n + 1` or `i <= n`; in Rust, `1..n + 1` or `1..=n`.
+
+**Blocks:** the blocks include pieces of the buggy line, so don't just rebuild what is already there.
+
