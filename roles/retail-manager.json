@@ -1,0 +1,46 @@
+{
+  "id": "retail-manager",
+  "title": "Retail Manager",
+  "icon": "store",
+  "flags": ["experience_heavy"],
+  "description": "Footfall and staffing, markups and margins, deals and sale prices, stock turn and shrinkage: the arithmetic of running a shop, with every rule stated.",
+  "exclusive": "role-retail-manager",
+  "mix": {
+    "shopping-money": { "weight": 4, "subtopics": ["unit-price", "discounts", "budgets"] },
+    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["percentages", "proportion"] },
+    "marketing": { "weight": 1, "subtopics": ["pricing"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "accounting-terms": { "weight": 1, "subtopics": ["terms", "statements"] }
+  },
+  "subroles": [
+    {
+      "id": "store-manager",
+      "title": "Store Manager",
+      "icon": "users",
+      "description": "Staff hours against footfall, conversion rate, basket size, sales per hour and stock loss.",
+      "mix": {
+        "ratios-percentages": { "weight": 3, "subtopics": ["percentages", "proportion"] },
+        "shopping-money": { "weight": 2, "subtopics": ["budgets", "unit-price"] },
+        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "business-math": { "weight": 1, "subtopics": ["percentages"] },
+        "accounting-terms": { "weight": 1, "subtopics": ["statements"] }
+      },
+      "exclusiveSubtopics": ["footfall-staffing", "stock-shrinkage"]
+    },
+    {
+      "id": "merchandiser",
+      "title": "Merchandiser",
+      "icon": "tags",
+      "description": "Markups against margins, markdowns and sale prices, multi-buy deals, stock turn and shrinkage.",
+      "mix": {
+        "shopping-money": { "weight": 4, "subtopics": ["discounts", "unit-price"] },
+        "business-math": { "weight": 3, "subtopics": ["percentages", "margins"] },
+        "marketing": { "weight": 2, "subtopics": ["pricing"] },
+        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] },
+        "accounting-terms": { "weight": 1, "subtopics": ["terms"] }
+      },
+      "exclusiveSubtopics": ["markup-margin", "deal-compare", "stock-shrinkage"]
+    }
+  ]
+}

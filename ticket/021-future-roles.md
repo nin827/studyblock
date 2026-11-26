@@ -20,3 +20,10 @@ All the earlier candidates have been built. Still parked: **Teacher** and **Nutr
 
 ## Done
 Teacher (Examiner, Tutor) and Nutritionist (Food Label Analyst, Sports Nutrition Analyst, with a start notice) are built.
+
+## Later batches (2026-11-26)
+- Batch 5: Economist, Historian, Linguist, Geographer.
+- Batch 6 (with new subjects Structures, in a new Engineering domain, and Project Scheduling, in Business): Civil Engineer, Architect, Project Manager.
+- Batch 7: Electrician (start notice), Pilot (start notice), Data Scientist, Land Surveyor.
+- Batch 8, filling subjects no role used (Logic Puzzles, Shopping & Money): Investigator, Chef, Retail Manager.
+- Every active subject is now used by at least one role (29 roles). Each batch had a Sonnet build and an Opus review.

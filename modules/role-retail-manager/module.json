@@ -1,0 +1,16 @@
+{
+  "id": "role-retail-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join footfall and staffing, markups and margins, multi-buy deals and stock loss, as a retail manager meets them (arithmetic practice with made-up figures).",
+  "icon": "store",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "footfall-staffing", "title": "Footfall and staffing", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "markup-margin", "title": "Markup and margin", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "deal-compare", "title": "Deals and sale prices", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "stock-shrinkage", "title": "Stock turn and shrinkage", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}
