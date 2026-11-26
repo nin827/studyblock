@@ -45,22 +45,78 @@ function levelStats(key, level) {
   return { attempts: list.length, best: list.length ? Math.max(...list.map(percent)) : null };
 }
 
-const EXPERIENCE_NOTE = `> [!IMPORTANT] Experience matters most
-> This role is mostly learned on the job. Theory and knowledge, which is what these questions practise, are only a small part of the real work: experience, judgement and working with people count for more.`;
+// Role flags: tags (icon + label) and callouts (markdown). CALLOUT_ORDER is the fixed display order.
+const FLAGS = {
+  experience_heavy: { label: 'Experience-led', icon: 'hammer', kind: 'IMPORTANT', title: 'Experience matters most',
+    text: 'This role is mostly learned on the job. Theory and knowledge, which is what these questions practise, are only a small part of the real work: experience, judgement and working with people count for more.' },
+  safety_critical: { label: 'Safety-critical', icon: 'shield-alert', kind: 'WARNING', title: 'Safety-critical work',
+    text: 'Mistakes in the real job can hurt people. Rules here are simplified; real work follows official standards and procedures.' },
+  authority_required: { label: 'Authority required', icon: 'gavel', kind: 'WARNING', title: 'Practice only',
+    text: 'Real decisions here need a qualified, authorised professional. These questions are practice, not professional, financial or health advice.' },
+  license_oriented: { label: 'License-oriented', icon: 'badge-check', kind: 'NOTE', title: 'Licence or qualification',
+    text: "The real job usually needs a formal licence, certification or qualification. This practice doesn't replace it." },
+  region_specific: { label: 'Varies by country', icon: 'globe', kind: 'NOTE', title: 'Rules vary by country',
+    text: 'Laws and standards differ between countries; questions use general textbook versions.' },
+  tool_heavy: { label: 'Tool-driven', icon: 'wrench', kind: 'TIP', title: 'Real work runs on tools',
+    text: 'Day to day this is done in software (spreadsheets, SQL, engines, simulators). These questions practise the reasoning behind the tools.' },
+  creative_oriented: { label: 'Creative-oriented', icon: 'palette', kind: 'TIP', title: 'Taste and judgement count',
+    text: 'Creative choices matter; theory here is a toolkit, not a rulebook.' },
+  theory_heavy: { label: 'Theory-led', icon: 'book-open' },
+};
+const CALLOUT_ORDER = ['safety_critical', 'authority_required', 'experience_heavy', 'license_oriented', 'region_specific', 'tool_heavy', 'creative_oriented'];
 
-// "About this role": the exclusive module's intro.md, with the experience_based callout first.
-// The flag is read from the role's own JSON as a strict boolean (a subrole inherits it).
-async function aboutHtml(role) {
-  let flag = false;
-  if (isValidId(role.id)) {
-    try { flag = (await loadJSON(`roles/${role.id}.json`))?.experience_based === true; } catch { /* no flag */ }
+const warnedFlags = new Set();
+// Known flag ids of one raw role/subrole object (legacy experience_based: true counts); unknown ids warn once per role.
+function parseFlags(obj, roleId) {
+  const out = [];
+  if (!obj || typeof obj !== 'object') return out;
+  if (obj.experience_based === true) out.push('experience_heavy');
+  if (Array.isArray(obj.flags)) {
+    for (let f of obj.flags) {
+      if (f === 'experience_based') f = 'experience_heavy'; // legacy alias
+      if (typeof f === 'string' && Object.hasOwn(FLAGS, f)) { if (!out.includes(f)) out.push(f); }
+      else if (!warnedFlags.has(roleId)) {
+        warnedFlags.add(roleId);
+        console.warn(`StudyBlock: role ${roleId}: ignoring unknown flag ${JSON.stringify(String(f)).slice(0, 40)}`);
+      }
+    }
   }
+  return out;
+}
+
+const rawRoles = new Map();
+async function rawRole(roleId) {
+  if (!isValidId(roleId)) return null;
+  if (!rawRoles.has(roleId)) rawRoles.set(roleId, loadJSON(`roles/${roleId}.json`).catch(() => null));
+  return rawRoles.get(roleId);
+}
+// { role: [flags], sub: Map(subroleId -> [flags]) } from the role's own JSON.
+async function roleFlagData(roleId) {
+  const raw = await rawRole(roleId);
+  const sub = new Map();
+  for (const s of Array.isArray(raw?.subroles) ? raw.subroles : []) {
+    if (s && typeof s === 'object' && isValidId(s.id)) sub.set(s.id, parseFlags(s, roleId));
+  }
+  return { role: parseFlags(raw, roleId), sub };
+}
+const combine = (...lists) => [...new Set(lists.flat())];
+
+function tagsHtml(flags) {
+  if (!flags.length) return '';
+  return `<ul class="flag-tags" aria-label="Role traits">${flags.map(f =>
+    `<li class="flag-tag">${icon(FLAGS[f].icon)}<span>${esc(FLAGS[f].label)}</span></li>`).join('')}</ul>`;
+}
+
+// "About this role": callouts for the flags (fixed order), then the exclusive module's intro.md.
+async function aboutHtml(role, flags) {
   let intro = null;
   if (role.exclusive && isValidId(role.exclusive)) {
     try { intro = await loadText(`modules/${role.exclusive}/intro.md`); } catch { /* no intro */ }
   }
-  if (!flag && !intro) return '';
-  const md = (flag ? EXPERIENCE_NOTE + '\n\n' : '') + (intro || '');
+  const notes = CALLOUT_ORDER.filter(f => flags.includes(f))
+    .map(f => `> [!${FLAGS[f].kind}] ${FLAGS[f].title}\n> ${FLAGS[f].text}`);
+  if (!notes.length && !intro) return '';
+  const md = notes.join('\n\n') + (notes.length && intro ? '\n\n' : '') + (intro || '');
   return `<section class="card prose" aria-label="About this role">${renderMarkdown(md)}</section>`;
 }
 
@@ -77,7 +133,9 @@ async function loadRolesSafe(root, ctx) {
 export async function render(root, params, ctx) {
   const roles = await loadRolesSafe(root, ctx);
   if (!roles || !ctx.alive()) return;
-  const cards = roles.map(r => {
+  const fdata = await Promise.all(roles.map(r => roleFlagData(r.id)));
+  if (!ctx.alive()) return;
+  const cards = roles.map((r, i) => {
     const s = getStats({ module: ROLE_MODULE, subtopic: r.id });
     return `<article class="card role-card">
       <a class="role-card-main" href="${roleHref(r.id)}">
@@ -85,6 +143,7 @@ export async function render(root, params, ctx) {
         <span class="role-card-text">
           <span class="role-card-title">${esc(r.title)}</span>
           <span class="role-card-sub">${esc(r.description)}</span>
+          ${tagsHtml(fdata[i].role)}
           <span class="role-card-meta">${s.attempts ? `${s.attempts} quiz${s.attempts === 1 ? '' : 'zes'} · best <span class="score ${scoreClass(s.best)}">${fmtPct(s.best)}</span>` : 'Not started'}</span>
         </span>
         <span class="tool-card-go" aria-hidden="true">${icon('chevron-right')}</span>
@@ -143,7 +202,9 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
     const subs = m && !all ? entry.subtopics.map(id => m.subtopics.find(s => s.id === id)?.title ?? id) : [];
     return { ...x, title: m ? String(m.title ?? m.id) : x.module, d, subs };
   });
-  const about = await aboutHtml(role);
+  const fd = await roleFlagData(role.id);
+  const flags = combine(fd.role, subrole ? (fd.sub.get(subrole.id) || []) : []);
+  const about = await aboutHtml(role, flags);
   if (!ctx.alive()) return;
   const label = `Subjects: ${shares.map(p => `${p.title} ${fmtShare(p.share)}`).join(', ')}`;
 
@@ -201,6 +262,7 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
         </div>
       </div>
       ${me.description ? `<p>${esc(me.description)}</p>` : ''}
+      ${tagsHtml(flags)}
     </section>
     ${about}
     <section class="card practice ${mode === GUIDED ? 'is-guided' : ''}" id="practice-card">

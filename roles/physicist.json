@@ -2,21 +2,52 @@
   "id": "physicist",
   "title": "Physicist",
   "icon": "atom",
+  "flags": [
+    "theory_heavy"
+  ],
   "description": "Motion, energy, waves, heat, electricity, orbits and radioactivity, worked with trigonometry, logarithms and calculus.",
   "exclusive": "role-physicist",
   "mix": {
-    "kinematics": { "weight": 2 },
-    "forces-energy": { "weight": 3 },
-    "electricity": { "weight": 2 },
-    "waves": { "weight": 2 },
-    "thermal-physics": { "weight": 2 },
-    "gases-pressure": { "weight": 1 },
-    "radioactivity": { "weight": 2 },
-    "astronomy": { "weight": 2 },
-    "unit-conversion": { "weight": 1 },
-    "trigonometry": { "weight": 1 },
-    "calculus": { "weight": 1, "subtopics": ["derivatives", "integration"] },
-    "exponents-logs": { "weight": 1 }
+    "kinematics": {
+      "weight": 2
+    },
+    "forces-energy": {
+      "weight": 3
+    },
+    "electricity": {
+      "weight": 2
+    },
+    "waves": {
+      "weight": 2
+    },
+    "thermal-physics": {
+      "weight": 2
+    },
+    "gases-pressure": {
+      "weight": 1
+    },
+    "radioactivity": {
+      "weight": 2
+    },
+    "astronomy": {
+      "weight": 2
+    },
+    "unit-conversion": {
+      "weight": 1
+    },
+    "trigonometry": {
+      "weight": 1
+    },
+    "calculus": {
+      "weight": 1,
+      "subtopics": [
+        "derivatives",
+        "integration"
+      ]
+    },
+    "exponents-logs": {
+      "weight": 1
+    }
   },
   "subroles": [
     {
@@ -25,30 +56,78 @@
       "icon": "telescope",
       "description": "Orbits, distances, light and gravity across the solar system and beyond.",
       "mix": {
-        "astronomy": { "weight": 4 },
-        "forces-energy": { "weight": 2 },
-        "kinematics": { "weight": 2 },
-        "waves": { "weight": 2 },
-        "trigonometry": { "weight": 2 },
-        "unit-conversion": { "weight": 1 },
-        "exponents-logs": { "weight": 1, "subtopics": ["index-laws", "logarithms"] }
+        "astronomy": {
+          "weight": 4
+        },
+        "forces-energy": {
+          "weight": 2
+        },
+        "kinematics": {
+          "weight": 2
+        },
+        "waves": {
+          "weight": 2
+        },
+        "trigonometry": {
+          "weight": 2
+        },
+        "unit-conversion": {
+          "weight": 1
+        },
+        "exponents-logs": {
+          "weight": 1,
+          "subtopics": [
+            "index-laws",
+            "logarithms"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["launch-motion", "orbit-signals"]
+      "exclusiveSubtopics": [
+        "launch-motion",
+        "orbit-signals"
+      ]
     },
     {
       "id": "nuclear-physicist",
       "title": "Nuclear Physicist",
+      "flags": [
+        "safety_critical"
+      ],
       "icon": "radiation",
       "description": "Decay, half-life, safe handling and the heat and power that radiation sources and reactors involve.",
       "mix": {
-        "radioactivity": { "weight": 4 },
-        "exponents-logs": { "weight": 3, "subtopics": ["logarithms", "solving", "growth-decay"] },
-        "thermal-physics": { "weight": 2 },
-        "electricity": { "weight": 2 },
-        "forces-energy": { "weight": 1, "subtopics": ["work-power", "energy"] },
-        "unit-conversion": { "weight": 1 }
+        "radioactivity": {
+          "weight": 4
+        },
+        "exponents-logs": {
+          "weight": 3,
+          "subtopics": [
+            "logarithms",
+            "solving",
+            "growth-decay"
+          ]
+        },
+        "thermal-physics": {
+          "weight": 2
+        },
+        "electricity": {
+          "weight": 2
+        },
+        "forces-energy": {
+          "weight": 1,
+          "subtopics": [
+            "work-power",
+            "energy"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1
+        }
       },
-      "exclusiveSubtopics": ["decay-safety", "heating-power"]
+      "exclusiveSubtopics": [
+        "decay-safety",
+        "heating-power"
+      ]
     }
   ]
 }

@@ -2,31 +2,95 @@
   "id": "operations-manager",
   "title": "Operations Manager",
   "icon": "truck",
+  "flags": [
+    "experience_heavy"
+  ],
   "description": "Routes, loads, staffing and stock, planned so that the goods arrive on time and the costs add up.",
   "exclusive": "role-operations-manager",
   "mix": {
-    "management": { "weight": 1, "subtopics": ["structure", "porter"] },
-    "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
-    "business-case": { "weight": 3, "subtopics": ["inventory", "hiring", "unit-economics"] },
-    "travel": { "weight": 2 },
-    "time-dates": { "weight": 2 },
-    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
-    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] }
+    "management": {
+      "weight": 1,
+      "subtopics": [
+        "structure",
+        "porter"
+      ]
+    },
+    "business-math": {
+      "weight": 2,
+      "subtopics": [
+        "percentages",
+        "margins"
+      ]
+    },
+    "business-case": {
+      "weight": 3,
+      "subtopics": [
+        "inventory",
+        "hiring",
+        "unit-economics"
+      ]
+    },
+    "travel": {
+      "weight": 2
+    },
+    "time-dates": {
+      "weight": 2
+    },
+    "statistics": {
+      "weight": 1,
+      "subtopics": [
+        "mean-median-mode",
+        "weighted-average"
+      ]
+    },
+    "ratios-percentages": {
+      "weight": 2,
+      "subtopics": [
+        "proportion",
+        "percentages"
+      ]
+    }
   },
   "subroles": [
     {
       "id": "logistics-coordinator",
       "title": "Logistics Coordinator",
+      "flags": [
+        "region_specific"
+      ],
       "icon": "route",
       "description": "Drive times, arrival times across time zones, and how many trucks a load needs.",
       "mix": {
-        "travel": { "weight": 4 },
-        "time-dates": { "weight": 3 },
-        "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
-        "business-math": { "weight": 1, "subtopics": ["percentages"] },
-        "business-case": { "weight": 1, "subtopics": ["unit-economics"] }
+        "travel": {
+          "weight": 4
+        },
+        "time-dates": {
+          "weight": 3
+        },
+        "ratios-percentages": {
+          "weight": 2,
+          "subtopics": [
+            "proportion",
+            "percentages"
+          ]
+        },
+        "business-math": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        },
+        "business-case": {
+          "weight": 1,
+          "subtopics": [
+            "unit-economics"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["route-timing", "load-planning"]
+      "exclusiveSubtopics": [
+        "route-timing",
+        "load-planning"
+      ]
     },
     {
       "id": "production-planner",
@@ -34,13 +98,45 @@
       "icon": "factory",
       "description": "Crew size, labour cost, reorder points and when the next order must go out.",
       "mix": {
-        "business-case": { "weight": 4, "subtopics": ["inventory", "hiring", "unit-economics"] },
-        "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
-        "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "weighted-average"] },
-        "management": { "weight": 1, "subtopics": ["structure"] },
-        "time-dates": { "weight": 1, "subtopics": ["calendar"] }
+        "business-case": {
+          "weight": 4,
+          "subtopics": [
+            "inventory",
+            "hiring",
+            "unit-economics"
+          ]
+        },
+        "business-math": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "margins"
+          ]
+        },
+        "statistics": {
+          "weight": 2,
+          "subtopics": [
+            "mean-median-mode",
+            "weighted-average"
+          ]
+        },
+        "management": {
+          "weight": 1,
+          "subtopics": [
+            "structure"
+          ]
+        },
+        "time-dates": {
+          "weight": 1,
+          "subtopics": [
+            "calendar"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["staffing-plan", "stock-reorder"]
+      "exclusiveSubtopics": [
+        "staffing-plan",
+        "stock-reorder"
+      ]
     }
   ]
 }

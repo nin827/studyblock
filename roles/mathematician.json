@@ -2,6 +2,9 @@
   "id": "mathematician",
   "title": "Mathematician",
   "icon": "pi",
+  "flags": [
+    "theory_heavy"
+  ],
   "description": "Pure and applied maths across algebra, calculus, number theory, sequences and chance.",
   "exclusive": "role-mathematician",
   "mix": {
@@ -92,6 +95,9 @@
     {
       "id": "actuary",
       "title": "Actuary",
+      "flags": [
+        "license_oriented"
+      ],
       "icon": "shield-check",
       "description": "Risk and money over time: probability, expected values, growth and annuities.",
       "mix": {

@@ -1829,6 +1829,10 @@ sb-graph.static-graph { display: block; margin: 6px 0 4px; border: 1px solid var
 .role-card-title { font-weight: 700; font-size: 18px; letter-spacing: -0.01em; }
 .role-card-sub { color: var(--text-2); font-size: 14px; }
 .role-card-meta { color: var(--muted); font-size: 13px; }
+.flag-tags { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.flag-tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--sunken); color: var(--text-2); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+.flag-tag .icon { width: 14px; height: 14px; flex: none; }
+.page-head .flag-tags { margin-top: 10px; }
 .role-card-main .tool-card-go { align-self: center; }
 @media (hover: hover) { .role-card-main:hover .role-card-title { text-decoration: underline; } }
 .role-subs { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 10px; }

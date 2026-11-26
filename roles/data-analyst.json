@@ -2,16 +2,48 @@
   "id": "data-analyst",
   "title": "Data Analyst",
   "icon": "chart-line",
+  "flags": [
+    "experience_heavy",
+    "tool_heavy"
+  ],
   "description": "Turns data into answers: queries, experiments, KPIs and the statistics behind a call.",
   "exclusive": "role-data-analyst",
   "mix": {
-    "sql-queries": { "weight": 3 },
-    "statistics": { "weight": 3 },
-    "probability": { "weight": 2 },
-    "ratios-percentages": { "weight": 2, "subtopics": ["ratios", "percentages"] },
-    "business-math": { "weight": 1, "subtopics": ["percentages"] },
-    "data-representation": { "weight": 1, "subtopics": ["characters", "compression"] },
-    "number-patterns": { "weight": 1, "subtopics": ["numbers"] }
+    "sql-queries": {
+      "weight": 3
+    },
+    "statistics": {
+      "weight": 3
+    },
+    "probability": {
+      "weight": 2
+    },
+    "ratios-percentages": {
+      "weight": 2,
+      "subtopics": [
+        "ratios",
+        "percentages"
+      ]
+    },
+    "business-math": {
+      "weight": 1,
+      "subtopics": [
+        "percentages"
+      ]
+    },
+    "data-representation": {
+      "weight": 1,
+      "subtopics": [
+        "characters",
+        "compression"
+      ]
+    },
+    "number-patterns": {
+      "weight": 1,
+      "subtopics": [
+        "numbers"
+      ]
+    }
   },
   "subroles": [
     {
@@ -20,13 +52,48 @@
       "icon": "layout-dashboard",
       "description": "Dashboards and KPIs: SQL aggregates, percentages and the cost of keeping the data.",
       "mix": {
-        "sql-queries": { "weight": 3, "subtopics": ["select-where", "aggregates", "group-join"] },
-        "ratios-percentages": { "weight": 3, "subtopics": ["ratios", "percentages"] },
-        "business-math": { "weight": 2, "subtopics": ["percentages", "margins"] },
-        "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
-        "data-representation": { "weight": 1, "subtopics": ["characters", "compression"] }
+        "sql-queries": {
+          "weight": 3,
+          "subtopics": [
+            "select-where",
+            "aggregates",
+            "group-join"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 3,
+          "subtopics": [
+            "ratios",
+            "percentages"
+          ]
+        },
+        "business-math": {
+          "weight": 2,
+          "subtopics": [
+            "percentages",
+            "margins"
+          ]
+        },
+        "statistics": {
+          "weight": 1,
+          "subtopics": [
+            "mean-median-mode",
+            "weighted-average"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "characters",
+            "compression"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["kpi-review", "query-outliers", "storage-cost"]
+      "exclusiveSubtopics": [
+        "kpi-review",
+        "query-outliers",
+        "storage-cost"
+      ]
     },
     {
       "id": "research-analyst",
@@ -34,13 +101,37 @@
       "icon": "flask-conical",
       "description": "Statistics, probability and sampling: is the effect real, and is the sample big enough?",
       "mix": {
-        "statistics": { "weight": 3 },
-        "probability": { "weight": 3 },
-        "ratios-percentages": { "weight": 1, "subtopics": ["proportion", "percentages"] },
-        "sql-queries": { "weight": 1, "subtopics": ["select-where", "aggregates"] },
-        "number-patterns": { "weight": 1, "subtopics": ["numbers"] }
+        "statistics": {
+          "weight": 3
+        },
+        "probability": {
+          "weight": 3
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "proportion",
+            "percentages"
+          ]
+        },
+        "sql-queries": {
+          "weight": 1,
+          "subtopics": [
+            "select-where",
+            "aggregates"
+          ]
+        },
+        "number-patterns": {
+          "weight": 1,
+          "subtopics": [
+            "numbers"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["ab-test", "query-outliers"]
+      "exclusiveSubtopics": [
+        "ab-test",
+        "query-outliers"
+      ]
     }
   ]
 }

@@ -2,6 +2,10 @@
   "id": "business-analyst",
   "title": "Business Analyst",
   "icon": "briefcase-business",
+  "flags": [
+    "experience_heavy",
+    "tool_heavy"
+  ],
   "description": "Turns business data into decisions: queries, margins, forecasts and the case for or against a plan.",
   "exclusive": "role-business-analyst",
   "mix": {
@@ -58,6 +62,9 @@
     {
       "id": "financial-analyst",
       "title": "Financial Analyst",
+      "flags": [
+        "authority_required"
+      ],
       "icon": "landmark",
       "description": "Valuations, loans, returns and statements: the numbers behind investment decisions.",
       "mix": {

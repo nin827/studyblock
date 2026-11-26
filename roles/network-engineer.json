@@ -2,15 +2,50 @@
   "id": "network-engineer",
   "title": "Network Engineer",
   "icon": "network",
+  "flags": [
+    "experience_heavy",
+    "tool_heavy"
+  ],
   "description": "Subnets, transfer times, ciphers and logs, worked from the address plan to the security alert.",
   "exclusive": "role-network-engineer",
   "mix": {
-    "networking": { "weight": 5 },
-    "number-bases": { "weight": 2, "subtopics": ["binary", "hexadecimal"] },
-    "data-representation": { "weight": 1, "subtopics": ["characters", "compression"] },
-    "number-theory": { "weight": 2, "subtopics": ["ciphers", "keys-rsa"] },
-    "boolean-logic": { "weight": 1, "subtopics": ["gates", "truth-tables"] },
-    "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] }
+    "networking": {
+      "weight": 5
+    },
+    "number-bases": {
+      "weight": 2,
+      "subtopics": [
+        "binary",
+        "hexadecimal"
+      ]
+    },
+    "data-representation": {
+      "weight": 1,
+      "subtopics": [
+        "characters",
+        "compression"
+      ]
+    },
+    "number-theory": {
+      "weight": 2,
+      "subtopics": [
+        "ciphers",
+        "keys-rsa"
+      ]
+    },
+    "boolean-logic": {
+      "weight": 1,
+      "subtopics": [
+        "gates",
+        "truth-tables"
+      ]
+    },
+    "unit-conversion": {
+      "weight": 1,
+      "subtopics": [
+        "time-speed"
+      ]
+    }
   },
   "subroles": [
     {
@@ -19,26 +54,83 @@
       "icon": "router",
       "description": "Subnetting, addressing and throughput: sizing blocks and timing transfers.",
       "mix": {
-        "networking": { "weight": 6 },
-        "number-bases": { "weight": 2, "subtopics": ["binary", "binary-arithmetic"] },
-        "data-representation": { "weight": 1, "subtopics": ["compression"] },
-        "unit-conversion": { "weight": 1, "subtopics": ["time-speed"] }
+        "networking": {
+          "weight": 6
+        },
+        "number-bases": {
+          "weight": 2,
+          "subtopics": [
+            "binary",
+            "binary-arithmetic"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "compression"
+          ]
+        },
+        "unit-conversion": {
+          "weight": 1,
+          "subtopics": [
+            "time-speed"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["subnet-plan", "transfer-window"]
+      "exclusiveSubtopics": [
+        "subnet-plan",
+        "transfer-window"
+      ]
     },
     {
       "id": "security-analyst",
       "title": "Security Analyst",
+      "flags": [
+        "license_oriented"
+      ],
       "icon": "shield-check",
       "description": "Ciphers worked by hand, keys, log counts and binary flags behind an alert.",
       "mix": {
-        "number-theory": { "weight": 5, "subtopics": ["ciphers", "keys-rsa", "modular"] },
-        "number-bases": { "weight": 2, "subtopics": ["binary", "hexadecimal"] },
-        "boolean-logic": { "weight": 2, "subtopics": ["gates", "truth-tables"] },
-        "data-representation": { "weight": 1, "subtopics": ["characters"] },
-        "networking": { "weight": 1, "subtopics": ["ip-binary", "masks-cidr"] }
+        "number-theory": {
+          "weight": 5,
+          "subtopics": [
+            "ciphers",
+            "keys-rsa",
+            "modular"
+          ]
+        },
+        "number-bases": {
+          "weight": 2,
+          "subtopics": [
+            "binary",
+            "hexadecimal"
+          ]
+        },
+        "boolean-logic": {
+          "weight": 2,
+          "subtopics": [
+            "gates",
+            "truth-tables"
+          ]
+        },
+        "data-representation": {
+          "weight": 1,
+          "subtopics": [
+            "characters"
+          ]
+        },
+        "networking": {
+          "weight": 1,
+          "subtopics": [
+            "ip-binary",
+            "masks-cidr"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["cipher-decode", "log-flags"]
+      "exclusiveSubtopics": [
+        "cipher-decode",
+        "log-flags"
+      ]
     }
   ]
 }

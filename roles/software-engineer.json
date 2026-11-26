@@ -2,6 +2,10 @@
   "id": "software-engineer",
   "title": "Software Engineer",
   "icon": "code-xml",
+  "flags": [
+    "experience_heavy",
+    "tool_heavy"
+  ],
   "description": "Reads, writes and reviews code, picks the right algorithm and talks to databases and networks.",
   "exclusive": "role-software-engineer",
   "mix": {
@@ -89,6 +93,9 @@
     {
       "id": "fintech-engineer",
       "title": "Fintech Engineer",
+      "flags": [
+        "region_specific"
+      ],
       "icon": "credit-card",
       "description": "Code that handles money: interest, loans, transactions and keeping them secure.",
       "mix": {

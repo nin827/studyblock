@@ -2,16 +2,54 @@
   "id": "accountant",
   "title": "Accountant",
   "icon": "calculator",
+  "flags": [
+    "experience_heavy",
+    "license_oriented",
+    "region_specific",
+    "authority_required"
+  ],
   "description": "Keeps the books and reads them critically: double entry, ratios, depreciation, costing and the judgement to spot what looks wrong.",
   "exclusive": "role-accountant",
   "mix": {
-    "accounting-terms": { "weight": 3 },
-    "accounting-theory": { "weight": 3 },
-    "finance-theory": { "weight": 2, "subtopics": ["ratios", "risk-return", "appraisal"] },
-    "finance": { "weight": 2, "subtopics": ["depreciation", "loans"] },
-    "business-math": { "weight": 2 },
-    "business-case": { "weight": 2, "subtopics": ["break-even", "unit-economics", "inventory"] },
-    "economics": { "weight": 1, "subtopics": ["supply-demand", "macro"] }
+    "accounting-terms": {
+      "weight": 3
+    },
+    "accounting-theory": {
+      "weight": 3
+    },
+    "finance-theory": {
+      "weight": 2,
+      "subtopics": [
+        "ratios",
+        "risk-return",
+        "appraisal"
+      ]
+    },
+    "finance": {
+      "weight": 2,
+      "subtopics": [
+        "depreciation",
+        "loans"
+      ]
+    },
+    "business-math": {
+      "weight": 2
+    },
+    "business-case": {
+      "weight": 2,
+      "subtopics": [
+        "break-even",
+        "unit-economics",
+        "inventory"
+      ]
+    },
+    "economics": {
+      "weight": 1,
+      "subtopics": [
+        "supply-demand",
+        "macro"
+      ]
+    }
   },
   "subroles": [
     {
@@ -20,14 +58,42 @@
       "icon": "scale",
       "description": "Tests the books: concepts, errors, going concern and ratio red flags.",
       "mix": {
-        "accounting-theory": { "weight": 4 },
-        "accounting-terms": { "weight": 3 },
-        "finance-theory": { "weight": 2, "subtopics": ["ratios", "risk-return"] },
-        "business-math": { "weight": 1, "subtopics": ["percentages"] },
-        "ratios-percentages": { "weight": 1, "subtopics": ["percentages"] },
-        "business-theory": { "weight": 1, "subtopics": ["stakeholders"] }
+        "accounting-theory": {
+          "weight": 4
+        },
+        "accounting-terms": {
+          "weight": 3
+        },
+        "finance-theory": {
+          "weight": 2,
+          "subtopics": [
+            "ratios",
+            "risk-return"
+          ]
+        },
+        "business-math": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        },
+        "ratios-percentages": {
+          "weight": 1,
+          "subtopics": [
+            "percentages"
+          ]
+        },
+        "business-theory": {
+          "weight": 1,
+          "subtopics": [
+            "stakeholders"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["transaction-review", "audit-review"]
+      "exclusiveSubtopics": [
+        "transaction-review",
+        "audit-review"
+      ]
     },
     {
       "id": "management-accountant",
@@ -35,13 +101,47 @@
       "icon": "coins",
       "description": "Costing, break-even, budgets and depreciation: the numbers behind internal decisions.",
       "mix": {
-        "business-case": { "weight": 4, "subtopics": ["break-even", "unit-economics", "pricing-decision", "inventory"] },
-        "finance": { "weight": 3, "subtopics": ["depreciation", "loans"] },
-        "business-math": { "weight": 2, "subtopics": ["margins", "percentages"] },
-        "finance-theory": { "weight": 1, "subtopics": ["appraisal"] },
-        "accounting-terms": { "weight": 1, "subtopics": ["equation"] }
+        "business-case": {
+          "weight": 4,
+          "subtopics": [
+            "break-even",
+            "unit-economics",
+            "pricing-decision",
+            "inventory"
+          ]
+        },
+        "finance": {
+          "weight": 3,
+          "subtopics": [
+            "depreciation",
+            "loans"
+          ]
+        },
+        "business-math": {
+          "weight": 2,
+          "subtopics": [
+            "margins",
+            "percentages"
+          ]
+        },
+        "finance-theory": {
+          "weight": 1,
+          "subtopics": [
+            "appraisal"
+          ]
+        },
+        "accounting-terms": {
+          "weight": 1,
+          "subtopics": [
+            "equation"
+          ]
+        }
       },
-      "exclusiveSubtopics": ["asset-review", "break-even-review", "budget-variance"]
+      "exclusiveSubtopics": [
+        "asset-review",
+        "break-even-review",
+        "budget-variance"
+      ]
     }
   ]
 }

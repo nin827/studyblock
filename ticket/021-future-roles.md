@@ -15,8 +15,5 @@ Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, t
 - The disclaimer says the role is **measurement and calculation practice only**. Numbers are worked examples, not facts or targets to follow.
 - Draws on Body Measurements and Nutrition, plus ratios, unit conversion and statistics. Follow the Medical rules: no medications, doses, symptoms, diagnosis, treatment or "is this normal?".
 
-## Other candidates (fair, for later)
-| Role | Possible subroles | Mix |
-|---|---|---|
-
-Geography and History are mostly fact recall, so their mixed questions would be weak. That's why Travel Planner is suggested in their place.
+## Other candidates
+All the earlier candidates have been built. Still parked: **Teacher** and **Nutritionist** (above).
