@@ -2,6 +2,10 @@
 // Generation works per octet (decimal arithmetic on four numbers); verify() re-derives every
 // answer independently with 32-bit integer / bitwise maths, bit-by-bit parsing, enumeration or
 // substitution. Dotted answers are text in canonical form (no leading zeros, no spaces).
+// Octet arithmetic for generation (masks, subnets, address offsets, binary) is js/lib/net.js;
+// verify()'s helpers below stay local and independent of it.
+
+import { bin8, binDotted, maskOctets, subnetOctets, addToOctets, usableHosts } from "../../js/lib/net.js";
 
 // ---- Segmented (block-list) choices (ticket 019) ----
 // Options are arrays with one segment per column (`choiceCols`); the engine joins them with " | ".
@@ -63,11 +67,9 @@ function commas(n) {
   return f ? `${s}.${f}` : s;
 }
 
-const bin8 = (d) => d.toString(2).padStart(8, "0");
 const dotted = (o) => o.join(".");
-const binDotted = (o) => o.map(bin8).join(".");
-const ORD = ["1st", "2nd", "3rd", "4th"];
 const pow2 = (k) => Math.pow(2, k);
+const ORD = ["1st", "2nd", "3rd", "4th"];
 
 // A "write it like" example that never equals the answer.
 function likeIp(ans) {
@@ -82,46 +84,6 @@ function likeBinIp(ans) {
 }
 
 const IP_NOTE = "Write it in dotted decimal with no leading zeros or spaces";
-
-// ---------------------------------------------------------------------------------------------
-// Octet arithmetic used by generation
-
-// Mask octets for /n: each octet holds `bits` ones, worth 256 - 2^(8 - bits).
-function maskOctets(n) {
-  const out = [];
-  for (let i = 0; i < 4; i++) {
-    const bits = Math.max(0, Math.min(8, n - 8 * i));
-    out.push(256 - pow2(8 - bits));
-  }
-  return out;
-}
-
-// Network / broadcast octets of ip/n using the block size in the "interesting" octet.
-function subnetOctets(ip, n) {
-  const k = Math.floor(n / 8); // index of the first octet that has host bits (n <= 30, so k <= 3)
-  const block = pow2(8 - (n % 8));
-  const net = [], bc = [];
-  for (let i = 0; i < 4; i++) {
-    if (i < k) { net.push(ip[i]); bc.push(ip[i]); }
-    else if (i === k) { const s = Math.floor(ip[i] / block) * block; net.push(s); bc.push(s + block - 1); }
-    else { net.push(0); bc.push(255); }
-  }
-  return { net, bc, k, block };
-}
-
-// Add a (possibly negative) offset to an address held as octets, with carry.
-function addOct(o, delta) {
-  const out = o.slice();
-  let carry = delta;
-  for (let i = 3; i >= 0 && carry !== 0; i--) {
-    const v = out[i] + carry;
-    out[i] = ((v % 256) + 256) % 256;
-    carry = Math.floor(v / 256);
-  }
-  return out;
-}
-
-const usable = (n) => pow2(32 - n) - 2;
 
 // ---------------------------------------------------------------------------------------------
 // Independent helpers used only by verify()
@@ -601,7 +563,7 @@ function genMasks(difficulty, rng) {
   if (kind === "hosts") {
     const n = difficulty === "easy" ? rng.int(24, 30) : difficulty === "medium" ? rng.int(16, 30) : rng.int(8, 30);
     const h = 32 - n;
-    const ans = usable(n);
+    const ans = usableHosts(n);
     const base = {
       explanation: `A /${n} leaves 32 − ${n} = ${h} host bits, giving 2^${h} = ${commas(pow2(h))} addresses. Two of them can't be given to hosts: the network address (all host bits 0) and the broadcast address (all host bits 1).\n\n${commas(pow2(h))} − 2 = **${commas(ans)}** usable hosts.`,
       hints: [
@@ -646,14 +608,14 @@ function genMasks(difficulty, rng) {
 
   if (kind === "fit") {
     const n = difficulty === "medium" ? rng.int(22, 29) : rng.int(9, 29);
-    const lo = usable(n + 1) + 1, hi = usable(n);
+    const lo = usableHosts(n + 1) + 1, hi = usableHosts(n);
     const H = rng.next() < 0.25 ? hi : rng.int(lo, hi);
     return {
       prompt: `A subnet must hold at least **${commas(H)}** hosts. What is the **longest** prefix (the smallest subnet) that is big enough? Give *n* for /n.`,
       answer: n,
       answerType: "number",
       tolerance: 0,
-      explanation: `Find the fewest host bits *h* with 2^h − 2 ≥ ${commas(H)}.\n\n- 2^${32 - n - 1} − 2 = ${commas(usable(n + 1))}, too small\n- 2^${32 - n} − 2 = ${commas(hi)}, big enough\n\nSo h = ${32 - n} and the prefix is 32 − ${32 - n} = **${n}**.`,
+      explanation: `Find the fewest host bits *h* with 2^h − 2 ≥ ${commas(H)}.\n\n- 2^${32 - n - 1} − 2 = ${commas(usableHosts(n + 1))}, too small\n- 2^${32 - n} − 2 = ${commas(hi)}, big enough\n\nSo h = ${32 - n} and the prefix is 32 − ${32 - n} = **${n}**.`,
       hints: [
         `You need host bits *h* so that 2^h − 2 is at least ${commas(H)}.`,
         `Add the network and broadcast addresses (${commas(H)} + 2), then find the smallest power of two, 2^h, that is at least that. The prefix is then 32 − h.`,
@@ -675,7 +637,7 @@ function genMasks(difficulty, rng) {
   else netO = [192, 168, rng.int(0, 255), 0];
   const bits = bitsWanted;
   const np = p + bits;
-  const hosts = usable(np);
+  const hosts = usableHosts(np);
   return {
     prompt: `The network \`${dotted(netO)}/${p}\` must be split into at least **${S}** equal subnets. Borrow as few host bits as possible. Every subnet is usable (subnet zero allowed), so *s* borrowed bits give 2^s subnets.`,
     answerType: "multi",
@@ -770,7 +732,7 @@ function nbHints(ip, n, kind) {
 function nbExplanation(ip, n) {
   const { net, bc, k, block } = subnetOctets(ip, n);
   const m = maskOctets(n);
-  const first = addOct(net, 1), last = addOct(bc, -1);
+  const first = addToOctets(net, 1), last = addToOctets(bc, -1);
   const intro = n % 8 === 0
     ? `/${n} = \`${dotted(m)}\`, so the first ${k} octet${k === 1 ? "" : "s"} are the network part.`
     : `/${n} = \`${dotted(m)}\`. The ${ORD[k]} octet has mask ${m[k]}, so the block size is 256 − ${m[k]} = ${block}. The largest multiple of ${block} that is ≤ ${ip[k]} is ${net[k]}.`;
@@ -797,7 +759,7 @@ function genNetBroadcast(difficulty, rng) {
   else { do { n = rng.int(9, 30); } while (n % 8 === 0); }
   const ip = pickIpForPrefix(n, rng);
   const { net, bc } = subnetOctets(ip, n);
-  const vals = { network: dotted(net), broadcast: dotted(bc), first: dotted(addOct(net, 1)), last: dotted(addOct(bc, -1)) };
+  const vals = { network: dotted(net), broadcast: dotted(bc), first: dotted(addToOctets(net, 1)), last: dotted(addToOctets(bc, -1)) };
   const kindRoll = difficulty === "hard" ? rng.pick(["multi", "multi", "hostin", "single"]) : difficulty === "medium" ? rng.pick(["single", "single", "single", "hostin"]) : "single";
 
   if (kindRoll === "multi") {
@@ -809,7 +771,7 @@ function genNetBroadcast(difficulty, rng) {
         hint: `The broadcast is the next block start minus 1: in the ${ORD[Math.floor(n / 8)]} octet that is (network value + block size) − 1${n < 24 ? ", with 255 in every later octet" : ""}.` },
     ];
     if (withRange) {
-      parts.push({ id: "hosts", label: "Usable hosts", ask: "How many usable host addresses does the subnet have?", answerType: "number", answer: usable(n), tolerance: 0,
+      parts.push({ id: "hosts", label: "Usable hosts", ask: "How many usable host addresses does the subnet have?", answerType: "number", answer: usableHosts(n), tolerance: 0,
         hint: `Host bits = 32 − ${n}. Usable hosts = two to the power of the host bits, minus the network and broadcast addresses.` });
     } else {
       parts.push({ id: "last", label: "Last host", ask: "Last usable host address (dotted decimal)", answerType: "text", answer: vals.last,
@@ -819,7 +781,7 @@ function genNetBroadcast(difficulty, rng) {
       prompt: `A host has the address \`${dotted(ip)}/${n}\`. ${IP_NOTE}.`,
       answerType: "multi",
       parts,
-      explanation: `${nbExplanation(ip, n)}${withRange ? `\n\nUsable hosts: 2^${32 - n} − 2 = **${commas(usable(n))}**.` : ""}`,
+      explanation: `${nbExplanation(ip, n)}${withRange ? `\n\nUsable hosts: 2^${32 - n} − 2 = **${commas(usableHosts(n))}**.` : ""}`,
       params: { kind: "multi", ip, n },
     };
   }
@@ -829,8 +791,8 @@ function genNetBroadcast(difficulty, rng) {
     const ipOff = (ip[3] - net[3]) + 256 * ((ip[2] - net[2]) + 256 * ((ip[1] - net[1]) + 256 * (ip[0] - net[0])));
     let off;
     do { off = rng.int(1, size - 2); } while (off === ipOff);
-    const right = dotted(addOct(net, off));
-    const nextHost = dotted(addOct(bc, 1 + rng.int(1, Math.max(1, Math.min(size - 2, 40)))));
+    const right = dotted(addToOctets(net, off));
+    const nextHost = dotted(addToOctets(bc, 1 + rng.int(1, Math.max(1, Math.min(size - 2, 40)))));
     const c = textChoices(right, [vals.network, vals.broadcast, nextHost], rng);
     return {
       prompt: `A host has the address \`${dotted(ip)}/${n}\`. Which of these is **another usable host** in the same subnet?`,
@@ -1288,10 +1250,10 @@ function xSameSubnet(rng) {
     let b;
     if (same) {
       const size = pow2(32 - n);
-      b = addOct(net, rng.int(1, size - 2));
+      b = addToOctets(net, rng.int(1, size - 2));
     } else {
       const dir = rng.next() < 0.5 ? -1 : 1;
-      b = dir < 0 ? addOct(net, -rng.int(2, Math.min(40, pow2(32 - n) - 1))) : addOct(bc, rng.int(2, Math.min(40, pow2(32 - n) - 1)));
+      b = dir < 0 ? addToOctets(net, -rng.int(2, Math.min(40, pow2(32 - n) - 1))) : addToOctets(bc, rng.int(2, Math.min(40, pow2(32 - n) - 1)));
     }
     if (dotted(b) === dotted(a)) continue;
     const m = maskOctets(n);
@@ -1324,14 +1286,14 @@ function xVlsm(rng) {
     const base = rng.pick([[192, 168, rng.int(0, 255), 0], [10, rng.int(0, 255), rng.int(0, 255), 0], [172, rng.int(16, 31), rng.int(0, 255), 0]]);
     const names = rng.shuffle(DEPTS).slice(0, 3);
     const need = names.map(() => rng.int(3, 120));
-    const pref = need.map((h) => { let p = 30; while (usable(p) < h) p--; return p; });
+    const pref = need.map((h) => { let p = 30; while (usableHosts(p) < h) p--; return p; });
     const order = [0, 1, 2].sort((x, y) => pref[x] - pref[y] || x - y); // biggest block first; ties keep listed order
     const sizes = order.map((i) => pow2(32 - pref[i]));
     if (sizes.reduce((s, x) => s + x, 0) > 256 || new Set(need).size < 3) continue;
     const starts = [];
     let off = 0;
     for (const s of sizes) { starts.push(off); off += s; }
-    const third = addOct(base, starts[2]);
+    const third = addToOctets(base, starts[2]);
     return {
       prompt: `The network \`${dotted(base)}/24\` is split with VLSM for three teams: ${names.map((nm, i) => `**${nm}** needs ${need[i]} hosts`).join(", ")}. Give each team the smallest subnet that fits (usable hosts = 2^h − 2), and hand them out **biggest subnet first** from the start of the block (equal sizes in the order listed), each starting straight after the previous one.`,
       answerType: "multi",
@@ -1341,7 +1303,7 @@ function xVlsm(rng) {
         { id: "net3", label: "Third subnet", ask: `Network address of the subnet handed out **third** (${names[order[2]]}). ${IP_NOTE}.`, answerType: "text", answer: dotted(third),
           hint: "Add the sizes (2^h addresses each) of the first two subnets to the start of the block." },
       ],
-      explanation: `Smallest subnet for each team:\n\n${names.map((nm, i) => `- ${nm}: ${need[i]} hosts → 2^${32 - pref[i]} − 2 = ${usable(pref[i])} ≥ ${need[i]}, so **/${pref[i]}** (${pow2(32 - pref[i])} addresses)`).join("\n")}\n\nBiggest first: ${order.map((i, j) => `${names[i]} at \`${dotted(addOct(base, starts[j]))}/${pref[i]}\``).join(", ")}.\n\nThe third subnet starts at ${starts[2]} addresses in: **${dotted(third)}**.`,
+      explanation: `Smallest subnet for each team:\n\n${names.map((nm, i) => `- ${nm}: ${need[i]} hosts → 2^${32 - pref[i]} − 2 = ${usableHosts(pref[i])} ≥ ${need[i]}, so **/${pref[i]}** (${pow2(32 - pref[i])} addresses)`).join("\n")}\n\nBiggest first: ${order.map((i, j) => `${names[i]} at \`${dotted(addToOctets(base, starts[j]))}/${pref[i]}\``).join(", ")}.\n\nThe third subnet starts at ${starts[2]} addresses in: **${dotted(third)}**.`,
       given: need.map((h, i) => ({ label: `_h${i + 1}`, value: h })),
       params: { kind: "x-vlsm", base, need },
       hints: [
@@ -1389,7 +1351,7 @@ function xMaskBack(rng) {
     const n = rng.int(18, 29);
     const ip = pickIpForPrefix(n, rng);
     const { net, bc } = subnetOctets(ip, n);
-    const h = usable(n);
+    const h = usableHosts(n);
     return {
       prompt: `A subnet's broadcast address is \`${dotted(bc)}\` and it has exactly **${commas(h)}** usable host addresses.`,
       answerType: "multi",
@@ -1421,8 +1383,8 @@ function xKth(rng) {
   const count = pow2(m - p);
   const k = rng.int(3, count - 2);
   const size = pow2(32 - m);
-  const net = addOct(base, k * size);
-  const bc = addOct(net, size - 1);
+  const net = addToOctets(base, k * size);
+  const bc = addToOctets(net, size - 1);
   return {
     prompt: `The network \`${dotted(base)}/${p}\` is cut into equal **/${m}** subnets, numbered from **0** (subnet 0 starts at \`${dotted(base)}\`; subnet zero is allowed). Look at **subnet number ${k}**. ${IP_NOTE}.`,
     answerType: "multi",
@@ -1431,10 +1393,10 @@ function xKth(rng) {
         hint: `Each /${m} subnet has 2^${32 - m} addresses. Subnet ${k} starts ${k} × that many addresses after the base, carrying into the next octet every 256.` },
       { id: "bc", label: "Broadcast", ask: "Its broadcast address", answerType: "text", answer: dotted(bc),
         hint: "The broadcast is the last address of the subnet: the network address plus the subnet size, minus 1." },
-      { id: "first", label: "First host", ask: "Its first usable host address", answerType: "text", answer: dotted(addOct(net, 1)),
+      { id: "first", label: "First host", ask: "Its first usable host address", answerType: "text", answer: dotted(addToOctets(net, 1)),
         hint: "The first usable host is the network address plus 1." },
     ],
-    explanation: `A /${m} subnet has 2^${32 - m} = ${size} addresses.\n\n- Subnet ${k} starts ${k} × ${size} = ${commas(k * size)} addresses after \`${dotted(base)}\`${k * size >= 256 ? ` (${Math.floor(k * size / 256)} × 256 + ${(k * size) % 256}, so the third octet goes up by ${Math.floor(k * size / 256)} and the fourth is ${(k * size) % 256})` : ""}: **${dotted(net)}**.\n- Broadcast: + ${size - 1} → **${dotted(bc)}**.\n- First usable host: **${dotted(addOct(net, 1))}**.`,
+    explanation: `A /${m} subnet has 2^${32 - m} = ${size} addresses.\n\n- Subnet ${k} starts ${k} × ${size} = ${commas(k * size)} addresses after \`${dotted(base)}\`${k * size >= 256 ? ` (${Math.floor(k * size / 256)} × 256 + ${(k * size) % 256}, so the third octet goes up by ${Math.floor(k * size / 256)} and the fourth is ${(k * size) % 256})` : ""}: **${dotted(net)}**.\n- Broadcast: + ${size - 1} → **${dotted(bc)}**.\n- First usable host: **${dotted(addToOctets(net, 1))}**.`,
     given: [{ label: "_k", value: k }, { label: "_size", value: size }],
     params: { kind: "x-kth", base, p, m, k },
     hints: [
@@ -1470,11 +1432,11 @@ function xGateway(rng) {
   let gw;
   if (kind === "net") gw = net;
   else if (kind === "bc") gw = bc;
-  else if (kind === "other") gw = rng.next() < 0.5 ? addOct(bc, 1 + rng.int(1, Math.min(size - 1, 30))) : addOct(net, -1 - rng.int(1, Math.min(size - 1, 30)));
+  else if (kind === "other") gw = rng.next() < 0.5 ? addToOctets(bc, 1 + rng.int(1, Math.min(size - 1, 30))) : addToOctets(net, -1 - rng.int(1, Math.min(size - 1, 30)));
   else {
     let off;
-    do off = rng.int(1, size - 2); while (dotted(addOct(net, off)) === dotted(ip));
-    gw = addOct(net, off);
+    do off = rng.int(1, size - 2); while (dotted(addToOctets(net, off)) === dotted(ip));
+    gw = addToOctets(net, off);
   }
   const ans = gwTuple(kind);
   return {
@@ -1483,10 +1445,10 @@ function xGateway(rng) {
     parts: [
       { id: "gw", label: "Gateway OK?", ask: "Is that a valid gateway for this laptop, and why?", answerType: "choice", answer: ans, choiceCols: GW_COLS, choices: gwChoices(kind),
         hint: "Work out the laptop's network and broadcast addresses, then see where the gateway falls." },
-      { id: "last", label: "Last host", ask: `A common choice of gateway is the subnet's last usable host. What is it? ${IP_NOTE}.`, answerType: "text", answer: dotted(addOct(bc, -1)),
+      { id: "last", label: "Last host", ask: `A common choice of gateway is the subnet's last usable host. What is it? ${IP_NOTE}.`, answerType: "text", answer: dotted(addToOctets(bc, -1)),
         hint: "The last usable host is the broadcast address minus 1." },
     ],
-    explanation: `${nbExplanation(ip, n)}\n\nThe gateway \`${dotted(gw)}\` ${kind === "ok" ? "lies strictly between them" : kind === "net" ? "is the network address" : kind === "bc" ? "is the broadcast address" : "is outside that range"}, so: **${ans[0] === "Yes" ? "yes, it is" : "no, it is not"} a valid gateway** (${ans[1].toLowerCase()}).\n\nLast usable host: **${dotted(addOct(bc, -1))}**.`,
+    explanation: `${nbExplanation(ip, n)}\n\nThe gateway \`${dotted(gw)}\` ${kind === "ok" ? "lies strictly between them" : kind === "net" ? "is the network address" : kind === "bc" ? "is the broadcast address" : "is outside that range"}, so: **${ans[0] === "Yes" ? "yes, it is" : "no, it is not"} a valid gateway** (${ans[1].toLowerCase()}).\n\nLast usable host: **${dotted(addToOctets(bc, -1))}**.`,
     params: { kind: "x-gateway", ip, n, gw },
     hints: nbHints(ip, n, "broadcast").slice(0, 3),
   };

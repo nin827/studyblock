@@ -49,6 +49,7 @@ js/lib/music.js         note/interval/scale/chord helpers (build + independent c
 js/lib/chem.js          element table (symbol, name, Z, rounded school Ar), formula parser/mass
 js/lib/sql.js           SQL: query-tree render/evaluate + executor for the taught grammar (runQuery/execQuery)
 js/lib/ciphers.js       letters A=0…Z=25, Caesar, Vigenère, affine, gcd/lcm, modular inverse
+js/lib/net.js           IPv4 octets/ints, masks, network/broadcast, usable hosts, same subnet
 js/views/guided.js      guided-mode helpers (mode switch, hint steps, guide.md)
 js/lib/graph.js         graph maths: sampling, ticks, zeros/extrema/intersections
 js/views/calculator.js  calculator panel (Sheet | Graph); js/views/graph.js = graph UI
@@ -64,7 +65,7 @@ modules/<id>/questions.csv  (type "csv")
 
 ## Shared knowledge libraries
 
-Knowledge used by more than one module lives once in `js/lib/` (chem, sql, ciphers, music, codelang, dates' calendar helpers). **Libraries hold knowledge only:** reference data and the engines that apply it. **Checks, settings and setups stay in each module:** `verify` and its check helpers (so verify stays independent of generate), settings such as constants (R = 8.31, 24 dm³/mol, g = 10), rounding, unit conventions and which subset a module uses, and the scenario setup (ranges, wording, distractors, hints). A library may export standard values, but each module picks and states its own (Role Chemist keeps Cu = 64 locally). Modules import with relative paths (`'../../js/lib/chem.js'`), and new lib files go in `sw.js` PRECACHE. Moving code into a library must keep every cell's questions identical per seed (fingerprint before and after).
+Knowledge used by more than one module lives once in `js/lib/` (chem, sql, ciphers, net, music, codelang, dates' calendar helpers). **Libraries hold knowledge only:** reference data and the engines that apply it. **Checks, settings and setups stay in each module:** `verify` and its check helpers (so verify stays independent of generate), settings such as constants (R = 8.31, 24 dm³/mol, g = 10), rounding, unit conventions and which subset a module uses, and the scenario setup (ranges, wording, distractors, hints). A library may export standard values, but each module picks and states its own (Role Chemist keeps Cu = 64 locally). Modules import with relative paths (`'../../js/lib/chem.js'`), and new lib files go in `sw.js` PRECACHE. Moving code into a library must keep every cell's questions identical per seed (fingerprint before and after).
 
 ## Hierarchy
 

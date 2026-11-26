@@ -9,6 +9,11 @@
 //   log-flags        failed-login counts -> rate -> lockout rule; flag byte -> risk score -> lockout       (Security)
 // Conventions (as Networking): usable hosts = 2^(32-p) - 2, network and broadcast addresses reserved,
 // /31 and /32 never used, 1 MB = 8 megabits, 1 GB = 1000 MB.
+// Address maths and cipher maps come from js/lib/net.js and js/lib/ciphers.js (generation only);
+// verify()'s routes (block maths, rotated-alphabet and lookup tables, brute force) stay local.
+
+import { formatIPv4, maskInt } from "../../js/lib/net.js";
+import { ALPHABET as ALPHA, UNITS26, caesar, affine, letterNumber, modInverse } from "../../js/lib/ciphers.js";
 
 // ---------- helpers ----------
 
@@ -52,8 +57,6 @@ const mdTable = (head, rows) => `| ${head.join(" | ")} |\n| ${head.map(() => "--
 
 // ---------- subnet-plan ----------
 
-const ip4 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
-const maskOf = (p) => (0xffffffff << (32 - p)) >>> 0;
 function randIp(rng) {
   const a = rng.pick([10, 172, 192]);
   const b = a === 10 ? rng.int(0, 255) : a === 172 ? rng.int(16, 31) : 168;
@@ -65,7 +68,7 @@ function genSubnet(rng, tier) {
   for (let i = 0; i < TRY; i++) {
     const p = rng.int(20, 29);
     const ip = randIp(rng);
-    const mask = maskOf(p);
+    const mask = maskInt(p);
     const net = (ip & mask) >>> 0;
     const size = 2 ** (32 - p);
     const bc = (net + size - 1) >>> 0;
@@ -84,27 +87,27 @@ function genSubnet(rng, tier) {
     const sameNow = ((ip2 & mask) >>> 0) === net;
     const all = [
       intPart("hosts", "Usable hosts", "How many usable host addresses does each subnet of this size hold?", hosts, `Host bits = 32 − ${p}. The subnet holds 2 to that power addresses, and two of them (network and broadcast) are reserved.`),
-      textPart("net", "Network address", "Network address of the subnet (dotted decimal)", ip4(net), "Keep the network bits and set every host bit to 0. Find the octet where the mask stops, and round that octet down to a multiple of the block size."),
-      ...(tier === "hard" ? [yesNo("same", "Same subnet?", `Is ${ip4(ip2)} on the same subnet?`, sameNow, "Find that address's network address the same way and compare it with the first one.")] : []),
+      textPart("net", "Network address", "Network address of the subnet (dotted decimal)", formatIPv4(net), "Keep the network bits and set every host bit to 0. Find the octet where the mask stops, and round that octet down to a multiple of the block size."),
+      ...(tier === "hard" ? [yesNo("same", "Same subnet?", `Is ${formatIPv4(ip2)} on the same subnet?`, sameNow, "Find that address's network address the same way and compare it with the first one.")] : []),
       ...(tier === "expert" ? [
-        textPart("mask", "Mask", "Subnet mask (dotted decimal)", ip4(mask), `A /${p} mask has ${p} ones, filled eight at a time from the left. A partial octet takes the value of its ones: 128, 192, 224, 240, 248, 252.`),
-        textPart("bc", "Broadcast", "Broadcast address of the subnet (dotted decimal)", ip4(bc), "The broadcast address is the network address with every host bit set to 1: the last address in the block."),
-        yesNo("same", "Same subnet?", `Is ${ip4(ip2)} on the same subnet?`, sameNow, "The subnet runs from the network address to the broadcast address. Is the second address inside that range?"),
+        textPart("mask", "Mask", "Subnet mask (dotted decimal)", formatIPv4(mask), `A /${p} mask has ${p} ones, filled eight at a time from the left. A partial octet takes the value of its ones: 128, 192, 224, 240, 248, 252.`),
+        textPart("bc", "Broadcast", "Broadcast address of the subnet (dotted decimal)", formatIPv4(bc), "The broadcast address is the network address with every host bit set to 1: the last address in the block."),
+        yesNo("same", "Same subnet?", `Is ${formatIPv4(ip2)} on the same subnet?`, sameNow, "The subnet runs from the network address to the broadcast address. Is the second address inside that range?"),
       ] : []),
     ];
     const order = tier === "expert" ? ["mask", "hosts", "bc", "same"] : tier === "hard" ? ["hosts", "net", "same"] : ["hosts", "net"];
     const parts = order.map((id) => all.find((x) => x.id === id));
     const lines = {
-      mask: `**Mask:** /${p} gives **${ip4(mask)}**.`,
+      mask: `**Mask:** /${p} gives **${formatIPv4(mask)}**.`,
       hosts: `**Hosts:** 2^${32 - p} − 2 = ${size} − 2 = **${hosts}**.`,
-      net: `**Network:** with a block of ${size}, the network address is **${ip4(net)}**.`,
-      bc: `**Broadcast:** ${ip4(net)} + ${size - 1} = **${ip4(bc)}**.`,
-      same: `**Same subnet:** ${ip4(ip2)} ${sameNow ? "lies" : "does not lie"} between ${ip4(net)} and ${ip4(bc)}, so **${sameNow ? "Yes" : "No"}**.`,
+      net: `**Network:** with a block of ${size}, the network address is **${formatIPv4(net)}**.`,
+      bc: `**Broadcast:** ${formatIPv4(net)} + ${size - 1} = **${formatIPv4(bc)}**.`,
+      same: `**Same subnet:** ${formatIPv4(ip2)} ${sameNow ? "lies" : "does not lie"} between ${formatIPv4(net)} and ${formatIPv4(bc)}, so **${sameNow ? "Yes" : "No"}**.`,
     };
     const ex = exWith(order.map((id) => lines[id]), n);
     const lastOct = ip & 255;
     return finish(
-      `A router interface is configured as **${ip4(ip)}/${p}**. Hosts need one address each, and the network and broadcast addresses are reserved.${n >= 3 ? ` A second device has the address **${ip4(ip2)}**.` : ""}`,
+      `A router interface is configured as **${formatIPv4(ip)}/${p}**. Hosts need one address each, and the network and broadcast addresses are reserved.${n >= 3 ? ` A second device has the address **${formatIPv4(ip2)}**.` : ""}`,
       parts, ex, "ne-subnet", { ip, ip2, p, n, tier }, [["_prefix", p], ["_lastoctet", lastOct]],
       ["Work from the prefix length: host bits first, then the block size, then the addresses.", "The network address is the first address of the block, and the broadcast address is the last."],
     );
@@ -250,13 +253,8 @@ function genTransferBack(rng) {
 
 // ---------- cipher-decode ----------
 
-const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const WORDS = ["ROUTE", "PORTS", "PROXY", "TOKEN", "LOGIN", "ADMIN", "CLOUD", "CABLE", "ALERT", "AUDIT", "PATCH", "QUEUE", "SHELL", "VAULT", "BADGE", "GUARD", "TRUST", "LINKS", "ROUTER", "SWITCH", "PACKET", "SERVER", "SOCKET", "BRIDGE", "SECURE", "SIGNAL", "BLOCKS", "DOMAIN", "ACCESS", "CIPHER", "FILTER", "GATEWAY", "NETWORK", "TRAFFIC", "BACKUP", "SCRIPT", "MALWARE", "SESSION", "PRIVATE", "VIRTUAL"];
-const shiftWord = (w, k) => [...w].map((c) => ALPHA[(ALPHA.indexOf(c) + k) % 26]).join("");
-const VALID_A = [1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25];
-const affine = (w, a, b) => [...w].map((c) => ALPHA[(a * ALPHA.indexOf(c) + b) % 26]).join("");
-const invMod = (a) => { for (let t = 1; t < 26; t++) if ((a * t) % 26 === 1) return t; return 0; };
-const idx = (c) => ALPHA.indexOf(c);
+const invMod = (a) => modInverse(a, 26);
 
 function genCaesar(rng, tier) {
   for (let i = 0; i < TRY; i++) {
@@ -266,25 +264,25 @@ function genCaesar(rng, tier) {
       let w2 = rng.pick(WORDS);
       if (w2 === w1) continue;
       const k = rng.int(1, 25);
-      const c1 = shiftWord(w1, k), c2 = shiftWord(w2, k);
+      const c1 = caesar(w1, k), c2 = caesar(w2, k);
       const parts = [
         intPart("key", "Key", `By how many places (1 to 25) was every letter shifted forward? A is the start of the alphabet, and it wraps after Z.`, k, `Number the letters A = 0 … Z = 25. The shift is (cipher letter − plain letter), and you add 26 if it comes out negative.`),
         textPart("word", "Decoded word", `Decode **${c1}**`, w1, "Move every letter back by the key, wrapping from A round to Z."),
         ...(tier === "hard" ? [textPart("word2", "Second message", `Decode the second message **${c2}**, sent with the same key`, w2, "The same key decodes it: shift each letter back by the same number.")] : []),
       ];
       const ex = exWith([
-        `**Key:** ${c1[0]} is letter ${idx(c1[0])} and ${w1[0]} is ${idx(w1[0])}; (${idx(c1[0])} − ${idx(w1[0])}) mod 26 = **${k}**.`,
+        `**Key:** ${c1[0]} is letter ${letterNumber(c1[0])} and ${w1[0]} is ${letterNumber(w1[0])}; (${letterNumber(c1[0])} − ${letterNumber(w1[0])}) mod 26 = **${k}**.`,
         `**Decode:** shifting each letter of ${c1} back by ${k} gives **${w1}**.`,
         `**Second message:** shifting ${c2} back by ${k} gives **${w2}**.`,
       ], n);
       return finish(
         `A Caesar cipher shifts every letter forward by the same key. An intercepted message reads **${c1}**, and the analyst knows its first plaintext letter is **${w1[0]}**.${tier === "hard" ? ` A second message with the same key reads **${c2}**.` : ""}`,
-        parts, ex, "ne-caesar", { w1, w2, k, n, tier }, [["_firstcipher", idx(c1[0])], ["_firstplain", idx(w1[0])]],
+        parts, ex, "ne-caesar", { w1, w2, k, n, tier }, [["_firstcipher", letterNumber(c1[0])], ["_firstplain", letterNumber(w1[0])]],
         ["Convert the known pair of letters to numbers; their difference is the key.", "To decode, go back by the key; to encode, go forward."],
       );
     }
     // expert: affine cipher by hand
-    const a = rng.pick(VALID_A.filter((v) => v !== 1));
+    const a = rng.pick(UNITS26.filter((v) => v !== 1));
     const b = rng.int(1, 25);
     const x = rng.int(0, 25);
     const w1 = rng.pick(WORDS.filter((w) => w.length <= 6));
@@ -298,7 +296,7 @@ function genCaesar(rng, tier) {
     ];
     const ex = [
       `**One letter:** (${a} × ${x} + ${b}) mod 26 = ${a * x + b} mod 26 = **${(a * x + b) % 26}**.`,
-      `**Encrypt:** ${[...w1].map((c) => `${c}→${ALPHA[(a * idx(c) + b) % 26]}`).join(", ")} gives **${affine(w1, a, b)}**.`,
+      `**Encrypt:** ${[...w1].map((c) => `${c}→${ALPHA[(a * letterNumber(c) + b) % 26]}`).join(", ")} gives **${affine(w1, a, b)}**.`,
       `**Inverse:** ${a} × ${invMod(a)} = ${a * invMod(a)} = 26 × ${(a * invMod(a) - 1) / 26} + 1, so **${invMod(a)}**.`,
       `**Decrypt:** D(y) = ${invMod(a)}·(y − ${b}) mod 26 turns ${c2} into **${w2}**.`,
     ].join("\n\n");
@@ -313,7 +311,7 @@ function genCaesar(rng, tier) {
 
 function genAffineBack(rng) {
   for (let i = 0; i < TRY; i++) {
-    const a = rng.pick(VALID_A);
+    const a = rng.pick(UNITS26);
     const b = rng.int(0, 25);
     const x1 = rng.int(0, 25);
     const x2 = rng.int(0, 25);
@@ -334,7 +332,7 @@ function genAffineBack(rng) {
       yesNo("strong", "Strong enough?", `There are 12 valid values of a and 26 of b. An attacker tries ${Rk} keys per second. The policy needs the worst case to take at least ${T} s. Does the cipher meet it?`, strong, "Count all the keys (12 × 26), divide by the keys per second for the worst-case time, and compare it with the policy."),
     ];
     const sol = [];
-    for (const aa of VALID_A) for (let bb = 0; bb < 26; bb++) if ((aa * x1 + bb) % 26 === y1 && (aa * x2 + bb) % 26 === y2) sol.push([aa, bb]);
+    for (const aa of UNITS26) for (let bb = 0; bb < 26; bb++) if ((aa * x1 + bb) % 26 === y1 && (aa * x2 + bb) % 26 === y2) sol.push([aa, bb]);
     if (sol.length !== 1) continue;
     const ex = [
       `**a:** (${y1} − ${y2}) ≡ a·(${x1} − ${x2}) mod 26, and the only valid a that works is **${a}**.`,
@@ -500,6 +498,8 @@ const dotted = (s) => String(s).trim();
 const wordNorm = (s) => String(s).trim().toUpperCase().replace(/\s+/g, "");
 const binVal = (s) => { const t = String(s).trim().replace(/\s+/g, "").replace(/^0b/i, ""); return /^[01]{1,8}$/.test(t) ? parseInt(t, 2) : NaN; };
 
+const encodeCaesar = (w, k) => { const row = ALPHA.slice(k) + ALPHA.slice(0, k); return [...w].map((ch) => row[ALPHA.indexOf(ch)]).join(""); };
+const CHECK_A = Array.from({ length: 25 }, (_, i) => i + 1).filter((a) => Array.from({ length: 25 }, (_, t) => t + 1).some((t) => (a * t) % 26 === 1));
 const decodeCaesar = (c, k) => { const cipherAlpha = ALPHA.slice(k) + ALPHA.slice(0, k); return [...c].map((ch) => ALPHA[cipherAlpha.indexOf(ch)]).join(""); };
 function affineTable(a, b) { const t = {}; for (let x = 0; x < 26; x++) t[ALPHA[x]] = ALPHA[(a * x + b) % 26]; return t; }
 
@@ -532,10 +532,10 @@ const ALT = {
     return { pay, files, link: `${link} Mbps`, upgrade: YN(p.N > files) };
   },
   "ne-caesar": (p) => {
-    const k = (idx(shiftWord(p.w1, p.k)[0]) - idx(p.w1[0]) + 26) % 26;
-    const c1 = shiftWord(p.w1, p.k);
+    const c1 = encodeCaesar(p.w1, p.k);
+    const k = (ALPHA.indexOf(c1[0]) - ALPHA.indexOf(p.w1[0]) + 26) % 26;
     const out = { key: k, word: decodeCaesar(c1, k) };
-    if (p.tier === "hard") out.word2 = decodeCaesar(shiftWord(p.w2, p.k), k);
+    if (p.tier === "hard") out.word2 = decodeCaesar(encodeCaesar(p.w2, p.k), k);
     return out;
   },
   "ne-affine": (p) => {
@@ -546,7 +546,7 @@ const ALT = {
   },
   "ne-affineback": (p) => {
     let found = null;
-    for (const a of VALID_A) for (let b = 0; b < 26; b++) if ((a * idx(ALPHA[p.x1]) + b) % 26 === p.y1 && (a * p.x2 + b) % 26 === p.y2) found = [a, b];
+    for (const a of CHECK_A) for (let b = 0; b < 26; b++) if ((a * p.x1 + b) % 26 === p.y1 && (a * p.x2 + b) % 26 === p.y2) found = [a, b];
     const [a, b] = found;
     const rev = Object.fromEntries(Object.entries(affineTable(a, b)).map(([k, v]) => [v, k]));
     return { a, b, word: [...p.cw].map((c) => rev[c]).join(""), strong: YN(312 / p.Rk >= p.T) };
