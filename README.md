@@ -10,15 +10,17 @@ Everything happens in your browser. There's no account and no server-side databa
 
 ## What you can do
 
-- **Pick a domain and drill down.** Start from a broad area (Math, Science, Computing, Geography, History, Business, Language), open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
+- **Pick a domain and drill down.** Start from one of 14 broad areas (Math, Science, Computing, Business, Music, Biology, Engineering and more), open a subdomain such as Algebra or Kinematics, then choose a subtopic and a difficulty.
 - **Practise for a role.** Roles such as Business Analyst, Software Engineer, Mathematician, Data Analyst, Physicist, Accountant, Chemist, Electrical Engineer, Biologist, Game Developer, Network Engineer, Music Theorist, Operations Manager, Teacher, Nutritionist, Economist, Historian, Geographer, Linguist, Civil Engineer, Architect, Project Manager, Electrician, Pilot, Data Scientist, Land Surveyor, Investigator, Chef and Retail Manager mix the right subjects one level harder, and their Expert+ level has scenarios that combine several subjects.
 - **Build answers from blocks.** Many questions let you drag or tap blocks instead of typing, from ordering events to building SQL queries.
+- **Write real book entries.** Accounting journal entries go in a proper Account | Debit | Credit table: type into the cells or drop account and amount blocks onto them.
 - **Think through real cases.** Business Case questions give you a scenario and ask for several answers at once, such as the calculation and your recommendation.
 - **Read and write code.** Code Writing and Code Reviewing show short programs in Python, C#, C++, GDScript or Rust (your pick): fill the gaps, predict the output, find the bug and choose the fix.
 - **Practise with a guide.** Switch any subject to **Guided** for hints, unlimited tries and a Show solution button. Guided sets are never scored.
 - **Mix it up.** Build a quiz that pulls from several domains at once. You decide how often each one appears by giving it a weight; everything starts at 1.
 - **Save your favourite mixes.** Keep mixes as presets, or start from the official ones that ship with the app. A mix you're still working on is kept until you save it or clear it.
 - **Work it out on screen.** A built-in calculator starts with the question's numbers filled in, and lets you name values (`_price`, `_cost`) and build on them. Change an early step and everything after it updates live. Switch to **Graph** to plot functions and find where they cross zero or each other.
+- **Keep it going.** Earn XP and levels, build a daily streak and collect badges. It's all worked out from your history, and you can switch it off in Settings.
 - **Learn from mistakes.** Every question comes with a worked explanation, and your history keeps every question, answer and your working for review.
 - **Keep your progress safe.** Progress is saved automatically in the browser. You can also export it to a file, or sync it to a folder on your computer.
 - **Use it anywhere.** It's laid out for phones as well as desktops, can be installed as an app, and works offline.

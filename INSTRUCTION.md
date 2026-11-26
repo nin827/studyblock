@@ -246,10 +246,10 @@ Your rows stay for the whole quiz, so values from one question can be reused in 
 
 Open **Mix** to build a quiz across several domains.
 
-1. **Tick the domains** you want. Within each one, tick or untick its subdomains.
-2. **Set weights.** Each domain and subdomain has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
-3. Watch the **share bar** and the percentages update as you change things.
-4. Choose a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (5–50).
+1. **Tick the domains** you want. Each domain starts folded: tap its name to open it and tick or untick single subjects. **All** and **None** tick or untick everything, and **Expand all** opens every domain. To jump to one subject, type in **Find a subject** (for example "Chords").
+2. **Set weights** with − and +. Each domain and subject has a weight, starting at **1**. A weight of 2 appears about twice as often as a weight of 1, and **0** leaves it out.
+3. Watch **Your mix**: the share bar and one line per domain update as you change things.
+4. Choose **Practice** or **Guided**, a **difficulty** (Any, Easy, Medium, Hard or Expert; a subject without Expert uses Hard) and the **number of questions** (5–50).
 5. Press **Start**.
 
 How a question is picked: first a domain (by domain weight), then a subdomain inside it (by subdomain weight), then a random subtopic. If a subtopic doesn't have the difficulty you chose, the closest one is used.
@@ -269,13 +269,16 @@ Whatever you set up in the builder is saved automatically as your **draft**. It 
 - **Load, Rename, Delete:** from the preset chips. Deleting asks you to confirm first.
 
 ### Official presets
-Presets marked with a ✓ badge come with the app. You can load them and start from them, but not change them. To keep a changed version, use **Save as new**.
+Presets marked with a ✓ badge come with the app: Daily warm-up (every domain, Easy), STEM focus, World & money, People, places & words, Code & logic, Life sciences and Everyday skills. You can load them and start from them, but not change them. To keep a changed version, use **Save as new**.
 
 Presets also appear on Home as one-tap quick starts.
 
 ---
 
 ## 6. Your progress and data
+
+### XP, levels, streaks and badges
+StudyBlock gives XP for every practice quiz you finish: 10 per correct answer at Easy, 15 at Medium, 20 at Hard, 30 at Expert and 40 for Expert+ role questions, plus 5 for finishing, and ×1.2 for a perfect score. XP adds up to levels. Practising on days in a row builds a streak (guided runs keep a streak going but give no XP). Home shows your level, streak and next badge; the results screen shows the XP you just earned and any new badge. All 15 badges are under **History → Badges, level and streak**. Everything is worked out from your history, so nothing extra is stored and an export/import carries it. Turn it all off in **Settings → Game elements**; turning it back on shows everything again.
 
 ### Where your progress is kept
 - **In the browser:** saved automatically after every quiz.

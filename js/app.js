@@ -9,6 +9,7 @@ import * as results from './views/results.js';
 import * as settings from './views/settings.js';
 import * as calcPage from './views/calcpage.js';
 import * as roles from './views/roles.js';
+import * as badges from './views/badges.js';
 import { applyTheme } from './views/settings.js';
 import { getCookie } from './lib/storage.js';
 import { icons, errorBox, esc, icon } from './views/ui.js';
@@ -73,6 +74,7 @@ function match(hash) {
     }
   }
   if (parts[0] === 'results' && parts.length === 1) return { view: results, nav: 'results', params: {} };
+  if (parts[0] === 'badges' && parts.length === 1) return { view: badges, nav: 'results', params: {} };
   if (parts[0] === 'settings' && parts.length === 1) return { view: settings, nav: 'settings', params: {} };
   if (parts[0] === 'calc' && parts.length === 1) return { view: calcPage, nav: 'calc', params: {} };
   return null;

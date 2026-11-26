@@ -1,6 +1,6 @@
 import { loadModule, loadGuide, domainOf, checkAnswer, gradeAnswer, runAnswer, serialiseTree, SLOT_DEPTH_MAX, buildQuiz, allowedCells, ALL } from '../lib/engine.js';
 import { hintsFor, parseGuide, guideHtml, setQuizMode, OUTCOMES, GUIDED, PRACTICE } from './guided.js';
-import { saveAttempt, setCookie, getCookie, cleanWork, cleanGraph, creditOf, weightOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
+import { saveAttempt, getAttempts, setCookie, getCookie, cleanWork, cleanGraph, creditOf, weightOf, roundScore, cleanChoiceCols, cleanPartCols, splitSegs, SEG_SEP } from '../lib/storage.js';
 import { renderMarkdown, renderInline } from '../lib/markdown.js';
 import { formatValue } from '../lib/calc.js';
 import { esc, icon, icons, cap, errorBox, hashPart, scoreClass, domClass, tag, fmtScore, difficultyLabel, difficultyHtml, difficultyTag, subtopicLabel, isFlameLevel } from './ui.js';
@@ -11,6 +11,7 @@ import { parseDate, formatDate, hasPrecision, precisionHint } from '../lib/dates
 import { playButtonHtml, bindPlay, addReviewPlay, stopPlayback } from './playbtn.js';
 import { journalHtml, mountJournal, journalTableHtml, journalReviewHtml } from './journal.js';
 import { parseJournal } from '../lib/journal.js';
+import { gameOn, gameContext, resultsGameHtml, markSeen, badges as gameBadges } from './game.js';
 
 // The calculator sheet survives a reload: only the first quiz after page load, on the same
 // address it was opened on, may restore it from sessionStorage. Every other run starts empty.
@@ -2253,8 +2254,10 @@ export async function runQuiz(root, ctx, opts) {
     // Weighted: score = Σ credit × weight, total = Σ weight (single questions weigh 1).
     const score = scoreSum();
     const total = results.reduce((s, r) => s + weightOf(r.q), 0);
-    saveAttempt({ ...opts.toAttempt(results), score, total });
+    const before = getAttempts();
+    const saved = saveAttempt({ ...opts.toAttempt(results), score, total });
     const pct = total ? Math.round((score / total) * 100) : 0;
+    const game = gameOn();
     root.innerHTML = `<div class="page-narrow">
       ${opts.crumbs}
       <section class="card result-summary">
@@ -2262,6 +2265,7 @@ export async function runQuiz(root, ctx, opts) {
         <h1 class="quiz-title">${opts.title}</h1>
         <p class="big-score score ${scoreClass(pct)}">${fmtScore(score)} / ${total} <span>(${pct}%)</span></p>
         <div class="result-meter" aria-hidden="true">${results.map(r => `<span class="${SEG_CLASS[resultState(r)]}"></span>`).join('')}</div>
+        ${game ? '<div class="game-result" id="game-result" aria-live="polite"></div>' : ''}
         <div class="btn-row">
           <button type="button" class="btn btn-primary" id="retry">${icon('rotate-ccw')} Retry</button>
           <a class="btn" href="${opts.backHref}">${icon(opts.backIcon || 'layout-grid')} ${esc(opts.backLabel)}</a>
@@ -2276,6 +2280,17 @@ export async function runQuiz(root, ctx, opts) {
     addReviewPlay(root, results.map(r => r.q));
     icons();
     root.querySelector('#retry').addEventListener('click', start);
+    // Game elements: +XP, level up and badges this attempt unlocked (derived, never stored).
+    const slot = root.querySelector('#game-result');
+    if (slot) {
+      const after = [...before, saved];
+      gameContext().then(gctx => {
+        if (!slot.isConnected) return;
+        slot.innerHTML = resultsGameHtml(before, after, saved, gctx);
+        icons();
+        markSeen(gameBadges(after, gctx));
+      }).catch(e => console.warn('StudyBlock: game elements failed', e));
+    }
     // Runnable questions: the expected output under each review item (run while still in memory).
     root.querySelectorAll('.review > .review-item').forEach((li, i) => {
       const q = results[i]?.q;

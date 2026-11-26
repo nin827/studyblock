@@ -32,6 +32,20 @@ const fmtShare = s => {
   return `${Math.round(p)}%`;
 };
 
+// Open domains in the builder: per-tab UI state (sessionStorage), never in the draft or presets.
+const OPEN_KEY = 'studyblock:mixOpen';
+function loadOpen() {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(OPEN_KEY));
+    return new Set(Array.isArray(v) ? v.filter(isValidId) : []);
+  } catch { return new Set(); }
+}
+function saveOpen(set) {
+  try { sessionStorage.setItem(OPEN_KEY, JSON.stringify([...set])); } catch { /* storage unavailable */ }
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 // normalizeMixConfig iterates `available` in order, so equal configs stringify identically.
 const sameConfig = (a, b, available) =>
   JSON.stringify(normalizeMixConfig(a, available)) === JSON.stringify(normalizeMixConfig(b, available));
@@ -91,40 +105,50 @@ function draw(root, available, official, only, flash) {
       <button type="button" class="step" data-step="1" aria-label="${esc(`Increase ${title} weight`)}" ${disabled ? 'disabled' : ''}>+</button>
     </span>`;
 
+  // Which domains are open is UI state only (per tab), never part of the draft or presets.
+  const openSet = loadOpen();
+  if (preselect) openSet.add(only);
+  const live = available.filter(d => d.modules.length);
+
   const domainBlocks = available.map(d => {
     const s = state[d.id];
     const dc = domClass(d.id);
     if (!d.modules.length) {
       return `<li class="mix-domain is-empty is-off ${dc}"${domStyle(d)}>
         <div class="mix-row mix-domain-head">
-          <label class="mix-check"><input type="checkbox" disabled><span class="swatch"></span>
-            <span class="mix-name">${esc(d.title)}</span></label>
-          <span class="soon">Coming soon</span>
+          <span class="mix-tick"><input type="checkbox" disabled aria-label="${esc(`${d.title} (coming soon)`)}"></span><span class="swatch" aria-hidden="true"></span>
+          <span class="mix-disclose"><span class="mix-name">${esc(d.title)}</span><span class="mix-count">Coming soon</span></span>
         </div>
       </li>`;
     }
-    const n = d.modules.length;
+    const open = openSet.has(d.id);
+    const listId = `mix-mods-${d.id}`;
     const mods = d.loaded.map(m => {
       const ms = s.modules[m.id];
       const title = String(m.title ?? m.id);
-      return `<li class="mix-row mix-module" data-domain="${esc(d.id)}" data-module="${esc(m.id)}">
+      return `<li class="mix-row mix-module" data-domain="${esc(d.id)}" data-module="${esc(m.id)}" data-search="${esc(title.toLowerCase())}">
         <label class="mix-check"><input type="checkbox" data-role="module" ${ms.on ? 'checked' : ''}>
           <span class="mix-name">${esc(title)}</span></label>
         <span class="mix-share" data-share>–</span>
         ${weightInput('mw', ms.weight, title, !ms.on)}
       </li>`;
     }).join('');
-    return `<li class="mix-domain ${dc}"${domStyle(d)} data-domain="${esc(d.id)}">
+    return `<li class="mix-domain ${dc}"${domStyle(d)} data-domain="${esc(d.id)}" data-search="${esc(String(d.title).toLowerCase())}">
       <div class="mix-row mix-domain-head">
-        <label class="mix-check"><input type="checkbox" data-role="domain" ${s.on ? 'checked' : ''}>
-          <span class="swatch"></span><span class="mix-name">${esc(d.title)}</span>
-          <span class="mix-count">${n} subdomain${n === 1 ? '' : 's'}</span></label>
+        <label class="mix-tick"><input type="checkbox" data-role="domain" ${s.on ? 'checked' : ''} aria-label="${esc(`Include ${d.title}`)}"></label>
+        <span class="swatch" aria-hidden="true"></span>
+        <button type="button" class="mix-disclose" aria-expanded="${open}" aria-controls="${esc(listId)}">
+          <span class="mix-name">${esc(d.title)}</span>
+          <span class="mix-count"><span data-dcount></span><span class="mix-count-share"> · <span data-dshare-m>–</span></span></span>
+          ${icon('chevron-down', 'chev')}
+        </button>
         <span class="mix-share mix-share-domain" data-dshare>–</span>
         ${weightInput('dw', s.weight, d.title, !s.on)}
       </div>
-      <ul class="mix-modules" ${s.on ? '' : 'hidden'}>${mods}</ul>
+      <ul class="mix-modules" id="${esc(listId)}" aria-label="${esc(`${d.title} subjects`)}" ${open ? '' : 'hidden'}>${mods}</ul>
     </li>`;
   }).join('');
+  const totalSubjects = live.reduce((n, d) => n + d.modules.length, 0);
 
   const chip = p => `<span class="chip ${p.official ? 'is-official' : ''} ${p.id === draft.presetId ? 'is-linked' : ''}" data-id="${esc(p.id)}" role="listitem">
       <button type="button" class="chip-main" data-act="load" title="${esc(p.description || `Load ${p.name}`)}">
@@ -138,7 +162,7 @@ function draw(root, available, official, only, flash) {
     <section class="page-head">
       <p class="eyebrow">Mixed quiz</p>
       <h1>Build your mix</h1>
-      <p>Tick what to include and set how often each appears. A weight of 2 shows up twice as often as a weight of 1.</p>
+      <p>Pick domains, open one to fine-tune its subjects. A weight of 2 shows up twice as often as 1.</p>
     </section>
     <section class="card presets-bar" aria-label="Presets">
       <div class="presets-top">
@@ -165,13 +189,24 @@ function draw(root, available, official, only, flash) {
     <form class="mix-layout" id="mix-form" novalidate>
       <div class="mix-main">
         <h2 class="sr-only">Domains</h2>
+        <div class="mix-tools">
+          <label class="mix-search">${icon('search')}<span class="sr-only">Find a subject</span>
+            <input type="search" id="mix-search" placeholder="Find a subject, e.g. Chords" autocomplete="off" enterkeyhint="search"></label>
+          <span class="mix-tally" id="mix-tally" aria-live="polite"></span>
+          <div class="mix-bulk" role="group" aria-label="Select domains">
+            <button type="button" class="mix-bulk-btn" id="mix-all">All</button>
+            <button type="button" class="mix-bulk-btn" id="mix-none">None</button>
+            <button type="button" class="mix-bulk-btn is-quiet" id="mix-expand"></button>
+          </div>
+        </div>
+        <p class="mix-noresults muted" id="mix-noresults" role="status" hidden></p>
         <ul class="mix-list">${domainBlocks}</ul>
       </div>
       <aside class="mix-summary" id="mix-summary" aria-label="Mix summary">
         <h2 class="mix-summary-title">Your mix</h2>
         <button type="button" class="mix-summary-toggle" id="mix-summary-toggle" aria-expanded="false" aria-controls="mix-sheet">
           <span class="sheet-handle" aria-hidden="true"></span>
-          <span class="share-bar" id="share-bar" role="img" aria-label="Share of questions per subdomain"></span>
+          <span class="share-bar" id="share-bar" role="img" aria-label="Share of questions per domain"></span>
           <span class="mix-summary-line">
             <span class="mix-summary-text" id="mix-summary-text"></span>
             <span class="mix-summary-hint"><span id="mix-sheet-hint">Details</span>${icon('chevron-up', 'chev')}</span>
@@ -222,6 +257,10 @@ function draw(root, available, official, only, flash) {
   const sheetList = root.querySelector('#mix-sheet-list');
   const shareBar = root.querySelector('#share-bar');
   const summaryText = root.querySelector('#mix-summary-text');
+  const tally = root.querySelector('#mix-tally');
+  const searchInput = root.querySelector('#mix-search');
+  const noResults = root.querySelector('#mix-noresults');
+  const expandBtn = root.querySelector('#mix-expand');
 
   const say = (text, good) => {
     presetMsg.textContent = text;
@@ -262,7 +301,6 @@ function draw(root, available, official, only, flash) {
       s.weight = Number.isNaN(parsed) ? 0 : parsed;
       w.disabled = !s.on;
       w.parentElement.querySelectorAll('.step').forEach(b => { b.disabled = !s.on; });
-      li.querySelector('.mix-modules').hidden = !s.on;
     }
     for (const li of root.querySelectorAll('.mix-module')) {
       const ms = state[li.dataset.domain].modules[li.dataset.module];
@@ -314,7 +352,6 @@ function draw(root, available, official, only, flash) {
 
   const titleOfDomain = new Map(available.map(d => [d.id, d.title]));
   const domById = new Map(available.map(d => [d.id, d]));
-  const titleOfModule = new Map(available.flatMap(d => d.loaded.map(m => [m.id, String(m.title ?? m.id)])));
 
   function update(persist) {
     const config = readForm();
@@ -329,38 +366,46 @@ function draw(root, available, official, only, flash) {
       li.classList.toggle('is-off', share === 0);
     });
     root.querySelectorAll('.mix-domain[data-domain]').forEach(li => {
-      const share = byDomain.get(li.dataset.domain) || 0;
-      li.querySelector('[data-dshare]').textContent = fmtShare(share);
+      const id = li.dataset.domain;
+      const share = byDomain.get(id) || 0;
+      const d = domById.get(id);
+      const s = state[id];
+      const ticked = d.modules.filter(mid => s.modules[mid].on).length;
+      li.querySelector('[data-dshare]').textContent = share ? fmtShare(share) : '—';
+      li.querySelector('[data-dshare-m]').textContent = share ? fmtShare(share) : '—';
+      li.querySelector('[data-dcount]').textContent = !s.on ? 'Not included'
+        : d.modules.length === 1 && ticked === 1 ? '1 subject' : `${ticked} of ${plural(d.modules.length, 'subject')}`;
       li.classList.toggle('is-off', share === 0);
     });
 
-    // Summary: share bar (per domain), text, and the expandable sheet.
+    // Summary: share bar (per domain), text, and one row per included domain.
     const domainShares = [...byDomain.entries()];
-    shareBar.innerHTML = shares.map(r =>
-      `<span class="share-seg ${domClass(r.domain)}" style="${domVars(domById.get(r.domain))}flex-grow:${r.share.toFixed(4)}"></span>`).join('');
+    const subjectsIn = id => shares.filter(r => r.domain === id).length;
+    shareBar.innerHTML = domainShares.map(([id, sh]) =>
+      `<span class="share-seg ${domClass(id)}" style="${domVars(domById.get(id))}flex-grow:${sh.toFixed(4)}"></span>`).join('');
     shareBar.setAttribute('aria-label', shares.length
-      ? `Share of questions: ${shares.map(r => `${titleOfModule.get(r.module) ?? r.module} ${fmtShare(r.share)}`).join(', ')}`
+      ? `Share of questions: ${domainShares.map(([id, sh]) => `${titleOfDomain.get(id) ?? id} ${fmtShare(sh)}`).join(', ')}`
       : 'Nothing selected');
     summaryText.textContent = shares.length
-      ? `${domainShares.length} domain${domainShares.length === 1 ? '' : 's'} · ${shares.length} subdomain${shares.length === 1 ? '' : 's'} · ${cap(config.difficulty)}`
+      ? `${plural(domainShares.length, 'domain')} · ${plural(shares.length, 'subject')} · ${config.difficulty === 'any' ? 'Any difficulty' : cap(config.difficulty)}`
       : 'Nothing selected';
-    sheetList.innerHTML = domainShares.map(([id, s]) => `<li class="${domClass(id)}"${domStyle(domById.get(id))}>
-        <div class="sheet-row"><span class="swatch"></span><strong>${esc(titleOfDomain.get(id) ?? id)}</strong><span>${esc(fmtShare(s))}</span></div>
-        <ul>${shares.filter(r => r.domain === id).map(r =>
-          `<li class="sheet-row"><span></span><span>${esc(titleOfModule.get(r.module) ?? r.module)}</span><span>${esc(fmtShare(r.share))}</span></li>`).join('')}</ul>
-      </li>`).join('') || '<li class="muted">No subdomains selected.</li>';
+    sheetList.innerHTML = domainShares.map(([id, sh]) => `<li class="sheet-row ${domClass(id)}"${domStyle(domById.get(id))}>
+        <span class="swatch" aria-hidden="true"></span><span>${esc(titleOfDomain.get(id) ?? id)}</span>
+        <span class="sheet-sub">${esc(plural(subjectsIn(id), 'subject'))}</span><span>${esc(fmtShare(sh))}</span>
+      </li>`).join('') || '<li class="muted">No subjects selected.</li>';
+    tally.textContent = `${domainShares.length} of ${plural(live.length, 'domain')} · ${shares.length} of ${plural(totalSubjects, 'subject')}`;
     startLabel.textContent = `${mode === GUIDED ? 'Start guided' : 'Start'} · ${config.count} question${config.count === 1 ? '' : 's'}`;
 
     const ok = shares.length > 0;
     startBtn.disabled = !ok;
-    msg.textContent = ok ? '' : 'Nothing selected — tick at least one subdomain with a weight above 0.';
+    msg.textContent = ok ? '' : 'Nothing selected — tick at least one subject with a weight above 0.';
     if (persist) saveMixDraft(draft); // draft is auto-saved on every change
     refreshStatus();
     return { config, ok };
   }
 
   // Enter / "Next" in a weight field moves to the next field instead of submitting the form.
-  const weightFields = () => [...root.querySelectorAll('.weight-input:not(:disabled), #mix-count')];
+  const weightFields = () => [...root.querySelectorAll('.weight-input:not(:disabled), #mix-count')].filter(el => el.getClientRects().length);
   root.querySelectorAll('.weight-input').forEach(inp => inp.addEventListener('keydown', e => {
     if (e.key !== 'Enter' || e.isComposing) return;
     e.preventDefault();
@@ -386,6 +431,85 @@ function draw(root, available, official, only, flash) {
     const { ok } = update(true);
     if (ok) location.hash = mode === GUIDED ? '#/mix/guided' : '#/mix/play';
   });
+
+  // ---- open/close domains, search, All / None / Expand all ----
+  const domainItems = [...root.querySelectorAll('.mix-domain[data-domain]')];
+  let searching = false;
+  const setOpen = (li, open) => {
+    li.querySelector('.mix-modules').hidden = !open;
+    li.querySelector('.mix-disclose').setAttribute('aria-expanded', String(open));
+  };
+  const allOpen = () => domainItems.every(li => openSet.has(li.dataset.domain));
+  const refreshExpand = () => { expandBtn.textContent = allOpen() ? 'Collapse all' : 'Expand all'; };
+  // Re-applies the remembered open state (used when a search is cleared).
+  const applyOpen = () => domainItems.forEach(li => setOpen(li, openSet.has(li.dataset.domain)));
+  domainItems.forEach(li => li.querySelector('.mix-disclose').addEventListener('click', () => {
+    const id = li.dataset.domain;
+    const open = li.querySelector('.mix-modules').hidden;
+    setOpen(li, open);
+    if (!searching) {
+      if (open) openSet.add(id); else openSet.delete(id);
+      saveOpen(openSet);
+      refreshExpand();
+    }
+  }));
+  expandBtn.addEventListener('click', () => {
+    if (searching) { searchInput.value = ''; runSearch(); }
+    const open = !allOpen();
+    domainItems.forEach(li => { if (open) openSet.add(li.dataset.domain); else openSet.delete(li.dataset.domain); });
+    saveOpen(openSet);
+    applyOpen();
+    refreshExpand();
+  });
+  // Ticking a subject inside an unticked domain includes the domain too.
+  root.querySelectorAll('input[data-role="module"]').forEach(box => box.addEventListener('change', () => {
+    if (!box.checked) return;
+    const dbox = box.closest('.mix-domain')?.querySelector('input[data-role="domain"]');
+    if (dbox && !dbox.checked) dbox.checked = true;
+  }));
+  // All / None: every domain and every subject, through the same auto-saved update().
+  const tickAll = on => {
+    root.querySelectorAll('input[data-role="domain"], input[data-role="module"]').forEach(b => { b.checked = on; });
+    update(true);
+  };
+  root.querySelector('#mix-all').addEventListener('click', () => tickAll(true));
+  root.querySelector('#mix-none').addEventListener('click', () => tickAll(false));
+
+  // Find a subject: filters subjects across domains (a domain-title match shows all its subjects)
+  // and opens the domains with matches; clearing restores the remembered open state.
+  function runSearch() {
+    const q = searchInput.value.trim().toLowerCase().replace(/\s+/g, ' ');
+    searching = q.length > 0;
+    let hits = 0, doms = 0;
+    root.querySelectorAll('.mix-domain').forEach(li => {
+      if (!li.dataset.domain) { li.hidden = searching; return; } // "coming soon" rows
+      const domainHit = searching && li.dataset.search.includes(q);
+      let n = 0;
+      li.querySelectorAll('.mix-module').forEach(m => {
+        const show = !searching || domainHit || m.dataset.search.includes(q);
+        m.hidden = !show;
+        if (show) n++;
+      });
+      li.hidden = searching && n === 0;
+      if (searching) {
+        setOpen(li, n > 0);
+        if (n) { hits += n; doms++; }
+      }
+    });
+    if (!searching) applyOpen();
+    noResults.hidden = !searching;
+    noResults.textContent = !searching ? '' : hits
+      ? `${plural(hits, 'subject')} in ${plural(doms, 'domain')} match “${searchInput.value.trim()}”.`
+      : `No subjects match “${searchInput.value.trim()}”.`;
+    noResults.classList.toggle('is-empty', searching && !hits);
+  }
+  searchInput.addEventListener('input', e => { e.stopPropagation(); runSearch(); });
+  searchInput.addEventListener('change', e => e.stopPropagation());
+  searchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') e.preventDefault(); // never submits the form
+    if (e.key === 'Escape' && searchInput.value) { e.preventDefault(); searchInput.value = ''; runSearch(); }
+  });
+  refreshExpand();
 
   const askName = (title, current) => window.prompt(`${title} (1–${PRESET_NAME_MAX} characters)`, current ?? '');
   const redraw = text => draw(root, available, official, null, text);

@@ -3,7 +3,7 @@
 // a subpath such as https://<user>.github.io/studyblock/.
 
 // Bump on every release: activating a new version deletes all older caches.
-const CACHE_VERSION = 'v31';
+const CACHE_VERSION = 'v32';
 const CACHE_PREFIX = 'studyblock-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -25,6 +25,7 @@ const PRECACHE = [
   'js/lib/dates.js',
   'js/lib/engine.js',
   'js/lib/folder.js',
+  'js/lib/gamify.js',
   'js/lib/graph.js',
   'js/lib/journal.js',
   'js/lib/languages.js',
@@ -38,9 +39,11 @@ const PRECACHE = [
   'js/lib/sql.js',
   'js/lib/storage.js',
   'js/lib/theme.js',
+  'js/views/badges.js',
   'js/views/calcpage.js',
   'js/views/calculator.js',
   'js/views/domain.js',
+  'js/views/game.js',
   'js/views/graph.js',
   'js/views/guided.js',
   'js/views/home.js',

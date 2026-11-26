@@ -1,6 +1,7 @@
 import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
 import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
+import { gameOn, gameContext, summary, seenForNotice, progressCardHtml } from './game.js';
 import { esc, icon, icons, cap, fmtDate, errorBox, hashPart, domClass, domVars, domStyle, tag, fmtScore, difficultyLabel, subtopicLabel } from './ui.js';
 
 const RECENT_COUNT = 4;
@@ -67,6 +68,8 @@ export async function render(root, params, ctx) {
   // Roles: the Home card and titles of role attempts in "Recent".
   let roles = [];
   try { roles = await loadRoles(); } catch (e) { console.warn(e); }
+  // Game elements (XP, level, streak, next badge); the badge context is cached per page load.
+  const game = gameOn() ? await gameContext() : null;
   if (!ctx.alive()) return;
   const draft = loadMixDraft();
   const quick = [...official, ...getPresets()];
@@ -196,6 +199,12 @@ export async function render(root, params, ctx) {
         : `<span class="recent-score">${fmtScore(a.score)} / ${a.total}</span>`}</li>`;
   }).join('');
 
+  let gameCard = '';
+  if (game && attempts.length) {
+    const sum = summary(attempts, game);
+    gameCard = progressCardHtml(sum, sum.newlyEarned(seenForNotice(sum.badges)));
+  }
+
   root.innerHTML = `<div class="stack">
     <section class="hero">
       <div class="hero-text">
@@ -205,6 +214,7 @@ export async function render(root, params, ctx) {
       </div>
       ${continueCard}
     </section>
+    ${gameCard}
     <section class="card" id="home-install" aria-label="Install app" hidden></section>
     <section aria-labelledby="domains-h">
       <div class="section-head">

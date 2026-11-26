@@ -2,6 +2,7 @@ import { loadAllModules, loadDomains, loadArchived, titleLookup, loadRoles, pars
 import { getAttempts, getModuleRecords, percent, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import { esc, icon, cap, fmtDate, scoreClass, hashPart, domClass, tag, fmtScore, difficultyHtml, subtopicLabel } from './ui.js';
 import { reviewItem, moduleBreakdown, cellTag, questionTag, guidedItemHtml } from './quiz.js';
+import { gameOn } from './game.js';
 
 export async function render(root, params, ctx) {
   const attempts = getAttempts(); // newest first
@@ -39,8 +40,9 @@ export async function render(root, params, ctx) {
   };
   const subTitle = (mid, sid) => subtopicLabel(sid, byId[mid]?.subtopics.find(s => s.id === sid)?.title);
 
+  const badgesLink = gameOn() ? `<p class="page-head-link"><a href="#/badges">${icon('award')} Badges, level and streak</a></p>` : '';
   if (!attempts.length) {
-    root.innerHTML = `<section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
+    root.innerHTML = `<section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1>${badgesLink}</section>
       <div class="card"><p class="muted">No attempts yet. <a href="#/">Pick a module</a> to get started.</p></div>`;
     return;
   }
@@ -148,7 +150,7 @@ export async function render(root, params, ctx) {
   }).join('');
 
   root.innerHTML = `
-    <section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1></section>
+    <section class="page-head"><p class="eyebrow">Your progress</p><h1>History</h1>${badgesLink}</section>
     <section class="card">
       <h2>By module</h2>
       <p class="muted small">Module stats include questions answered inside mixed and role quizzes.</p>

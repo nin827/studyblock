@@ -80,7 +80,7 @@ Domains are just groupings in `modules/index.json`; module folders stay flat und
 
 ## Routes (hash router)
 
-`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run
+`#/` home (domain cards) · `#/d/<domain>` domain page (its subdomain/module cards) · `#/m/<module>` module page · `#/q/<module>/<subtopic>/<difficulty>` quiz (either part may be `all`: whole-module quiz) · `#/g/<module>/<subtopic>/<difficulty>` guided run (same rules, never scored) · `#/mix` multi-domain builder · `#/mix/play` mixed quiz · `#/mix/guided` guided mixed run · `#/results` · `#/settings` · `#/calc` standalone Calculator · `#/roles`, `#/roles/<role>`, `#/roles/<role>/<subrole>` role pages · `#/rq/<role>[~<subrole>]/<level>` role quiz · `#/rg/…` guided role run · `#/badges` badges, level and streak
 
 ## Registry — `modules/index.json`
 
@@ -105,6 +105,12 @@ The `#/mix` builder lets the user:
 
 Sampling per question (seeded): pick a domain with probability ∝ domain weight, then a subdomain within it ∝ subdomain weight, then a subtopic uniformly from that module, then difficulty (the chosen one if the subtopic supports it, else the closest available; `any` = uniform over the subtopic's difficulties). Domains/subdomains whose effective weight is 0 are skipped. The builder shows each subdomain's resulting share as a percentage.
 
+**Builder layout:**
+- Each domain is a collapsed row: include checkbox, domain dot, a disclosure button (title, "n of m subjects" or "Not included", chevron, `aria-expanded`), share % and weight stepper. Opening one shows its subjects (checkbox, share, weight) in a 2-column grid on desktop and 1 column on phones. Ticking a subject in an unticked domain ticks the domain.
+- Above the list: "Find a subject" search (matches subject titles, or a domain title for all its subjects; opens domains with matches; clearing or Esc restores the open state), the tally "X of N domains · Y of M subjects", and All / None / Expand all (Collapse all). All/None tick or untick every domain and subject through the normal draft auto-save; weights are kept.
+- Which domains are open is per-tab UI state (sessionStorage `studyblock:mixOpen`), never in the draft or presets.
+- The summary ("Your mix") shows a per-domain share bar and one row per included domain (dot, title, "n subjects", share), plus Practice/Guided, Difficulty, Questions and Start.
+
 Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficulty, count }`.
 
 **Draft and presets.** Both are stored in localStorage, never in cookies (too big).
@@ -121,7 +127,7 @@ Mix config `{ domains: { <id>: { weight, modules: { <id>: weight } } }, difficul
 - Home shows saved presets as quick-start chips next to "Start last mix".
 
 **Official presets** are maintained by hand in the repo under `presets/`:
-- `presets/index.json` → `{ "presets": ["daily-warmup", "stem-focus"] }`. Ids match `^[a-z0-9-]+$` and are loaded only if listed here.
+- `presets/index.json` → `{ "presets": ["daily-warmup", "stem-focus"] }` (today 7: daily-warmup across all domains, stem-focus, world-and-money, humanities, code-and-logic, life-sciences, everyday-skills; keep them covering the current domains). Ids match `^[a-z0-9-]+$` and are loaded only if listed here.
 - `presets/<id>.json` →
   ```json
   {
@@ -413,6 +419,21 @@ After an answer is checked, music questions show a **Play** button (`volume-2` +
 - `js/lib/audio.js` synthesises with Web Audio: no files, works offline, a lazy AudioContext on the first click, a soft triangle with two quiet partials, one playback at a time (stopped on Next and when leaving). The button is hidden when there is no AudioContext.
 - Generators attach `play` (`{ mode: note|interval|chord|scale|progression, notes|chords, semis? }`, notes `{l, a}`, optional octave `o`) with `withPlay(q, spec)` in a thin wrapper around their old `generate`, derived from `params`: no rng, so prompts and answers are unchanged. The engine keeps `meta` but drops unknown fields, so `withPlay` mirrors it to `meta.play`; the quiz reads `q.play ?? q.meta.play`. Never stored.
 - Used by Intervals & Scales, Chords and Role Music Theorist (not bar-timing or the downward transpositions). Settings → Sound (cookie `sb_sound`, default on) hides every Play button when off.
+
+## Game elements
+
+Light gamification: icon + text only, no animations beyond existing transitions, no sounds or confetti.
+- **Logic** (`js/lib/gamify.js`, pure; the rules live only there), derived from stored attempts, so export/import carries it:
+  - XP per practice attempt: per question credit × weight × level points (easy 10, medium 15, hard 20, expert 30, expert-plus 40; the question's own difficulty, else the attempt's), +5 for finishing, ×1.2 for a perfect score, rounded. Guided attempts give 0.
+  - Levels: level L → L+1 costs 100 + 50(L − 1) XP.
+  - Streak: consecutive local calendar days with any attempt (guided counts), DST-safe; `{ current, best, today, atRisk }`.
+  - 15 badges (first quiz, flawless, expert attempt/flawless, 10/50/200 quizzes, 3/7/30-day streaks, explorer (5 domains), all-rounder (every level of one module), first role, first mix, guided learner) with `earnedAt` and `progress`.
+- **UI** (`js/views/game.js` shared pieces and the cached `gameContext()` = `{ domainOf, levelsOf }` from the registry; `js/views/badges.js`):
+  - Settings → Game elements (cookie `sb_game`, "0" = off, default on) hides everything below.
+  - Home: a "Your progress" card (level pill, XP progressbar, streak line with "Practise today to keep it" when at risk and "best N", hidden when both are 0; next badge with progress; "All badges (n of 15)"; a "New badge: …" line for earned badges not yet seen).
+  - Results (practice, mix and role runs; never guided): "+N XP" with a short "how" line (left out when more than 2 levels scored), "Level up" when it happened, and newly earned badges; then all earned ids are saved as seen.
+  - `#/badges` (History nav highlighted; not in the nav or tab bar; linked from Home and the top of History): level, streak and badge count, then badge cards (earned with date; others with "n of m" and a bar). Opening it marks earned badges as seen. When off, it says so and links to Settings.
+- **Storage:** localStorage `studyblock:seenBadges` (per-browser list of ids, never exported). The first time it is missing, badges already earned are marked seen silently, so existing users aren't shown every old badge as new.
 
 ## Guided mode
 

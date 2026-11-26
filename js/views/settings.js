@@ -5,6 +5,7 @@ import { loadModule } from '../lib/source.js';
 import * as folder from '../lib/folder.js';
 import * as pwa from '../lib/pwa.js';
 import { soundOn, setSoundOn } from './playbtn.js';
+import { gameOn, setGameOn } from '../lib/gamify.js';
 import { canPlay, stopPlayback } from '../lib/audio.js';
 import { icon, icons, esc, fmtDate } from './ui.js';
 
@@ -107,6 +108,13 @@ export async function render(root, params = {}, ctx = {}) {
         Sounds are made in your browser, so they work offline. Turn this off to hide the buttons.</p>
     </section>
 
+    <section class="card" id="game-settings">
+      <h2>${icon('trophy')} Game elements</h2>
+      <label class="check-row"><input type="checkbox" role="switch" id="game-toggle" aria-describedby="game-help" ${gameOn() ? 'checked' : ''}>
+        <span>Show XP, levels, streaks and badges</span></label>
+      <p class="muted" id="game-help">XP, levels, streaks and badges. Worked out from your history, so hiding them loses nothing.</p>
+    </section>
+
     <section class="card" id="install-card" hidden></section>
 
     <section class="card">
@@ -149,6 +157,8 @@ export async function render(root, params = {}, ctx = {}) {
     setSoundOn(e.target.checked);
     if (!e.target.checked) stopPlayback();
   });
+
+  root.querySelector('#game-toggle')?.addEventListener('change', (e) => setGameOn(e.target.checked));
 
   const updateCount = () => {
     const n = getAttempts().length;
