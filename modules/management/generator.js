@@ -30,6 +30,13 @@ function mixOk(tuples, correct) {
   };
   return !correct.every((_, j) => major(j));
 }
+// Counting attack: the answer is the only option with the highest sum of its values' counts.
+function countPick(tuples, correct) {
+  const cnt = (j, v) => tuples.filter((t) => t[j] === v).length;
+  const score = (t) => t.reduce((s, v, j) => s + cnt(j, v), 0);
+  const a = score(correct), key = keyOf(correct);
+  return tuples.every((t) => keyOf(t) === key || score(t) < a);
+}
 function segChoice(cols, correct, candidates, rng, diff, extra = []) {
   const n = cols.length;
   const want = OPTION_COUNT[diff];
@@ -42,12 +49,17 @@ function segChoice(cols, correct, candidates, rng, diff, extra = []) {
     ok.push(c);
   }
   // Redraw (same rng) until the option set cannot be solved by counting.
-  let wrong = [];
-  for (let tries = 0; tries < 300; tries++) {
+  // A set that is only mixOk is kept as a fallback if no set also beats counting.
+  let wrong = [], fallback = [];
+  for (let tries = 0; tries < 600; tries++) {
     wrong = rng.shuffle(ok).slice(0, want - 1);
-    if (wrong.length === want - 1 && mixOk([correct, ...wrong], correct)) break;
+    if (wrong.length === want - 1 && mixOk([correct, ...wrong], correct)) {
+      if (!countPick([correct, ...wrong], correct)) break;
+      if (!fallback.length) fallback = wrong;
+    }
     wrong = [];
   }
+  if (!wrong.length) wrong = fallback;
   if (wrong.length !== want - 1) throw new Error("not enough segmented options");
   const shown = cols.map((_, i) => new Set([correct, ...wrong].map((t) => t[i])));
   const extraSegs = [];

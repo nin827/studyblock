@@ -31,4 +31,4 @@ Option 1, **mixed distances**:
 - Also avoid the coherence giveaway: the answer must not be the only option whose columns make sense together.
 
 ## Built (2026-11-26)
-Engine check `segMixIssues` (warn once per module). All 42 modules with segmented options pass at 300 seeds per cell (156 cells, 0 failing). Where only 3–4 sensible combinations exist (networking gateway, vectors, Data Analyst binary pairs), one or two wrong options read as unlikely combinations, but the answer is never the only sensible one. A cruder "sum of value counts" heuristic still finds the answer 1–24% of the time in some 3-column Marketing/Management cells.
+Engine check `segMixIssues` (warn once per module). All 42 modules with segmented options pass at 300 seeds per cell (156 cells, 0 failing). Where only 3–4 sensible combinations exist (networking gateway, vectors, Data Analyst binary pairs), one or two wrong options read as unlikely combinations, but the answer is never the only sensible one. A cruder "sum of value counts" heuristic was then pushed to 0% in Marketing and Management too (follow-up, same day).

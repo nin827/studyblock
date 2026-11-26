@@ -42,10 +42,17 @@ function mixOk(set, answer) {
   const major = (j) => set.every((c) => c[j] === answer[j] || cnt(j, c[j]) < cnt(j, answer[j]));
   return !answer.every((_, j) => major(j));
 }
+// Counting attack: the answer is the only option with the highest sum of its values' counts.
+function countPick(set, answer) {
+  const cnt = (j, v) => set.filter((c) => c[j] === v).length;
+  const score = (c) => c.reduce((s, v, j) => s + cnt(j, v), 0);
+  const a = score(answer);
+  return set.every((c) => c === answer || score(c) < a);
+}
 function segChoices(rng, answer, opts, prefer = [], n = 4) {
   const cols = answer.length;
-  let best = null;
-  for (let attempt = 0; attempt < 300; attempt++) {
+  let best = null, bestOk = false;
+  for (let attempt = 0; attempt < 600; attempt++) {
     const seen = new Set([answer.join(SEP)]);
     const out = [answer];
     const add = (c) => {
@@ -69,8 +76,11 @@ function segChoices(rng, answer, opts, prefer = [], n = 4) {
       }
       add(c);
     }
-    best = out;
-    if (out.length === n && mixOk(out, answer)) break;
+    if (!best) best = out;
+    if (out.length !== n) continue;
+    if (!mixOk(out, answer)) { if (!best) best = out; continue; }
+    if (!bestOk) { best = out; bestOk = true; }
+    if (!countPick(out, answer)) { best = out; break; }
   }
   return rng.shuffle(best);
 }
