@@ -1,0 +1,15 @@
+{
+  "id": "structures",
+  "title": "Structures",
+  "description": "Moments and balance, stress and strain, support reactions and shear in beams, and factors of safety.",
+  "icon": "hard-hat",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "moments", "title": "Moments", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "stress-strain", "title": "Stress and strain", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "beams", "title": "Beams and reactions", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "factor-of-safety", "title": "Factor of safety", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

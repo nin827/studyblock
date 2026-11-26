@@ -1,0 +1,47 @@
+{
+  "id": "economist",
+  "title": "Economist",
+  "icon": "trending-up",
+  "flags": [
+    "theory_heavy"
+  ],
+  "description": "Prices, wages, growth and markets: index numbers, elasticity, taxes and compound growth, worked from the figures.",
+  "exclusive": "role-economist",
+  "mix": {
+    "economics": { "weight": 4 },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
+    "finance": { "weight": 1, "subtopics": ["annuities-savings"] },
+    "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+    "exponents-logs": { "weight": 2, "subtopics": ["growth-decay", "logarithms"] },
+    "business-math": { "weight": 1, "subtopics": ["percentages", "interest"] }
+  },
+  "subroles": [
+    {
+      "id": "macroeconomist",
+      "title": "Macroeconomist",
+      "icon": "landmark",
+      "description": "Inflation, real and nominal figures, GDP per person and how long growth takes to double an economy.",
+      "mix": {
+        "economics": { "weight": 4, "subtopics": ["macro"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["percentages"] },
+        "exponents-logs": { "weight": 3, "subtopics": ["growth-decay", "logarithms"] },
+        "business-math": { "weight": 1, "subtopics": ["percentages", "interest"] },
+        "statistics": { "weight": 1, "subtopics": ["weighted-average"] }
+      },
+      "exclusiveSubtopics": ["inflation-real", "growth-doubling"]
+    },
+    {
+      "id": "market-analyst",
+      "title": "Market Analyst",
+      "icon": "chart-line",
+      "description": "Elasticity, revenue effects of price changes, and who really pays a tax on a market.",
+      "mix": {
+        "economics": { "weight": 5, "subtopics": ["supply-demand", "elasticity", "interventions"] },
+        "ratios-percentages": { "weight": 2, "subtopics": ["proportion", "percentages"] },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode", "weighted-average"] },
+        "business-math": { "weight": 1, "subtopics": ["percentages"] }
+      },
+      "exclusiveSubtopics": ["elasticity-revenue", "tax-incidence"]
+    }
+  ]
+}

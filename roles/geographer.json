@@ -1,0 +1,45 @@
+{
+  "id": "geographer",
+  "title": "Geographer",
+  "icon": "compass",
+  "flags": ["theory_heavy"],
+  "description": "Maps, routes, slopes and climate tables, read and measured so that the numbers say something about the place.",
+  "exclusive": "role-geographer",
+  "mix": {
+    "map-skills": { "weight": 4 },
+    "physical-geography": { "weight": 3, "subtopics": ["mountains", "deserts-lakes", "climate-biomes"] },
+    "continents": { "weight": 1, "subtopics": ["oceans-seas"] },
+    "capitals": { "weight": 1 },
+    "travel": { "weight": 1, "subtopics": ["journeys", "timetables"] },
+    "statistics": { "weight": 2, "subtopics": ["mean-median-mode", "range-iqr", "weighted-average"] },
+    "trigonometry": { "weight": 2, "subtopics": ["right-sides", "right-angles"] }
+  },
+  "subroles": [
+    {
+      "id": "cartographer",
+      "title": "Cartographer",
+      "icon": "map",
+      "description": "Map scale, grid references, bearings and contour gradients.",
+      "mix": {
+        "map-skills": { "weight": 5 },
+        "trigonometry": { "weight": 3, "subtopics": ["right-sides", "right-angles"] },
+        "travel": { "weight": 1, "subtopics": ["journeys", "timetables"] },
+        "physical-geography": { "weight": 1, "subtopics": ["mountains"] }
+      },
+      "exclusiveSubtopics": ["scale-journey", "grid-route", "contour-slope"]
+    },
+    {
+      "id": "climate-analyst",
+      "title": "Climate Analyst",
+      "icon": "cloud-sun",
+      "description": "Climate graphs read as tables: ranges, totals, wettest and driest months, and the biome they point to.",
+      "mix": {
+        "physical-geography": { "weight": 4, "subtopics": ["deserts-lakes", "climate-biomes"] },
+        "statistics": { "weight": 3, "subtopics": ["mean-median-mode", "range-iqr", "weighted-average"] },
+        "map-skills": { "weight": 1, "subtopics": ["time-zones"] },
+        "continents": { "weight": 1, "subtopics": ["oceans-seas"] }
+      },
+      "exclusiveSubtopics": ["climate-table", "contour-slope"]
+    }
+  ]
+}

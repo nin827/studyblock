@@ -10,7 +10,7 @@ export { escapeHtml };
 try { applyAccent(getAccent()); } catch (e) { console.warn('Accent not applied', e); }
 
 // Domain colour class: fixed tints for known domains, a neutral one for anything else.
-const KNOWN_DOMAINS = ['math', 'science', 'geography', 'business', 'computing', 'history', 'language', 'game-dev', 'music', 'biology', 'medical', 'logic', 'everyday-math'];
+const KNOWN_DOMAINS = ['math', 'science', 'geography', 'business', 'computing', 'history', 'language', 'game-dev', 'music', 'biology', 'medical', 'logic', 'everyday-math', 'engineering'];
 export function domClass(id) {
   return KNOWN_DOMAINS.includes(id) ? `dom-${id}` : 'dom-default';
 }

@@ -1,0 +1,51 @@
+{
+  "id": "historian",
+  "title": "Historian",
+  "icon": "scroll",
+  "flags": [
+    "theory_heavy"
+  ],
+  "description": "Dating sources, counting years across BC and AD, and laying out timelines, all worked out from the facts in front of you.",
+  "exclusive": "role-historian",
+  "mix": {
+    "world-history": { "weight": 3 },
+    "timelines": { "weight": 3 },
+    "inventions": { "weight": 1 },
+    "time-dates": { "weight": 2, "subtopics": ["calendar"] },
+    "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+  },
+  "subroles": [
+    {
+      "id": "archivist",
+      "title": "Archivist",
+      "icon": "archive",
+      "description": "Dating undated documents, counting years across BC and AD, and calendar arithmetic for reigns and terms.",
+      "mix": {
+        "timelines": { "weight": 4, "subtopics": ["years-between", "spans", "centuries"] },
+        "time-dates": { "weight": 3, "subtopics": ["calendar"] },
+        "world-history": { "weight": 2 },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": [
+        "dating-sources",
+        "calendar-spans"
+      ]
+    },
+    {
+      "id": "museum-curator",
+      "title": "Museum Curator",
+      "icon": "landmark",
+      "description": "Labelling objects with ages, centuries and galleries, and hanging events on a scaled wall timeline.",
+      "mix": {
+        "timelines": { "weight": 4, "subtopics": ["centuries", "ordering", "spans"] },
+        "world-history": { "weight": 3 },
+        "inventions": { "weight": 2 },
+        "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
+      },
+      "exclusiveSubtopics": [
+        "object-labels",
+        "exhibit-timeline"
+      ]
+    }
+  ]
+}
