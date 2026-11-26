@@ -271,7 +271,9 @@ export async function runQuiz(root, ctx, opts) {
     const isDate = kind === 'date';
     const typed = isMulti(q) ? kind !== 'choice' && !isDate : q.answerType !== 'choice' && !isDate && !inBlocks(q);
     calc.setUseEnabled(on && typed && phase === 'answer',
-      inBlocks(q) || inBuild(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+      inBlocks(q) ? 'Use fills typed answers. For this question, arrange the blocks.'
+        : inBuild(q) ? 'Use fills typed answers. For this question, place the blocks.'
+        : isSegQ(q) ? 'Use fills typed answers. For this question, pick an option.'
         : isDate ? 'Use fills number answers. For this question, type a date.'
         : !typed ? 'Use fills typed answers. For this question, pick one of the choices.'
         : phase !== 'answer' ? 'Use fills the answer on the next question.' : '');
@@ -1386,6 +1388,7 @@ export async function runQuiz(root, ctx, opts) {
     const check = root.querySelector('#check');
     if (check) { check.hidden = !build; if (phase === 'answer') check.disabled = !segReady(); }
     segActionHint(q);
+    applyCalc(q); // the calculator's Use note names the current mode
   }
 
   function bindSeg(q) {
@@ -2301,8 +2304,9 @@ function answerInline(value, cols) {
   const segs = segsOf(value, cols);
   if (!segs) return renderInline(String(value ?? ''));
   const c = cleanChoiceCols(cols);
+  // Each chip carries its column label as a small caption, so "Yes / Yes / No" reads unambiguously.
   return `<span class="seg-inline">${segs.map((s, j) =>
-    `<span class="seg-chip"><span class="sr-only">${esc(c[j])}: </span>${renderInline(s)}</span>`).join('')}</span>`;
+    `<span class="seg-chip"><span class="seg-chip-cap">${esc(c[j])}<span class="sr-only">: </span></span><span class="seg-chip-val">${renderInline(s)}</span></span>`).join('')}</span>`;
 }
 // { [partId]: cols } for a multi-part question: live parts carry `choiceCols`, stored ones `partCols`.
 function partColsOf(q) {
