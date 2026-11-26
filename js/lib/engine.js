@@ -249,6 +249,7 @@ function decorate(q, mod, difficulty) {
       console.warn(`StudyBlock: module ${mod.id}: segmented choice questions should have ${want} options at ${difficulty} (got ${out.choices.length})`);
     }
   }
+  warnSegMix(out, mod.id);
   return out;
 }
 const segCountWarned = new Set();
@@ -556,6 +557,57 @@ export function segChoiceSpec(cols, choices, answer) {
   const ans = a.join(SEG_SEP);
   if (!joined.includes(ans)) return null;
   return { choiceCols: c, choiceSegs: segs, choices: joined, answer: ans };
+}
+
+/*
+ * Mixed distances (ticket 022): counting values across the options must not find the answer.
+ * `segs`: every option's segments (the answer's row included); `ans`: the answer's segments.
+ * -> issue codes, [] when the set is fine:
+ *   'near'     no wrong option differs from the answer in 2+ columns;
+ *   'majority' in every column the answer's value is strictly the most common one (no column where
+ *              another value appears at least as often);
+ *   'far'      with 3+ columns, a wrong option differs from the answer in every column (wrong
+ *              options differ in 1 to n−1 columns; with 2 columns, in 1 or 2).
+ * The same rule applies to 3-option Easy sets; it is reachable with 2+ columns: both wrong options
+ * differ in one shared column (the tie breaks the majority) and one of them also in another column.
+ * Only a warning (decorate, once per module); nothing is rejected or regenerated for it.
+ */
+export function segMixIssues(segs, ans) {
+  if (!Array.isArray(segs) || !Array.isArray(ans) || !ans.length) return [];
+  const n = ans.length;
+  const key = ans.join(SEG_SEP);
+  const wrong = segs.filter(r => Array.isArray(r) && r.length === n && r.join(SEG_SEP) !== key);
+  if (!wrong.length) return [];
+  const issues = [];
+  const dists = wrong.map(r => r.reduce((d, v, j) => d + (v !== ans[j] ? 1 : 0), 0));
+  if (!dists.some(d => d >= 2)) issues.push('near');
+  const strictMajority = j => {
+    const counts = new Map();
+    for (const r of segs) if (Array.isArray(r) && r.length === n) counts.set(r[j], (counts.get(r[j]) || 0) + 1);
+    const mine = counts.get(ans[j]) || 0;
+    for (const [v, k] of counts) if (v !== ans[j] && k >= mine) return false;
+    return true;
+  };
+  if (ans.every((_, j) => strictMajority(j))) issues.push('majority');
+  if (n >= 3 && dists.some(d => d >= n)) issues.push('far');
+  return issues;
+}
+const segMixWarned = new Set();
+// Warns (once per module) when a question's segmented options, or a part's, break the mixed-distance rule.
+function warnSegMix(q, modId) {
+  if (segMixWarned.has(modId)) return;
+  const sets = [];
+  if (Array.isArray(q.choiceSegs) && Array.isArray(q.choiceCols)) sets.push(['', q]);
+  if (Array.isArray(q.parts)) for (const p of q.parts) if (Array.isArray(p?.choiceSegs) && Array.isArray(p?.choiceCols)) sets.push([` part ${p.id}`, p]);
+  for (const [where, s] of sets) {
+    const ans = splitSegs(String(s.answer ?? ''), s.choiceCols);
+    const issues = ans ? segMixIssues(s.choiceSegs, ans) : [];
+    if (issues.length) {
+      segMixWarned.add(modId);
+      console.warn(`StudyBlock: module ${modId}: segmented options${where} (seed ${q.seed}) break the mixed-distance rule (${issues.join(', ')}); see ticket 022`);
+      return;
+    }
+  }
 }
 
 // Extra decoy blocks for Build mode: [[col, value], ...] where col is a column label (any case)
