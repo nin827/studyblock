@@ -1792,15 +1792,6 @@ input[type="number"][aria-invalid="true"] { border-color: var(--wrong); backgrou
 
 /* ================= code languages (Code Writing / Code Reviewing) ================= */
 
-/* Language picker: module page (language-aware modules) and Settings. 44px targets, wraps at 360px. */
-.lang-picker { margin: 0 0 16px; }
-.lang-picker:last-child { margin-bottom: 0; }
-.lang-picker .field-label { display: flex; align-items: center; gap: 6px; }
-.lang-picker .field-label .icon { width: 16px; height: 16px; }
-.lang-picker-hint { margin: -4px 0 8px; }
-.seg-lang { display: flex; max-width: 100%; }
-.seg-lang .seg span { min-height: 44px; }
-
 /* Language pill next to the subtopic · difficulty tag (text, not colour only). */
 .tag-lang { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); font-family: var(--mono); }
 .tag-lang .icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--muted); }

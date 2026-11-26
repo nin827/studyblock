@@ -1,6 +1,7 @@
 // Programming languages that code subjects (Code Writing, Code Reviewing, Role Software Engineer) can be
 // shown in. Pure data, no DOM. A module opts in with `"languages": [ids…]` in module.json; the user's
-// pick is the `sb_codeLang` cookie (default python). `fence` is the markdown code-fence tag.
+// choice is the `sb_codeLangs` cookie (one or more ids, default python; see storage.js getCodeLangs and
+// engine.js runLangs/langForSeed). `fence` is the markdown code-fence tag.
 // `industry`: an industry-standard language (roles only use these; GDScript is the one that isn't).
 
 export const LANGUAGES = Object.freeze([
