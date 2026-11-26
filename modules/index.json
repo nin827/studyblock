@@ -157,6 +157,18 @@
         "syllogisms",
         "number-patterns"
       ]
+    },
+    {
+      "id": "everyday-math",
+      "title": "Everyday Math",
+      "icon": "wallet",
+      "description": "Real-life maths: clock times, calendars and time zones, scaling recipes, shopping and budgets, and planning journeys.",
+      "modules": [
+        "time-dates",
+        "recipes-scaling",
+        "shopping-money",
+        "travel"
+      ]
     }
   ],
   "archived": [

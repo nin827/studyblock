@@ -1,0 +1,14 @@
+{
+  "id": "time-dates",
+  "title": "Time and Dates",
+  "description": "Clock times, durations, calendar dates and leap years, and time zones with fixed offsets.",
+  "icon": "calendar-clock",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "clock", "title": "Clock time", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "calendar", "title": "Calendar dates", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "time-zones", "title": "Time zones", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

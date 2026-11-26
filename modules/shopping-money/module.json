@@ -1,0 +1,15 @@
+{
+  "id": "shopping-money",
+  "title": "Shopping and Money",
+  "description": "Best buys and unit prices, discounts and sales tax, bills, pay and budgets, and changing money abroad.",
+  "icon": "shopping-cart",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "unit-price", "title": "Unit prices and best buys", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "discounts", "title": "Discounts and tax", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "budgets", "title": "Bills, pay and budgets", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "currency", "title": "Currency exchange", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

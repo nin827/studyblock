@@ -1,0 +1,14 @@
+{
+  "id": "recipes-scaling",
+  "title": "Recipes and Scaling",
+  "description": "Scale recipes up and down, convert cups, spoons and oven temperatures, and plan cooking times.",
+  "icon": "chef-hat",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "scaling", "title": "Scaling recipes", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "kitchen-units", "title": "Kitchen measures", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "cooking-times", "title": "Cooking times", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

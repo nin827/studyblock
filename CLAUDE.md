@@ -258,7 +258,7 @@ A near miss earns part credit; `correct` stays false. This applies to single que
 - **Parsing:** `js/lib/dates.js` (pure). It accepts month names and abbreviations, ordinals, `Month D, YYYY`, ISO `Y-M(-D)`, and numeric D/M/Y read **day first**. All-numeric dates need a 3–4 digit year. Real dates only: no 31 April, and leap years are honoured.
 - **Checking:** correct means the same value at the answer's precision; extra detail is ignored. Less detail is wrong, with the hint "give the month and year". Close credit uses the years formula, in units of the precision, across month and year ends.
 - **UI:** a text field with a placeholder that fits the precision. A live "Read as: …" line (aria-live) shows the parsed date, or "Not a date yet". Check needs a value that parses. Feedback repeats "Your answer read as: …". Use is disabled.
-- **CSV:** an optional `type` column. `date` makes the row a date answer, with its precision taken from the answer's format. Bad rows are skipped with one warning per module. Date rows are in World History and Inventions.
+- **CSV:** an optional `type` column. `date` makes the row a date answer, with its precision taken from the answer's format. Bad rows are skipped with one warning per module. Date rows are in World History and Inventions, and the Time and Dates generator (`calendar`) uses day-precision date answers.
 
 ### Grading hook and case
 
@@ -462,6 +462,7 @@ The reference design is the "StudyBlock Visual Refresh" design canvas: https://c
   | Biology | `#DFF3E4` / `#1B5E2B` | `#2E8B47` |
   | Medical | `#DDF4F8` / `#0A5866` | `#0E8FA6` |
   | Logic | `#E4E8EE` / `#334155` | `#52637A` |
+  | Everyday Math | `#F1E7DD` / `#5E4126` | `#8C6239` |
 
   A domain can override these with `color` in `index.json`.
 - Correct and incorrect states always show an icon and a label, not colour alone.
@@ -579,6 +580,7 @@ Uses the File System Access API (`showDirectoryPicker`), which only Chromium bro
 - **Genetics:** *Write gametes & genotypes* is typed with Blocks, case-sensitive, in the order stated in the prompt (capital first, then alphabetical).
 - **Word Roots and Grammar:** every cell has at least 10 rows. Word Roots has build-the-word rows (dual Type | Blocks and pure blocks, joiner `(none)`). Grammar has sentence-ordering rows (capitalised first block, punctuated last block, wrong-form distractors such as is/are) and dual verb-form rows in Tenses. Both set `tilesMultiplier`. Vocabulary also has 10 rows per cell.
 - **Logic & Puzzles:** logic-puzzles (knights and knaves, ordering, whodunits), syllogisms (categorical and if-then) and number-patterns (numbers, letters, shapes). Every puzzle is brute-forced to a unique answer, and verify() re-solves it independently. Number-patterns' verify infers the rule from the shown terms, trying several rule families that must agree. Conventions: syllogisms assume every group has a member and use made-up nouns; "or" is inclusive; "A unless B" means "if not B then A"; letter wrap-around is stated. All are exact (`fuzzy: false`, `fuzzyNumber: 0`); number-patterns has `tilesMultiplier`.
+- **Everyday Math:** time-dates, recipes-scaling, shopping-money and travel. Conventions: fixed UTC offsets with no daylight saving; a generic `$`; made-up exchange rates, always stated; kitchen conversion factors stated in the question. `fuzzyNumber` is 1, and whole counts (days, minutes, servings, bags) set `fuzzyNumber: 0` per question.
 - **Networking:** KB/MB = 1000, KiB/MiB = 1024, subnet zero allowed, /31 and /32 never generated.
 - **Timelines:** *Ordering* is built from blocks (tiles A–D in prompt order); seeds give the same events and answers as the old choice version. A fixed, hand-checked event list inside the generator; only the *Famous dates (recall)* subtopic relies on memorised years, and arguable years (1347, 1517, 221 BC) are kept out of recall.
 - **Rounding ties:** generators should never produce an answer that sits exactly on a rounding half-step. Newer generators redraw inside `generate()` (same rng, so still deterministic) until their own `verify` passes, rather than leaving it to the engine's retry.
