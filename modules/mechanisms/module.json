@@ -1,0 +1,15 @@
+{
+  "id": "mechanisms",
+  "title": "Mechanisms",
+  "description": "Levers, gears, pulleys and belt drives, and how torque, speed and power pass through a machine.",
+  "icon": "cog",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "levers", "title": "Levers", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "gears", "title": "Gears", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pulleys", "title": "Pulleys and belt drives", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "power-transmission", "title": "Torque and power", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

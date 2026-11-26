@@ -318,9 +318,13 @@
       "id": "engineering",
       "title": "Engineering",
       "icon": "hard-hat",
-      "description": "How structures carry load: moments, stress and strain, beams and factors of safety.",
+      "description": "How things carry load, move and work: structures, mechanisms, fluids and hydraulics, electronics, and tolerances and fits.",
       "modules": [
-        "structures"
+        "structures",
+        "mechanisms",
+        "fluid-systems",
+        "electronics",
+        "tolerances"
       ]
     }
   ],

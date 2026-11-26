@@ -1,0 +1,15 @@
+{
+  "id": "tolerances",
+  "title": "Tolerances & Fits",
+  "description": "Limits and tolerance bands, hole and shaft fits, tolerance stack-ups and measurement error, all in millimetres.",
+  "icon": "ruler",
+  "type": "generator",
+  "fuzzyNumber": 0,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "limits", "title": "Limits and tolerances", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "fits", "title": "Fits", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "stack-up", "title": "Tolerance stack-up", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "measurement", "title": "Measurement error", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

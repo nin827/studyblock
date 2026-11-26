@@ -2,7 +2,7 @@
 
 **Practice that never runs out of questions.**
 
-StudyBlock is a small quiz app with 73 subjects across 12 areas: Math, Science, Computing, Geography, History, Business, Language, Music Theory, Biology, Medical, Logic & Puzzles and Engineering — from fractions and calculus to forces, beams and stress, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, project schedules, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
+StudyBlock is a small quiz app with 77 subjects across 12 areas: Math, Science, Computing, Geography, History, Business, Language, Music Theory, Biology, Medical, Logic & Puzzles and Engineering — from fractions and calculus to forces, beams and stress, gears, hydraulics, resistor colour codes and tolerances, radioactivity, astronomy, binary, SQL, ciphers, code in five programming languages, map bearings, timelines, economics, project schedules, chords, genetics, loot drops and BMI, at up to four levels from Easy to Expert. Most questions aren't drawn from a fixed list; they're generated on the spot. Each answer is computed when the question is made and double-checked by a separate method before you see it, so you can practise as long as you like without memorising one set.
 
 Everything happens in your browser. There's no account and no server-side database, and none of your progress leaves your device unless you export it.
 

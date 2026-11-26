@@ -1,0 +1,15 @@
+{
+  "id": "electronics",
+  "title": "Electronics",
+  "description": "Resistor colour codes, voltage dividers, LED current-limiting resistors, and capacitors with RC timing.",
+  "icon": "circuit-board",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "resistor-codes", "title": "Resistor colour codes", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "dividers", "title": "Voltage dividers", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "led-resistors", "title": "LED resistors", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "rc-timing", "title": "Capacitors and RC timing", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}

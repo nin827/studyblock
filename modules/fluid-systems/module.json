@@ -1,0 +1,15 @@
+{
+  "id": "fluid-systems",
+  "title": "Fluids & Hydraulics",
+  "description": "Flow rate and continuity in pipes, hydraulic cylinders and jacks, pump power and running costs, and filling and draining tanks.",
+  "icon": "droplets",
+  "type": "generator",
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 10,
+  "subtopics": [
+    { "id": "flow-rate", "title": "Flow rate and continuity", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "hydraulics", "title": "Hydraulic presses and jacks", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "pump-power", "title": "Pumps and power", "difficulties": ["easy", "medium", "hard", "expert"] },
+    { "id": "tanks", "title": "Tanks: filling and draining", "difficulties": ["easy", "medium", "hard", "expert"] }
+  ]
+}
