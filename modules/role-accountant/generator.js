@@ -36,7 +36,7 @@ const FIRMS = ["Northwind Traders", "Harbour & Co", "Bluepeak Retail", "Lumen Go
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 // The answer plus up to n − 1 distractors, each differing from it in 1..cols−1 segments.
-function segChoices(rng, answer, opts, prefer = [], n = 5) {
+function segChoices(rng, answer, opts, prefer = [], n = 5, distinct = false) {
   const cols = answer.length;
   const seen = new Set([answer.join(SEP)]);
   const out = [answer];
@@ -44,6 +44,7 @@ function segChoices(rng, answer, opts, prefer = [], n = 5) {
     if (out.length >= n) return;
     const d = c.filter((v, i) => v !== answer[i]).length;
     if (d < 1 || d >= cols) return;
+    if (distinct && new Set(c).size < cols) return; // e.g. a journal never debits and credits one account
     const k = c.join(SEP);
     if (seen.has(k)) return;
     seen.add(k);
@@ -62,8 +63,8 @@ function segChoices(rng, answer, opts, prefer = [], n = 5) {
   }
   return rng.shuffle(out);
 }
-function segPart(rng, { id, label, ask, cols, answer, opts, prefer, hint, n }) {
-  const choices = segChoices(rng, answer, opts, prefer, n);
+function segPart(rng, { id, label, ask, cols, answer, opts, prefer, hint, n, distinct }) {
+  const choices = segChoices(rng, answer, opts, prefer, n, distinct);
   const extraSegs = [];
   cols.forEach((c, i) => { for (const v of new Set(opts[i])) if (v !== answer[i]) extraSegs.push([c, v]); });
   return { id, label, ask, answerType: "choice", choiceCols: cols, choices, answer, extraSegs, hint };
@@ -103,7 +104,7 @@ function journalPart(rng, id, tx) {
   const prefer = [[t.dr, rng.pick(other(t.cr))], [rng.pick(other(t.dr)), t.cr]];
   return segPart(rng, {
     id, label: "Journal", ask: "Record the transaction: pick the account to debit and the account to credit",
-    cols: ["Debit", "Credit"], answer: [t.dr, t.cr], opts: [ACC_POOL, ACC_POOL], prefer,
+    cols: ["Debit", "Credit"], answer: [t.dr, t.cr], opts: [ACC_POOL, ACC_POOL], prefer, distinct: true,
     hint: "A debit increases an asset and decreases a liability or capital; a credit does the opposite. Say which two accounts the transaction changes and in which direction, then match each to a side.",
   });
 }
@@ -335,8 +336,8 @@ function journalPartCustom(rng) {
   const other = (x) => ACC_POOL.filter((a) => a !== x && a !== dr && a !== cr);
   return segPart(rng, {
     id: "journal", label: "Correcting entry", ask: "Record the correcting entry that reverses the early sale",
-    cols: ["Debit", "Credit"], answer: [dr, cr], opts: [ACC_POOL, ACC_POOL], prefer: [[dr, rng.pick(other(cr))], [rng.pick(other(dr)), cr]],
-    hint: "The original entry debited Trade receivables and credited Sales revenue. The correction undoes it, so each account goes on the opposite side.",
+    cols: ["Debit", "Credit"], answer: [dr, cr], opts: [ACC_POOL, ACC_POOL], prefer: [[dr, rng.pick(other(cr))], [rng.pick(other(dr)), cr]], distinct: true,
+    hint: "First write down the entry that recorded the credit sale. A correcting entry undoes it by putting the same two accounts on the opposite sides.",
   });
 }
 
@@ -385,9 +386,9 @@ function genAsset(rng, tier) {
     numPart({ id: "dep", label: "Depreciation", ask: "Annual straight-line depreciation, in $", answer: D, hint: "Straight-line charge = (cost − residual value) ÷ useful life in years." }),
     numPart({ id: "cv", label: "Carrying value", ask: `Carrying value at the end of year ${n}, in $`, answer: cv, hint: `After ${plural(n, "year")} the accumulated depreciation is ${n} times the yearly charge. Carrying value = cost − accumulated depreciation.` }),
   ];
-  if (tier === "hard") parts.push(numPart({ id: "profit", label: "Profit", ask: "Profit for the year after depreciation, in $", answer: P - D, hint: "Profit after depreciation = profit before depreciation − the year's depreciation charge." }));
+  if (tier === "hard") parts.push(numPart({ id: "profit", label: "Profit", ask: `Profit for year ${n} after depreciation, in $`, answer: P - D, hint: "Profit after depreciation = profit before depreciation − the year's depreciation charge." }));
   return {
-    prompt: `${firm} bought ${asset} for **${money(cost)}**. It expects to use it for **${L} years** and then sell it for **${money(res)}**, and depreciates it on the **straight-line** method. ${tier === "hard" ? `Profit before depreciation this year is **${money(P)}**.` : `It has now been held for **${n} year${n === 1 ? "" : "s"}**.`}${tier === "hard" ? ` Asked at the end of year ${n}.` : ""}`,
+    prompt: `${firm} bought ${asset} for **${money(cost)}**. It expects to use it for **${L} years** and then sell it for **${money(res)}**, and depreciates it on the **straight-line** method. It has now been held for **${n} year${n === 1 ? "" : "s"}**.${tier === "hard" ? ` Profit before depreciation for year ${n} is **${money(P)}**.` : ""}`,
     answerType: "multi", parts,
     explanation: `- Depreciation: (${fmt(cost)} − ${fmt(res)}) ÷ ${L} = **${fmt(D)}** a year.\n- Accumulated depreciation after ${plural(n, "year")}: ${n} × ${fmt(D)} = ${fmt(D * n)}. Carrying value = ${fmt(cost)} − ${fmt(D * n)} = **${fmt(cv)}**.${tier === "hard" ? `\n- Profit after depreciation: ${fmt(P)} − ${fmt(D)} = **${fmt(P - D)}**.` : ""}`,
     given: [{ label: "_cost", value: cost }, { label: "_resid", value: res }, { label: "_life", value: L }, ...(tier === "hard" ? [{ label: "_profit", value: P }] : [])],
@@ -406,7 +407,7 @@ function genAssetRB(rng, firm, asset) {
     const d1 = (cost * rate) / 100, d2 = ((cost - d1) * rate) / 100;
     const sl = cost / L;
     if (!Number.isInteger(d1) || !Number.isInteger(d2) || !Number.isInteger(sl) || sl === d2 || P <= Math.max(d2, sl)) continue;
-    const best = sl < d2 ? "Reducing balance" : "Straight-line"; // lower charge = higher profit
+    const best = sl < d2 ? "Straight-line" : "Reducing balance"; // lower year 2 charge = higher year 2 profit
     if ((best === "Reducing balance" ? 1 : 0) !== wantRB && tries < 900) continue;
     const cv = cost - d1 - d2;
     const parts = [
@@ -476,7 +477,9 @@ function verifyAssetRB(q, answer) {
   for (let y = 1; y <= 2; y++) { d = Math.round((cv * p.rate) / 100); cv -= d; }
   if (!numOk(part(answer, "dep2"), d, 0) || !numOk(part(answer, "cv"), cv, 0) || !numOk(part(answer, "profit"), p.P - d, 0)) return false;
   const sl = p.cost / p.L;
-  return plainChoiceOk(q, "method", sl < d ? "Reducing balance" : "Straight-line", part(answer, "method"));
+  // Compare the two year 2 profits directly.
+  const profitSL = p.P - sl, profitRB = p.P - d;
+  return plainChoiceOk(q, "method", profitSL > profitRB ? "Straight-line" : "Reducing balance", part(answer, "method"));
 }
 
 function verifyAssetDisposal(q, answer) {
@@ -498,6 +501,8 @@ const PRODUCTS = ["a new range of mugs", "a garden-tool line", "a subscription b
 function genBreakEven(rng, tier) {
   const firm = rng.pick(FIRMS), prod = rng.pick(PRODUCTS);
   if (tier === "expert-plus") return genBreakEvenPlus(rng, firm, prod);
+  // The decision to aim for is drawn once, so the outcomes are balanced (medium draws nothing here).
+  const target = tier === "hard" ? rng.int(0, 1) * 2 : tier === "expert" ? rng.int(0, 2) : 0;
   for (let tries = 0; tries < 3000; tries++) {
     const v = rng.int(4, 30);
     const c = rng.int(3, 20);
@@ -506,7 +511,7 @@ function genBreakEven(rng, tier) {
     const B = b + rng.int(2, 30) * 100;
     const M = rng.pick([10, 15, 20, 25]);
     const t = rng.int(1, 12) * 100;
-    const want = rng.int(0, 2);
+    rng.int(0, 2); // was a per-attempt target; still drawn so medium keeps its questions
     // No rng below in this attempt.
     const F = c * b;
     const mos = ((B - b) / B) * 100;
@@ -518,7 +523,7 @@ function genBreakEven(rng, tier) {
       dec = B < tu ? 1 : mos < M ? 2 : 0;
     } else dec = mos < M ? 2 : 0;
     if (tier === "hard" && dec === 1) continue;
-    if (dec !== want && tries < 2500 && !(tier === "hard" && want === 1)) continue;
+    if (dec !== target && tries < 2500) continue;
     return buildBreakEven(rng, { firm, prod, tier, p, v, c, b, B, M, t, F, mos });
   }
   throw new Error("break-even-review: could not draw");
@@ -630,6 +635,8 @@ const SIGN_RULE = "A variance that raises profit is favourable and one that lowe
 function genBudgetVariance(rng, tier) {
   const firm = rng.pick(FIRMS), prod = rng.pick(PRODUCTS);
   if (tier === "expert-plus") return genBudgetPlus(rng, firm, prod);
+  // Expert aims for a decision drawn once, so both outcomes are common (medium and hard draw nothing here).
+  const target = tier === "expert" ? rng.int(0, 1) : 0;
   for (let tries = 0; tries < 3000; tries++) {
     const B = rng.int(4, 20) * 100;
     const p = rng.int(12, 40);
@@ -641,7 +648,7 @@ function genBudgetVariance(rng, tier) {
     const k = rng.pick([30, 40, 50, 60]);
     const dF = rng.int(1, 6) * 100 * rng.pick([-1, 1]);
     const M = rng.pick([10, 15, 20, 30]);
-    const want = rng.int(0, 1);
+    rng.int(0, 1); // was a per-attempt target; still drawn so medium and hard keep their questions
     // No rng below in this attempt.
     if (A <= 0 || pa <= v || va <= 0 || va >= pa) continue;
     if (tier === "medium") return buildBudgetMedium(rng, { firm, prod, B, p, v, A, pa });
@@ -656,7 +663,7 @@ function genBudgetVariance(rng, tier) {
     const pct = (Math.abs(tv) / bp) * 100;
     if (Math.abs(pct - M) < 1) continue;
     const inv = pct >= M ? 1 : 0;
-    if (inv !== want && tries < 2500) continue;
+    if (inv !== target && tries < 2500) continue;
     return buildBudgetExpert(rng, { firm, prod, B, p, v, A, pa, F, Fa, M, bp, tv });
   }
   throw new Error("budget-variance: could not draw");

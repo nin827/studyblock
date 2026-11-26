@@ -3,7 +3,7 @@
 **Status:** open (parked by the user; build when asked)
 **Raised:** 2026-11-26
 
-Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, then **Chemist**, **Electrical Engineer**, **Biologist**. Accountant now includes Budget variance.
+Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, then **Chemist**, **Electrical Engineer**, **Biologist**, then **Game Developer**, **Network Engineer**, **Music Theorist**, **Operations Manager** (which also covers Travel Planner and Logistics). Accountant now includes Budget variance.
 
 ## Teacher (general role)
 - Accepted as a general role. No "X Teacher" subroles (ticket 020).
@@ -18,10 +18,5 @@ Built (ticket 020 follow-up): **Data Analyst**, **Physicist**, **Accountant**, t
 ## Other candidates (fair, for later)
 | Role | Possible subroles | Mix |
 |---|---|---|
-| Game Developer | Gameplay Programmer, Game Designer | vectors/movement, game probability, code, trigonometry, algorithms |
-| Network/IT Engineer | Network Admin, Security Analyst | networking, number bases, data representation, number theory (ciphers), boolean logic |
-| Musician / Music Theorist | Composer | intervals/scales, chords, rhythm, ratios, fractions |
-| Travel Planner (instead of a Geographer/Historian role) | none yet | travel, time-dates, map skills, shopping-money |
-| Logistics / Operations Manager | none yet | management, business math, travel, time-dates, statistics |
 
 Geography and History are mostly fact recall, so their mixed questions would be weak. That's why Travel Planner is suggested in their place.

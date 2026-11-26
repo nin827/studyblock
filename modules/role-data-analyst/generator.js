@@ -118,8 +118,9 @@ function genAb(rng, tier) {
   const rateBR = roundTo(d.rateB, 2);
   const liftOk = d.lift >= d.X;
   const lintro = `A team tests **${ex.what}** on the ${ex.page}. Each version was shown to **${thou(d.n)} ${ex.unit}**. Version A (current) had **${d.cA}** who ${ex.goal}; version B (new) had **${d.cB}**.`;
-  const rule1 = `The team ships B only if its lift (B's rate minus A's rate) is **at least ${d.X} percentage points**.`;
-  const plusRule = `Ship B only if **both** checks pass: the lift is at least **${d.X} points**, and B brings at least **${thou(d.E)} extra conversions a month** at **${thou(d.V)} ${ex.unit} a month**.`;
+  const pts = d.X === 1 ? "point" : "points";
+  const rule1 = `The team ships B only if its lift (B's rate minus A's rate) is **at least ${d.X} percentage ${pts}**.`;
+  const plusRule = `Ship B only if **both** checks pass: the lift is at least **${d.X} ${pts}**, and B brings at least **${thou(d.E)} extra conversions a month** at **${thou(d.V)} ${ex.unit} a month**.`;
   const dec = liftOk ? "Ship B" : "Keep A";
   const passes = [liftOk ? "Passes" : "Fails", d.extra >= d.E ? "Passes" : "Fails"];
   const planAns = [passes[0], passes[1], passes[0] === "Passes" && passes[1] === "Passes" ? "Ship B" : "Keep A"];
@@ -129,7 +130,7 @@ function genAb(rng, tier) {
     numPart("extra", "Extra a month", `Extra conversions a month if B replaces A at ${thou(d.V)} ${ex.unit} a month (whole number)`, d.extra, 0, "Multiply the monthly volume by the lift, written as a fraction (points ÷ 100).", true),
     choicePart("decision", "Decision", "What does the rule say?", dec, ["Ship B", "Keep A"], "Compare the lift in points with the limit in the rule. 'At least' includes the limit itself."),
     numPart("prob", "Chance", `Probability that at least one of ${d.m} B-${ex.unit} converts, to 4 decimal places`, d.pAtLeast, 4, `Find the chance that none of ${d.m} converts, (1 − p)^${d.m} with B's rate as p, and subtract it from 1.`),
-    numPart("need", "Volume needed", `${ex.unit[0].toUpperCase() + ex.unit.slice(1)} B needs to expect ${d.K} conversions (round up to a whole number)`, Math.ceil(d.needV), 0, `Work backwards: visitors needed = conversions wanted ÷ B's rate (as a fraction). Round up, since a part-visitor cannot be shown.`, true),
+    numPart("need", "Volume needed", `${ex.unit[0].toUpperCase() + ex.unit.slice(1)} B needs to expect ${d.K} conversions (round up to a whole number)`, Math.ceil(d.needV), 0, `Work backwards: ${ex.unit} needed = conversions wanted ÷ B's rate (as a fraction). Round up, since only whole ${ex.unit} can be counted.`, true),
     segPart(rng, { id: "plan", label: "Plan", ask: "Judge each check, then the call", cols: ["Lift check", "Volume check", "Call"], answer: planAns,
       opts: [["Passes", "Fails"], ["Passes", "Fails"], ["Ship B", "Keep A"]], hint: "Judge the lift check and the volume check separately against their limits. The call is Ship B only if both pass." }),
   ];
@@ -182,6 +183,8 @@ function kpiDraw(rng, tier) {
     const ok = safeAt(chg, 1) && safeAt(contrib, 1) && safeAt(share, 1) && Math.abs(chg - G) > 0.1 && Math.abs(chg) > 0.3 && Math.abs(contrib) > 0.3;
     if (!ok) continue;
     if (tier === "expert-plus" && (!Number.isInteger(roundTo(K, 6)) || need <= 0)) continue;
+    // "Added the most" / "largest contributor" needs at least one segment that rose.
+    if ((tier === "hard" || tier === "expert-plus") && Math.max(...delta) <= 0) continue;
     return { set, prev, curr, delta, T0, T1, chg, i, contrib, share, G, g, K, need, hi, lo };
   }
 }
@@ -201,7 +204,7 @@ function genKpi(rng, tier) {
     choicePart("driver", "Biggest driver", "Which segment added the most to the total?", set.segs[d.hi], set.segs, "Compare each segment's change in money, this quarter minus last quarter. The biggest rise wins, not the biggest total."),
     numPart("share", "Share now", `${name}'s share of this quarter's total (%), to 1 decimal place`, d.share, 1, "Share = the segment's figure this quarter ÷ this quarter's total × 100."),
     choicePart("met", "Target met?", `The target is growth of at least ${d.G}%. Was it met?`, met ? "Yes" : "No", ["Yes", "No"], "Compare the total change % you found with the target. 'At least' includes the target itself."),
-    numPart("need", "Needed", `${name} revenue needed next quarter (${set.unit}) for total growth of ${d.g}%, other segments flat`, d.need, 0, `Work backwards: the target total is this quarter's total × (1 + ${d.g}/100). Subtract what the other two segments already bring in.`, true),
+    numPart("need", "Needed", `${name} ${set.kpi} needed next quarter (${set.unit}) for total growth of ${d.g}%, other segments flat`, d.need, 0, `Work backwards: the target total is this quarter's total × (1 + ${d.g}/100). Subtract what the other two segments already bring in.`, true),
     segPart(rng, { id: "rank", label: "Ranking", ask: "Name the largest and smallest contributors, then judge the target", cols: ["Largest", "Smallest", `Target ${d.G}% met?`], answer: rank,
       opts: [set.segs, set.segs, ["Yes", "No"]], hint: "Rank the segments by their change in money, this quarter minus last. Then compare the total change % with the target." }),
   ];

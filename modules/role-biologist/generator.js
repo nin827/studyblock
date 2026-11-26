@@ -145,7 +145,7 @@ function genCrossFit(rng) {
   for (let i = 0; i < TRY; i++) {
     const tr = rng.pick(MONO);
     const N = rng.int(10, 30) * 4;
-    const pTrue = rng.pick([0.25, 0.5]);
+    const pTrue = rng.pick([0.25, 0.5, 0.375]); // 0.375: data that neither cross fits well, so "No" occurs
     const r = Math.ceil(N * 0.08);
     const k = Math.round(N * pTrue + rng.int(-r, r));
     if (k < 1 || k >= N) continue;
@@ -259,7 +259,7 @@ function genHWBack(rng) {
     const k = rng.int(2, 9);
     const N = rng.pick([1000, 2000, 4000]);
     const M = rng.pick([4000, 8000, 20000]);
-    const R = rng.pick([50, 100, 200, 500, 1000, 2000]);
+    const R = rng.pick([8, 10, 20, 25, 50, 100]); // q² runs from 0.01 to 0.2, so both answers occur
     const c = Math.round((N * k * (20 - k)) / 200);
     if (Math.abs(c - (N * k * (20 - k)) / 200) > 1e-6) continue;
     const st = (rd) => {
@@ -327,6 +327,7 @@ function genLincoln(rng, tier) {
     const order = ["pop", "dens", "en", "pr"].slice(0, n);
     if (!stableOk(st, Object.fromEntries(order.map((x) => [x, dps[x]])))) continue;
     const r = st((a, v) => v);
+    if (tier === "expert" && r.pr < 1) continue; // at least one whole predator, never "0.0 predators"
     const spec = {
       pop: numPart("pop", "Population", `Estimated population of ${sp}`, r.pop, 0, "Lincoln–Petersen: population = marked × second catch ÷ number recaptured."),
       dens: numPart("dens", "Density", "Population density (animals per hectare)", r.dens, 1, "Density = population ÷ area."),
@@ -361,33 +362,33 @@ function genChain(rng) {
     const f = (100 / P) ** L;
     const st = (rd) => {
       const pop = rd("pop", (M * C) / R);
-      const mj = rd("mj", (pop * need * f) / 1000);
-      const ha = rd("ha", (mj * 1000) / prod / 10000);
+      const mj = rd("mj", (pop * need * f) / 1000); // GJ: need is in MJ
+      const ha = rd("ha", (mj * 1e6) / prod / 10000);
       return { pop, mj, ha };
     };
-    if (!stableOk(st, { pop: 0, mj: 1, ha: 1 })) continue;
+    if (!stableOk(st, { pop: 0, mj: 1, ha: 0 })) continue;
     const r = st((a, v) => v);
-    if (r.ha < 0.5 || r.ha > 300) continue;
+    if (r.ha < 20 || r.ha > 300000) continue;
     const mul = rng.pick([0.6, 0.8, 1.25, 1.5]);
-    const res = roundTo(r.ha * mul, 1);
+    const res = roundTo(r.ha * mul, 0);
     if (Math.abs(res / r.ha - 1) < 0.1) continue;
     const enough = res >= r.ha;
     const parts = [
       numPart("pop", "Predators", `Estimated number of ${sp}`, r.pop, 0, "Lincoln–Petersen: population = marked × second catch ÷ number recaptured."),
-      numPart("mj", "Producer energy", "Energy the grass must capture each year (MJ)", r.mj, 1, "Each transfer passes on only the stated percentage, so divide by pct ÷ 100 once per transfer, working back from the predators' needs. Convert kJ to MJ."),
-      numPart("ha", "Area needed", "Area of grassland needed (hectares)", r.ha, 1, "Area (m²) = energy needed ÷ energy captured per m² per year. 1 ha = 10 000 m²."),
+      numPart("mj", "Producer energy", "Energy the grass must capture each year (GJ, 1 GJ = 1000 MJ)", r.mj, 1, "Each transfer passes on only the stated percentage, so divide by pct ÷ 100 once per transfer, working back from the predators' needs. Convert MJ to GJ."),
+      numPart("ha", "Area needed", "Area of grassland needed (hectares)", r.ha, 0, "Area (m²) = energy needed ÷ energy captured per m² per year. 1 ha = 10 000 m²."),
       yesNo("enough", "Reserve enough?", `The reserve has ${res} ha of grassland. Is that enough?`, enough, "Compare the area needed with the reserve."),
     ];
     const ex = [
       `**Predators:** ${M} × ${C} ÷ ${R} = **${fixed(r.pop, 0)}**.`,
-      `**Producer energy:** the predators need ${fixed(r.pop, 0)} × ${need} = ${fmt(r.pop * need, 0)} kJ a year. With ${P}% passed on at each of ${L} transfers, divide by ${fmt(P / 100, 2)}^${L}: ${fmt(r.pop * need * f, 0)} kJ = **${fixed(r.mj, 1)} MJ**.`,
-      `**Area needed:** ${fixed(r.mj, 1)} × 1000 ÷ ${prod} = ${fmt((r.mj * 1000) / prod, 1)} m², and ÷ 10 000 = **${fixed(r.ha, 1)} ha**.`,
-      `**Reserve:** ${res} ha is ${enough ? "at least" : "less than"} ${fixed(r.ha, 1)} ha, so **${enough ? "Yes" : "No"}**.`,
+      `**Producer energy:** the predators need ${fixed(r.pop, 0)} × ${need} = ${fmt(r.pop * need, 0)} MJ a year. With ${P}% passed on at each of ${L} transfers, divide by ${fmt(P / 100, 2)}^${L}: ${fmt(r.pop * need * f, 0)} MJ = **${fixed(r.mj, 1)} GJ**.`,
+      `**Area needed:** ${fixed(r.mj, 1)} GJ = ${fmt(r.mj * 1e6, 0)} kJ, and ÷ ${prod} = ${fmt((r.mj * 1e6) / prod, 0)} m², and ÷ 10 000 = **${fixed(r.ha, 0)} ha**.`,
+      `**Reserve:** ${res} ha is ${enough ? "at least" : "less than"} ${fixed(r.ha, 0)} ha, so **${enough ? "Yes" : "No"}**.`,
     ].join("\n\n");
     return finish(
-      `Researchers mark **${M}** ${sp} and release them. A later sample of **${C}** includes **${R}** marked animals (Lincoln–Petersen: population = marked × second catch ÷ recaptured). Each predator needs **${need} kJ** per year. The food chain has **${L}** energy transfers from the grass to the ${sp}, and **${P}%** of the energy passes on at each transfer. Grassland captures **${prod} kJ per m²** per year.`,
+      `Researchers mark **${M}** ${sp} and release them. A later sample of **${C}** includes **${R}** marked animals (Lincoln–Petersen: population = marked × second catch ÷ recaptured). Each predator needs **${need} MJ** of food energy per year. The food chain has **${L}** energy transfers from the grass to the ${sp}, and **${P}%** of the energy passes on at each transfer. Grassland captures **${prod} kJ per m²** per year.`,
       parts, ex, "eco-chain", { M, C, R, need, P, L, prod, res }, [["_marked", M], ["_caught", C], ["_recap", R], ["_need", need], ["_pct", P], ["_land", prod], ["_reserve", res]],
-      ["Work backwards up the chain: each step down needs more energy, not less.", "Convert units at the end: kJ to MJ, m² to hectares."],
+      ["Work backwards up the chain: each step down needs more energy, not less.", "Mind the units: MJ to GJ, GJ to kJ, m² to hectares."],
     );
   }
   return tooMany();
@@ -646,10 +647,10 @@ const ALT = {
   },
   "eco-chain": (p) => {
     const pop = p.C / (p.R / p.M);
-    let kj = pop * p.need;
+    let kj = pop * p.need * 1000; // need is in MJ per predator per year
     for (let i = 0; i < p.L; i++) kj /= p.P / 100;
     const ha = kj / p.prod / 1e4;
-    return { pop, mj: kj / 1000, ha, enough: YN(p.res >= ha) };
+    return { pop, mj: kj / 1e6, ha, enough: YN(p.res >= ha) };
   },
   "gd-culture": (p) => {
     const g = p.t / p.Td;

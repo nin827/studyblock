@@ -119,6 +119,10 @@ const COMPS = [
   { f: "FeO", M: "Fe", A: 56, a: 1, b: 1 }, { f: "Fe₂O₃", M: "Fe", A: 56, a: 2, b: 3 },
   { f: "Fe₃O₄", M: "Fe", A: 56, a: 3, b: 4 }, { f: "Na₂O", M: "Na", A: 23, a: 2, b: 1 },
 ];
+// Distractor formulas use the same metal with another metal : oxygen ratio.
+const SUBS = { 2: "₂", 3: "₃", 4: "₄" };
+const oxideOf = (M, a, b) => `${M}${a > 1 ? SUBS[a] : ""}O${b > 1 ? SUBS[b] : ""}`;
+const RATIOS = [[1, 1], [2, 1], [1, 2], [2, 3], [3, 4], [3, 2]];
 const compPct = (c) => roundTo((100 * c.a * c.A) / (c.a * c.A + 16 * c.b), 1);
 function genEmpirical(rng, tier) {
   for (let i = 0; i < TRY; i++) {
@@ -129,7 +133,11 @@ function genEmpirical(rng, tier) {
     if (same.some((x) => x !== c && Math.abs(compPct(x) - p) < 3)) continue;
     const S = rng.pick([5, 8, 10, 12.5, 20, 25, 40, 50]);
     const X = roundTo((S * p) / 100, 2);
-    const others = rng.shuffle(COMPS.filter((x) => x.f !== c.f)).slice(0, 3).map((x) => x.f);
+    // Same rng draw as before (so medium keeps its questions); it now only picks where to start in the ratio list.
+    const order = rng.shuffle(COMPS.filter((x) => x.f !== c.f));
+    const pool = RATIOS.filter(([a, b]) => a !== c.a || b !== c.b);
+    const start = COMPS.indexOf(order[0]) % pool.length;
+    const others = [0, 1, 2].map((j) => pool[(start + j) % pool.length]).map(([a, b]) => oxideOf(c.M, a, b));
     const st = (rd) => ({ nm: rd("nm", X / c.A), no: rd("no", (S - X) / 16), mr: rd("mr", c.a * c.A + 16 * c.b) });
     const dps = { nm: 3, no: 3, mr: 1 };
     const n = TIER_PARTS[tier];
@@ -139,7 +147,7 @@ function genEmpirical(rng, tier) {
     const all = [
       numPart("nm", "Moles of metal", `Amount of ${c.M} in the sample (mol)`, r.nm, 3, `Moles = mass ÷ relative atomic mass. Here ${c.M} has a relative atomic mass of ${c.A}.`),
       numPart("no", "Moles of oxygen", "Amount of O in the sample (mol)", r.no, 3, "The oxygen is the rest of the sample: subtract the metal mass, then divide by 16."),
-      { id: "formula", label: "Formula", ask: "Which is the empirical formula of the oxide?", answerType: "choice", answer: c.f, choices: [c.f, ...others], hint: "Divide both mole amounts by the smaller one and, if needed, multiply to get whole numbers. That gives the ratio of metal to oxygen atoms." },
+      { id: "formula", label: "Formula", ask: "Which is the empirical formula of the oxide?", answerType: "choice", answer: c.f, choices: rng.shuffle([c.f, ...others]), hint: "Divide both mole amounts by the smaller one and, if needed, multiply to get whole numbers. That gives the ratio of metal to oxygen atoms." },
       numPart("mr", "Formula mass", "Relative formula mass of the oxide", r.mr, 1, "Add the relative atomic masses of every atom in the formula you found."),
     ].slice(0, n);
     const ex = [
@@ -163,7 +171,7 @@ function genPurity(rng) {
     const ri = rng.pick(RIDX);
     const R = REACTIONS[ri];
     const ms = rng.int(20, 200) / 4;
-    const pur = rng.int(70, 98);
+    const pur = rng.next() < 0.5 ? rng.int(93, 99) : rng.int(70, 92); // about half the samples near the grades
     const mp = roundTo((((ms * pur) / 100) / R.Mr) * R.k * R.Mp, 2);
     const thr = rng.pick([90, 92, 95]);
     if (mp <= 0.5) continue;
@@ -235,6 +243,9 @@ function genTitr(rng, tier) {
     if (Math.abs(devAbs - 2) < 0.5) continue;
     if (tier === "expert" && (r.vd >= Vd || r.vd < 1)) continue;
     const ok = devAbs <= 2;
+    // The label check must give the same verdict from the rounded concentration, with room to spare.
+    const devRounded = (Math.abs(roundTo(r.ca, 3) - cl) / cl) * 100;
+    if (tier === "expert" && ((devRounded <= 2) !== ok || Math.abs(devRounded - 2) < 0.3)) continue;
     const all = {
       nb: numPart("nb", "Moles of NaOH", `Amount of NaOH in the titre (mmol)`, r.nb, 2, "Millimoles = concentration (mol/dm³) × volume (cm³)."),
       na: numPart("na", "Moles of acid", `Amount of ${A.f} in the flask (mmol)`, r.na, 2, `1 mol of ${A.f} reacts with ${A.r} mol of NaOH, so divide the NaOH amount by ${A.r}.`),
@@ -266,7 +277,7 @@ function genTitrBack(rng) {
     const A = rng.pick(ACIDS);
     const c = rng.pick([0.05, 0.1, 0.2, 0.25, 0.5]);
     const V = rng.int(150, 350) / 10;
-    const pur = rng.int(70, 99);
+    const pur = rng.next() < 0.5 ? rng.int(93, 99) : rng.int(70, 92); // about half the samples near the grades
     const massTrue = c * V * A.r * 0.4;
     const m = roundTo(massTrue / (pur / 100), 1);
     if (m < 1 || m > 15) continue;

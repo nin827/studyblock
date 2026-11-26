@@ -1,0 +1,16 @@
+{
+  "id": "role-operations-manager",
+  "title": "Applied scenarios",
+  "description": "Multi-step problems that join drive times, time zones, loads, staffing and stock control, as an operations manager meets them.",
+  "icon": "truck",
+  "type": "generator",
+  "roleOnly": true,
+  "fuzzyNumber": 1,
+  "questionsPerQuiz": 5,
+  "subtopics": [
+    { "id": "route-timing", "title": "Routes and arrival times", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "load-planning", "title": "Loads and trucks", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "staffing-plan", "title": "Staffing and labour cost", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "stock-reorder", "title": "Stock and reorder dates", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+  ]
+}

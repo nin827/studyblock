@@ -152,7 +152,11 @@ A role is a hand-made weighted mix with a difficulty shift, plus role-only Exper
   - Chemist (`role-chemist`): yield-purity, titration, gas-vessel, batch-cost (relative atomic masses, R = 8.31 and 24 dm³/mol at RTP stated in each prompt).
   - Electrical Engineer (`role-electrical-engineer`): power-circuit, battery-energy, register-flags, sensor-data (1 kB = 1000 bytes, bits numbered from 0 at the right, fuse and cable ratings stated).
   - Biologist (`role-biologist`): cross-counts, hardy-weinberg, field-ecology, growth-diversity (chi-square cut-offs, Lincoln–Petersen, transfer % and Simpson's formula stated).
-- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary, BI and Research Analyst, Astrophysicist and Nuclear Physicist, Auditor and Management Accountant, Analytical and Industrial Chemist, Embedded and Power Engineer, Geneticist and Ecologist. There are no "X Teacher" subroles: teaching would be a general role of its own. Future roles are parked in ticket 021.
+  - Game Developer (`role-game-developer`): move-collide, loot-odds, xp-curve, frame-budget (first frame at or past the wall, geometric XP curve where level 1 costs the base, pity cap at pull H, frame cost = fixed + per entity, pairs = n(n−1)/2).
+  - Network Engineer (`role-network-engineer`): subnet-plan, transfer-window, cipher-decode, log-flags (usable hosts 2^h − 2, /31 and /32 never, 1 MB = 8 megabits, A = 0 … Z = 25, affine keys coprime to 26, flag weights and lockout rules stated).
+  - Music Theorist (`role-music-theorist`): key-chords, progression, bar-timing, transposition (uses `js/lib/music.js` build/check toolkits; notes are choice parts; no double accidentals; cadence rule, tempo ranges and instrument transpositions stated; tempo in quarter notes per minute).
+  - Operations Manager (`role-operations-manager`): route-timing, load-planning, staffing-plan, stock-reorder (fixed UTC offsets, 15-minute break per full 2 hours of driving, counts round up, stock-count convention stated).
+- **Subroles:** Financial and Marketing Analyst, Backend and Fintech Engineer, Statistician and Actuary, BI and Research Analyst, Astrophysicist and Nuclear Physicist, Auditor and Management Accountant, Analytical and Industrial Chemist, Embedded and Power Engineer, Geneticist and Ecologist, Gameplay Programmer and Game Designer, Network Admin and Security Analyst, Composer and Arranger, Logistics Coordinator and Production Planner. There are no "X Teacher" subroles: teaching would be a general role of its own. Future roles are parked in ticket 021.
 - **Storage:** a role attempt is stored as `module: "role"`, `subtopic: "<role>"` or `"<role>~<subrole>"`, and `difficulty: <role level>`.
   - Questions carry their own origin, and their stored difficulty is the subject level drawn (`expert-plus` for scenarios). They count toward subject stats like mixes do; role-only modules count only under the role.
   - History has a "Roles" group, and Home Recent shows the role tag. Role runs don't set the last-module cookies.
@@ -211,7 +215,7 @@ export function generate({ subtopic, difficulty, rng }) {
 export function verify(question, answer) { ... }
 ```
 
-The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
+The engine does **not** shuffle generator `choices`: a generator must shuffle its own options (with the rng), or the answer sits in a fixed position. The engine seeds `rng` per question and stores the seed, so any question can be regenerated. After `generate`, the engine calls `verify(question, question.answer)`; if it fails, it discards and regenerates (max 20 tries, then logs an error).
 
 ### Code languages (Code Writing, Code Reviewing)
 

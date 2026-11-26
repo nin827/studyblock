@@ -282,7 +282,6 @@ function genStarMass(rng) {
   for (let i = 0; i < TRY; i++) {
     const M = rng.pick([0.5, 0.6, 0.8, 1.2, 1.5, 2, 2.5, 3, 4, 0.7, 0.9, 1.1, 1.4, 1.8, 3.5]);
     const T = rng.int(2, 60);
-    const B = rng.pick([20, 30, 40, 60, 25, 35, 45, 50, 80, 90]);
     const st = (rd) => {
       const a = rd("a", Math.cbrt(M * T * T));
       const v = rd("v", (2 * Math.PI * a * AU) / (T * YEAR));
@@ -292,6 +291,8 @@ function genStarMass(rng) {
     const dps = { a: 2, v: 1, rt: 1 };
     if (!stableOk(st, dps)) continue;
     const r = st((k, v) => v);
+    // The relay limit sits on either side of the round trip, so both answers occur.
+    const B = Math.max(5, Math.round((r.rt * rng.pick([0.6, 0.7, 0.8, 0.9, 1.1, 1.2, 1.35, 1.5])) / 5) * 5);
     if (Math.abs(r.rt - B) < 2.5) continue;
     const ok = r.rt <= B;
     const parts = [
@@ -488,36 +489,38 @@ function genKettle(rng, tier) {
 function genMetal(rng) {
   for (let i = 0; i < TRY; i++) {
     const [name, c] = rng.pick(METALS);
-    const m = rng.pick([0.5, 1, 1.5, 2]);
-    const P = rng.pick([500, 750, 1000, 1500, 2000]);
+    const m = rng.pick([2, 5, 10, 20]);
+    const P = rng.pick([1000, 1500, 2000, 3000]);
     const eta = rng.pick([70, 80, 90]);
     const dT1 = rng.int(10, 60);
     const dT2 = rng.int(10, 40);
     const rate = rng.pick([20, 25, 30]);
     const t1 = roundTo((m * c * dT1) / ((eta / 100) * P) / 60, 1);
-    if (t1 < 1.5 || t1 > 14) continue;
+    if (t1 < 2 || t1 > 30) continue;
     const st = (rd) => {
       const cc = rd("c", ((eta / 100) * P * t1 * 60) / (m * dT1));
       const t2 = rd("t2", (m * c * dT2) / ((eta / 100) * P) / 60);
       const cost = rd("cost", (P / 1000) * ((t1 + t2) / 60) * rate);
       return { c: cc, t2, cost };
     };
-    const dps = { c: 0, t2: 1, cost: 0 };
+    const dps = { c: 0, t2: 1, cost: 1 };
     if (!stableOk(st, dps)) continue;
     const r = st((k, v) => v);
+    if (r.cost < 2) continue;
+    // The table value nearest the calculated c must be this metal, with the next one clearly further.
     const near = METALS.map(([nm, cv]) => [nm, Math.abs(cv - r.c) / cv]).sort((x, y) => x[1] - y[1]);
-    if (near[0][0] !== name || near[1][1] < 0.3) continue;
+    if (near[0][0] !== name || near[1][1] < 0.1) continue;
     const parts = [
       numPart("c", "Specific heat", "Specific heat capacity of the block (J/kg°C)", r.c, 0, "Energy supplied to the block = efficiency × power × time. Then c = energy ÷ (m × ΔT)."),
       { id: "metal", label: "Metal", ask: "Which metal in the table is the block most likely made of?", answerType: "choice", answer: name, choices: METALS.map((x) => x[0]), hint: "Pick the metal whose tabulated value is closest to your calculated specific heat capacity." },
       numPart("t2", "Further heating", `Time to raise its temperature by a further ${dT2} °C (minutes), using the tabulated value for the metal you chose`, r.t2, 1, "Energy = m × c × ΔT with the table's c, then divide by the useful power (efficiency × P) and convert to minutes."),
-      numPart("cost", "Cost", `Cost of running the heater for the whole time, at ${rate} cents per kWh (cents)`, r.cost, 0, "Energy in kWh = power in kW × time in hours. The whole time is the first heating plus the further heating."),
+      numPart("cost", "Cost", `Cost of running the heater for the whole time, at ${rate} cents per kWh (cents)`, r.cost, 1, "Energy in kWh = power in kW × time in hours. The whole time is the first heating plus the further heating."),
     ];
     const ex = [
       `**Specific heat:** energy = ${eta / 100} × ${P} × ${fmt(t1 * 60, 1)} s = ${fmt((eta / 100) * P * t1 * 60, 0)} J, so c = ${fmt((eta / 100) * P * t1 * 60, 0)} ÷ (${m} × ${dT1}) = **${fixed(r.c, 0)} J/kg°C**.`,
       `**Metal:** the closest table value is ${name} (${c}), so **${name}**.`,
       `**Further heating:** ${m} × ${c} × ${dT2} ÷ (${eta / 100} × ${P}) = ${fmt((m * c * dT2) / ((eta / 100) * P), 1)} s = **${fixed(r.t2, 1)} min**.`,
-      `**Cost:** ${P / 1000} kW × (${t1} + ${fixed(r.t2, 1)}) ÷ 60 h × ${rate} = **${fixed(r.cost, 0)} cents**.`,
+      `**Cost:** ${P / 1000} kW × (${t1} + ${fixed(r.t2, 1)}) ÷ 60 h × ${rate} = **${fixed(r.cost, 1)} cents**.`,
     ].join("\n\n");
     return finish(
       `A **${m} kg** block of an unknown metal is heated by a **${P} W** electric heater. **${eta}%** of the electrical energy reaches the block, and its temperature rises by **${dT1} °C** in **${t1} minutes**. Specific heat capacities (J/kg°C): ${METALS.map(([nm, cv]) => `${nm} ${cv}`).join(", ")}.`,

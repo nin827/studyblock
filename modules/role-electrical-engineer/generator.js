@@ -33,7 +33,9 @@ const TRY = 30000;
 const tooMany = () => { throw new Error("role-electrical-engineer: no suitable draw"); };
 
 function numPart(id, label, ask, val, dp, hint, exact) {
-  const p = { id: id.toLowerCase(), label, ask: `${ask}, ${dpWord(dp)}`, answerType: "number", answer: roundTo(val, dp), tolerance: tolOf(dp), hint, _dp: dp };
+  // An ask that already states its whole-number rule in brackets gets no "to the nearest ..." suffix.
+  const said = dp === 0 && /\([^)]*whole[^)]*\)$/.test(ask);
+  const p = { id: id.toLowerCase(), label, ask: said ? ask : `${ask}, ${dpWord(dp)}`, answerType: "number", answer: roundTo(val, dp), tolerance: tolOf(dp), hint, _dp: dp };
   if (exact) p.fuzzyNumber = 0;
   return p;
 }
@@ -84,6 +86,8 @@ const parallel = (a, b) => (a * b) / (a + b);
 
 // C1: a resistor network on a supply. medium: two resistors; hard+: R1 in series with R2 || R3.
 function genNet(rng, tier) {
+  // Expert aims for a fuse drawn once, so the answer is not nearly always the smallest rating.
+  const wantFuse = tier === "expert" ? rng.pick([3, 5, 10, 13, 20]) : 0;
   for (let i = 0; i < TRY; i++) {
     const med = tier === "medium";
     const V = rng.pick([6, 9, 12, 24, 48, 120, 230]);
@@ -106,6 +110,7 @@ function genNet(rng, tier) {
     if (r.I < 0.3 || r.I > 28 || r.P > 2500) continue;
     const exp = tier === "expert";
     if (exp && !farFrom(FUSES, r.I)) continue;
+    if (exp && pickRating(FUSES, r.I) !== wantFuse && i < TRY - 1000) continue;
     const parts = [
       numPart("Rt", "Total resistance", "Total resistance of the network (Ω)", r.Rt, 2, med ? (ser ? "Resistors in series simply add." : "For two resistors in parallel, 1/R = 1/R₁ + 1/R₂ (or product ÷ sum).") : "Combine the parallel pair first (1/R = 1/R₂ + 1/R₃), then add the series resistor."),
       numPart("I", "Supply current", "Current drawn from the supply (A)", r.I, 2, "Ohm's law on the whole network: I = V ÷ total resistance."),
@@ -133,6 +138,8 @@ function genNet(rng, tier) {
 
 // C2 (expert+): work backwards from the rated power to an unknown resistor, then fuse and cable.
 function genBack(rng) {
+  // Aim for a fuse drawn once, so the answer is not nearly always the smallest pair.
+  const wantFuse = rng.pick([3, 5, 10, 13, 20]);
   for (let i = 0; i < TRY; i++) {
     const V = rng.pick([12, 24, 48, 120, 230]);
     const R1 = rng.int(2, 20);
@@ -151,6 +158,7 @@ function genBack(rng) {
     const r = st((k, v) => v);
     const Rp = r.Rt - R1;
     if (Rp <= 0.5 || Rp > R2 * 0.85 || r.R3 < 3 || r.R3 > 400 || r.I < 0.4 || r.I > 28 || !farFrom(FUSES, r.I)) continue;
+    if (pickRating(FUSES, r.I) !== wantFuse && i < TRY - 1000) continue;
     const fuse = pickRating(FUSES, r.I);
     const cable = CABLES.find((c) => c >= fuse);
     const cols = ["Fuse", "Cable rating"];
@@ -209,7 +217,7 @@ function genBattery(rng, tier) {
       Wh: numPart("Wh", "Stored energy", "Energy stored in the battery (Wh)", r.Wh, 2, "Energy in Wh = voltage × capacity in Ah, so convert mAh to Ah first (÷ 1000)."),
       use: numPart("use", "Usable energy", `Usable energy at ${D}% depth of discharge (Wh)`, r.use, 2, "Only the stated percentage of the stored energy may be used."),
       T: numPart("T", "Runtime", `Runtime at the stated load (h)`, med ? r.T : r.T, 1, med ? "Runtime = energy ÷ power." : "Runtime = usable energy ÷ power."),
-      cost: numPart("cost", "Charging cost", "Cost of 100 full charges (currency units)", r.cost, 2, "Mains energy for one charge = stored energy ÷ charger efficiency. Convert Wh to kWh, multiply by the tariff, then by 100."),
+      cost: numPart("cost", "Charging cost", "Cost of 100 charges, each putting the full stored energy back in (currency units)", r.cost, 2, "Mains energy for one charge = stored energy ÷ charger efficiency. Convert Wh to kWh, multiply by the tariff, then by 100."),
     };
     const pl = med ? ["Wh", "T"] : ["Wh", "use", "T", "cost"].slice(0, n);
     const ex = [
@@ -257,7 +265,7 @@ function genPack(rng) {
     const parts = [
       numPart("Wh", "Energy needed", "Energy the pack must store (Wh)", r.Wh, 1, "The load energy is power × time, but only part of the pack may be used, so divide by the usable fraction."),
       numPart("cap", "Capacity", `Capacity needed at the pack voltage (mAh)`, r.cap, 0, "Capacity in Ah = energy ÷ pack voltage; multiply by 1000 for mAh.", true),
-      numPart("strings", "Parallel strings", "Number of parallel strings of cells needed (whole number)", strings, 0, "Each string adds one cell's capacity. Divide the capacity needed by one cell's capacity and round up.", true),
+      numPart("strings", "Parallel strings", "Number of parallel strings of cells needed (round up to a whole number)", strings, 0, "Each string adds one cell's capacity. Divide the capacity needed by one cell's capacity and round up.", true),
       yesNo("ok", "Offered pack", `A supplier offers the same ${s}-cell series pack with ${offeredP} parallel string${offeredP > 1 ? "s" : ""}. Does it meet the requirement?`, meets, "Its capacity is the number of strings times the cell capacity. Compare it with the capacity you found."),
     ];
     parts[2].answer = strings;
@@ -488,7 +496,7 @@ function genAdc(rng, tier) {
       lev: numPart("lev", "Levels", `Number of levels the ${n}-bit converter can output`, r.lev, 0, "n bits give 2ⁿ different codes.", true),
       step: numPart("step", "Step size", "Size of one step (mV)", r.step, 2, "One step is the reference voltage divided by the number of levels; use millivolts."),
       V: numPart("V", "Voltage", `Input voltage when the code reads ${code} (V)`, r.V, 3, "Voltage = code × step size (convert mV back to V)."),
-      bits: numPart("bits", "Bits needed", `Smallest number of bits for a step of at most ${target} mV (whole number)`, bitsNeeded, 0, "Need 2ⁿ ≥ reference in mV ÷ target step. Take log₂ and round up.", true),
+      bits: numPart("bits", "Bits needed", `Smallest number of bits for a step of at most ${target} mV (a whole number)`, bitsNeeded, 0, "Need 2ⁿ ≥ reference in mV ÷ target step. Take log₂ and round up.", true),
       cd: numPart("cd", "Code", `Code the converter outputs for an input of ${Vin} V (nearest whole code)`, r.cd, 0, "Code = input voltage ÷ step size (same units), rounded to the nearest whole number.", true),
     };
     const ex = {
@@ -498,7 +506,7 @@ function genAdc(rng, tier) {
       bits: `**Bits needed:** ${Vref * 1000} ÷ ${target} = ${fmt((Vref * 1000) / target, 1)}, log₂ of that is ${fmt(need, 2)}, rounded up gives **${bitsNeeded}**.`,
       cd: `**Code:** ${Vin * 1000} mV ÷ ${fixed(r.step, 2)} mV = **${fixed(r.cd, 0)}**.`,
     };
-    const lead = med ? `A ${nodeName} feeds a **${n}-bit** analogue-to-digital converter whose reference voltage is **${Vref} V**.` : `A ${nodeName} feeds a **${n}-bit** analogue-to-digital converter with a **${Vref} V** reference. Code 0 means 0 V and the full range is divided equally into 2ⁿ steps.`;
+    const lead = med ? `A ${nodeName} feeds ${n === 8 || n === 11 || n === 18 ? "an" : "a"} **${n}-bit** analogue-to-digital converter whose reference voltage is **${Vref} V**.` : `A ${nodeName} feeds ${n === 8 || n === 11 || n === 18 ? "an" : "a"} **${n}-bit** analogue-to-digital converter with a **${Vref} V** reference. Code 0 means 0 V and the full range is divided equally into 2ⁿ steps.`;
     const extra = tier === "expert" ? ` The design needs steps of at most **${target} mV**, and the sensor currently reads **${Vin} V**.` : "";
     const given = [["_bits", n], ["_vref", Vref]].concat(tier === "hard" ? [["_code", code]] : tier === "expert" ? [["_target", target], ["_vin", Vin]] : []);
     if (tier === "expert") given.push(["_code", code]);
