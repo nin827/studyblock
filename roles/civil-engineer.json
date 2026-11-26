@@ -53,7 +53,7 @@
         "unit-conversion": { "weight": 1, "subtopics": ["mass-volume"] },
         "statistics": { "weight": 1, "subtopics": ["mean-median-mode"] }
       },
-      "exclusiveSubtopics": ["concrete-batches", "setting-out"]
+      "exclusiveSubtopics": ["pipe-drainage", "setting-out"]
     },
     {
       "id": "geotechnical-engineer",
@@ -68,7 +68,7 @@
         "unit-conversion": { "weight": 1, "subtopics": ["mass-volume"] },
         "statistics": { "weight": 1, "subtopics": ["range-iqr"] }
       },
-      "exclusiveSubtopics": ["concrete-batches", "tie-rod"]
+      "exclusiveSubtopics": ["ground-stress", "tie-rod"]
     }
   ]
 }

@@ -11,6 +11,8 @@
     { "id": "beam-check", "title": "Beams and section checks", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
     { "id": "tie-rod", "title": "Tie rods and factor of safety", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
     { "id": "concrete-batches", "title": "Concrete quantities and loads", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
-    { "id": "setting-out", "title": "Levels, cut and fill, setting out", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
+    { "id": "setting-out", "title": "Levels, cut and fill, setting out", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "pipe-drainage", "title": "Pipes and drainage", "difficulties": ["medium", "hard", "expert", "expert-plus"] },
+    { "id": "ground-stress", "title": "Ground and slopes", "difficulties": ["medium", "hard", "expert", "expert-plus"] }
   ]
 }

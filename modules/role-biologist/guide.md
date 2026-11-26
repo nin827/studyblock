@@ -36,3 +36,14 @@
 2. To find the time to reach a target, use logs: time = doubling time × log₂(target ÷ start).
 3. Actual size = image size ÷ magnification. Keep µm and mm straight (1 mm = 1000 µm).
 4. Simpson's index D = 1 − Σ n(n − 1) ÷ (N(N − 1)), where n is the count of each species and N the total. A higher D means more diversity.
+
+## Dilutions and colony counts
+
+1. One dilution step moving v mL into d mL of diluent has a factor of (v + d) ÷ v: 1 mL into 9 mL is 1 in 10, and 0.1 mL into 9.9 mL is 1 in 100.
+2. The total dilution factor of a tube is the step factors multiplied together. With powers of ten, add the exponents.
+3. CFU per mL of the sample = colonies ÷ (volume plated × dilution) = colonies ÷ volume plated × the total dilution factor.
+4. Count only the plate inside the stated range (for example 30 to 300 colonies). Plates above it are too crowded, plates below it too sparse.
+5. To write a big number as A × 10ⁿ for a given n, divide it by 10ⁿ and type A.
+6. Growth by doubling: N = N₀ × 2^(t/g). Generations = time ÷ generation time.
+7. Generation time from two counts: generations = log(N ÷ N₀) ÷ log 2, and g = time ÷ generations.
+8. Making up a solution: C₁V₁ = C₂V₂, so V₁ = C₂ × V₂ ÷ C₁. Each 1-in-10 step after that divides the concentration by 10.

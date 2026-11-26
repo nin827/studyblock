@@ -7,6 +7,8 @@
 //   orbit-signals   light delay, Kepler's third law, orbital speed, signal budget    (Astrophysicist)
 //   decay-safety    half-life, activity left, time to a safe level (logs), shipping  (Nuclear Physicist)
 //   heating-power   energy to heat a sample, power, current, fuse, identify a metal  (Nuclear Physicist)
+//   optics-bench    Snell's law, critical angle, thin lenses, photons; Expert+ two lenses or a fibre
+//                   worked back from its critical angle (Optical Physicist; parts 2 / 3 / 4 / 4)
 
 // ---------- helpers ----------
 
@@ -527,6 +529,254 @@ function genMetal(rng) {
   return tooMany();
 }
 
+// ---------- optics-bench ----------
+// Lens convention as in modules/waves (real-is-positive): 1/f = 1/u + 1/v, u > 0, a real image has
+// v > 0 and a virtual one v < 0, a diverging lens has f < 0. Magnification is the positive size
+// ratio |v| ÷ u; the orientation is asked as a separate choice part. Speeds, frequencies and photon
+// energies are answered in units of 10⁸ m/s, 10¹⁴ Hz and 10⁻¹⁹ J. Parts: 2 / 3 / 4 / 4.
+
+const OPT_PARTS = { medium: 2, hard: 3, expert: 4, "expert-plus": 4 };
+const C_MS = 3e8; // m/s
+const H_PL = 6.63e-34; // J s
+const deg = (r) => (r * 180) / Math.PI;
+const LENS_TEXT =
+  "Use 1/f = 1/u + 1/v with the real-is-positive convention: the object distance u is positive, a real image has a positive image distance v and a virtual image a negative v, and a converging lens has a positive focal length f (a diverging lens a negative one).";
+const NATURE_COLS = ["Image", "Orientation"];
+const NATURE_CHOICES = [["Real", "Inverted"], ["Real", "Upright"], ["Virtual", "Inverted"], ["Virtual", "Upright"]];
+function naturePart(ask, real, upright, hint) {
+  const choices = NATURE_CHOICES.map((c) => c.slice());
+  const answer = choices.find((c) => c[0] === (real ? "Real" : "Virtual") && c[1] === (upright ? "Upright" : "Inverted"));
+  return { id: "nature", label: "Image type", ask, answerType: "choice", choiceCols: NATURE_COLS.slice(), choices, answer, hint };
+}
+const natureText = (real, upright) => `${real ? "Real" : "Virtual"} | ${upright ? "Upright" : "Inverted"}`;
+const OPT_MATERIALS = [["crown glass", 1.52], ["water", 1.33], ["acrylic", 1.49], ["flint glass", 1.62], ["quartz", 1.46], ["dense flint glass", 1.75]];
+
+// B1: a ray from air into a block: Snell's law -> speed in the block -> critical angle -> TIR decision.
+function genOptBlock(rng, tier) {
+  for (let i0 = 0; i0 < TRY; i0++) {
+    const i = rng.int(25, 70);
+    const r = rng.int(14, 45);
+    const nTrue = Math.sin(rad(i)) / Math.sin(rad(r));
+    if (nTrue < 1.3 || nTrue > 1.9) continue;
+    const mat = rng.pick(["clear plastic", "glass", "acrylic", "resin"]);
+    const st = (rd) => {
+      const n = rd("n", Math.sin(rad(i)) / Math.sin(rad(r)));
+      const v = rd("v", 3 / n);
+      const cc = rd("cc", deg(Math.asin(1 / n)));
+      return { n, v, cc };
+    };
+    const dps = { n: 3, v: 2, cc: 1 };
+    const n = OPT_PARTS[tier];
+    const use = ["n", "v", "cc"].slice(0, Math.min(n, 3));
+    if (!stableOk(st, Object.fromEntries(use.map((k) => [k, dps[k]])))) continue;
+    const res = st((k, v) => v);
+    let th = 0, tir = false;
+    if (n === 4) {
+      const Cr = Math.round(res.cc);
+      th = rng.int(Math.max(15, Cr - 12), Math.min(80, Cr + 12));
+      if (Math.abs(th - res.cc) < 1.5) continue;
+      tir = th > res.cc;
+    }
+    const all = [
+      numPart("n", "Refractive index", "Refractive index of the block (no unit)", res.n, 3, "Snell's law from air (n = 1.00): sin i = n × sin r. Divide the sines, not the angles."),
+      numPart("v", "Speed in block", "Speed of light in the block (in units of 10⁸ m/s, so type 2 for 2 × 10⁸ m/s)", res.v, 2, "A higher refractive index means slower light: n = c ÷ v, so v = c ÷ n."),
+      numPart("cc", "Critical angle", "Critical angle from the block into air (degrees)", res.cc, 1, "At the critical angle the refracted ray runs along the surface (90°), so sin C = 1 ÷ n for a boundary with air."),
+      yesNo("tir", "Trapped?", `Is the ray that meets the far face at ${th}° to the normal totally internally reflected?`, tir, "Total internal reflection needs the angle inside the block to be bigger than the critical angle. Compare the two angles."),
+    ].slice(0, n);
+    const ex = [
+      `**Refractive index:** n = sin ${i}° ÷ sin ${r}° = ${fmt(Math.sin(rad(i)), 4)} ÷ ${fmt(Math.sin(rad(r)), 4)} = **${fixed(res.n, 3)}**.`,
+      `**Speed in the block:** v = c ÷ n = 3.00 ÷ ${fixed(res.n, 3)} = **${fixed(res.v, 2)}** × 10⁸ m/s.`,
+      `**Critical angle:** sin C = 1 ÷ ${fixed(res.n, 3)}, so C = **${fixed(res.cc, 1)}°**.`,
+      `**Far face:** ${th}° is ${tir ? "bigger" : "smaller"} than the critical angle ${fixed(res.cc, 1)}°, so **${tir ? "Yes" : "No"}**${tir ? ": no light refracts out" : ": the ray refracts out into the air"}.`,
+    ].slice(0, n).join("\n\n");
+    return finish(
+      `On the optics bench you shine a ray of light from air into a rectangular block of ${mat}. The angle of incidence is **${i}°** and the angle of refraction inside the block is **${r}°**, both measured from the normal. Take the refractive index of air as 1.00 and c = 3.00 × 10⁸ m/s.${n === 4 ? ` A second ray inside the block meets its far face at **${th}°** to the normal.` : ""}`,
+      all, ex, "ph-opt-block", { i, r, th, n }, [["_i", i], ["_r", r], ["_c", C_MS]].concat(n === 4 ? [["_theta", th]] : []),
+      ["Snell's law gives the refractive index first; the other answers all use it.", "Make sure the calculator works in degrees, and take the inverse sine to get an angle."],
+    );
+  }
+  return tooMany();
+}
+
+// B2: a single thin lens: image distance -> image type -> image height -> lens power.
+function genOptLens(rng, tier) {
+  for (let i0 = 0; i0 < TRY; i0++) {
+    const med = tier === "medium";
+    const div = tier === "expert" && rng.next() < 0.3;
+    const fAbs = rng.int(5, 30);
+    const f = div ? -fAbs : fAbs;
+    let u;
+    if (med) u = rng.int(Math.ceil(1.2 * fAbs), 6 * fAbs);
+    else if (div) u = rng.int(4, 80);
+    else if (rng.next() < 0.45) {
+      if (Math.floor(0.85 * fAbs) < 2) continue;
+      u = rng.int(2, Math.floor(0.85 * fAbs));
+    } else u = rng.int(Math.ceil(1.15 * fAbs), 6 * fAbs);
+    const h = rng.int(2, 20) / 2;
+    const st = (rd) => {
+      const v = rd("v", (u * f) / (u - f));
+      const hi = rd("hi", (h * Math.abs(v)) / u);
+      const p = rd("p", 100 / f);
+      return { v, hi, p };
+    };
+    const n = OPT_PARTS[tier];
+    const order = med ? ["v", "hi"] : n === 3 ? ["v", "nature", "hi"] : ["v", "nature", "hi", "p"];
+    const dps = { v: 1, hi: 1, p: 2 };
+    if (!stableOk(st, Object.fromEntries(order.filter((k) => k in dps).map((k) => [k, dps[k]])))) continue;
+    const res = st((k, v) => v);
+    if (Math.abs(res.v) > 250 || res.hi < 0.5 || res.hi > 80) continue;
+    const real = res.v > 0;
+    const upright = -res.v / u > 0;
+    const spec = {
+      v: numPart("v", "Image distance", med ? "Image distance v from the lens (cm)" : "Image distance v (cm, with a minus sign if the image is virtual)", res.v, 1, "Rearrange the lens equation: 1/v = 1/f − 1/u, then take the reciprocal."),
+      nature: naturePart("What kind of image forms?", real, upright, "The sign of v tells you whether the image can be caught on a screen. A single lens turns any image it can throw onto a screen upside down."),
+      hi: numPart("hi", "Image height", "Height of the image (cm, as a positive size)", res.hi, 1, "The size ratio is |v| ÷ u. Multiply the object height by it."),
+      p: numPart("p", "Lens power", "Power of the lens in dioptres (D), negative for a diverging lens", res.p, 2, "Power = 1 ÷ f, with f in metres."),
+    };
+    const txt = {
+      v: `**Image distance:** 1/v = 1/${f} − 1/${u}, so v = ${u} × ${f} ÷ (${u} − ${f}) = **${fixed(res.v, 1)} cm**.`,
+      nature: `**Image type:** v is ${real ? "positive, so the image is real (on the far side, it can be caught on a screen) and inverted" : "negative, so the image is virtual (on the same side as the object) and upright"}: **${natureText(real, upright)}**.`,
+      hi: `**Image height:** ${h} × ${fixed(Math.abs(res.v), 1)} ÷ ${u} = **${fixed(res.hi, 1)} cm**.`,
+      p: `**Power:** 1 ÷ ${fmt(f / 100, 2)} m = **${fixed(res.p, 2)} D**.`,
+    };
+    return finish(
+      `On the optics bench, a lit arrow **${h} cm** tall stands **${u} cm** from a ${div ? "diverging" : "converging"} lens of focal length **${f} cm**. ${LENS_TEXT}`,
+      order.map((k) => spec[k]), order.map((k) => txt[k]).join("\n\n"), "ph-opt-lens", { u, f, h, order }, [["_u", u], ["_f", f], ["_h", h]],
+      ["Find the image distance first; the image type and size both follow from it.", "Keep the signs: a virtual image has a negative v, and a diverging lens a negative f."],
+    );
+  }
+  return tooMany();
+}
+
+// B3: a laser beam: frequency -> photon energy -> wavelength in the block -> angle of refraction.
+function genOptLaser(rng, tier) {
+  for (let i0 = 0; i0 < TRY; i0++) {
+    const lam = rng.int(80, 140) * 5;
+    const n = OPT_PARTS[tier];
+    const [name, ni] = n >= 3 ? rng.pick(OPT_MATERIALS) : ["", 1];
+    const i = n === 4 ? rng.int(20, 70) : 0;
+    const st = (rd) => {
+      const f = rd("f", 3000 / lam);
+      const e = rd("e", 0.663 * f);
+      const lm = rd("lm", 3000 / (ni * f));
+      const r = rd("r", deg(Math.asin(Math.sin(rad(i)) / ni)));
+      return { f, e, lm, r };
+    };
+    const order = ["f", "e", "lm", "r"].slice(0, n);
+    const dps = { f: 2, e: 2, lm: 0, r: 1 };
+    if (!stableOk(st, Object.fromEntries(order.map((k) => [k, dps[k]])))) continue;
+    const res = st((k, v) => v);
+    const parts = [
+      numPart("f", "Frequency", "Frequency of the light (in units of 10¹⁴ Hz, so type 5 for 5 × 10¹⁴ Hz)", res.f, 2, "Use c = f × λ with λ in metres, so f = c ÷ λ."),
+      numPart("e", "Photon energy", "Energy of one photon (in units of 10⁻¹⁹ J)", res.e, 2, "Photon energy E = h × f, with the frequency in Hz."),
+      numPart("lm", "Wavelength in block", "Wavelength of the light inside the block (nm)", res.lm, 0, "The frequency stays the same in the block, but the light slows to c ÷ n, so the wavelength shrinks by the factor n."),
+      numPart("r", "Refraction angle", "Angle of refraction inside the block (degrees)", res.r, 1, "Snell's law from air: sin r = sin i ÷ n. Take the inverse sine, in degrees."),
+    ].slice(0, n);
+    const ex = [
+      `**Frequency:** f = c ÷ λ = 3.00 × 10⁸ ÷ (${lam} × 10⁻⁹) = **${fixed(res.f, 2)}** × 10¹⁴ Hz.`,
+      `**Photon energy:** E = h f = 6.63 × 10⁻³⁴ × ${fixed(res.f, 2)} × 10¹⁴ = **${fixed(res.e, 2)}** × 10⁻¹⁹ J.`,
+      `**Wavelength in the block:** λ ÷ n = ${lam} ÷ ${ni} = **${fixed(res.lm, 0)} nm** (the same as (c ÷ n) ÷ f).`,
+      `**Refraction angle:** sin r = sin ${i}° ÷ ${ni} = ${fmt(Math.sin(rad(i)) / ni, 4)}, so r = **${fixed(res.r, 1)}°**.`,
+    ].slice(0, n).join("\n\n");
+    const block = n >= 3 ? ` The beam enters a block of ${name} with refractive index **${ni}**${n === 4 ? ` at an angle of incidence of **${i}°**` : ""}. Take the refractive index of air as 1.00.` : "";
+    return finish(
+      `A laser on the optics bench emits light of wavelength **${lam} nm** in air. Use c = 3.00 × 10⁸ m/s, h = 6.63 × 10⁻³⁴ J s and 1 nm = 10⁻⁹ m.${block}`,
+      parts, ex, "ph-opt-laser", { lam, ni, i, n }, [["_lambda", lam], ["_c", C_MS], ["_planck", H_PL]].concat(n >= 3 ? [["_n", ni]] : []).concat(n === 4 ? [["_i", i]] : []),
+      ["Convert the wavelength to metres before using c = f × λ.", "In the calculator, write powers of ten with e: 3e8 means 3 × 10⁸."],
+    );
+  }
+  return tooMany();
+}
+
+// B4 (expert+): an optical fibre worked backwards from its critical angle, then a launch decision.
+function genOptFibre(rng) {
+  for (let i0 = 0; i0 < TRY; i0++) {
+    const n2 = rng.pick([1.4, 1.42, 1.44, 1.46, 1.48]);
+    const Cd = rng.int(68, 84);
+    const L = rng.int(2, 40) / 2;
+    const want = rng.next() < 0.5;
+    const i = rng.int(4, 50);
+    const st = (rd) => {
+      const n1 = rd("n1", n2 / Math.sin(rad(Cd)));
+      const t = rd("t", ((L * 1e3 * n1) / C_MS) * 1e6);
+      const r = rd("r", deg(Math.asin(Math.sin(rad(i)) / n1)));
+      return { n1, t, r };
+    };
+    const dps = { n1: 3, t: 1, r: 1 };
+    if (!stableOk(st, dps)) continue;
+    const res = st((k, v) => v);
+    const wall = 90 - res.r;
+    if (Math.abs(wall - Cd) < 1.5) continue;
+    const tir = wall > Cd;
+    if (tir !== want) continue;
+    const parts = [
+      numPart("n1", "Core index", "Refractive index of the core glass (no unit)", res.n1, 3, "Work backwards from the critical angle: at the core–cladding boundary, sin C = n(cladding) ÷ n(core)."),
+      numPart("t", "Travel time", "Time for a pulse travelling straight along the axis to cover the whole fibre (μs)", res.t, 1, "Light in the core travels at c ÷ n. Time = length in metres ÷ speed; multiply seconds by 10⁶ for μs."),
+      numPart("r", "Refraction angle", "Angle of refraction of the test beam inside the core, at the end face (degrees)", res.r, 1, "Snell's law at the end face: 1.00 × sin i = n(core) × sin r."),
+      yesNo("tir", "Stays in core?", "Is the test beam totally internally reflected when it first meets the core–cladding boundary?", tir, "The end face and the side wall are at right angles, so the beam meets the side wall at 90° minus its refraction angle. Compare that angle with the critical angle."),
+    ];
+    const ex = [
+      `**Core index:** sin ${Cd}° = ${n2} ÷ n(core), so n(core) = ${n2} ÷ ${fmt(Math.sin(rad(Cd)), 4)} = **${fixed(res.n1, 3)}**.`,
+      `**Travel time:** speed = 3.00 × 10⁸ ÷ ${fixed(res.n1, 3)} m/s, so t = ${L * 1000} m ÷ that speed = **${fixed(res.t, 1)} μs**.`,
+      `**Refraction angle:** sin r = sin ${i}° ÷ ${fixed(res.n1, 3)}, so r = **${fixed(res.r, 1)}°**.`,
+      `**Stays in core?** The beam meets the side wall at 90° − ${fixed(res.r, 1)}° = ${fmt(wall, 1)}°, which is ${tir ? "more" : "less"} than the critical angle ${Cd}°, so **${tir ? "Yes" : "No"}**${tir ? "" : ": part of it leaks into the cladding"}.`,
+    ].join("\n\n");
+    return finish(
+      `You are testing an optical fibre for a data link. Its glass core is surrounded by cladding with refractive index **${n2}**, and the critical angle at the core–cladding boundary is measured as **${Cd}°**. The fibre is **${L} km** long. A test beam enters the flat end face of the core from air at an angle of incidence of **${i}°**. Use c = 3.00 × 10⁸ m/s and take the refractive index of air as 1.00.`,
+      parts, ex, "ph-opt-fibre", { n2, Cd, L, i }, [["_n_clad", n2], ["_crit", Cd], ["_len_km", L], ["_c", C_MS], ["_i", i]],
+      ["Work backwards: the critical angle and the cladding index give the core index, and everything else uses it.", "Draw the beam: it bends at the end face, then travels to the side wall, which is at right angles to the end face."],
+    );
+  }
+  return tooMany();
+}
+
+// B5 (expert+): two converging lenses; the image of lens 1 is the object for lens 2.
+function genOptTwoLens(rng) {
+  for (let i0 = 0; i0 < TRY; i0++) {
+    const f1 = rng.int(5, 20);
+    const u1 = rng.int(Math.ceil(1.3 * f1), 4 * f1);
+    const f2 = rng.int(5, 25);
+    const h = rng.int(2, 10) / 2;
+    const wantReal = rng.next() < 0.5;
+    const v1t = (u1 * f1) / (u1 - f1);
+    // Lens 2 sits beyond its focal length from the first image for a real final image, inside it for a virtual one.
+    const d = wantReal ? rng.int(Math.ceil(v1t + 1.2 * f2), Math.floor(v1t + 3 * f2)) : rng.int(Math.ceil(v1t) + 2, Math.floor(v1t + 0.85 * f2));
+    const st = (rd) => {
+      const v1 = rd("v1", (u1 * f1) / (u1 - f1));
+      const u2 = d - v1;
+      const v2 = rd("v2", (u2 * f2) / (u2 - f2));
+      const hf = rd("hf", h * Math.abs(v1 / u1) * Math.abs(v2 / u2));
+      return { v1, u2, v2, hf };
+    };
+    const dps = { v1: 1, v2: 1, hf: 1 };
+    if (!stableOk(st, dps)) continue;
+    const res = st((k, v) => v);
+    if (res.u2 < 2 || Math.abs(res.u2 - f2) < 0.15 * f2 || Math.abs(res.v2) > 200 || res.hf < 0.5 || res.hf > 60) continue;
+    const real = res.v2 > 0;
+    if (real !== wantReal) continue;
+    const m = (-res.v1 / u1) * (-res.v2 / res.u2);
+    const upright = m > 0;
+    const parts = [
+      numPart("v1", "First image", "Distance of the image formed by lens 1, measured from lens 1 (cm)", res.v1, 1, "Use the lens equation for lens 1 on its own: 1/v = 1/f − 1/u."),
+      numPart("v2", "Final image", "Distance of the final image from lens 2 (cm, with a minus sign if it is virtual)", res.v2, 1, "The object distance for lens 2 is the lens separation minus the first image distance. Then use the lens equation again with lens 2's focal length."),
+      numPart("hf", "Final height", "Height of the final image (cm, as a positive size)", res.hf, 1, "Each lens scales the size by |v| ÷ u. Multiply the two size ratios, then multiply by the object height."),
+      naturePart("What kind of final image forms, compared with the original object?", real, upright, "The sign of the final image distance tells you whether it can be caught on a screen. Every lens that throws its image onto the far side turns the picture upside down, so count the flips."),
+    ];
+    const ex = [
+      `**First image:** v₁ = ${u1} × ${f1} ÷ (${u1} − ${f1}) = **${fixed(res.v1, 1)} cm**, a real image beyond lens 1.`,
+      `**Final image:** that image is ${d} − ${fixed(res.v1, 1)} = ${fmt(res.u2, 1)} cm in front of lens 2, so v₂ = ${fmt(res.u2, 1)} × ${f2} ÷ (${fmt(res.u2, 1)} − ${f2}) = **${fixed(res.v2, 1)} cm**.`,
+      `**Final height:** ${h} × (${fixed(res.v1, 1)} ÷ ${u1}) × (${fixed(Math.abs(res.v2), 1)} ÷ ${fmt(res.u2, 1)}) = **${fixed(res.hf, 1)} cm**.`,
+      `**Image type:** v₂ is ${real ? "positive, so the final image is real" : "negative, so the final image is virtual"}. Lens 1 turns the picture upside down${real ? " and lens 2 turns it back" : ", and lens 2 (used as a magnifier) keeps it that way"}: **${natureText(real, upright)}**.`,
+    ].join("\n\n");
+    return finish(
+      `On the optics bench, an object **${h} cm** tall stands **${u1} cm** in front of lens 1, a converging lens of focal length **${f1} cm**. Lens 2, a converging lens of focal length **${f2} cm**, sits **${d} cm** beyond lens 1 on the same axis. The image formed by lens 1 acts as the object for lens 2. ${LENS_TEXT}`,
+      parts, ex, "ph-opt-twolens", { u1, f1, f2, d, h }, [["_h", h], ["_u1", u1], ["_f1", f1], ["_f2", f2], ["_d", d]],
+      ["Treat the lenses one at a time: solve lens 1, then use its image as the object for lens 2.", "Keep full precision in the calculator; the separation minus the first image distance is the second object distance."],
+    );
+  }
+  return tooMany();
+}
+
 // ---------- dispatch ----------
 
 export function generate({ subtopic, difficulty, rng }) {
@@ -537,6 +787,11 @@ export function generate({ subtopic, difficulty, rng }) {
   if (subtopic === "orbit-signals") return plus ? genStarMass(rng) : coin ? genLightDelay(rng, difficulty) : genKepler(rng, difficulty);
   if (subtopic === "decay-safety") return plus ? genDecayBack(rng) : genDecay(rng, difficulty);
   if (subtopic === "heating-power") return plus ? genMetal(rng) : genKettle(rng, difficulty);
+  if (subtopic === "optics-bench") {
+    if (plus) return coin ? genOptTwoLens(rng) : genOptFibre(rng);
+    const pick = rng.next();
+    return pick < 1 / 3 ? genOptBlock(rng, difficulty) : pick < 2 / 3 ? genOptLens(rng, difficulty) : genOptLaser(rng, difficulty);
+  }
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
 
@@ -615,6 +870,42 @@ const ALT = {
     const best = METALS.slice().sort((x, y) => Math.abs(x[1] - c) - Math.abs(y[1] - c))[0];
     const t2 = (p.m * best[1] * p.dT2) / (p.eta / 100 / (1 / p.P)) / 60;
     return { c, metal: best[0], t2, cost: (p.P / 1000) * ((p.t1 + t2) / 60) * p.rate };
+  },
+  "ph-opt-block": (p) => {
+    const n = Math.cos(rad(90 - p.i)) / Math.cos(rad(90 - p.r)); // sines as cosines of the complements
+    return { n, v: (3 * Math.sin(rad(p.r))) / Math.sin(rad(p.i)), cc: deg(Math.atan(1 / Math.sqrt(n * n - 1))), tir: YN(n * Math.sin(rad(p.th)) > 1) };
+  },
+  "ph-opt-lens": (p) => {
+    const x = p.u - p.f; // Newton's form: v = f + f² ÷ (u − f), signed magnification −f ÷ (u − f)
+    const v = p.f + (p.f * p.f) / x;
+    const m = -p.f / x;
+    return { v, hi: p.h * Math.abs(m), p: 1 / (p.f / 100), nature: natureText(v > 0, m > 0) };
+  },
+  "ph-opt-laser": (p) => {
+    const lamM = p.lam * 1e-9;
+    const s = Math.sin(rad(p.i)) / p.ni;
+    return { f: C_MS / lamM / 1e14, e: (H_PL * C_MS) / lamM / 1e-19, lm: p.lam / p.ni, r: deg(Math.atan(s / Math.sqrt(1 - s * s))) };
+  },
+  "ph-opt-fibre": (p) => {
+    const n1 = p.n2 / Math.cos(rad(90 - p.Cd));
+    const s = Math.sin(rad(p.i)) / n1;
+    const r = deg(Math.atan(s / Math.sqrt(1 - s * s)));
+    return { n1, t: (p.L * 1e3) / (C_MS / n1) * 1e6, r, tir: YN(n1 * Math.cos(rad(r)) > p.n2) };
+  },
+  "ph-opt-twolens": (p) => {
+    // Ray-transfer matrices: gap T(d) = [[1, d], [0, 1]], thin lens L(f) = [[1, 0], [−1/f, 1]].
+    const mul = (A, B) => [
+      [A[0][0] * B[0][0] + A[0][1] * B[1][0], A[0][0] * B[0][1] + A[0][1] * B[1][1]],
+      [A[1][0] * B[0][0] + A[1][1] * B[1][0], A[1][0] * B[0][1] + A[1][1] * B[1][1]],
+    ];
+    const T = (d) => [[1, d], [0, 1]];
+    const Lf = (f) => [[1, 0], [-1 / f, 1]];
+    const M1 = mul(Lf(p.f1), T(p.u1));
+    const v1 = -M1[0][1] / M1[1][1];
+    const M2 = mul(Lf(p.f2), mul(T(p.d), M1));
+    const v2 = -M2[0][1] / M2[1][1];
+    const m = M2[0][0] + v2 * M2[1][0];
+    return { v1, v2, hf: p.h * Math.abs(m), nature: natureText(v2 > 0, m > 0) };
   },
 };
 

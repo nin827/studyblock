@@ -11,6 +11,11 @@
 //   tie-rod           stress -> extension -> factor of safety -> meets the minimum?             (Structural)
 //   concrete-batches  volume -> order with waste -> trucks (round up) -> cost                   (Site)
 //   setting-out       gradient -> level difference -> cut/fill -> volume, lorries; trig pegs    (Site)
+//   pipe-drainage     Q = A·v and fill time; drain 1 in N -> outfall level -> flood check; pump head ->
+//                     hydraulic and input power -> cost; supply rate -> main size -> tank storage -> verdict  (Water)
+//   ground-stress     σ, u, σ′ at depth; pad footing weight -> bearing pressure -> FoS -> verdict;
+//                     slope FoS -> anchor force (backwards) -> stock anchor -> wider spacing verdict    (Geotechnical)
+// (pipe-drainage and ground-stress: medium / hard / expert / expert-plus = 2 / 3 / 4 / 4 parts.)
 
 import { roundTo } from "../../js/lib/mathutil.js";
 
@@ -400,6 +405,219 @@ function genSetting(rng, tier) {
   return tooMany();
 }
 
+// ---------- pipe-drainage ----------
+
+const PIPE_D = [100, 150, 200, 225, 250, 300];
+const STOCK_D = [100, 150, 200, 250, 300, 350, 400, 450];
+const GRAV = 9.81;
+const waterNote = "Water has a density of **1000 kg/m³**, and g = **9.81 N/kg**.";
+const boreArea = (dmm) => (Math.PI * (dmm / 1000) ** 2) / 4; // m², diameter in mm
+const BLOCKS = ["00:00–04:00", "04:00–08:00", "08:00–12:00", "12:00–16:00", "16:00–20:00", "20:00–24:00"];
+
+function genPipe(rng, tier) {
+  let pipeTarget; // expert-plus only: drawn on first use so the answer spreads over the stock list
+  for (let i = 0; i < TRY; i++) {
+    if (tier === "medium") {
+      const d = rng.pick(PIPE_D), v = rng.int(6, 20) / 10, V = rng.int(4, 60) * 5;
+      const Q = boreArea(d) * v * 1000; // L/s
+      const t = (V * 1000) / Q / 60, tR = (V * 1000) / roundTo(Q, 1) / 60;
+      if (nearHalf(Q, 1, 0.1) || nearHalf(t, 0, 0.1) || roundTo(t, 0) !== roundTo(tR, 0) || t < 5 || t > 600) continue;
+      const parts = [
+        numPart("q", "Flow rate", "Flow rate when the main runs full (L/s)", Q, 1, "Area of the bore = π × d² ÷ 4 with d in metres. Flow in m³/s = area × velocity; multiply by 1000 for litres per second."),
+        numPart("t", "Filling time", "Time to fill the empty tank at that flow (minutes)", t, 0, "Tank volume in litres ÷ flow in L/s gives seconds; then convert the seconds to minutes.", true),
+      ];
+      const ex = `**Flow rate:** area = π × ${f(d / 1000)}² ÷ 4 = ${roundTo(boreArea(d), 5)} m²; Q = area × ${f(v)} = ${roundTo(Q / 1000, 5)} m³/s = **${roundTo(Q, 1).toFixed(1)} L/s**.\n\n**Filling time:** ${commas(V * 1000)} L ÷ ${roundTo(Q, 1).toFixed(1)} L/s = ${commas(roundTo((V * 1000) / Q, 0))} s ÷ 60 = **${roundTo(t, 0)} minutes**.`;
+      return finish(
+        `A water main with an internal diameter of **${d} mm** runs full at a mean velocity of **${f(v)} m/s**. It fills an empty storage tank of **${V} m³** (1 m³ = 1000 L).`,
+        parts, ex, "civ-pipe1", { tier, d, v, V }, [["_d", d], ["_vel", v], ["_vol", V]],
+        ["Flow = area × velocity, with the area from the internal diameter in metres.", "Then time = volume ÷ flow, keeping litres with L/s."],
+      );
+    }
+    if (tier === "hard") {
+      const N = rng.pick([40, 50, 60, 75, 80, 100, 120, 150, 200]), L = rng.int(4, 30) * 5, fall = L / N;
+      if (!isEx(fall, 2) || fall < 0.1) continue;
+      const ILa = rng.int(3000, 9000) / 100, ILb = roundTo(ILa - fall, 2);
+      const L2 = rng.int(2, 20) * 5, out = ILb - L2 / N;
+      if (nearHalf(out, 2, 0.1)) continue;
+      const want = rng.next() < 0.5, clr = rng.pick([0.15, 0.2, 0.3]), gap = rng.pick([0.05, 0.1, 0.2, 0.4]);
+      const F = roundTo(want ? out - clr - gap : out - clr + gap, 2);
+      const ok = out - F >= clr;
+      if (ok !== want || ok !== roundTo(out, 2) - F >= clr - 1e-9) continue;
+      const parts = [
+        numPart("n", "Gradient", "Gradient of the drain from A to B, written as 1 in N (give N)", N, 0, "Fall = invert at A − invert at B. N = horizontal length ÷ fall.", true),
+        numPart("out", "Outfall invert", "Invert level at the outfall (m RL)", out, 2, "Over the extra length the drain falls by that length ÷ N. Subtract this from the invert at B."),
+        yesNo("ok", "Clear of the flood?", `The outfall invert must be at least **${clr.toFixed(2)} m** above the river's design flood level of **${F.toFixed(2)} m RL**. Is it?`, ok, "Subtract the flood level from the outfall invert and compare the gap with the clearance."),
+      ];
+      const ex = `**Gradient:** fall = ${ILa.toFixed(2)} − ${ILb.toFixed(2)} = ${f(fall)} m; N = ${L} ÷ ${f(fall)} = **${N}**, so 1 in ${N}.\n\n**Outfall invert:** extra fall = ${L2} ÷ ${N} = ${roundTo(L2 / N, 4)} m; ${ILb.toFixed(2)} − ${roundTo(L2 / N, 4)} = **${roundTo(out, 2).toFixed(2)} m RL**.\n\n**Clear of the flood?** ${roundTo(out, 2).toFixed(2)} − ${F.toFixed(2)} = ${roundTo(out - F, 2).toFixed(2)} m, ${ok ? "at least" : "less than"} ${clr.toFixed(2)} m: **${YN(ok)}**.`;
+      return finish(
+        `A surface-water drain runs from manhole A (invert level **${ILa.toFixed(2)} m RL**) to manhole B (invert level **${ILb.toFixed(2)} m RL**), a horizontal distance of **${L} m**. The invert is the inside bottom of the pipe. From B the drain continues at the same gradient for a further **${L2} m** to an outfall on a river.`,
+        parts, ex, "civ-pipe2", { tier, ILa, ILb, L, L2, clr, F }, [["_ILa", ILa], ["_ILb", ILb], ["_L", L], ["_L2", L2]],
+        ["A gradient of 1 in N means 1 m of fall for every N m along.", "The drain keeps the same gradient all the way to the outfall."],
+      );
+    }
+    if (tier === "expert") {
+      const sump = rng.int(1000, 6000) / 100, top = roundTo(sump + rng.int(500, 4000) / 100, 2), hf = rng.int(5, 60) / 10;
+      const Q = rng.int(5, 80), eta = rng.pick([55, 60, 65, 70, 72, 75, 78, 80, 85]), hrs = rng.pick([4, 6, 8, 10, 12, 16, 20]);
+      const price = rng.pick([0.12, 0.15, 0.18, 0.2, 0.22, 0.25, 0.28, 0.3]);
+      const H = roundTo(top - sump + hf, 2);
+      const P = (GRAV * Q * H) / 1000; // kW: 1000 kg/m³ × g × Q/1000 m³/s × H, in W, ÷ 1000
+      const Pin = P / (eta / 100), PinR = roundTo(P, 2) / (eta / 100);
+      const cost = Pin * hrs * price, costR = roundTo(Pin, 2) * hrs * price;
+      if (P < 0.5 || nearHalf(P, 2, 0.1) || nearHalf(Pin, 2, 0.1) || roundTo(Pin, 2) !== roundTo(PinR, 2)) continue;
+      if (nearHalf(cost, 2, 0.1) || roundTo(cost, 2) !== roundTo(costR, 2)) continue;
+      const parts = [
+        numPart("h", "Total head", "Total head the pump must deliver (m)", H, 2, "Static lift = reservoir top water level − sump water level. Add the friction loss."),
+        numPart("p", "Hydraulic power", "Hydraulic power given to the water (kW)", P, 2, "Hydraulic power = ρ × g × Q × H, with Q in m³/s (L/s ÷ 1000). That gives watts; divide by 1000 for kW."),
+        numPart("pin", "Motor input", "Electrical power the pump set draws (kW)", Pin, 2, "Input power = hydraulic power ÷ efficiency, with the efficiency as a decimal."),
+        numPart("cost", "Daily cost", "Electricity cost per day ($)", cost, 2, "Energy in kWh = input power × hours run. Multiply by the price per kWh."),
+      ];
+      const ex = `**Total head:** ${top.toFixed(2)} − ${sump.toFixed(2)} + ${f(hf)} = **${H.toFixed(2)} m**.\n\n**Hydraulic power:** 1000 × 9.81 × ${f(Q / 1000)} × ${H.toFixed(2)} = ${roundTo(P * 1000, 1)} W = **${roundTo(P, 2).toFixed(2)} kW**.\n\n**Motor input:** ${roundTo(P, 2).toFixed(2)} ÷ ${f(eta / 100)} = **${roundTo(Pin, 2).toFixed(2)} kW**.\n\n**Daily cost:** ${roundTo(Pin, 2).toFixed(2)} × ${hrs} h = ${roundTo(Pin * hrs, 2)} kWh; × $${price.toFixed(2)} = **$${roundTo(cost, 2).toFixed(2)}**.`;
+      return finish(
+        `A pump lifts water from a sump (water level **${sump.toFixed(2)} m RL**) to a reservoir (top water level **${top.toFixed(2)} m RL**) at **${Q} L/s**. Friction in the rising main adds a head loss of **${f(hf)} m**. The pump set is **${eta}%** efficient, runs **${hrs} hours** a day, and electricity costs **$${price.toFixed(2)} per kWh**. ${waterNote}`,
+        parts, ex, "civ-pipe3", { tier, sump, top, hf, Q, eta, hrs, price }, [["_sump", sump], ["_top", top], ["_hf", hf], ["_Q", Q], ["_eta", eta], ["_hrs", hrs], ["_price", price]],
+        ["Head first: the static lift plus the friction loss.", "Power to the water, then the power drawn, then the energy over the day."],
+      );
+    }
+    // expert-plus: average supply rate -> size the main backwards from a velocity limit -> mass-curve storage -> verdict
+    if (pipeTarget === undefined) pipeTarget = rng.int(1, 4);
+    const qs = Array.from({ length: 6 }, () => rng.int(5, 90));
+    const Qin = qs.reduce((a, b) => a + b, 0) / 6;
+    if (!isEx(Qin, 1)) continue;
+    const vmax = rng.pick([0.8, 1, 1.2, 1.5]);
+    const Areq = Qin / 1000 / vmax;
+    const idx = STOCK_D.findIndex((x) => boreArea(x) >= Areq);
+    if (idx !== pipeTarget || Areq > 0.97 * boreArea(STOCK_D[idx]) || boreArea(STOCK_D[idx - 1]) > Areq / 1.03) continue;
+    const dc = STOCK_D[idx];
+    let run = 0, hi = 0, lo = 0;
+    const runs = [];
+    for (const q of qs) { run += (Qin - q) * 14.4; runs.push(run); hi = Math.max(hi, run); lo = Math.min(lo, run); }
+    const S = hi - lo;
+    if (S < 50) continue;
+    const want = rng.next() < 0.5;
+    const cap = want ? Math.ceil((S * (1 + rng.pick([0.05, 0.1, 0.2]))) / 10) * 10 : Math.floor((S * (1 - rng.pick([0.05, 0.1, 0.2]))) / 10) * 10;
+    if ((cap >= S) !== want || Math.abs(cap / S - 1) < 0.04) continue;
+    const opts = STOCK_D.map((x) => `${x} mm`);
+    const parts = [
+      numPart("qin", "Supply rate", "Constant rate the main must supply (L/s)", Qin, 1, "The main supplies the whole day's demand at a steady rate. Every block lasts the same time, so that rate is the mean of the six demands."),
+      { id: "dia", label: "Main size", ask: `Smallest stock diameter that keeps the velocity in the main at or below ${f(vmax)} m/s`, answerType: "choice", answer: `${dc} mm`, choices: shuffled(rng, opts), fuzzyNumber: 0,
+        hint: "Work backwards: the bore area needed is flow (m³/s) ÷ maximum velocity. Work out π × d² ÷ 4 for the stock sizes (d in metres) and take the smallest that reaches it." },
+      numPart("s", "Storage needed", "Storage the tank needs over the day (m³)", S, 0, "For each block, surplus = (supply − demand) in L/s × 4 × 3600 s ÷ 1000, in m³. Keep a running total from 0 at 00:00; storage = highest running total − lowest (0 counts).", true),
+      yesNo("ok", "Tank big enough?", `The existing tank holds **${commas(cap)} m³**. Is it big enough?`, cap >= S, "Compare the storage you found with the tank's capacity."),
+    ];
+    const ex = `**Supply rate:** (${qs.join(" + ")}) ÷ 6 = **${f(Qin)} L/s**.\n\n**Main size:** area needed = ${f(Qin / 1000)} ÷ ${f(vmax)} = ${roundTo(Areq, 5)} m². Areas: ${STOCK_D.map((x) => `${x} mm: ${roundTo(boreArea(x), 5)}`).join(", ")} m². The smallest that reaches it is **${dc} mm**.\n\n**Storage needed:** surplus per block = (${f(Qin)} − demand) × 14.4 m³; running totals ${runs.map((x) => f(roundTo(x, 1))).join(", ")}. Highest ${f(roundTo(hi, 1))}, lowest ${f(roundTo(lo, 1))}, so storage = **${commas(roundTo(S, 0))} m³**.\n\n**Tank big enough?** ${commas(cap)} m³ is ${cap >= S ? "at least" : "less than"} ${commas(roundTo(S, 0))} m³: **${YN(cap >= S)}**.`;
+    const table = ["| Block | Demand (L/s) |", "|---|---|"].concat(qs.map((q, k) => `| ${BLOCKS[k]} | ${q} |`)).join("\n");
+    return finish(
+      `A service reservoir feeds a district. Demand is steady within each 4-hour block:\n\n${table}\n\nOne main fills the reservoir at a constant rate that supplies the day's total demand, and the pattern repeats every day. Stock pipe diameters are ${opts.join(", ")}. For this exercise, storage needed = the highest running total of (supply − demand) volume minus the lowest, counting from 0 at 00:00 (1 m³ = 1000 L).`,
+      parts, ex, "civ-pipe4", { tier, qs, vmax, cap }, [...qs.map((q, k) => [`_q${k + 1}`, q]), ["_vmax", vmax]],
+      ["Find the steady supply rate first; everything else follows from it.", "Size the main backwards from the velocity limit, then build the running total for the tank."],
+    );
+  }
+  return tooMany();
+}
+
+// ---------- ground-stress ----------
+
+const GAMMA_W = 9.81;
+const groundNote = "Unit weight of water γw = **9.81 kN/m³**. Stresses are in kPa (1 kPa = 1 kN/m²).";
+const ANCHORS = [100, 150, 200, 250, 300, 400, 500, 600, 800];
+const RAD = Math.PI / 180;
+
+function genGround(rng, tier) {
+  let anchTarget, anchWant; // expert-plus only: drawn on first use (spread the anchor size, balance the verdict)
+  for (let i = 0; i < TRY; i++) {
+    if (tier === "medium") {
+      const dw = rng.int(2, 8) * 0.5, z = dw + rng.int(2, 12) * 0.5;
+      const g1 = rng.pick([16, 16.5, 17, 17.5, 18, 18.5, 19]), gs = rng.pick([19, 19.5, 20, 20.5, 21, 21.5]);
+      if (gs <= g1) continue;
+      const sig = g1 * dw + gs * (z - dw), u = GAMMA_W * (z - dw);
+      if (nearHalf(sig, 1, 0.1) || nearHalf(u, 1, 0.1)) continue;
+      const parts = [
+        numPart("sig", "Total stress", `Total vertical stress at ${f(z)} m depth (kPa)`, sig, 1, "Add unit weight × thickness for each band of soil above the point: the soil above the water table, then the saturated soil below it."),
+        numPart("u", "Pore pressure", "Pore water pressure at that depth (kPa)", u, 1, "u = γw × the depth of the point below the water table (not below ground level)."),
+      ];
+      const ex = `**Total stress:** ${f(g1)} × ${f(dw)} + ${f(gs)} × ${f(z - dw)} = **${roundTo(sig, 1).toFixed(1)} kPa**.\n\n**Pore pressure:** 9.81 × (${f(z)} − ${f(dw)}) = **${roundTo(u, 1).toFixed(1)} kPa**.`;
+      return finish(
+        `A uniform soil has its water table **${f(dw)} m** below ground level. Above the water table the soil weighs **${f(g1)} kN/m³**; below it, saturated, it weighs **${f(gs)} kN/m³**. Consider a point **${f(z)} m** below ground level. Total vertical stress σ = Σ(unit weight × thickness) of the soil above the point; pore water pressure u = γw × depth below the water table. ${groundNote}`,
+        parts, ex, "civ-ground1", { tier, dw, z, g1, gs }, [["_dw", dw], ["_z", z], ["_g1", g1], ["_gsat", gs]],
+        ["Split the soil above the point at the water table.", "Pore pressure only counts the water above the point."],
+      );
+    }
+    if (tier === "hard") {
+      const dw = rng.int(1, 6) * 0.5, h1 = dw + rng.int(1, 6) * 0.5, z = h1 + rng.int(1, 10) * 0.5;
+      const g1 = rng.pick([16, 16.5, 17, 17.5, 18, 18.5]), g1s = rng.pick([19, 19.5, 20, 20.5, 21]), g2 = rng.pick([17.5, 18, 18.5, 19, 19.5, 20, 20.5]);
+      const sig = g1 * dw + g1s * (h1 - dw) + g2 * (z - h1), u = GAMMA_W * (z - dw), se = sig - u;
+      if (nearHalf(sig, 1, 0.1) || nearHalf(u, 1, 0.1) || nearHalf(se, 1, 0.1)) continue;
+      if (roundTo(roundTo(sig, 1) - roundTo(u, 1), 1) !== roundTo(se, 1)) continue;
+      const parts = [
+        numPart("sig", "Total stress", `Total vertical stress at ${f(z)} m depth (kPa)`, sig, 1, "Three bands of soil lie above the point: sand above the water table, saturated sand below it, then clay. Add unit weight × thickness for each."),
+        numPart("u", "Pore pressure", "Pore water pressure at that depth (kPa)", u, 1, "u = γw × the depth of the point below the water table."),
+        numPart("se", "Effective stress", "Effective vertical stress σ′ = σ − u at that depth (kPa)", se, 1, "Effective stress is the share carried by the soil grains: total stress minus pore water pressure."),
+      ];
+      const ex = `**Total stress:** ${f(g1)} × ${f(dw)} + ${f(g1s)} × ${f(h1 - dw)} + ${f(g2)} × ${f(z - h1)} = **${roundTo(sig, 1).toFixed(1)} kPa**.\n\n**Pore pressure:** 9.81 × (${f(z)} − ${f(dw)}) = **${roundTo(u, 1).toFixed(1)} kPa**.\n\n**Effective stress:** ${roundTo(sig, 1).toFixed(1)} − ${roundTo(u, 1).toFixed(1)} = **${roundTo(se, 1).toFixed(1)} kPa** (check: Σ(γ − γw) × thickness below the water table plus the dry sand).`;
+      return finish(
+        `A site has **${f(h1)} m** of sand over a deep clay layer. The water table is **${f(dw)} m** below ground level. The sand weighs **${f(g1)} kN/m³** above the water table and **${f(g1s)} kN/m³** below it (saturated); the clay is saturated and weighs **${f(g2)} kN/m³**. Consider a point in the clay **${f(z)} m** below ground level. σ = Σ(unit weight × thickness) above the point; u = γw × depth below the water table; σ′ = σ − u. ${groundNote}`,
+        parts, ex, "civ-ground2", { tier, dw, h1, z, g1, g1s, g2 }, [["_dw", dw], ["_h1", h1], ["_z", z], ["_g1", g1], ["_g1sat", g1s], ["_g2", g2]],
+        ["Total stress band by band, then the water pressure, then the difference.", "Measure the water depth from the water table, not the ground."],
+      );
+    }
+    if (tier === "expert") {
+      const B = rng.int(12, 36) / 10, t = rng.pick([0.4, 0.5, 0.6, 0.75]), P = rng.int(20, 300) * 5;
+      const qult = rng.int(15, 90) * 10, Fmin = rng.pick([2.5, 3]);
+      const W = B * B * t * 24, q = (P + W) / (B * B), qR = (P + roundTo(W, 1)) / (B * B);
+      const fos = qult / q, fosR = qult / roundTo(q, 1);
+      if (nearHalf(W, 1, 0.1) || nearHalf(q, 1, 0.1) || roundTo(q, 1) !== roundTo(qR, 1)) continue;
+      if (fos < 1.5 || fos > 5 || nearHalf(fos, 2, 0.1) || roundTo(fos, 2) !== roundTo(fosR, 2) || Math.abs(fos - Fmin) < 0.1) continue;
+      const want = rng.next() < 0.5;
+      if ((fos >= Fmin) !== want) continue;
+      const parts = [
+        numPart("w", "Footing weight", "Weight of the concrete footing (kN)", W, 1, "Volume = B × B × thickness; weight = volume × the concrete's unit weight."),
+        numPart("q", "Bearing pressure", "Bearing pressure under the footing (kPa)", q, 1, "Bearing pressure = (column load + footing weight) ÷ plan area B × B."),
+        numPart("fos", "Factor of safety", "Factor of safety against bearing failure", fos, 2, "Factor of safety = ultimate bearing capacity ÷ bearing pressure."),
+        yesNo("ok", "Meets the minimum?", `The design rule asks for a factor of safety of at least **${Fmin.toFixed(1)}**. Is it met?`, fos >= Fmin, "Compare your factor of safety with the stated minimum."),
+      ];
+      const ex = `**Footing weight:** ${f(B)} × ${f(B)} × ${f(t)} × 24 = **${roundTo(W, 1).toFixed(1)} kN**.\n\n**Bearing pressure:** (${P} + ${roundTo(W, 1).toFixed(1)}) ÷ (${f(B)} × ${f(B)}) = **${roundTo(q, 1).toFixed(1)} kPa**.\n\n**Factor of safety:** ${qult} ÷ ${roundTo(q, 1).toFixed(1)} = **${roundTo(fos, 2).toFixed(2)}**.\n\n**Meets the minimum?** ${roundTo(fos, 2).toFixed(2)} is ${fos >= Fmin ? "at least" : "below"} ${Fmin.toFixed(1)}: **${YN(fos >= Fmin)}**.`;
+      return finish(
+        `A square pad footing, **${f(B)} m** by **${f(B)} m** in plan and **${f(t)} m** thick, carries a column load of **${P} kN**. Reinforced concrete weighs **24 kN/m³**. The soil's ultimate bearing capacity is **${qult} kPa**. For this exercise, bearing pressure = total vertical load ÷ plan area, and factor of safety = ultimate bearing capacity ÷ bearing pressure (1 kPa = 1 kN/m²).`,
+        parts, ex, "civ-ground3", { tier, B, t, P, qult, Fmin }, [["_B", B], ["_t", t], ["_P", P], ["_qult", qult]],
+        ["The footing's own weight adds to the column load.", "Pressure, then factor of safety, then the verdict."],
+      );
+    }
+    // expert-plus: slope FoS -> anchor force needed (backwards) -> stock anchor -> verdict at a wider spacing
+    if (anchTarget === undefined) { anchTarget = rng.int(1, ANCHORS.length - 2); anchWant = rng.next() < 0.5; }
+    const th = rng.pick([20, 25, 30, 35, 40]), ph = rng.pick([20, 22, 25, 28, 30, 32, 35]), c = rng.pick([0, 5, 10, 15, 20]);
+    const L = rng.int(8, 25), W = rng.int(20, 120) * 10, Freq = rng.pick([1.3, 1.4, 1.5]);
+    if (c === 0 && th === ph) continue; // FoS would be exactly 1 whatever W and L are
+    const D = W * Math.sin(th * RAD), R = c * L + W * Math.cos(th * RAD) * Math.tan(ph * RAD);
+    const fos = R / D;
+    if (fos < 0.6 || fos > Freq - 0.1 || nearHalf(fos, 2, 0.1)) continue;
+    const T = Freq * D - R, Talt = D * (Freq - roundTo(fos, 2)); // Talt: worked from the rounded FoS
+    if (T < 20 || nearHalf(T, 0, 0.1) || nearHalf(Talt, 0, 0.1) || roundTo(Talt, 0) !== roundTo(T, 0)) continue;
+    const s = rng.pick([1.5, 2, 2.5, 3]), F = T * s;
+    const idx = ANCHORS.findIndex((x) => x >= F);
+    if (idx !== anchTarget || F > 0.97 * ANCHORS[idx] || ANCHORS[idx - 1] > F / 1.03) continue;
+    const Tset = [T, roundTo(T, 0), Talt]; // later parts must agree whichever of these is used
+    if (Tset.some((x) => ANCHORS.findIndex((a) => a >= x * s) !== idx)) continue;
+    const cap = ANCHORS[idx], s2 = s + rng.pick([0.25, 0.5, 1]), want = anchWant;
+    const okW = cap / s2 >= T;
+    if (okW !== want || Math.abs(cap / s2 / T - 1) < 0.03 || Tset.some((x) => (cap / s2 >= x) !== okW)) continue;
+    const opts = ANCHORS.map((x) => `${x} kN`);
+    const parts = [
+      numPart("fos", "Factor of safety", "Factor of safety of the slope as it stands", fos, 2, "Work out the disturbing force W sin θ and the resisting force c × L + W cos θ × tan φ, then divide resisting by disturbing."),
+      numPart("t", "Anchor force", `Anchor force needed per metre run to reach a factor of safety of ${f(Freq)} (kN/m)`, T, 0, "Work backwards: with an anchor force T up the slope, FoS = (resisting + T) ÷ disturbing. Set that equal to the required value and solve for T.", true),
+      { id: "anchor", label: "Stock anchor", ask: `Anchors are spaced **${f(s)} m** apart along the slope, so each carries the force per metre × the spacing. Smallest stock anchor that can carry it`, answerType: "choice", answer: `${cap} kN`, choices: shuffled(rng, opts), fuzzyNumber: 0,
+        hint: "Multiply the force per metre run by the spacing, then take the smallest working capacity that is at least that." },
+      yesNo("ok", "Wider spacing OK?", `To save cost, the spacing is widened to **${f(s2)} m**, with the same anchor working at its full capacity. Would the slope still reach a factor of safety of ${f(Freq)}?`, okW, "At the wider spacing each metre run gets the anchor's capacity ÷ the spacing. Compare that with the force per metre you need."),
+    ];
+    const ex = `**Factor of safety:** disturbing = ${W} × sin ${th}° = ${roundTo(D, 2)} kN; resisting = ${c} × ${L} + ${W} × cos ${th}° × tan ${ph}° = ${roundTo(R, 2)} kN; FoS = ${roundTo(R, 2)} ÷ ${roundTo(D, 2)} = **${roundTo(fos, 2).toFixed(2)}**.\n\n**Anchor force:** T = ${f(Freq)} × ${roundTo(D, 2)} − ${roundTo(R, 2)} = ${roundTo(T, 2)}, so **${roundTo(T, 0)} kN/m**.\n\n**Stock anchor:** ${roundTo(T, 2)} × ${f(s)} = ${roundTo(F, 1)} kN, so the smallest is **${cap} kN**.\n\n**Wider spacing OK?** ${cap} ÷ ${f(s2)} = ${roundTo(cap / s2, 1)} kN/m, ${okW ? "at least" : "less than"} the ${roundTo(T, 2)} kN/m needed: **${YN(okW)}**.`;
+    return finish(
+      `A block of soil can slide on a plane slip surface inclined at **${th}°** to the horizontal. Per metre run of slope, the block weighs **${W} kN** and the slip surface is **${L} m** long. Along the slip surface the soil has cohesion c = **${c} kPa** and friction angle φ = **${ph}°**. For this exercise: disturbing force = W sin θ; resisting force = c × L + W cos θ × tan φ; factor of safety = resisting ÷ disturbing. An anchor force T per metre run, pulling straight up the slope, adds to the resisting force. The required factor of safety is **${f(Freq)}**. Stock ground anchors have working capacities of ${opts.join(", ")}.`,
+      parts, ex, "civ-ground4", { tier, th, ph, c, L, W, Freq, s, s2 }, [["_W", W], ["_theta", th], ["_L", L], ["_c", c], ["_phi", ph], ["_Freq", Freq]],
+      ["Find how safe the slope is now, then work backwards to the anchor force it needs.", "Per metre run first, then per anchor."],
+    );
+  }
+  return tooMany();
+}
+
 // ---------- entry ----------
 
 export function generate({ subtopic, difficulty, rng }) {
@@ -408,6 +626,8 @@ export function generate({ subtopic, difficulty, rng }) {
   if (subtopic === "tie-rod") return genTie(rng, difficulty);
   if (subtopic === "concrete-batches") return genConcrete(rng, difficulty);
   if (subtopic === "setting-out") return genSetting(rng, difficulty);
+  if (subtopic === "pipe-drainage") return genPipe(rng, difficulty);
+  if (subtopic === "ground-stress") return genGround(rng, difficulty);
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
 
@@ -512,6 +732,61 @@ const ALT = {
     const ang = (Math.atan2(rise, p.H) * 180) / Math.PI;
     const S = Math.sqrt(p.H * p.H + rise * rise);
     return { rise, ang, s: S, ok: YN(Math.abs(p.meas - S) <= 0.2 + 1e-9) }; // exact slope distance, as the prompt says
+  },
+  "civ-pipe1": (p) => {
+    const r = p.d / 2; // mm
+    const Qm3 = (Math.PI * r * r * (p.v * 1000)) / 1e9; // mm² × mm/s -> m³/s
+    return { q: Qm3 * 1000, t: p.V / Qm3 / 60 };
+  },
+  "civ-pipe2": (p) => {
+    const pct = ((p.ILa - p.ILb) / p.L) * 100; // gradient as a percentage, then back to 1 in N
+    const N = 100 / pct;
+    const out = p.ILa - (p.L + p.L2) / N; // straight from A over the whole length
+    return { n: N, out, ok: YN(out - p.F >= p.clr - 1e-9) };
+  },
+  "civ-pipe3": (p) => {
+    const H = p.top + p.hf - p.sump;
+    const pressure = 1000 * GRAV * H; // Pa
+    const P = (pressure * (p.Q / 1000)) / 1000; // kW
+    const Pin = (P * 100) / p.eta;
+    return { h: H, p: P, pin: Pin, cost: Pin * p.price * p.hrs };
+  },
+  "civ-pipe4": (p) => {
+    const vol = p.qs.reduce((a, q) => a + q * 4 * 3600, 0); // litres per day
+    const Qin = vol / 86400;
+    let dc = null;
+    for (const d of STOCK_D) if (Qin / 1000 / ((Math.PI * d * d) / 4e6) <= p.vmax + 1e-12) { dc = d; break; }
+    // storage: largest net draw over any run of consecutive blocks, the day wrapping round
+    const draw = p.qs.map((q) => (q - Qin) * 4 * 3.6);
+    let S = 0;
+    for (let a = 0; a < 6; a++) { let sum = 0; for (let k = 0; k < 6; k++) { sum += draw[(a + k) % 6]; S = Math.max(S, sum); } }
+    return { qin: Qin, dia: `${dc} mm`, s: S, ok: YN(p.cap >= S) };
+  },
+  "civ-ground1": (p) => {
+    const sig = p.gs * p.z - (p.gs - p.g1) * p.dw;
+    return { sig, u: GAMMA_W * (p.z - p.dw) };
+  },
+  "civ-ground2": (p) => {
+    // effective stress from submerged unit weights, total stress = effective + pore pressure
+    const se = p.g1 * p.dw + (p.g1s - GAMMA_W) * (p.h1 - p.dw) + (p.g2 - GAMMA_W) * (p.z - p.h1);
+    const u = GAMMA_W * (p.z - p.dw);
+    return { sig: se + u, u, se };
+  },
+  "civ-ground3": (p) => {
+    const Bmm = p.B * 1000;
+    const W = 24 * p.t * p.B * p.B;
+    const q = (((p.P + W) * 1000) / (Bmm * Bmm)) * 1000; // N/mm² -> kPa
+    const fos = p.qult / q;
+    return { w: W, q, fos, ok: YN(fos >= p.Fmin) };
+  },
+  "civ-ground4": (p) => {
+    const Nf = p.W * Math.cos(p.th * RAD), Sf = p.W * Math.sin(p.th * RAD);
+    const R = Nf * Math.tan(p.ph * RAD) + p.c * p.L;
+    const fos = R / Sf;
+    const T = Sf * (p.Freq - fos);
+    let cap = null;
+    for (const a of ANCHORS) if ((R + a / p.s) / Sf >= p.Freq) { cap = a; break; }
+    return { fos, t: T, anchor: `${cap} kN`, ok: YN((R + cap / p.s2) / Sf >= p.Freq) };
   },
 };
 

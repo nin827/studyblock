@@ -167,6 +167,7 @@
         }
       },
       "exclusiveSubtopics": [
+        "optics-bench",
         "orbit-signals"
       ]
     },

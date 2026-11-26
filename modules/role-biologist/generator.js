@@ -7,6 +7,7 @@
 //   hardy-weinberg   q^2 -> q -> carriers -> alleles; backwards from a carrier count           (Geneticist)
 //   field-ecology    capture-recapture -> density -> energy to the next level -> area          (Ecologist)
 //   growth-diversity doubling time, microscope magnification, Simpson's index                  (Ecologist)
+//   dilution-counts  dilution factor, CFU/mL, countable plate, doubling, C1V1 (Microbiologist; parts 2 / 3 / 3 / 4)
 
 // ---------- helpers ----------
 
@@ -562,6 +563,320 @@ function genGrowthBack(rng) {
   return tooMany();
 }
 
+// ---------- dilution-counts ----------
+// Lab-practice maths only (Microbiologist): serial dilution factors, CFU back-calculation, the
+// countable plate, growth by doubling and C1V1. Large counts are A × 10ⁿ (n stated, type A).
+
+const SUP = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", "-": "⁻" };
+const pow10 = (e) => `10${String(e).split("").map((c) => SUP[c]).join("")}`;
+const EXACT = { fuzzyNumber: 0 }; // counts and exact CFU mantissas: no close credit
+const intPart = (id, label, ask, val, hint) => ({ ...numPart(id, label, ask, val, 0, hint), ask: `${ask}, as a whole number`, ...EXACT });
+const sciPart = (id, label, what, A, m, hint, exact) => {
+  const p = numPart(id, label, `${what}, as A × ${pow10(m)} CFU/mL: type A`, A, 2, hint);
+  return exact ? { ...p, ...EXACT } : p;
+};
+const SAMPLES = ["A pond-water sample", "A soil suspension", "A yoghurt starter culture", "A fermentation broth", "A river-water sample", "A sourdough starter", "A compost extract", "A kombucha culture"];
+const CULTURES = ["a broth culture of a soil bacterium", "a yeast culture from a brewing trial", "a yoghurt starter culture", "a broth culture of a harmless laboratory strain", "a sourdough yeast culture"];
+const REAGENTS = ["glucose", "sodium chloride", "yeast extract", "lactose", "crystal violet stain", "sucrose"];
+const PLATE_V = [0.1, 0.1, 0.2, 0.25, 0.5, 1];
+const RANGES = [[30, 300], [25, 250]];
+const CFU_RULE = "CFU per mL of the sample = colonies ÷ (volume plated in mL × dilution), where a tube's dilution is 1 ÷ its total dilution factor.";
+const GROW_RULE = "Growth follows N = N₀ × 2^(t/g), where t is the time and g the generation time.";
+const sciOf = (x) => { const m = Math.floor(Math.log10(x) + 1e-12); return { A: x / 10 ** m, m }; };
+const exact2 = (A) => Math.abs(A * 100 - Math.round(A * 100)) < 1e-6 && A >= 1 && A < 10;
+const tubeName = (t) => `Tube ${t}`;
+const countText = (c) => (c >= 1000 ? "too many to count" : String(c));
+
+function series(rng) {
+  const e1 = rng.pick([1, 2]);
+  const first = e1 === 1 ? rng.pick([[1, 9], [0.5, 4.5]]) : rng.pick([[0.1, 9.9], [1, 99]]);
+  const later = rng.pick([[1, 9], [0.5, 4.5]]);
+  return { e1, first, later };
+}
+const seriesText = (s, T) => `It is diluted in a series of ${T} tubes. Tube 1: **${s.first[0]} mL** of the sample into **${s.first[1]} mL** of sterile saline. Each later tube: **${s.later[0]} mL** from the previous tube into **${s.later[1]} mL** of saline, mixed well.`;
+const dfText = (s, k, n) => `tube 1 is ${s.first[0]} mL in ${fmt(s.first[0] + s.first[1], 2)} mL, a factor of ${pow10(s.e1)}, and each later tube is ${s.later[0]} mL in ${fmt(s.later[0] + s.later[1], 2)} mL, a factor of 10. Tube ${k}: ${pow10(s.e1)} × ${pow10(k - 1)} = ${pow10(n)}`;
+
+// Four plates from consecutive tubes j..j+3, exactly one inside [lo, hi] (others well clear).
+function drawPlates(rng, s, T, lo, hi, mult) {
+  const j = rng.int(2, T - 3);
+  const at = rng.int(0, 3);
+  const C = rng.int(lo + 3, hi - 10);
+  const counts = [0, 1, 2, 3].map((idx) => (idx === at ? C : Math.round((C * 10 ** (at - idx) * rng.int(85, 115)) / 100)));
+  if (counts.some((c, idx) => idx !== at && c >= lo - 2 && c <= hi + 10)) return null;
+  const k = j + at;
+  const n = s.e1 + k - 1;
+  const x = C * mult;
+  const { A, m } = sciOf(x);
+  if (!exact2(A)) return null;
+  return { j, at, k, C, counts, n, x, A, m: m + n };
+}
+const plateList = (j, counts) => counts.map((c, idx) => `tube ${j + idx}: **${countText(c)}**`).join(", ");
+const plateGiven = (j, counts) => counts.map((c, idx) => [`_t${j + idx}`, c]).filter(([, c]) => c < 1000);
+const PLATE_HINT = "Pick the only plate whose count lies inside the stated range.";
+const DF_HINT = "Each step's factor is (volume moved + diluent) ÷ volume moved. Multiply the factors of every tube up to this one, then count the powers of ten.";
+const CFU_HINT = "Divide the colonies by the volume plated, then multiply by that tube's total dilution factor. Write the result with one digit before the decimal point.";
+
+// Medium: dilution factor -> CFU/mL. Hard: countable plate -> its dilution factor -> CFU/mL.
+function genPlate(rng, tier) {
+  for (let i = 0; i < TRY; i++) {
+    const smp = rng.pick(SAMPLES);
+    const s = series(rng);
+    const T = rng.int(6, 8);
+    const V = rng.pick(PLATE_V);
+    const mult = Math.round(1 / V);
+    const [lo, hi] = rng.pick(RANGES);
+    const hard = tier === "hard";
+    let d;
+    if (hard) {
+      d = drawPlates(rng, s, T, lo, hi, mult);
+      if (!d) continue;
+    } else {
+      const k = rng.int(3, T);
+      const C = rng.int(lo, hi);
+      const n = s.e1 + k - 1;
+      const x = C * mult;
+      const { A, m } = sciOf(x);
+      if (!exact2(A)) continue;
+      d = { k, C, n, x, A, m: m + n, counts: null, j: 0 };
+    }
+    if (d.m > 10) continue; // keep counts lab-realistic (at most about 10¹⁰ CFU/mL)
+    const { k, C, n, x, A, m, counts, j } = d;
+    const parts = [
+      intPart("df", "Dilution factor", `Total dilution factor of tube ${k}, written as 10ⁿ: type n`, n, DF_HINT),
+      sciPart("cfu", "CFU per mL", "CFU per mL in the original sample", A, m, CFU_HINT, true),
+    ];
+    const ex = [
+      `**Dilution factor:** ${dfText(s, k, n)}, so n = **${n}**.`,
+      `**CFU per mL:** ${C} ÷ (${V} × 1/${pow10(n)}) = ${x} × ${pow10(n)} = **${fixed(A, 2)} × ${pow10(m)}** CFU/mL.`,
+    ];
+    if (hard) {
+      parts.unshift({ id: "plate", label: "Countable plate", ask: "Which tube's plate should be counted?", answerType: "choice", answer: tubeName(k), choices: [0, 1, 2, 3].map((t) => tubeName(j + t)), hint: PLATE_HINT });
+      ex.unshift(`**Countable plate:** only tube ${k}'s plate (${C} colonies) lies within ${lo} to ${hi}, so **${tubeName(k)}**.`);
+    }
+    const prompt = hard
+      ? `${smp} is tested for its microbial count. ${seriesText(s, T)} You spread **${V} mL** from each of tubes ${j} to ${j + 3} on agar plates. After incubation the colony counts are ${plateList(j, counts)}. Rule: only a plate with ${lo} to ${hi} colonies (inclusive) is countable. ${CFU_RULE}`
+      : `${smp} is tested for its microbial count. ${seriesText(s, T)} You spread **${V} mL** from tube ${k} on an agar plate, and after incubation it grows **${C}** colonies. ${CFU_RULE}`;
+    return finish(
+      prompt, parts, ex.join("\n\n"), "dc-plate", { first: s.first, later: s.later, k, C, V, m, counts, j, lo, hi },
+      [["_vol", V]].concat(hard ? plateGiven(j, counts) : [["_count", C]]),
+      ["Work out each tube's total dilution factor first: the step factors multiply.", "CFU per mL scales the colony count back up by the volume plated and the dilution."],
+    );
+  }
+  return tooMany();
+}
+
+// Medium: C1V1 stock volume -> concentration after a 1-in-10 series. Hard adds the tubes filled.
+function genStock(rng, tier) {
+  for (let i = 0; i < TRY; i++) {
+    const rg = rng.pick(REAGENTS);
+    const C1 = rng.pick([10, 20, 25, 40, 50, 80, 100]);
+    const C2 = rng.pick([0.5, 1, 1.5, 2, 2.5, 4, 5]);
+    const V2 = rng.pick([50, 100, 150, 200, 250, 500]);
+    const s = rng.int(2, 4);
+    const u = rng.pick([5, 8, 12, 15, 20]);
+    const hard = tier === "hard";
+    if (C2 * 4 > C1) continue;
+    const v1 = (C2 * V2) / C1;
+    const conc = (C2 * 1000) / 10 ** s;
+    const tubes = Math.floor((V2 - 1) / u);
+    if (v1 < 0.5 || nearHalf(v1, 1) || nearHalf(conc, 2) || conc < 0.05) continue;
+    const parts = [
+      numPart("v1", "Stock volume", "Volume of stock needed (mL)", v1, 1, "Use C₁V₁ = C₂V₂ and rearrange for the stock volume V₁."),
+      numPart("conc", "Last tube", "Concentration in the last tube of the series (µg/mL)", conc, 2, "Each 1-in-10 step divides the concentration by 10. Convert mg to µg (× 1000)."),
+    ];
+    const ex = [
+      `**Stock volume:** V₁ = ${C2} × ${V2} ÷ ${C1} = **${fixed(v1, 1)} mL**, topped up with water to ${V2} mL.`,
+      `**Last tube:** ${C2} mg/mL = ${fmt(C2 * 1000, 2)} µg/mL, divided by 10 ${s} times (÷ ${pow10(s)}) = **${fixed(conc, 2)} µg/mL**.`,
+    ];
+    if (hard) {
+      parts.push(intPart("tubes", "Full tubes", `Number of full ${u} mL tubes the rest fills (round down)`, tubes, "Take away the 1 mL used for the series, divide by the tube volume and keep only full tubes."));
+      ex.push(`**Full tubes:** (${V2} − 1) ÷ ${u} = ${fmt((V2 - 1) / u, 3)}, so **${tubes}** full tubes.`);
+    }
+    return finish(
+      `You need **${V2} mL** of ${rg} solution at **${C2} mg/mL** for a growth medium, made from a **${C1} mg/mL** stock topped up with sterile water. Use C₁V₁ = C₂V₂. From the working solution you then make a series of **${s}** tubes: 1 mL of it into 9 mL of water, then 1 mL of each tube into 9 mL of water in the next. 1 mg = 1000 µg.${hard ? ` The rest of the working solution is shared into **${u} mL** tubes.` : ""}`,
+      parts, ex.join("\n\n"), "dc-stock", { C1, C2, V2, s, u },
+      [["_c1", C1], ["_c2", C2], ["_v2", V2], ["_steps", s]].concat(hard ? [["_tube", u]] : []),
+      ["The stock is diluted once to make the working solution; the series dilutes it again.", "Keep the units straight: mL for volumes, mg/mL or µg/mL for concentrations."],
+    );
+  }
+  return tooMany();
+}
+
+// Expert: countable plate -> CFU/mL -> the count a set time later, by doubling.
+function genPlateGrow(rng) {
+  for (let i = 0; i < TRY; i++) {
+    const smp = rng.pick(CULTURES);
+    const s = series(rng);
+    const T = rng.int(6, 8);
+    const V = rng.pick(PLATE_V);
+    const mult = Math.round(1 / V);
+    const [lo, hi] = rng.pick(RANGES);
+    const d = drawPlates(rng, s, T, lo, hi, mult);
+    if (!d) continue;
+    const g = rng.pick([20, 25, 30, 40, 45, 60]);
+    const t = rng.pick([60, 90, 120, 150, 180, 240, 300]);
+    const { k, C, n, x, A, m, counts, j } = d;
+    const L = x * 10 ** n * 2 ** (t / g);
+    const { A: A2, m: m2 } = sciOf(L);
+    if (nearHalf(A2, 2) || roundTo(A2, 2) >= 10 || t / g < 2 || m2 > 10) continue;
+    const parts = [
+      { id: "plate", label: "Countable plate", ask: "Which tube's plate should be counted?", answerType: "choice", answer: tubeName(k), choices: [0, 1, 2, 3].map((q) => tubeName(j + q)), hint: PLATE_HINT },
+      sciPart("cfu", "CFU per mL", "CFU per mL in the culture at sampling", A, m, CFU_HINT, true),
+      sciPart("later", "Later count", `CFU per mL in the culture ${t} minutes after sampling`, A2, m2, "Generations = time ÷ generation time. Multiply the count by 2 raised to that number."),
+    ];
+    const ex = [
+      `**Countable plate:** only tube ${k}'s plate (${C} colonies) lies within ${lo} to ${hi}, so **${tubeName(k)}**.`,
+      `**CFU per mL:** ${dfText(s, k, n)}. ${C} ÷ (${V} × 1/${pow10(n)}) = **${fixed(A, 2)} × ${pow10(m)}** CFU/mL.`,
+      `**Later count:** ${t} ÷ ${g} = ${fmt(t / g, 3)} generations, so ${fixed(A, 2)} × ${pow10(m)} × 2^${fmt(t / g, 3)} = **${fixed(A2, 2)} × ${pow10(m2)}** CFU/mL.`,
+    ].join("\n\n");
+    return finish(
+      `You sample ${smp}. ${seriesText(s, T)} You spread **${V} mL** from each of tubes ${j} to ${j + 3} on agar plates. After incubation the colony counts are ${plateList(j, counts)}. Rule: only a plate with ${lo} to ${hi} colonies (inclusive) is countable. ${CFU_RULE} The culture keeps growing with a generation time of **${g} minutes**. ${GROW_RULE}`,
+      parts, ex, "dc-grow", { first: s.first, later: s.later, k, C, V, m, counts, j, lo, hi, g, t, m2 },
+      [["_vol", V]].concat(plateGiven(j, counts), [["_gen", g], ["_time", t]]),
+      ["Find the countable plate first, then scale its count back to the culture.", "Growth multiplies the count by 2 once per generation."],
+    );
+  }
+  return tooMany();
+}
+
+// Expert (3 parts) / Expert+ (4): two plate counts -> CFU/mL at each time -> generation time
+// (working backwards with logs) -> Expert+: is the target reached by the planned harvest?
+function genGenTime(rng, plus) {
+  for (let i = 0; i < TRY; i++) {
+    const smp = rng.pick(CULTURES);
+    const s = series(rng);
+    const T = 8;
+    const V = rng.pick(PLATE_V);
+    const mult = Math.round(1 / V);
+    const [lo, hi] = rng.pick(RANGES);
+    const a = rng.int(2, 4);
+    const C1 = rng.int(lo, hi);
+    const g = rng.pick([20, 25, 30, 40, 45, 50, 60]);
+    const dbl = rng.int(6, 20) / 2;
+    const tm = g * dbl;
+    if (!Number.isInteger(tm)) continue; // whole minutes only
+    const x1 = C1 * mult;
+    const n1 = s.e1 + a - 1;
+    const N1 = x1 * 10 ** n1;
+    const N2t = N1 * 2 ** dbl;
+    let b = 0, C2 = 0;
+    for (let tb = a; tb <= T; tb++) {
+      const c = Math.round((N2t * V) / 10 ** (s.e1 + tb - 1));
+      if (c >= lo + 5 && c <= hi - 10) { b = tb; C2 = c; break; }
+    }
+    if (!b) continue;
+    const n2 = s.e1 + b - 1;
+    const x2 = C2 * mult;
+    const N2 = x2 * 10 ** n2;
+    const S1 = sciOf(x1), S2 = sciOf(x2);
+    if (!exact2(S1.A) || !exact2(S2.A)) continue;
+    const m1 = S1.m + n1, m2 = S2.m + n2;
+    if (m2 > 9) continue; // keep counts lab-realistic (below 10¹⁰ CFU/mL)
+    const st = (rd) => {
+      const gens = rd("gens", Math.log(N2 / N1) / Math.LN2);
+      return { gens, gen: rd("gen", tm / gens) };
+    };
+    if (!stableOk(st, { gens: 2, gen: 1 })) continue; // generation time is the same from the rounded generations
+    const gens = Math.log(N2 / N1) / Math.LN2;
+    const gen = tm / gens;
+    if (gen < 10 || gen > 120) continue;
+    let R = 0, q = 0, W = 0, ok = false, tneed = 0;
+    if (plus) {
+      R = rng.pick([1, 2, 5]);
+      q = m2 + rng.int(1, 2);
+      const Tg = R * 10 ** q;
+      if (Tg <= N2 * 2 || q > 10) continue;
+      tneed = (gen * Math.log(Tg / N1)) / Math.LN2;
+      W = Math.round(tneed * (1 + (rng.pick([-1, 1]) * rng.int(8, 25)) / 100));
+      if (W <= tm || Math.abs(W - tneed) < 5) continue;
+      ok = W >= tneed;
+    }
+    const parts = [
+      sciPart("cfu1", "First count", "CFU per mL at the first sample", S1.A, m1, CFU_HINT, true),
+      numPart("gens", "Generations", `Number of generations between the two samples`, gens, 2, "Work out the second sample's CFU per mL the same way, using its own tube. Then solve 2^x = N ÷ N₀ with logs: x = log(N ÷ N₀) ÷ log 2."),
+      numPart("gen", "Generation time", "Generation time of the culture (minutes)", gen, 1, "The generation time is the time between the samples shared out over the generations."),
+    ];
+    const ex = [
+      `**First count:** tube ${a} has total dilution ${pow10(n1)}, so ${C1} ÷ (${V} × 1/${pow10(n1)}) = **${fixed(S1.A, 2)} × ${pow10(m1)}** CFU/mL.`,
+      `**Generations:** tube ${b} has total dilution ${pow10(n2)}, so the second sample is ${C2} ÷ (${V} × 1/${pow10(n2)}) = ${fixed(S2.A, 2)} × ${pow10(m2)} CFU/mL. The count rose by a factor of ${fmt(N2 / N1, 4)}, and log(${fmt(N2 / N1, 4)}) ÷ log 2 = **${fixed(gens, 2)}** generations.`,
+      `**Generation time:** ${tm} ÷ ${fixed(gens, 2)} = **${fixed(gen, 1)} min**.`,
+    ];
+    if (plus) {
+      parts.push(yesNo("reach", "Ready in time?", `Will the culture have reached ${R} × ${pow10(q)} CFU/mL by the planned harvest?`, ok, "Work out how many generations take the first count to the target, then multiply by the generation time and compare with the harvest time."));
+      ex.push(`**Ready in time?** log(${R} × ${pow10(q)} ÷ ${fixed(S1.A, 2)} × ${pow10(m1)}) ÷ log 2 × ${fixed(gen, 1)} = ${fmt(tneed, 1)} minutes after the first sample. The harvest is at ${W} minutes, so **${ok ? "Yes" : "No"}**.`);
+    }
+    const prompt = `You follow ${smp}. ${seriesText(s, T).replace("It is diluted", "Each sample is diluted")} At time 0 you spread **${V} mL** from tube ${a} on an agar plate: after incubation it grows **${C1}** colonies. After **${tm} minutes** you spread **${V} mL** from tube ${b}: **${C2}** colonies. ${CFU_RULE} ${GROW_RULE}${plus ? ` The next step needs at least **${R} × ${pow10(q)} CFU/mL**, and the harvest is planned **${W} minutes** after the first sample, with growth carrying on at the same rate.` : ""}`;
+    return finish(
+      prompt, parts, ex.join("\n\n"), "dc-gen", { first: s.first, later: s.later, a, b, C1, C2, V, m1, m2, tm, R, q, W },
+      [["_vol", V], ["_c1", C1], ["_c2", C2], ["_time", tm]].concat(plus ? [["_target", R * 10 ** q], ["_harvest", W]] : []),
+      ["Turn each plate count into CFU per mL first; the tubes are different, so the dilutions are too.", "Logs undo the power of 2: generations = log(ratio) ÷ log 2."],
+    );
+  }
+  return tooMany();
+}
+
+// Expert+: plate count -> CFU/mL -> count later by doubling -> which tube to plate then (working
+// backwards to the countable range) -> expected colonies on that plate.
+function genPlan(rng) {
+  for (let i = 0; i < TRY; i++) {
+    const smp = rng.pick(CULTURES);
+    const s = series(rng);
+    const T = 8;
+    const V = rng.pick(PLATE_V);
+    const mult = Math.round(1 / V);
+    const V2 = rng.pick([0.1, 0.2, 0.5, 1]);
+    const [lo, hi] = rng.pick(RANGES);
+    const a = rng.int(2, 4);
+    const C = rng.int(lo, hi);
+    const g = rng.pick([20, 25, 30, 40, 45, 60]);
+    const t = rng.pick([90, 120, 150, 180, 240, 300, 360]);
+    const c0 = rng.int(0, 3);
+    const x = C * mult;
+    const n = s.e1 + a - 1;
+    const S = sciOf(x);
+    if (!exact2(S.A) || t / g < 2) continue;
+    const m = S.m + n;
+    const L = x * 10 ** n * 2 ** (t / g);
+    const { A: A2, m: m2 } = sciOf(L);
+    if (roundTo(A2, 2) >= 10 || m2 > 10) continue;
+    let b = 0;
+    for (let tb = 1; tb <= T; tb++) {
+      const E = (L * V2) / 10 ** (s.e1 + tb - 1);
+      if (E >= lo * 1.05 && E <= hi * 0.95) b = tb;
+    }
+    if (!b) continue;
+    const j = b - c0;
+    if (j < 1 || j + 3 > T) continue;
+    const nb = s.e1 + b - 1;
+    const st = (rd) => {
+      const later = rd("later", A2);
+      const col = rd("col", (later * 10 ** m2 * V2) / 10 ** nb);
+      return { later, col };
+    };
+    if (!stableOk(st, { later: 2, col: 0 })) continue;
+    const E = (L * V2) / 10 ** nb;
+    const parts = [
+      sciPart("cfu", "CFU per mL now", "CFU per mL in the culture now", S.A, m, CFU_HINT, true),
+      sciPart("later", "Later count", `CFU per mL ${t} minutes from now`, A2, m2, "Generations = time ÷ generation time. Multiply the count by 2 raised to that number."),
+      { id: "tube", label: "Tube to plate", ask: "Which tube should you plate from then?", answerType: "choice", answer: tubeName(b), choices: [0, 1, 2, 3].map((q) => tubeName(j + q)), hint: "Expected colonies = CFU per mL × volume plated ÷ the tube's total dilution factor. Try each tube until the count falls inside the range." },
+      intPart("col", "Expected colonies", "Expected number of colonies on that plate", E, "Use your later count, the volume plated and that tube's total dilution factor."),
+    ];
+    const ex = [
+      `**CFU per mL now:** tube ${a} has total dilution ${pow10(n)}, so ${C} ÷ (${V} × 1/${pow10(n)}) = **${fixed(S.A, 2)} × ${pow10(m)}** CFU/mL.`,
+      `**Later count:** ${t} ÷ ${g} = ${fmt(t / g, 3)} generations, so × 2^${fmt(t / g, 3)} = **${fixed(A2, 2)} × ${pow10(m2)}** CFU/mL.`,
+      `**Tube to plate:** ${V2} mL holds ${fmt(A2 * V2, 4)} × ${pow10(m2)} CFU. Tube ${b} divides that by ${pow10(nb)}, giving ${fmt(E, 1)}, inside ${lo} to ${hi}; the tubes either side are 10 times too many or too few. So **${tubeName(b)}**.`,
+      `**Expected colonies:** ${fixed(A2, 2)} × ${pow10(m2)} × ${V2} ÷ ${pow10(nb)} = **${fixed(E, 0)}**.`,
+    ].join("\n\n");
+    return finish(
+      `You are growing ${smp}. ${seriesText(s, T)} You spread **${V} mL** from tube ${a} on an agar plate, and after incubation it grows **${C}** colonies. ${CFU_RULE} The culture keeps growing with a generation time of **${g} minutes**. ${GROW_RULE} In **${t} minutes** you will dilute it in the same series again and spread **${V2} mL** from one tube. Rule: a plate is countable with ${lo} to ${hi} colonies (inclusive).`,
+      parts, ex, "dc-plan", { first: s.first, later: s.later, a, C, V, V2, g, t, m, m2, lo, hi, T },
+      [["_count", C], ["_vol", V], ["_gen", g], ["_time", t], ["_vol2", V2]],
+      ["Work forwards to the later count, then backwards to the dilution that gives a countable plate.", "Each tube along the series cuts the expected colonies by a factor of 10."],
+    );
+  }
+  return tooMany();
+}
+
 // ---------- generate ----------
 
 export function generate({ subtopic, difficulty, rng }) {
@@ -575,6 +890,11 @@ export function generate({ subtopic, difficulty, rng }) {
     if (plus) return coin ? genGrowthBack(rng) : genSimpson(rng, true);
     if (difficulty === "expert") return coin ? genCulture(rng, difficulty) : genSimpson(rng, false);
     return coin ? genCulture(rng, difficulty) : genMicro(rng, difficulty);
+  }
+  if (subtopic === "dilution-counts") {
+    if (plus) return coin ? genGenTime(rng, true) : genPlan(rng);
+    if (difficulty === "expert") return coin ? genGenTime(rng, false) : genPlateGrow(rng);
+    return coin ? genPlate(rng, difficulty) : genStock(rng, difficulty);
   }
   throw new Error(`Unknown subtopic: ${subtopic}`);
 }
@@ -668,6 +988,47 @@ const ALT = {
     return { td: T, p2: p.N0 * 2 ** (p.T2 / T), ts, reach: YN(p.W >= ts) };
   },
 };
+
+// dilution-counts: step factors multiplied tube by tube, CFU = colonies × factor ÷ volume.
+const dfOf = (p, k) => {
+  let f = (p.first[0] + p.first[1]) / p.first[0];
+  for (let t = 2; t <= k; t++) f *= (p.later[0] + p.later[1]) / p.later[0];
+  return f;
+};
+const cfuOf = (p, C, k, V) => (C * dfOf(p, k)) / V;
+const onlyPlate = (p) => {
+  const hits = (p.counts || []).map((c, i) => (c >= p.lo && c <= p.hi ? i : -1)).filter((i) => i >= 0);
+  return hits.length === 1 ? `Tube ${p.j + hits[0]}` : "(none)";
+};
+Object.assign(ALT, {
+  "dc-plate": (p) => ({ df: Math.round(Math.log10(dfOf(p, p.k))), cfu: cfuOf(p, p.C, p.k, p.V) / 10 ** p.m, plate: onlyPlate(p) }),
+  "dc-stock": (p) => {
+    let left = p.V2 - 1, tubes = 0;
+    while (left >= p.u - 1e-9) { left -= p.u; tubes++; }
+    return { v1: p.V2 / (p.C1 / p.C2), conc: p.C2 * 1000 * 0.1 ** p.s, tubes };
+  },
+  "dc-grow": (p) => {
+    const N = cfuOf(p, p.C, p.k, p.V);
+    return { plate: onlyPlate(p), cfu: N / 10 ** p.m, later: (N * Math.exp((Math.LN2 * p.t) / p.g)) / 10 ** p.m2 };
+  },
+  "dc-gen": (p) => {
+    const N1 = cfuOf(p, p.C1, p.a, p.V), N2 = cfuOf(p, p.C2, p.b, p.V);
+    const gens = Math.log10(N2 / N1) / Math.log10(2);
+    const gen = p.tm / gens;
+    const out = { cfu1: N1 / 10 ** p.m1, gens, gen };
+    if (p.R) out.reach = YN(p.W >= gen * log2((p.R * 10 ** p.q) / N1));
+    return out;
+  },
+  "dc-plan": (p) => {
+    const L = cfuOf(p, p.C, p.a, p.V) * Math.exp((Math.LN2 * p.t) / p.g);
+    let tube = "(none)", col = NaN;
+    for (let k = 1; k <= p.T; k++) {
+      const E = (L * p.V2) / dfOf(p, k);
+      if (E >= p.lo && E <= p.hi) { tube = `Tube ${k}`; col = E; }
+    }
+    return { cfu: cfuOf(p, p.C, p.a, p.V) / 10 ** p.m, later: L / 10 ** p.m2, tube, col };
+  },
+});
 
 export function verify(question, answer) {
   const p = question && question.params;
