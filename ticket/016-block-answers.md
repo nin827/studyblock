@@ -1,6 +1,6 @@
 # 016 — Block (tiles) answers and the Blocks score multiplier
 
-**Status:** open (partly resolved; see Resolution)
+**Status:** resolved (2026-11-26): partly built, rest to build
 **Raised:** 2026-11-26
 
 ## What's built
@@ -34,3 +34,10 @@ Top picks: SQL Queries order-limit, Algorithms sorting and data structures, Chor
 - **Run the query (SQL "Write the query"):** a Run button runs the learner's query, typed or built from blocks, on the question's table and shows the output or an error. It's unlimited and never scored.
   - *Default:* grading stays a text match against the answer plus a short list of accepted equivalents. The output is for testing only.
   - *Alternative:* grade by output (any query that returns the right result counts). That's fairer to equivalent queries, but it rewards a hard-coded query such as `WHERE id IN (2, 5)`.
+
+## Resolution (cleared 2026-11-26)
+
+- Dual questions start in **Type**.
+- **SQL grading: both.** A query whose output matches counts too, but a query that hard-codes literal values the task didn't give (e.g. `WHERE id IN (2, 5)`) gets 0.
+- Unordered sets: **the prompt states the order**.
+- **Typed + Blocks with the Blocks penalty** (1 / 1 / 0.85 / 0.7) also for Boolean Logic, Algorithms, Genetics, Word Roots and Grammar (the CSV format needs a tiles column).

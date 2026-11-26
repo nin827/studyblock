@@ -1,6 +1,6 @@
 # 012 — New domains: placement and scope
 
-**Status:** open (built with the defaults below)
+**Status:** resolved (2026-11-26): keep all as built
 **Raised:** 2026-11-25
 
 Four new domains were added: **Game Dev**, **Music Theory**, **Biology** and **Medical**. New subjects were also added to Math, Science and Computing.
@@ -30,3 +30,7 @@ Four new domains were added: **Game Dev**, **Music Theory**, **Biology** and **M
 10. **Anatomy:** calculator stays on (like Biology Basics). Fact wordings to double-check: "Immune and lymphatic system" as one label; sweat glands as integumentary; red blood cells "mainly made in bone marrow"; liver "the largest organ inside the body".
 11. **Genetics:** sex-linked examples are haemophilia, red-green colour blindness and G6PD deficiency; Hardy–Weinberg "1 in N" cases use a generic "inherited recessive condition".
 12. **Text answers:** spaces around commas are now ignored, like colons.
+
+## Resolution (cleared 2026-11-26)
+
+Keep every choice and convention as built.
