@@ -812,15 +812,22 @@ export function run(prog, { entry, args = [], maxSteps = 10000 } = {}) {
 // `int& x` keeps the `&` on the type block (`int&`). Lines that do not fit this shape
 // (a comma after a slot inside mixed arguments, nesting deeper than 3) give null, so a generator
 // can redraw.
-//   lineTree(text)                → [item…] | null   item: { v } or { v, open, close, sep, kids:[item…] }
+//   lineTree(text, { ext }?)      → [item…] | null   item: { v } or { v, open, close, sep, kids:[item…] }
 //   serialiseTree(items, joiner=' ')   back to text (lineTree(t) serialises to exactly t, or is null)
-//   blocksFor(text, { distractors=[texts], count=0, seed=1 }) → { tiles, solution, joiner:' ', useAll:false } | null
+//   blocksFor(text, { distractors=[texts], count=0, seed=1, ext=false }) → { tiles, solution, joiner:' ', useAll:false } | null
 //        tiles shuffled with `seed`; up to `count` extra blocks (all different) taken in order from the
 //        distractor texts' blocks that the answer does not already use; solution = tree of tile indices.
-//   decoyTokens(text, lang?)      spare one-block distractors: sibling operators, numbers ± 1 (comparisons
+//   decoyTokens(text, lang?, { ext }?)  spare one-block distractors: sibling operators, numbers ± 1 (comparisons
 //        use === / !== for javascript/typescript, or when the line already does)
 //   JavaScript `===`/`!==` and Go `:=` are single operator blocks; a Java `(int)` cast sticks to the next
-//   block like C++'s. Go and other brace headers ending in `{` give null (strip the `{` first).
+//   block like C++'s. By default, brace headers ending in `{` give null (strip the `{` first).
+//   Extended mode (`{ ext: true }` as the last argument of lineTree / blocksFor's options / decoyTokens)
+//   also reads lines that give null by default: a `;` or a `:` with no space before it right after a
+//   slot block sticks to its close (`len(xs);`, `Math.floor(n / 10);`, `return xs[i];`, a TypeScript
+//   `): number`; the close stays at most 3 characters), a trailing ` {` is its own block, `=>` is one
+//   operator block, and `ArrayList<>`, `List<Integer>` and `number[]` are one block each. It never
+//   changes a line that is not null by default; the default stays as it was so existing questions keep
+//   their blocks (Code Reviewing's JavaScript, TypeScript, Java and Go questions use extended mode).
 //   serialiseBlocks(tiles, solution, joiner=' ')  the text a solution tree builds (null if malformed)
 //   textKey(text)                 the engine's text normalisation (for accepts lists)
 //   spacingVariants(text)         the line with every subset of `a + b` operator gaps written as `a+b`
@@ -830,13 +837,19 @@ const LX_OPS = ['===', '!==', '..=', '==', '!=', '<=', '>=', '&&', '||', '+=', '
 const LX_WORD = /^(?:\((?:int|double)\))?[&!]?(?:-?[A-Za-z0-9_]+(?:(?:\.\.=?|\.|::)[A-Za-z0-9_]+)*(?:\(\))?(?:\+\+|--)?(?:&(?= ))?|"[^"]*"|'[^']*')/;
 const KW_SLOT = new Set(['for', 'if', 'while', 'foreach']);
 
-function lexLine(text) {
+// Extended mode only: a generic type (`ArrayList<>`, `List<Integer>`, optionally with `()`) or an array
+// type (`number[]`) as one block.
+const LX_EXT_WORD = /^(?:[A-Z][A-Za-z0-9_]*<(?:[A-Z][A-Za-z0-9_]*)?>(?:\(\))?|[A-Za-z_][A-Za-z0-9_]*\[\](?![A-Za-z0-9_]))/;
+function lexLine(text, ext = false) {
   const toks = [];
   let i = 0, sp = false;
   while (i < text.length) {
     const ch = text[i];
     if (ch === ' ') { sp = true; i++; continue; }
     const rest = text.slice(i);
+    const xm = ext ? rest.match(LX_EXT_WORD) : null;
+    if (xm) { toks.push({ k: 'w', t: xm[0], sp }); i += xm[0].length; sp = false; continue; }
+    if (ext && rest.startsWith('=>')) { toks.push({ k: 'w', t: '=>', sp }); i += 2; sp = false; continue; }
     let m = rest.match(LX_WORD);
     // A leading '-' is only a negative literal when it is glued to a digit (binary minus is spaced).
     if (m && m[0].startsWith('-') && !/^-\d/.test(m[0])) m = null;
@@ -851,9 +864,9 @@ function lexLine(text) {
   return toks;
 }
 
-export function lineTree(text) {
+export function lineTree(text, { ext = false } = {}) {
   if (typeof text !== 'string' || !text.trim() || /\s{2}|^\s|\s$/.test(text)) return null;
-  const toks = lexLine(text);
+  const toks = lexLine(text, ext);
   if (!toks) return null;
   let i = 0;
   const glue = (items, t) => {
@@ -875,13 +888,18 @@ export function lineTree(text) {
         items.push({ v: '(', open: '', close: ')', sep: ' ', kids });
         continue;
       }
+      // (extended) a trailing ` {` at the end of the line is a block of its own
+      if (ext && t.k === '{' && t.sp && !closer && i === toks.length - 1) { items.push({ v: '{' }); i++; continue; }
       if (t.k === ')' || t.k === ']' || t.k === '{' || t.k === '}' || t.k === '[') return null;
       if (t.k === ',' || t.k === ';' || (t.k === ':' && !t.sp)) {
         if (t.sp) return null;
         i++;
         if (args && t.k === ',') { items.push({ comma: true }); continue; }
-        if (!glue(items, t.t)) return null;
-        continue;
+        if (glue(items, t.t)) continue;
+        // (extended) `;` or `:` right after a slot block sticks to its close: `len(xs);`, `): number`
+        const prev = items[items.length - 1];
+        if (ext && t.k !== ',' && prev && prev.kids && (prev.close + t.t).length <= 3) { prev.close += t.t; continue; }
+        return null;
       }
       if (t.k === ':') { items.push({ v: ':' }); i++; continue; }
       i++;
@@ -945,8 +963,8 @@ function seededShuffle(arr, seed) {
   return out;
 }
 
-export function blocksFor(text, { distractors = [], count = 0, seed = 1 } = {}) {
-  const items = lineTree(text);
+export function blocksFor(text, { distractors = [], count = 0, seed = 1, ext = false } = {}) {
+  const items = lineTree(text, { ext });
   if (!items) return null;
   // Number every answer block in tree order.
   const real = [];
@@ -957,7 +975,7 @@ export function blocksFor(text, { distractors = [], count = 0, seed = 1 } = {}) 
   const extra = [], taken = new Set(), looks = new Map(real.map(t => [t.label, tileKey(t)]));
   for (const d of distractors) {
     if (extra.length >= count) break;
-    const di = lineTree(d);
+    const di = lineTree(d, { ext });
     if (!di) continue;
     const need = new Map();
     for (const t of flatTiles(di)) {
@@ -981,8 +999,8 @@ export function blocksFor(text, { distractors = [], count = 0, seed = 1 } = {}) 
 const OP_FAMILIES = [['+', '-', '*', '/', '%'], ['//', '+', '-', '*', '%'], ['<', '<=', '>', '>=', '==', '!='], ['=', '+=', '-=', '*=', '/=', '%='], ['&&', '||'], ['and', 'or']]; // first family holding the operator wins
 // JavaScript/TypeScript compare with === and !== (lang given, or the line already uses them).
 const JS_FAMILIES = [OP_FAMILIES[0], OP_FAMILIES[1], ['<', '<=', '>', '>=', '===', '!=='], ...OP_FAMILIES.slice(3)];
-export function decoyTokens(text, lang) {
-  const items = lineTree(text) || [];
+export function decoyTokens(text, lang, { ext = false } = {}) {
+  const items = lineTree(text, { ext }) || [];
   const out = [];
   const fams = JSL(lang) || /===|!==/.test(String(text)) ? JS_FAMILIES : OP_FAMILIES;
   const walk = xs => xs.forEach(x => {

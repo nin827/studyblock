@@ -1,4 +1,5 @@
 // Code Reviewing, "Language features": questions that exist only in the current language.
+// Languages: Python, C#, C++, GDScript, Rust, JavaScript, TypeScript, Java and Go.
 //
 // Unlike the other subtopics, these snippets are NOT codelang programs: each family below is a
 // hand-written template for ONE language (Python integer division, C# struct copies, C++ references,
@@ -2125,9 +2126,1475 @@ F['rust-mut-line'] = {
 };
 
 // =============================================================================================
+// JavaScript, TypeScript, Java and Go (ticket 027 phase 2)
+// =============================================================================================
+// Each prompt states its assumptions (NOTE). The sims of the JavaScript and TypeScript families run
+// the drawn values through the host engine's own operators (`==`, `+`, `??`, …: the language itself,
+// no eval), while view() works the answer out from a closed form or a hand-written rule.
+inMain.java = body => ['void main() {', ...indentAll(body), '}'];
+inMain.go = body => ['func main() {', ...indentAll(body), '}'];
+const NOTE = {
+  javascript: 'Assume the code runs as an ES module (so in strict mode) in Node.js 20 or a modern browser.',
+  typescript: 'Assume `tsc` with `"strict": true`, and that the compiled JavaScript runs in Node.js 20.',
+  java: 'Assume Java 25: a compact source file with `void main()` and no class around it. `int` is 32 bits.',
+  go: 'Assume Go 1.22 or later. `package main` and the imports are not shown.',
+};
+const askPrint = L => `What does this program print? ${NOTE[L]}`;
+const REF_ERR = 'It throws a `ReferenceError`', TYPE_ERR = 'It throws a `TypeError`', NO_COMPILE = 'It does not compile';
+const fmtAns = s => (/^It /.test(s) || /^Not guaranteed/.test(s) ? s : tk(s));
+
+// ---- JavaScript ----
+const JS_VALS = {
+  zero: ['0', 0], one: ['1', 1], five: ['5', 5], empty: ['""', ''], szero: ['"0"', '0'], sfive: ['"5"', '5'], spaced: ['" 5 "', ' 5 '],
+  sone: ['"1"', '1'], abc: ['"abc"', 'abc'], t: ['true', true], f: ['false', false], nul: ['null', null], und: ['undefined', undefined], nan: ['NaN', NaN],
+};
+const jsType = x => (x === null ? 'null' : typeof x);
+// ToNumber for the strings used here: blank → 0, whole-number text → that number, anything else → NaN.
+const jsToNum = s => { const t = s.trim(); return t === '' ? 0 : /^-?\d+$/.test(t) ? parseInt(t, 10) : NaN; };
+// The spec's IsLooselyEqual steps, for these primitive values only.
+function looseEq(x, y) {
+  const tx = jsType(x), ty = jsType(y), nullish = t => t === 'null' || t === 'undefined';
+  if (tx === ty) return strictEq(x, y);
+  if (nullish(tx) || nullish(ty)) return nullish(tx) && nullish(ty);
+  if (tx === 'boolean') return looseEq(x ? 1 : 0, y);
+  if (ty === 'boolean') return looseEq(x, y ? 1 : 0);
+  if (tx === 'string') return looseEq(jsToNum(x), y);
+  if (ty === 'string') return looseEq(x, jsToNum(y));
+  return false;
+}
+// IsStrictlyEqual: same type and same value; NaN equals nothing.
+function strictEq(x, y) {
+  if (jsType(x) !== jsType(y)) return false;
+  if (typeof x === 'number') return !Number.isNaN(x) && !Number.isNaN(y) && Object.is(x + 0, y + 0);
+  return Object.is(x, y);
+}
+const looseWhy = (as, bs, x, y) => {
+  const tx = jsType(x), ty = jsType(y);
+  if (tx === ty) return typeof x === 'number' && Number.isNaN(x) ? '`NaN` is not equal to anything, not even itself, with either operator.' : `Both sides are the same type (${tx}), so \`==\` converts nothing and agrees with \`===\`.`;
+  if (['null', 'undefined'].includes(tx) || ['null', 'undefined'].includes(ty)) return '`null` and `undefined` are loosely equal to each other and to nothing else: `==` never converts them to a number.';
+  if (tx === 'boolean' || ty === 'boolean') return `\`==\` turns a boolean into a number first (\`true\` → 1, \`false\` → 0), then compares again${tx === 'string' || ty === 'string' ? ', turning the string into a number too' : ''}.`;
+  const s = tx === 'string' ? as : bs, v = tx === 'string' ? x : y;
+  return `Between a string and a number, \`==\` turns the string into a number: ${tk(s)} becomes ${String(jsToNum(v))}.`;
+};
+const JS_EQ_PAIRS = [['sfive', 'five'], ['szero', 'zero'], ['empty', 'zero'], ['nul', 'und'], ['nul', 'zero'], ['und', 'zero'], ['spaced', 'five'],
+  ['one', 't'], ['sone', 't'], ['nan', 'nan'], ['abc', 'nan'], ['szero', 'f'], ['empty', 'f'], ['five', 'five'], ['sfive', 'sfive']];
+F['javascript-equality'] = {
+  lang: 'javascript', diffs: ['medium'],
+  make(rng) {
+    const [a, b] = names(rng, [['a', 'left', 'input', 'first'], ['b', 'right', 'stored', 'second']]);
+    const pair = rng.pick(JS_EQ_PAIRS);
+    return { a, b, pair: rng.next() < 0.5 ? pair : [pair[1], pair[0]], ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { a, b } = c, [A, B] = c.pair.map(k => JS_VALS[k]);
+    const loose = looseEq(A[1], B[1]), strict = strictEq(A[1], B[1]);
+    const answer = `${loose} ${strict}`;
+    const choices = arrange(answer, ['true true', 'true false', 'false false', 'false true'], c.ord);
+    return {
+      code: [`const ${a} = ${A[0]};`, `const ${b} = ${B[0]};`, `console.log(${a} == ${b}, ${a} === ${b});`],
+      ask: askPrint('javascript'), type: 'choice', answer: tk(answer), choices: choices.map(tk),
+      explanation: `It prints **${answer}**. \`===\` (strict equality) is true only when both sides have the same type and the same value. ${looseWhy(A[0], B[0], A[1], B[1])} So \`==\` gives **${loose}**.\n\nUse \`===\` and \`!==\` unless you really want the conversions.`,
+      hints: ['`===` never converts: different types are never strictly equal.', '`==` converts first: a string or a boolean becomes a number, but `null` and `undefined` only equal each other. `NaN` equals nothing.'],
+    };
+  },
+  sim(c) {
+    const [x, y] = c.pair.map(k => JS_VALS[k][1]);
+    return tk(`${x == y} ${x === y}`); // eslint-disable-line eqeqeq
+  },
+};
+
+F['javascript-loose-count'] = {
+  lang: 'javascript', diffs: ['hard'],
+  make(rng) {
+    const target = rng.pick(['zero', 'empty', 'nul', 'f', 'szero', 'one']);
+    const pool = Object.keys(JS_VALS).filter(k => k !== target && k !== 'spaced');
+    const items = rng.shuffle(pool).slice(0, rng.int(5, 6));
+    const [xs, v, hits] = names(rng, [['values', 'inputs', 'cells', 'entries'], ['v', 'item', 'x'], ['hits', 'count', 'matches']]);
+    return { target, items, op: rng.pick(['==', '==', '===']), xs, v, hits };
+  },
+  view(c) {
+    const { target, items, op, xs, v, hits } = c, T = JS_VALS[target];
+    const count = f => items.filter(k => f(JS_VALS[k][1], T[1])).length;
+    const nl = count(looseEq), ns = count(strictEq);
+    if (nl === ns) return null;
+    const answer = op === '==' ? nl : ns;
+    const matched = items.filter(k => (op === '==' ? looseEq : strictEq)(JS_VALS[k][1], T[1])).map(k => tk(JS_VALS[k][0]));
+    return {
+      code: [`const ${xs} = [${items.map(k => JS_VALS[k][0]).join(', ')}];`, `let ${hits} = 0;`, `for (const ${v} of ${xs}) {`, `    if (${v} ${op} ${T[0]}) {`, `        ${hits}++;`, '    }', '}', `console.log(${hits});`],
+      ask: askPrint('javascript'), type: 'number', answer,
+      explanation: `It prints **${answer}**: ${matched.length ? matched.join(', ') : 'nothing'} ${matched.length === 1 ? 'matches' : 'match'} \`${v} ${op} ${T[0]}\`. ` +
+        (op === '==' ? `\`==\` converts before comparing: strings and booleans become numbers (\`""\` → 0, \`"0"\` → 0, \`false\` → 0, \`true\` → 1), while \`null\` and \`undefined\` equal only each other and \`NaN\` equals nothing. With \`===\` the count would be ${ns}.`
+          : `\`===\` converts nothing, so only a value of the same type and value counts. With \`==\` the count would be ${nl}.`),
+      hints: [`Go through the list one value at a time and decide whether \`${v} ${op} ${T[0]}\` is true.`,
+        op === '==' ? '`==` turns a string or boolean into a number before comparing it with a number; `null` and `undefined` are equal only to each other; `NaN` equals nothing.' : '`===` is only true for the same type and the same value.'],
+    };
+  },
+  sim(c) {
+    const t = JS_VALS[c.target][1];
+    // eslint-disable-next-line eqeqeq
+    return c.items.filter(k => (c.op === '==' ? JS_VALS[k][1] == t : JS_VALS[k][1] === t)).length;
+  },
+};
+
+// var hoisting, let/const temporal dead zone, block scope, function declarations.
+const JS_HOIST = { medium: ['varBefore', 'letBefore', 'varBlock', 'letBlock'], hard: ['letBefore', 'varBlock', 'letBlock', 'fnDecl', 'fnArrow', 'varFn', 'shadowTdz'] };
+function hoistProg(c) {
+  const { variant: w, x, n, f, V, W, k } = c;
+  const log = { k: 'log', name: x }, call = { k: 'call', name: f, arg: V };
+  return {
+    varBefore: [log, { k: 'decl', kind: 'var', name: x, v: V }],
+    letBefore: [log, { k: 'decl', kind: 'let', name: x, v: V }],
+    varBlock: [{ k: 'decl', kind: 'const', name: n, v: W }, { k: 'if', name: n, body: [{ k: 'decl', kind: 'var', name: x, v: V }] }, log],
+    letBlock: [{ k: 'decl', kind: 'const', name: n, v: W }, { k: 'if', name: n, body: [{ k: 'decl', kind: 'let', name: x, v: V }] }, log],
+    fnDecl: [call, { k: 'fnDecl', name: f, mult: k }],
+    fnArrow: [call, { k: 'decl', kind: 'const', name: f, fn: k }],
+    varFn: [call, { k: 'decl', kind: 'var', name: f, fn: k }],
+    shadowTdz: [{ k: 'decl', kind: 'let', name: x, v: W }, { k: 'block', body: [log, { k: 'decl', kind: 'let', name: x, v: V }] }],
+  }[w];
+}
+function hoistLines(stmts) {
+  const out = [];
+  const emit = (s, pad) => {
+    if (s.k === 'log') out.push(`${pad}console.log(${s.name});`);
+    else if (s.k === 'call') out.push(`${pad}console.log(${s.name}(${s.arg}));`);
+    else if (s.k === 'fnDecl') out.push(`${pad}function ${s.name}(n) {`, `${pad}    return n * ${s.mult};`, `${pad}}`);
+    else if (s.k === 'decl' && s.fn !== undefined) {
+      if (s.kind === 'var') out.push(`${pad}var ${s.name} = function (n) {`, `${pad}    return n * ${s.fn};`, `${pad}};`);
+      else out.push(`${pad}const ${s.name} = n => n * ${s.fn};`);
+    } else if (s.k === 'decl') out.push(`${pad}${s.kind} ${s.name} = ${s.v};`);
+    else if (s.k === 'if' || s.k === 'block') {
+      out.push(s.k === 'if' ? `${pad}if (${s.name} > 0) {` : `${pad}{`);
+      s.body.forEach(b => emit(b, pad + '    '));
+      out.push(`${pad}}`);
+    }
+  };
+  stmts.forEach(s => emit(s, ''));
+  return out;
+}
+// A small scope model: var (and function declarations) hoisted to the top scope, let/const in a
+// temporal dead zone from the start of their block until their declaration runs.
+function hoistRun(stmts) {
+  const top = { vars: new Map(), up: null };
+  const hoistVars = body => body.forEach(s => {
+    if (s.k === 'decl' && s.kind === 'var' && !top.vars.has(s.name)) top.vars.set(s.name, { init: true, v: undefined });
+    if (s.body) hoistVars(s.body);
+  });
+  const enter = (sc, body) => body.forEach(s => {
+    if (s.k === 'decl' && s.kind !== 'var') sc.vars.set(s.name, { init: false });
+    if (s.k === 'fnDecl') sc.vars.set(s.name, { init: true, v: { fn: s.mult } });
+  });
+  const find = (sc, n) => { for (let s = sc; s; s = s.up) if (s.vars.has(n)) return s.vars.get(n); return null; };
+  const read = (sc, n) => { const b = find(sc, n); if (!b || !b.init) throw new Error('ReferenceError'); return b.v; };
+  const out = [];
+  const exec = (sc, body) => body.forEach(s => {
+    if (s.k === 'log') { const v = read(sc, s.name); out.push(v === undefined ? 'undefined' : String(v)); }
+    else if (s.k === 'call') { const v = read(sc, s.name); if (!v || v.fn === undefined) throw new Error('TypeError'); out.push(String(s.arg * v.fn)); }
+    else if (s.k === 'decl') { const b = s.kind === 'var' ? top.vars.get(s.name) : sc.vars.get(s.name); b.init = true; b.v = s.fn !== undefined ? { fn: s.fn } : s.v; }
+    else if (s.k === 'if' || s.k === 'block') {
+      if (s.k === 'if' && !(read(sc, s.name) > 0)) return;
+      const inner = { vars: new Map(), up: sc };
+      enter(inner, s.body); exec(inner, s.body);
+    }
+  });
+  hoistVars(stmts); enter(top, stmts);
+  try { exec(top, stmts); } catch (e) { return e.message === 'ReferenceError' ? REF_ERR : e.message === 'TypeError' ? TYPE_ERR : null; }
+  return out.length === 1 ? tk(out[0]) : null;
+}
+F['javascript-hoist'] = {
+  lang: 'javascript', diffs: ['medium', 'hard'],
+  make(rng, diff) {
+    const [x, n, f] = names(rng, [['level', 'total', 'score', 'size'], ['count', 'limit', 'items'], ['double', 'scale', 'boost', 'grow']]);
+    return { variant: rng.pick(JS_HOIST[diff]), x, n, f, V: rng.int(2, 9), W: rng.int(10, 20), k: rng.int(2, 5), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { variant: w, x, f, V, W, k } = c;
+    const answer = { varBefore: 'undefined', letBefore: REF_ERR, varBlock: String(V), letBlock: REF_ERR, fnDecl: String(V * k), fnArrow: REF_ERR, varFn: TYPE_ERR, shadowTdz: REF_ERR }[w];
+    const wrongs = ['undefined', REF_ERR, TYPE_ERR, String(V), String(W), String(V * k), 'null'];
+    const choices = arrange(answer, wrongs, c.ord);
+    if (!choices) return null;
+    const why = {
+      varBefore: `\`var ${x}\` is **hoisted**: the variable exists (holding \`undefined\`) from the start of the scope, and only the \`= ${V}\` part waits until its line runs.`,
+      letBefore: `\`let ${x}\` is hoisted too, but it stays in the **temporal dead zone** until its declaration runs, so reading it earlier throws \`ReferenceError: Cannot access '${x}' before initialization\`.`,
+      varBlock: `\`var\` ignores blocks: \`var ${x}\` inside the \`if\` belongs to the whole scope, so it still holds ${V} after the \`}\`.`,
+      letBlock: `\`let\` is block-scoped: \`${x}\` exists only inside the \`if\` block, so after the \`}\` there is no \`${x}\` at all: \`ReferenceError: ${x} is not defined\`.`,
+      fnDecl: `A function **declaration** is hoisted with its body, so \`${f}\` can be called before the line that defines it: ${V} × ${k} = ${V * k}.`,
+      fnArrow: `\`const ${f} = …\` is in the temporal dead zone until that line runs, so calling \`${f}\` earlier throws a \`ReferenceError\`. Only function declarations are hoisted with their body.`,
+      varFn: `\`var ${f}\` is hoisted but holds \`undefined\` until the assignment runs, so \`${f}(${V})\` throws \`TypeError: ${f} is not a function\`.`,
+      shadowTdz: `The inner block declares its own \`let ${x}\`, which shadows the outer one for the **whole** block. Before its declaration line it is in the temporal dead zone, so \`console.log(${x})\` throws a \`ReferenceError\` instead of printing the outer ${W}.`,
+    }[w];
+    return {
+      code: hoistLines(hoistProg(c)), ask: askPrint('javascript'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `${fmtAns(answer)}. ${why}`,
+      hints: ['Ask what exists when each line runs. `var` and function declarations are set up before any code runs; `let` and `const` exist from the start of their block but can\'t be read before their line.',
+        '`var` belongs to the whole function or file; `let` and `const` belong to the block `{ … }` they are written in.'],
+    };
+  },
+  sim: c => hoistRun(hoistProg(c)),
+};
+
+// `this` depends on how a function is called. Class bodies are always strict, so a method called
+// without an object gets `this === undefined`.
+const JS_THIS = { hard: ['method', 'detached', 'bound', 'arrowWrap', 'mapDetached', 'mapArrow'], expert: ['cbFunction', 'cbFunction', 'cbArrow', 'cbThisArg', 'cbFor', 'detached'] };
+F['javascript-this'] = {
+  lang: 'javascript', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [K, o] = names(rng, [['Counter', 'Tally', 'Meter', 'Score'], ['c', 'counter', 'meter', 'tally']]);
+    return { variant: rng.pick(JS_THIS[diff]), K, o, S: rng.int(2, 9), n: rng.int(2, 9), xs: randList(rng, 2, 3, 1, 9), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { variant: w, K, o, S, n, xs } = c;
+    const expert = w.startsWith('cb');
+    const cls = [`class ${K} {`, '    constructor(start) {', '        this.count = start;', '    }', '',
+      ...(expert ? [
+        '    addAll(xs) {',
+        ...{
+          cbFunction: ['        xs.forEach(function (x) {', '            this.count += x;', '        });'],
+          cbArrow: ['        xs.forEach((x) => {', '            this.count += x;', '        });'],
+          cbThisArg: ['        xs.forEach(function (x) {', '            this.count += x;', '        }, this);'],
+          cbFor: ['        for (const x of xs) {', '            this.count += x;', '        }'],
+        }[w],
+        '        return this.count;', '    }',
+      ] : ['    add(n) {', '        this.count += n;', '        return this.count;', '    }']),
+      '}', '', `const ${o} = new ${K}(${S});`];
+    const calls = {
+      method: [`console.log(${o}.add(${n}));`],
+      detached: ['const add = ' + o + '.add;', `console.log(add(${n}));`],
+      bound: [`const add = ${o}.add.bind(${o});`, `console.log(add(${n}));`],
+      arrowWrap: [`const add = (n) => ${o}.add(n);`, `console.log(add(${n}));`],
+      mapDetached: [`const results = [${n}].map(${o}.add);`, 'console.log(results[0]);'],
+      mapArrow: [`const results = [${n}].map((n) => ${o}.add(n));`, 'console.log(results[0]);'],
+    };
+    const code = [...cls, ...(expert ? [`console.log(${o}.addAll([${xs.join(', ')}]));`] : calls[w])];
+    const ok = expert ? S + sum(xs) : S + n;
+    const fails = ['detached', 'mapDetached', 'cbFunction'].includes(w);
+    const answer = fails ? TYPE_ERR : String(ok);
+    const choices = arrange(answer, [String(ok), TYPE_ERR, String(S), String(expert ? sum(xs) : n), REF_ERR, 'undefined'], c.ord);
+    const why = {
+      method: `\`${o}.add(${n})\` is called **on** \`${o}\`, so inside \`add\`, \`this\` is \`${o}\`.`,
+      detached: `\`const add = ${o}.add;\` copies the function without the object. Calling \`add(${n})\` on its own gives \`this === undefined\` (class code is always in strict mode), so \`this.count\` throws \`TypeError: Cannot read properties of undefined\`.`,
+      bound: `\`.bind(${o})\` makes a function whose \`this\` is always \`${o}\`, however it is called.`,
+      arrowWrap: `The arrow function calls \`${o}.add(n)\` on the object, so \`this\` is \`${o}\`.`,
+      mapDetached: `\`map\` calls \`${o}.add\` as a plain function, without the object, so \`this\` is \`undefined\` and \`this.count\` throws a \`TypeError\`.`,
+      mapArrow: `The arrow callback calls \`${o}.add(n)\` on the object, so \`this\` is \`${o}\`.`,
+      cbFunction: `\`forEach\` calls the \`function (x) { … }\` callback as a plain function, so inside it \`this\` is \`undefined\` (class code is strict): \`this.count\` throws a \`TypeError\`. Only the method itself gets \`this\` = \`${o}\`.`,
+      cbArrow: `An arrow function has no \`this\` of its own: it uses the \`this\` of \`addAll\`, which is \`${o}\`.`,
+      cbThisArg: `The second argument of \`forEach\` (\`this\`) is used as \`this\` inside the callback, so the callback updates \`${o}\`.`,
+      cbFor: `A \`for…of\` loop is not a separate function, so \`this\` is still \`${o}\`.`,
+    }[w];
+    return {
+      code, ask: askPrint('javascript'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `${fmtAns(answer)}. ${why}${fails ? '' : ` It returns ${S} + ${expert ? xs.join(' + ') : n} = ${ok}.`}`,
+      hints: ['`this` is decided by how a function is **called**: `obj.method()` sets it to `obj`; calling the same function on its own leaves it `undefined` in strict code.',
+        expert ? 'A `function` callback gets its own `this` (from whoever calls it); an arrow function and a loop body keep the method\'s `this`.' : '`.bind(obj)` fixes `this`; an arrow function that calls `obj.method()` keeps the object.'],
+    };
+  },
+  sim(c) {
+    // receivers: a method value remembers no object; bind fixes one; a plain call passes undefined
+    const obj = { count: c.S };
+    const add = (self, n) => { if (!self) throw new Error('TypeError'); self.count += n; return self.count; };
+    const method = { kind: 'method' };
+    const call = (fv, n, recv) => (fv.kind === 'bound' ? add(fv.target, n) : fv.kind === 'arrow' ? fv.body(n) : add(recv, n));
+    try {
+      if (c.variant.startsWith('cb')) {
+        const self = obj; // this inside addAll (called as obj.addAll)
+        const cb = { cbFunction: { kind: 'function' }, cbArrow: { kind: 'arrow' }, cbThisArg: { kind: 'function', thisArg: self }, cbFor: { kind: 'loop' } }[c.variant];
+        for (const x of c.xs) add(cb.kind === 'function' ? cb.thisArg : self, x);
+        return tk(String(self.count));
+      }
+      const r = {
+        method: () => call(method, c.n, obj),
+        detached: () => call(method, c.n, undefined),
+        bound: () => call({ kind: 'bound', target: obj }, c.n),
+        arrowWrap: () => call({ kind: 'arrow', body: n => call(method, n, obj) }, c.n),
+        mapDetached: () => [c.n].map(n => call(method, n, undefined))[0],
+        mapArrow: () => [c.n].map(n => call({ kind: 'arrow', body: m => call(method, m, obj) }, n))[0],
+      }[c.variant]();
+      return tk(String(r));
+    } catch { return TYPE_ERR; }
+  },
+};
+
+// Array.prototype.sort() compares as strings unless given a compare function.
+function sortWith(xs, cmp) { // insertion sort (stable), used by the sims
+  const out = xs.slice();
+  for (let i = 1; i < out.length; i++) { const v = out[i]; let j = i - 1; while (j >= 0 && cmp(out[j], v) > 0) { out[j + 1] = out[j]; j--; } out[j + 1] = v; }
+  return out;
+}
+const lexCmp = (a, b) => { const s = String(a), t = String(b); for (let i = 0; i < Math.min(s.length, t.length); i++) { if (s.charCodeAt(i) !== t.charCodeAt(i)) return s.charCodeAt(i) - t.charCodeAt(i); } return s.length - t.length; };
+const mixedNums = (rng, n) => {
+  const xs = [rng.int(1, 9), rng.int(10, 99), rng.int(10, 99), rng.int(100, 999), rng.int(1, 9), rng.int(10, 99)].slice(0, n);
+  return rng.shuffle([...new Set(xs)]);
+};
+F['javascript-sort'] = {
+  lang: 'javascript', diffs: ['medium'],
+  make(rng) {
+    const [xs] = names(rng, [['xs', 'nums', 'scores', 'sizes', 'ages']]);
+    return { xs, vals: mixedNums(rng, rng.int(4, 5)), mode: rng.pick(['default', 'default', 'asc', 'desc']), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { xs, vals, mode } = c;
+    const lexi = [...vals].sort(), asc = [...vals].sort((a, b) => a - b), desc = [...asc].reverse();
+    if (lexi.join() === asc.join()) return null;
+    const J = a => a.join(' ');
+    const answer = J({ default: lexi, asc, desc }[mode]);
+    const choices = arrange(answer, [J(lexi), J(asc), J(desc), J(vals), J([...lexi].reverse())], c.ord);
+    const call = { default: `${xs}.sort();`, asc: `${xs}.sort((a, b) => a - b);`, desc: `${xs}.sort((a, b) => b - a);` }[mode];
+    return {
+      code: [`const ${xs} = [${vals.join(', ')}];`, call, `console.log(${xs}.join(" "));`], ask: askPrint('javascript'), type: 'choice', answer: tk(answer), choices: choices.map(tk),
+      explanation: `It prints **${answer}**. ` + (mode === 'default'
+        ? 'With no compare function, `sort()` turns the items into **strings** and sorts them in dictionary order, character by character: "1" < "10" < "100" < "2". So numbers with more digits are not necessarily later.'
+        : `\`(a, b) => ${mode === 'asc' ? 'a - b' : 'b - a'}\` compares the numbers as numbers: a negative result puts \`a\` first, so this sorts from ${mode === 'asc' ? 'smallest to largest' : 'largest to smallest'}.`) +
+        ' (`sort` also changes the array in place, which is why `const` is fine here.)',
+      hints: [mode === 'default' ? 'Look at the call: is there a compare function? Without one, `sort()` compares the items as text.' : 'The compare function returns a negative number when `a` should come first.',
+        mode === 'default' ? 'Write each number as text and sort them like words in a dictionary, first character first.' : 'Work out the order the numbers end up in.'],
+    };
+  },
+  sim(c) {
+    const cmp = { default: lexCmp, asc: (a, b) => a - b, desc: (a, b) => b - a }[c.mode];
+    return tk(sortWith(c.vals, cmp).join(' '));
+  },
+};
+
+F['javascript-sort-line'] = {
+  lang: 'javascript', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const dir = diff === 'expert' ? rng.pick(['asc', 'desc']) : 'asc';
+    const [f, xs] = names(rng, [dir === 'asc' ? ['sortScores', 'smallestFirst', 'ascending', 'inOrder'] : ['largestFirst', 'descending', 'topFirst', 'highToLow'], ['nums', 'scores', 'values', 'list']]);
+    return { dir, f, xs, ex: mixedNums(rng, rng.int(4, 5)), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { dir, f, xs, ex } = c;
+    const asc = dir === 'asc', body = asc ? 'a - b' : 'b - a';
+    const want = sortWith(ex, asc ? (a, b) => a - b : (a, b) => b - a).join(' '), got = sortWith(ex, lexCmp).join(' ');
+    if (want === got) return null;
+    const bug = `${xs}.sort()`, answer = `${xs}.sort((a, b) => ${body})`;
+    return {
+      code: [`function ${f}(${xs}) {`, `    ${bug};`, `    return ${xs};`, '}', '', `console.log(${f}([${ex.join(', ')}]).join(" "));`],
+      lead: `\`${f}\` should sort the numbers from ${asc ? 'smallest to largest' : 'largest to smallest'}, so this should print **${want}**. It prints **${got}** instead.`,
+      ask: rewriteAsk(diff, 2), type: 'text', answer, trail: ';', bug, lineNo: 2,
+      alts: [`${xs}.sort((x, y) => ${asc ? 'x - y' : 'y - x'})`, `${xs}.sort(function (a, b) { return ${body}; })`],
+      distractors: [bug, `${xs}.sort((a, b) => ${asc ? 'b - a' : 'a - b'})`, `${xs}.sort((a, b) => a > b)`, `${xs}.reverse()`, `${xs}.sort(a - b)`],
+      explanation: `Line 2 should be \`${answer};\`. Without a compare function, \`sort()\` turns the numbers into strings and sorts them in dictionary order (${got}). \`(a, b) => ${body}\` compares them as numbers: a negative result puts \`a\` first, so it sorts from ${asc ? 'smallest to largest' : 'largest to smallest'}. (A compare function that returns \`true\`/\`false\`, such as \`a > b\`, is not a valid comparator.)`,
+      hints: ['What does `sort()` do with numbers when it is given no compare function?', 'Give `sort` a compare function `(a, b) => …` that returns a negative number when `a` should come first.',
+        `For ${asc ? 'smallest first' : 'largest first'}, subtract in the right order.`],
+    };
+  },
+  sim(c) {
+    const X = c.xs, asc = c.dir === 'asc';
+    const tests = [c.ex, [100, 25, 3, 7], [9, 81, 18, 1, 200]];
+    const arrow = new RegExp(`^${X}\\s*\\.sort\\(\\s*\\(\\s*(\\w+)\\s*,\\s*(\\w+)\\s*\\)\\s*=>\\s*(\\w+)\\s*-\\s*(\\w+)\\s*\\)$`);
+    const fn = new RegExp(`^${X}\\s*\\.sort\\(\\s*function\\s*\\(\\s*(\\w+)\\s*,\\s*(\\w+)\\s*\\)\\s*\\{\\s*return\\s+(\\w+)\\s*-\\s*(\\w+)\\s*;?\\s*\\}\\s*\\)$`);
+    const plain = new RegExp(`^${X}\\s*\\.sort\\(\\s*\\)$`);
+    return {
+      ok(line) {
+        const s = stripMark(line);
+        let cmp = null;
+        if (plain.test(s)) cmp = lexCmp;
+        const m = s.match(arrow) || s.match(fn);
+        if (m) {
+          const [, p, q, u, v] = m;
+          if (p === q || p === X || q === X) return false;
+          if (u === p && v === q) cmp = (a, b) => a - b; else if (u === q && v === p) cmp = (a, b) => b - a; else return false;
+        }
+        if (!cmp) return false;
+        return tests.every(t => {
+          const got = sortWith(t, cmp);
+          // sorted the required way: every neighbour pair in order
+          return got.every((x, i) => i === 0 || (asc ? got[i - 1] <= x : got[i - 1] >= x));
+        });
+      },
+    };
+  },
+};
+
+// `==` converts; a check that should only accept one exact value needs `===`.
+const JS_STRICT = [
+  { fn: 'isZero', lit: '0', target: 'zero', ins: ['empty', 'szero', 'f'], what: 'the number 0' },
+  { fn: 'isEmpty', lit: '""', target: 'empty', ins: ['zero', 'f'], what: 'the empty string `""`' },
+  { fn: 'isOne', lit: '1', target: 'one', ins: ['t', 'sone'], what: 'the number 1' },
+];
+F['javascript-strict-line'] = {
+  lang: 'javascript', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const s = rng.pick(JS_STRICT);
+    const [p] = names(rng, [['value', 'input', 'x', 'v']]);
+    return { s: JS_STRICT.indexOf(s), p, input: rng.pick(s.ins), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const s = JS_STRICT[c.s], { p } = c, I = JS_VALS[c.input];
+    const bug = `return ${p} == ${s.lit}`, answer = `return ${p} === ${s.lit}`;
+    return {
+      code: [`function ${s.fn}(${p}) {`, `    ${bug};`, '}', '', `console.log(${s.fn}(${I[0]}));`],
+      lead: `\`${s.fn}\` should be \`true\` only for ${s.what}, so \`${s.fn}(${I[0]})\` should print **false**. It prints **true**.`,
+      ask: rewriteAsk(diff, 2), type: 'text', answer, trail: ';', bug, lineNo: 2,
+      alts: [`return ${s.lit} === ${p}`],
+      distractors: [bug, `return ${p} = ${s.lit}`, `return ${p} !== ${s.lit}`, `return ${p} != ${s.lit}`, s.lit === '""' ? `return ${p} === 0` : `return ${p} === "${s.lit}"`],
+      explanation: `Line 2 should be \`${answer};\`. \`==\` converts before comparing, so ${tk(I[0])} == ${tk(s.lit)} is \`true\`${typeof I[1] === 'boolean' ? ` (\`${I[0]}\` becomes ${I[1] ? 1 : 0})` : typeof I[1] === 'string' ? ` (the string becomes the number ${jsToNum(I[1])})` : ' (the number is compared with the string turned into a number)'}. \`===\` compares type and value with no conversion, so only ${s.what} passes.`,
+      hints: ['Which values does `==` treat as equal to the literal? It converts strings and booleans to numbers first.', 'JavaScript has an equality operator that never converts.', 'Change only the operator.'],
+    };
+  },
+  sim(c) {
+    const s = JS_STRICT[c.s], T = JS_VALS[s.target][1];
+    const re = /^return\s+(.+?)\s*(===|!==|==|!=)\s*(.+)$/;
+    return {
+      ok(line) {
+        const m = stripMark(line).match(re);
+        if (!m) return false;
+        const [, l, op, r] = m;
+        if (!((l === c.p && r === s.lit) || (r === c.p && l === s.lit))) return false;
+        // every value: true exactly for the target value itself (same type, same value)
+        return Object.values(JS_VALS).every(([, v]) => {
+          // eslint-disable-next-line eqeqeq
+          const got = op === '===' ? v === T : op === '!==' ? v !== T : op === '==' ? v == T : v != T;
+          return got === (jsType(v) === jsType(T) && Object.is(v, T));
+        });
+      },
+    };
+  },
+};
+
+// Closures in loops: one shared `var` binding vs a fresh `let` binding per iteration.
+F['javascript-closure-loop'] = {
+  lang: 'javascript', diffs: ['expert'],
+  make(rng) {
+    const [arr, i] = names(rng, [['getters', 'fns', 'makers', 'readers'], ['i', 'k', 'step']]);
+    return { arr, i, variant: rng.pick(['varHead', 'varHead', 'letHead', 'letOutside', 'varConst']), N: rng.int(3, 4), K: rng.int(1, 4), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { arr, i, variant: w, N, K } = c;
+    const mul = v => (K === 1 ? v : `${v} * ${K}`);
+    const head = { varHead: `for (var ${i} = 0; ${i} < ${N}; ${i}++) {`, letHead: `for (let ${i} = 0; ${i} < ${N}; ${i}++) {`, letOutside: `for (${i} = 0; ${i} < ${N}; ${i}++) {`, varConst: `for (var ${i} = 0; ${i} < ${N}; ${i}++) {` }[w];
+    const body = w === 'varConst' ? ['    const j = ' + i + ';', `    ${arr}.push(() => ${mul('j')});`] : [`    ${arr}.push(() => ${mul(i)});`];
+    const code = [`const ${arr} = [];`, ...(w === 'letOutside' ? [`let ${i};`] : []), head, ...body, '}', `console.log(${arr}.map((g) => g()).join(" "));`];
+    const range = Array.from({ length: N }, (_, j) => j);
+    const per = range.map(j => j * K).join(' '), shared = range.map(() => N * K).join(' ');
+    const answer = ['letHead', 'varConst'].includes(w) ? per : shared;
+    const choices = arrange(answer, [per, shared, range.map(j => (j + 1) * K).join(' '), range.map(() => (N - 1) * K).join(' ')], c.ord);
+    const why = {
+      varHead: `\`var ${i}\` is **one** variable for the whole loop. Every arrow function reads that same \`${i}\` when it is called, after the loop has finished, when \`${i}\` is ${N}.`,
+      letOutside: `\`let ${i};\` is declared **outside** the loop, so there is only one \`${i}\`, shared by every arrow function. When they are called, the loop has finished and \`${i}\` is ${N}.`,
+      letHead: `A \`let\` in the \`for\` header gets a **fresh copy for every pass**, so each arrow function keeps the value of \`${i}\` from its own pass.`,
+      varConst: `\`${i}\` is one shared \`var\`, but \`const j = ${i};\` creates a new \`j\` on every pass (it is block-scoped), so each arrow function keeps its own \`j\`.`,
+    }[w];
+    return {
+      code, ask: askPrint('javascript'), type: 'choice', answer: tk(answer), choices: choices.map(tk),
+      explanation: `It prints **${answer}**. ${why}`,
+      hints: ['The arrow functions run after the loop has finished. What value does each one read at that moment?', 'A `let` declared in the `for (…)` header is a new variable on each pass; a `var`, or a `let` declared before the loop, is a single variable.'],
+    };
+  },
+  sim(c) {
+    // bindings as objects; a closure keeps a reference to the binding it saw
+    const fns = [];
+    const perIter = c.variant === 'letHead';
+    let b = { v: 0 };
+    while (b.v < c.N) {
+      if (c.variant === 'varConst') { const j = { v: b.v }; fns.push(() => j.v * c.K); } else { const cur = b; fns.push(() => cur.v * c.K); }
+      if (perIter) b = { v: b.v }; // CreatePerIterationEnvironment copies before the increment
+      b.v++;
+    }
+    return tk(fns.map(f => f()).join(' '));
+  },
+};
+
+// ---- TypeScript ----
+const TS_NOTE_BOTH = NOTE.typescript;
+const tsConv = (conv, src) => ({ as: `${src} as number`, Number: `Number(${src})`, unary: `+${src}`, parseInt: `parseInt(${src}, 10)` }[conv]);
+F['typescript-cast'] = {
+  lang: 'typescript', diffs: ['medium', 'hard'],
+  make(rng, diff) {
+    const [d, fld, v] = names(rng, [['data', 'payload', 'row', 'body'], ['qty', 'count', 'age', 'size'], ['n', 'amount', 'value', 'num']]);
+    return { d, fld, v, sv: rng.int(2, 19), k: rng.int(2, 9), conv: rng.pick(diff === 'medium' ? ['as', 'as', 'Number', 'unary'] : ['as', 'as', 'Number', 'parseInt', 'unary']),
+      op: diff === 'medium' ? '+' : rng.pick(['+', '+', '*', '-']), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { d, fld, v, sv, k, conv, op } = c;
+    const num = op === '+' ? sv + k : op === '*' ? sv * k : sv - k;
+    const answer = conv === 'as' && op === '+' ? `${sv}${k}` : String(num);
+    const choices = arrange(answer, [`${sv}${k}`, String(num), NO_COMPILE, 'NaN', String(sv + k)], c.ord);
+    const code = [`const ${d}: any = JSON.parse('{"${fld}": "${sv}"}');`, `const ${v} = ${tsConv(conv, `${d}.${fld}`)};`, `console.log(${v} ${op} ${k});`];
+    const why = conv === 'as'
+      ? `\`as number\` only changes what the **compiler** believes: types are erased when TypeScript compiles to JavaScript, so at run time \`${v}\` is still the string "${sv}". ` +
+        (op === '+' ? `\`+\` with a string joins text: "${sv}" + ${k} is "${sv}${k}".` : `\`${op}\` has no string meaning, so JavaScript converts "${sv}" to a number anyway: ${num}.`)
+      : `\`${tsConv(conv, `${d}.${fld}`)}\` really converts the string "${sv}" to the number ${sv} at run time, so the arithmetic is ${sv} ${op} ${k} = ${num}.`;
+    return {
+      code, ask: askPrint('typescript'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `It prints **${answer}**. ${why} It compiles: \`JSON.parse\` returns \`any\`, and \`any\` may be used as anything.`,
+      hints: ['What is the value of the field at run time: a number or a string? Look at the JSON text.', 'Does the second line actually convert anything when the program runs, or does it only tell the compiler what to believe?'],
+    };
+  },
+  sim(c) {
+    const raw = String(c.sv);
+    const v = { as: raw, Number: Number(raw), unary: +raw, parseInt: parseInt(raw, 10) }[c.conv];
+    const r = c.op === '+' ? v + c.k : c.op === '*' ? v * c.k : v - c.k;
+    return fmtAns(String(r));
+  },
+};
+
+F['typescript-any'] = {
+  lang: 'typescript', diffs: ['medium', 'hard'],
+  make(rng, diff) {
+    const [f, xs, acc, p] = names(rng, [['total', 'sumAll', 'addUp'], ['xs', 'nums', 'items'], ['sum', 'acc', 'running'], ['parsed', 'values', 'input']]);
+    const vals = randList(rng, 3, 4, 1, 9);
+    const strs = new Set();
+    if (diff === 'medium') strs.add(rng.int(1, vals.length - 1));
+    else { strs.add(rng.int(0, vals.length - 1)); if (rng.next() < 0.4) strs.add(rng.int(0, vals.length - 1)); }
+    return { f, xs, acc, p, vals, strs: [...strs].sort(), fixed: diff === 'hard' && rng.next() < 0.2, ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { f, xs, acc, p, vals, strs, fixed } = c;
+    const json = `[${vals.map((v, i) => (strs.includes(i) ? `"${v}"` : String(v))).join(', ')}]`;
+    // closed form: numbers add until the first string; from then on everything is joined as text
+    let text = null, total = 0;
+    vals.forEach((v, i) => { if (text === null && (fixed || !strs.includes(i))) total += v; else text = (text === null ? String(total) : text) + String(v); });
+    const answer = text === null ? String(total) : text;
+    const plain = vals.join('');
+    const choices = arrange(answer, [answer, String(sum(vals)), NO_COMPILE, plain, `0${plain}`, 'NaN'], c.ord);
+    return {
+      code: [`function ${f}(${xs}: number[]): number {`, `    let ${acc} = 0;`, `    for (const x of ${xs}) {`, `        ${acc} += x;`, '    }', `    return ${acc};`, '}', '',
+        `const ${p}: number[] = JSON.parse('${json}')${fixed ? '.map(Number)' : ''};`, `console.log(${f}(${p}));`],
+      ask: askPrint('typescript'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `It prints **${answer}**. ` + (fixed ? `\`.map(Number)\` really turns every item into a number, so the sum is ${vals.join(' + ')} = ${sum(vals)}.`
+        : `\`JSON.parse\` returns \`any\`, so the compiler accepts it as a \`number[]\` without checking. At run time the array still holds the string${strs.length > 1 ? 's' : ''} ${strs.map(i => `"${vals[i]}"`).join(' and ')}. ` +
+          `\`${acc} += x\` adds numbers until it meets a string; from then on \`+\` joins text, so the result is the string "${answer}" even though the function says it returns a \`number\`.`),
+      hints: ['Does the compiler check what `JSON.parse` returns? What type is it?', 'Look at the JSON text: which items are strings? Trace `+=` item by item: number + number adds, but anything + string joins text.'],
+    };
+  },
+  sim(c) {
+    const items = c.vals.map((v, i) => (!c.fixed && c.strs.includes(i) ? String(v) : v));
+    let acc = 0;
+    for (const x of items) acc += x;
+    return fmtAns(String(acc));
+  },
+};
+
+F['typescript-optional'] = {
+  lang: 'typescript', diffs: ['medium', 'expert'],
+  make(rng, diff) {
+    const [T, p, nm] = names(rng, [['Player', 'Member', 'Entry', 'Card'], ['p', 'player', 'item'], ['kim', 'ann', 'raj', 'lee']]);
+    return { T, p, nm, S: rng.int(10, 20), D: rng.int(2, 9), B: rng.int(1, 9),
+      present: rng.pick(diff === 'medium' ? ['missing', 'missing', 'value'] : ['zero', 'zero', 'missing', 'value']), op: rng.pick(['??', '||', '!']), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c, diff) {
+    const { T, p, nm, S, D, B, present, op } = c;
+    const lit = present === 'missing' ? `{ name: "${nm}" }` : `{ name: "${nm}", bonus: ${present === 'zero' ? 0 : B} }`;
+    const head = [`interface ${T} {`, '    name: string;', '    bonus?: number;', '}', '', `const ${p}: ${T} = ${lit};`];
+    const bonus = present === 'missing' ? undefined : present === 'zero' ? 0 : B;
+    if (diff === 'expert') {
+      const a = S + (bonus === undefined ? D : bonus), b = S + (bonus === undefined || bonus === 0 ? D : bonus);
+      return {
+        code: [...head, `const a = ${S} + (${p}.bonus ?? ${D});`, `const b = ${S} + (${p}.bonus || ${D});`, 'console.log(a);', 'console.log(b);'],
+        ask: `What do the two lines print? ${NOTE.typescript}`, type: 'multi',
+        parts: [
+          { id: 'a', label: 'First line', ask: 'What does `console.log(a)` print?', answerType: 'number', answer: a, tolerance: 0, hint: '`x ?? d` uses `d` only when `x` is `null` or `undefined`.' },
+          { id: 'b', label: 'Second line', ask: 'What does `console.log(b)` print?', answerType: 'number', answer: b, tolerance: 0, hint: '`x || d` uses `d` whenever `x` is falsy: `undefined`, `null`, `0`, `""`, `NaN` or `false`.' },
+        ],
+        explanation: `It prints **${a}** then **${b}**. \`bonus?: number\` means the property may be missing (\`undefined\`). ${present === 'missing' ? 'Here it is missing, so both `??` and `||` fall back to ' + D + '.' : present === 'zero' ? `Here it is **0**. \`??\` falls back only for \`null\`/\`undefined\`, so it keeps 0; \`||\` falls back for any falsy value, and 0 is falsy, so it uses ${D}.` : `Here it is ${B}, which is neither missing nor falsy, so both keep it.`}`,
+      };
+    }
+    const expr = { '??': `(${p}.bonus ?? ${D})`, '||': `(${p}.bonus || ${D})`, '!': `${p}.bonus!` }[op];
+    const val = bonus === undefined ? (op === '!' ? NaN : S + D) : S + bonus;
+    const answer = String(val);
+    const choices = arrange(answer, [String(S + D), 'NaN', String(S), NO_COMPILE, String(S + B), 'undefined'], c.ord);
+    return {
+      code: [...head, `const total = ${S} + ${expr};`, 'console.log(total);'], ask: askPrint('typescript'), type: 'choice', answer: tk(answer), choices: choices.map(fmtAns),
+      explanation: `It prints **${answer}**. ` + (op === '!'
+        ? `\`${p}.bonus!\` is a **non-null assertion**: it tells the compiler "trust me, this is not undefined" and compiles, but it checks nothing at run time. ${bonus === undefined ? `The property is missing, so ${S} + undefined is \`NaN\`.` : `Here bonus is ${bonus}, so ${S} + ${bonus} = ${val}.`}`
+        : `\`bonus?: number\` may be \`undefined\`. ${bonus === undefined ? `It is missing here, so \`${op}\` falls back to ${D}: ${S} + ${D} = ${val}.` : `Here it is ${bonus}, so \`${op}\` keeps it: ${S} + ${bonus} = ${val}.`} (Without \`${op} ${D}\`, strict mode would reject \`${S} + ${p}.bonus\`: it is possibly \`undefined\`.)`),
+      hints: ['Is `bonus` set in the object literal? A missing optional property reads as `undefined`.', op === '!' ? 'The `!` after an expression only silences the compiler. What is a number plus `undefined` in JavaScript?' : `When does \`${op}\` use the value on its right?`],
+    };
+  },
+  sim(c, diff) {
+    const obj = c.present === 'missing' ? {} : { bonus: c.present === 'zero' ? 0 : c.B };
+    if (diff === 'expert') return { a: c.S + (obj.bonus ?? c.D), b: c.S + (obj.bonus || c.D) };
+    const v = c.op === '??' ? (obj.bonus ?? c.D) : c.op === '||' ? (obj.bonus || c.D) : obj.bonus;
+    return tk(String(c.S + v));
+  },
+};
+
+// Which line does tsc (strict) reject? One group breaks a rule; the others are look-alikes that compile.
+const TS_RULES = {
+  possiblyUndef: 'An optional property may be `undefined` (TS18048)',
+  assign: 'A `string` can\'t be assigned to a `number` (TS2322)',
+  castLiteral: '`as` can\'t convert between unrelated types (TS2352)',
+  constAssign: 'A `const` can\'t be assigned again (TS2588)',
+  missingProp: 'A required property is missing (TS2741)',
+};
+const TS_RULE_DECOYS = ['An `any` value can\'t be used in arithmetic', '`as unknown as` is not allowed'];
+const TS_HEAD = ['interface Stats {', '    score: number;', '    bonus?: number;', '}', ''];
+F['typescript-compile'] = {
+  lang: 'typescript', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const pool = diff === 'expert' ? ['possiblyUndef', 'assign', 'castLiteral', 'constAssign', 'missingProp'] : ['possiblyUndef', 'assign', 'castLiteral', 'constAssign'];
+    const bad = rng.pick(pool);
+    const goods = rng.shuffle(pool.filter(g => g !== bad)).slice(0, diff === 'expert' ? 3 : 2);
+    const n = {
+      t: rng.pick(['stats', 'mine', 'today']), sum: rng.pick(['sum', 'points', 'result']), s1: rng.int(3, 9),
+      cnt: rng.pick(['count', 'tally', 'hits']), k: rng.int(2, 9), q: rng.pick(['n', 'qty', 'size']), k2: rng.int(2, 9),
+      lim: rng.pick(['limit', 'cap', 'maxLevel']), k3: rng.int(2, 8), s2: rng.pick(['other', 'theirs', 'best']), k4: rng.int(2, 9),
+    };
+    return { bad, order: rng.shuffle([bad, ...goods]), n, ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c, diff) {
+    const { bad, order, n } = c;
+    const lines = [...TS_HEAD], suspects = [];
+    for (const g of order) {
+      const b = g === bad;
+      const G = {
+        possiblyUndef: [[`const ${n.t}: Stats = { score: ${n.s1} };`, b ? `const ${n.sum} = ${n.t}.score + ${n.t}.bonus;` : `const ${n.sum} = ${n.t}.score + (${n.t}.bonus ?? 0);`], 1],
+        assign: [[b ? `let ${n.cnt}: number = "${n.k}";` : `let ${n.cnt}: number = Number("${n.k}");`], 0],
+        castLiteral: [[b ? `const ${n.q} = "${n.k2}" as number;` : `const ${n.q} = "${n.k2}" as unknown as number;`], 0],
+        constAssign: [[b ? `const ${n.lim} = ${n.k3};` : `let ${n.lim} = ${n.k3};`, `${n.lim} = ${n.k3 + 1};`], 1],
+        missingProp: [[b ? `const ${n.s2}: Stats = { bonus: ${n.k4} };` : `const ${n.s2}: Stats = { score: ${n.k4} };`], 0],
+      }[g];
+      suspects.push(lines.length + G[1] + 1);
+      lines.push(...G[0]);
+    }
+    const badLine = suspects[order.indexOf(bad)];
+    let others = suspects.filter(x => x !== badLine);
+    if (others.length < 3) others = [...others, ...[6, 7, 8, 9, 10].filter(x => x <= lines.length && x !== badLine && !others.includes(x))].slice(0, 3);
+    const lc = lineChoices(badLine, others);
+    const why = {
+      possiblyUndef: `\`bonus?: number\` means \`${n.t}.bonus\` has the type \`number | undefined\`, and strict mode refuses arithmetic on a value that may be \`undefined\` ("'${n.t}.bonus' is possibly 'undefined'"). The look-alike gives a fallback with \`?? 0\`.`,
+      assign: `The variable is declared \`number\` but the value is a \`string\` literal. TypeScript never converts it; \`Number("${n.k}")\` does, at run time.`,
+      castLiteral: `\`as\` doesn't convert values, it only asserts a type, and the compiler refuses an assertion between two types that don't overlap, such as \`string\` and \`number\` ("Conversion of type 'string' to type 'number' may be a mistake"). Going through \`unknown\` (\`as unknown as number\`) silences it, but still converts nothing.`,
+      constAssign: `\`const\` means the name can never be assigned again ("Cannot assign to '${n.lim}' because it is a constant"). The look-alike uses \`let\`.`,
+      missingProp: `An object literal typed \`Stats\` must have every required property: \`score\` is required (only \`bonus\` has a \`?\`), so \`{ bonus: ${n.k4} }\` is rejected ("Property 'score' is missing").`,
+    }[bad];
+    const expl = `Line ${badLine} does not compile: **${TS_RULES[bad]}**. ${why}\n\nThe other suspicious lines compile.`;
+    const ask = `Exactly one line fails to compile. ${NOTE.typescript}`;
+    if (diff === 'expert') {
+      const rules = arrange(TS_RULES[bad], [...Object.values(TS_RULES), ...TS_RULE_DECOYS], c.ord);
+      return {
+        code: lines, ask: `${ask} Which line, and which rule does it break?`, type: 'multi', explanation: expl,
+        parts: [
+          { id: 'line', label: 'Line', ask: 'Which line fails to compile?', answerType: 'choice', answer: LINE(badLine), choices: lc, hint: 'Check each line that mixes types, uses an optional property, asserts a type with `as`, reassigns a name or builds a `Stats` object.' },
+          { id: 'rule', label: 'Rule', ask: 'Which rule does it break?', answerType: 'choice', answer: TS_RULES[bad], choices: rules, hint: 'Compare the line you picked with its look-alike: what is different?' },
+        ],
+      };
+    }
+    return {
+      code: lines, ask: `${ask} Which line?`, type: 'choice', answer: LINE(badLine), choices: lc, explanation: expl,
+      hints: ['Each suspicious line has a look-alike that compiles. Look for an optional property used in arithmetic, a `string` stored in a `number`, an `as` between unrelated types, or a `const` assigned again.',
+        '`?` on a property makes its type include `undefined`; `as` never converts a value; `const` can\'t be reassigned.'],
+    };
+  },
+  sim: (c, diff, v) => compileAnswer(F['typescript-compile'].check(c, diff, v), diff, TS_RULES),
+  // A small strict-mode checker over the rendered lines: interface properties, declared types,
+  // optional properties in arithmetic, `as` assertions on literals, const reassignment, object literals.
+  check(c, diff, v) {
+    const lines = v.code, props = {}, env = {};
+    let inIface = null;
+    const typeOf = e => {
+      e = e.trim();
+      let m;
+      if (/^-?\d+$/.test(e)) return 'number';
+      if (/^"[^"]*"$/.test(e)) return 'string';
+      if (/^Number\(.*\)$/.test(e)) return 'number';
+      if (/^"[^"]*" as unknown as number$/.test(e)) return 'number';
+      if (/^"[^"]*" as number$/.test(e)) return { err: 'castLiteral' };
+      if ((m = e.match(/^\((.+) \?\? (.+)\)$/))) { const a = typeOf(m[1]); return a.err ? a : 'number'; }
+      if ((m = e.match(/^(\w+)\.(\w+)$/))) { const p = props[env[m[1]]?.type]?.[m[2]]; return p ? (p.optional ? 'number|undefined' : p.type) : '?'; }
+      if ((m = e.match(/^(.+) \+ (.+)$/))) {
+        const a = typeOf(m[1]), b = typeOf(m[2]);
+        if (a.err) return a; if (b.err) return b;
+        if (a === 'number|undefined' || b === 'number|undefined') return { err: 'possiblyUndef' };
+        return a === 'number' && b === 'number' ? 'number' : '?';
+      }
+      if ((m = e.match(/^\{ (.*) \}$/))) return { obj: m[1].split(', ').map(kv => kv.split(': ')[0]) };
+      return '?';
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      let m;
+      if ((m = l.match(/^interface (\w+) \{$/))) { inIface = m[1]; props[inIface] = {}; continue; }
+      if (inIface) { if (l === '}') { inIface = null; continue; } const p = l.match(/^ {4}(\w+)(\?)?: (\w+);$/); if (!p) return { line: -1 }; props[inIface][p[1]] = { optional: !!p[2], type: p[3] }; continue; }
+      if (l === '') continue;
+      if ((m = l.match(/^(const|let) (\w+)(?:: (\w+))? = (.+);$/))) {
+        const t = typeOf(m[4]);
+        if (t.err) return { line: i + 1, rule: t.err };
+        if (m[3] && props[m[3]]) {
+          if (!t.obj) return { line: -1 };
+          const missing = Object.entries(props[m[3]]).some(([k, p]) => !p.optional && !t.obj.includes(k));
+          if (missing) return { line: i + 1, rule: 'missingProp' };
+        } else if (m[3] && t !== m[3]) return { line: i + 1, rule: 'assign' };
+        env[m[2]] = { kind: m[1], type: m[3] || t };
+      } else if ((m = l.match(/^(\w+) = (.+);$/))) {
+        if (!env[m[1]]) return { line: -1 };
+        if (env[m[1]].kind === 'const') return { line: i + 1, rule: 'constAssign' };
+      } else return { line: -1 };
+    }
+    return { line: 0, rule: null };
+  },
+};
+
+F['typescript-cast-line'] = {
+  lang: 'typescript', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [d, fld, v] = names(rng, [['data', 'payload', 'row', 'body'], ['qty', 'count', 'age', 'size'], ['n', 'amount', 'value', 'num']]);
+    return { d, fld, v, sv: rng.int(2, 19), k: rng.int(2, 9), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { d, fld, v, sv, k } = c, src = `${d}.${fld}`;
+    const bug = `const ${v} = ${src} as number`, answer = `const ${v} = Number(${src})`;
+    return {
+      code: [`const ${d}: any = JSON.parse('{"${fld}": "${sv}"}');`, `${bug};`, `console.log(${v} + ${k});`],
+      lead: `This should print **${sv + k}** (${sv} + ${k}), but it prints **${sv}${k}**. ${NOTE.typescript}`,
+      ask: rewriteAsk(diff, 2, `${tk(v)} really holds a number`), type: 'text', answer, trail: ';', bug, lineNo: 2,
+      alts: [`const ${v} = parseInt(${src}, 10)`, `const ${v}: number = Number(${src})`, `const ${v} = +${src}`, `const ${v} = parseFloat(${src})`, `const ${v} = parseInt(${src})`],
+      distractors: [bug, `const ${v} = ${src} as string`, `const ${v}: number = ${src}`, `const ${v} = String(${src})`, `const ${v} = Number(${d})`],
+      explanation: `Line 2 should be \`${answer};\`. \`as number\` is only a promise to the compiler: TypeScript's types are erased when it compiles, so at run time \`${v}\` is still the string "${sv}", and \`+\` joins it with ${k}. \`Number(…)\` (or \`parseInt(…, 10)\`, or unary \`+\`) converts the string when the program runs.`,
+      hints: ['What is the value of the field at run time? Look at the JSON text.', 'Does `as number` change the value, or only what the compiler believes?', 'Use a function that turns a string into a number when the program runs.'],
+    };
+  },
+  sim(c) {
+    const src = `${c.d}\\s*\\.\\s*${c.fld}`;
+    const re = new RegExp(`^const\\s+${c.v}(?:\\s*:\\s*(\\w+))?\\s*=\\s*(.+)$`);
+    const forms = [
+      [new RegExp(`^Number\\(\\s*${src}\\s*\\)$`), s => Number(s), 'number'], [new RegExp(`^parseInt\\(\\s*${src}\\s*(?:,\\s*10\\s*)?\\)$`), s => parseInt(s, 10), 'number'],
+      [new RegExp(`^parseFloat\\(\\s*${src}\\s*\\)$`), s => parseFloat(s), 'number'], [new RegExp(`^\\+\\s*${src}$`), s => +s, 'number'],
+      [new RegExp(`^${src}\\s+as\\s+number$`), s => s, 'number'], [new RegExp(`^${src}\\s+as\\s+string$`), s => s, 'string'],
+      [new RegExp(`^String\\(\\s*${src}\\s*\\)$`), s => String(s), 'string'], [new RegExp(`^${src}$`), s => s, 'any'],
+    ];
+    return {
+      ok(line) {
+        const m = stripMark(line).match(re);
+        if (!m) return false;
+        const f = forms.find(([r]) => r.test(m[2].trim()));
+        if (!f) return false;
+        if (m[1] && !(m[1] === f[2] || f[2] === 'any')) return false; // e.g. `: number = String(…)` does not compile
+        // run it: the value read from JSON is a string; the program must print the numeric sum
+        return ['7', '12', '30', String(c.sv)].every(s => { const v = f[1](s); const out = v + c.k; return typeof out === 'number' && out === Number(s) + c.k; });
+      },
+    };
+  },
+};
+
+// ---- Java ----
+// int overflow: always wraps silently (constants too); Math.addExact/multiplyExact throw; a long
+// addition only helps when it happens in long.
+const JAVA_OVF = { medium: ['plain', 'plain', 'long', 'const'], hard: ['plain', 'longLate', 'long', 'exact'], expert: ['mul', 'mulExact', 'longLate', 'const', 'abs'] };
+F['java-overflow'] = {
+  lang: 'java', diffs: ['medium', 'hard', 'expert'],
+  make(rng, diff) {
+    return { v: rng.pick(['score', 'total', 'count', 'level']), variant: rng.pick(JAVA_OVF[diff]), d: rng.int(0, 4), n: rng.int(1, 9), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { v, variant: w, d, n } = c;
+    const MAXS = 'Integer.MAX_VALUE', start = d ? `${MAXS} - ${d}` : MAXS, s0 = INT_MAX - d;
+    const THROW = 'It throws an `ArithmeticException`';
+    const wrap = x => ((x + 2 ** 31) % 2 ** 32 + 2 ** 32) % 2 ** 32 - 2 ** 31;
+    let body, math, answer, why;
+    if (w === 'abs') {
+      body = [`int ${v} = Integer.MIN_VALUE;`, `System.out.println(Math.abs(${v}));`];
+      math = 2 ** 31; answer = String(-(2 ** 31));
+      why = `The true answer, 2147483648, is one more than \`Integer.MAX_VALUE\`, so it doesn't fit: \`Math.abs(Integer.MIN_VALUE)\` wraps around and returns \`Integer.MIN_VALUE\` itself, still negative. (\`Math.absExact\` would throw instead.)`;
+    } else if (w === 'mul' || w === 'mulExact') {
+      const b0 = Math.trunc(INT_MAX / 2) + d + 1;
+      math = b0 * 2;
+      body = [`int ${v} = ${MAXS} / 2 + ${d + 1};`, w === 'mul' ? `${v} *= 2;` : `${v} = Math.multiplyExact(${v}, 2);`, `System.out.println(${v});`];
+      answer = w === 'mul' ? String(wrap(math)) : THROW;
+      why = `${tk(v)} starts at ${b0}, and doubling gives ${math}, more than \`Integer.MAX_VALUE\` (${INT_MAX}). ` + (w === 'mul' ? 'Java `int` arithmetic never checks: the result silently wraps around past `Integer.MIN_VALUE`.' : '`Math.multiplyExact` checks the result and throws `ArithmeticException: integer overflow`.');
+    } else if (w === 'const') {
+      math = INT_MAX + n;
+      body = [`int ${v} = ${MAXS} + ${n};`, `System.out.println(${v});`];
+      answer = String(wrap(math));
+      why = `Unlike C#, Java doesn't reject an overflowing constant: \`${MAXS} + ${n}\` compiles and wraps around like any other \`int\` sum, giving ${wrap(math)}.`;
+    } else {
+      math = s0 + n;
+      const over = math > INT_MAX;
+      if (w === 'long' || w === 'longLate') {
+        body = [`int ${v} = ${start};`, w === 'long' ? `long bigger = (long) ${v} + ${n};` : `long bigger = ${v} + ${n};`, 'System.out.println(bigger);'];
+        answer = w === 'long' || !over ? String(math) : String(wrap(math));
+        why = w === 'long' ? `The cast turns ${tk(v)} into a \`long\` first, so the addition happens in 64 bits and gives ${math}.`
+          : over ? `\`${v} + ${n}\` is worked out in \`int\` **before** it is stored in the \`long\`, so it has already wrapped around to ${wrap(math)}. Cast first: \`(long) ${v} + ${n}\`.` : `${s0} + ${n} fits in an \`int\`, so nothing overflows.`;
+      } else if (w === 'exact') {
+        body = [`int ${v} = ${start};`, `${v} = Math.addExact(${v}, ${n});`, `System.out.println(${v});`];
+        answer = over ? THROW : String(math);
+        why = over ? `${s0} + ${n} = ${math} is more than \`Integer.MAX_VALUE\`, and \`Math.addExact\` throws \`ArithmeticException\` instead of wrapping.` : `${s0} + ${n} fits in an \`int\`, so \`Math.addExact\` just returns it.`;
+      } else {
+        body = [`int ${v} = ${start};`, `${v} += ${n};`, `System.out.println(${v});`];
+        answer = String(over ? wrap(math) : math);
+        why = over ? `${s0} + ${n} = ${math} doesn't fit in an \`int\` (max ${INT_MAX}). Java wraps around silently: ${math} − 2³² = ${wrap(math)}.` : `${s0} + ${n} fits in an \`int\`, so nothing overflows.`;
+      }
+    }
+    const choices = arrange(answer, [String(wrap(math)), String(math), THROW, NO_COMPILE, String(INT_MAX)], c.ord);
+    if (!choices) return null;
+    return {
+      code: inMain.java(body), ask: `What happens when this runs? ${NOTE.java}`, type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `${fmtAns(answer)}. ${why}\n\n\`int\` is 32 bits: from ${-(2 ** 31)} to ${INT_MAX}.`,
+      hints: ['`Integer.MAX_VALUE` is 2147483647. Work out the true result first and see whether it fits in an `int`.', 'Plain `int` arithmetic in Java wraps around silently, even for constants. Only the `Math.…Exact` methods throw, and a `long` only helps if the sum is worked out in `long`.'],
+    };
+  },
+  sim(c) {
+    const MAX = 2147483647n, MIN = -2147483648n, inInt = x => x >= MIN && x <= MAX;
+    const THROW = 'It throws an `ArithmeticException`', n = BigInt(c.n), d = BigInt(c.d);
+    const w32 = x => String(wrapBits(x, 32, true));
+    switch (c.variant) {
+      case 'abs': return fmtAns(w32(-MIN));
+      case 'mul': return fmtAns(w32((MAX / 2n + d + 1n) * 2n));
+      case 'mulExact': { const x = (MAX / 2n + d + 1n) * 2n; return fmtAns(inInt(x) ? String(x) : THROW); }
+      case 'const': return fmtAns(w32(MAX + n));
+      case 'long': return fmtAns(String(MAX - d + n));
+      case 'longLate': return fmtAns(w32(MAX - d + n)); // int sum first, then widened
+      case 'exact': { const x = MAX - d + n; return fmtAns(inInt(x) ? String(x) : THROW); }
+      default: return fmtAns(w32(MAX - d + n));
+    }
+  },
+};
+
+// == on references: string literals are interned, `new String` and run-time concatenation make new
+// objects; boxing caches only -128..127 for certain (outside it, == is not guaranteed either way).
+const JAVA_EQ = { medium: ['litlit', 'newlit', 'smallInt', 'mixed', 'equalsNew'], hard: ['newlit', 'concat', 'constConcat', 'bigInt', 'intLong', 'smallInt'], expert: ['concat', 'constConcat', 'bigInt', 'intLong', 'bigEquals', 'intLongEquals'] };
+const JAVA_UNSPEC = 'Not guaranteed: it may print `true` or `false`';
+F['java-equals'] = {
+  lang: 'java', diffs: ['medium', 'hard', 'expert'],
+  make(rng, diff) {
+    const [a, b] = rng.pick([['a', 'b'], ['first', 'second'], ['saved', 'typed']]), p = rng.pick(['part', 'head', 'start']);
+    const w1 = rng.pick(['sun', 'map', 'key', 'top', 'ice']), w2 = rng.pick(['day', 'set', 'box', 'row', 'cap']);
+    return { variant: rng.pick(JAVA_EQ[diff]), a, b, p, w1, w2, small: rng.int(1, 120), big: rng.int(200, 999), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  plan(c) { // what each line declares (shared by view and sim)
+    const { variant: w, w1, w2, small, big } = c, W = w1 + w2;
+    const k = ['bigInt', 'bigEquals', 'intLong', 'intLongEquals'].includes(w) ? big : small;
+    return {
+      litlit: { A: ['String', 'lit', W], B: ['String', 'lit', W], cmp: '==' },
+      newlit: { A: ['String', 'lit', W], B: ['String', 'new', W], cmp: '==' },
+      equalsNew: { A: ['String', 'lit', W], B: ['String', 'new', W], cmp: 'equals' },
+      concat: { A: ['String', 'lit', W], P: ['String', 'lit', w1], B: ['String', 'concatVar', w2], cmp: '==' },
+      constConcat: { A: ['String', 'lit', W], B: ['String', 'concatLit', [w1, w2]], cmp: '==' },
+      smallInt: { A: ['Integer', 'box', k], B: ['Integer', 'box', k], cmp: '==' },
+      bigInt: { A: ['Integer', 'box', k], B: ['Integer', 'box', k], cmp: '==' },
+      bigEquals: { A: ['Integer', 'box', k], B: ['Integer', 'box', k], cmp: 'equals' },
+      mixed: { A: ['int', 'prim', k], B: ['Integer', 'box', k], cmp: '==' },
+      intLong: { A: ['Integer', 'box', k], B: ['Long', 'box', k], cmp: '==' },
+      intLongEquals: { A: ['Integer', 'box', k], B: ['Long', 'box', k], cmp: 'equals' },
+    }[w];
+  },
+  view(c) {
+    const { variant: w, a, b, p } = c, pl = this.plan(c);
+    const decl = (name, [t, how, val]) => `${t} ${name} = ${how === 'lit' ? `"${val}"` : how === 'new' ? `new String("${val}")` : how === 'concatVar' ? `${p} + "${val}"` : how === 'concatLit' ? `"${val[0]}" + "${val[1]}"` : t === 'Long' ? `${val}L` : val};`;
+    const body = [decl(a, pl.A), ...(pl.P ? [decl(p, pl.P)] : []), decl(b, pl.B), `System.out.println(${pl.cmp === '==' ? `${a} == ${b}` : `${a}.equals(${b})`});`];
+    const answer = { litlit: 'true', newlit: 'false', equalsNew: 'true', concat: 'false', constConcat: 'true', smallInt: 'true', bigInt: JAVA_UNSPEC, bigEquals: 'true', mixed: 'true', intLong: NO_COMPILE, intLongEquals: 'false' }[w];
+    const choices = arrange(answer, ['true', 'false', JAVA_UNSPEC, NO_COMPILE], c.ord);
+    const k = pl.A[2];
+    const why = {
+      litlit: 'Both are the same string **literal**, and Java interns literals: both names refer to one shared `String` object, so `==` (same object?) is `true`. Still, compare strings with `equals`.',
+      newlit: '`new String(…)` always creates a **new** object. `==` on objects asks "same object?", not "same text?", so it is `false` even though the text matches. Use `equals` to compare text.',
+      equalsNew: '`equals` compares the **text**, so a `new String` with the same characters is equal: `true`. (`==` would be `false`: two different objects.)',
+      concat: `\`${p} + "${c.w2}"\` is worked out at run time (\`${p}\` is a variable, not a constant), and run-time concatenation creates a **new** \`String\` object. So \`==\` is \`false\` although the text is the same.`,
+      constConcat: '`"' + c.w1 + '" + "' + c.w2 + '"` is a **constant expression**, joined by the compiler into the literal "' + c.w1 + c.w2 + '", which is interned like any literal. So both names refer to the same object: `true`. (Fragile: change one side to a variable and it becomes `false`.)',
+      smallInt: `Autoboxing uses \`Integer.valueOf\`, which is guaranteed to return cached objects for -128 to 127. ${k} is in that range, so both names refer to the same object: \`true\`. Use \`equals\` anyway.`,
+      bigInt: `${k} is outside -128 to 127, the only range the language guarantees to cache. Whether \`Integer.valueOf(${k})\` returns the same object twice depends on the JVM (with default settings it usually doesn't), so \`==\` here is not guaranteed. Compare boxed numbers with \`equals\`, or unbox them.`,
+      bigEquals: `\`equals\` compares the **values** of the two \`Integer\` objects, so it is \`true\` whatever the cache does.`,
+      mixed: `One side is a primitive \`int\`, so \`==\` **unboxes** the \`Integer\` and compares numbers: ${k} == ${k} is \`true\` (whatever the size).`,
+      intLong: '`Integer` and `Long` are unrelated classes, so `==` between them is a compile error ("incomparable types: Integer and Long").',
+      intLongEquals: '`Integer.equals` is only true for another `Integer` with the same value. A `Long` is a different class, so it is `false` even though both hold the same number.',
+    }[w];
+    return {
+      code: inMain.java(body), ask: askPrint('java'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `${fmtAns(answer)}. ${why}`,
+      hints: ['On objects (`String`, `Integer`, `Long`), `==` asks whether both names refer to the **same object**; `equals` compares the contents. On a primitive like `int`, `==` compares numbers.',
+        'Literals and compile-time constants are shared; `new` and run-time concatenation make new objects; boxing is only guaranteed to share -128 to 127.'],
+    };
+  },
+  sim(c) {
+    // an object model: references have a class and an identity; `maybe` = identity not guaranteed
+    const pool = new Map();
+    let fresh = 0;
+    const intern = s => { if (!pool.has(s)) pool.set(s, `s${fresh++}`); return pool.get(s); };
+    const env = {};
+    const make = ([t, how, val]) => {
+      if (how === 'prim') return { prim: true, val };
+      if (how === 'lit') return { cls: 'String', id: intern(val), val };
+      if (how === 'new') return { cls: 'String', id: `n${fresh++}`, val };
+      if (how === 'concatLit') return { cls: 'String', id: intern(val[0] + val[1]), val: val[0] + val[1] }; // folded by the compiler
+      if (how === 'concatVar') return { cls: 'String', id: `n${fresh++}`, val: env.P.val + val }; // built at run time
+      const cached = val >= -128 && val <= 127;
+      return { cls: t, id: cached ? `${t}${val}` : `b${fresh++}`, maybe: !cached, val };
+    };
+    const pl = F['java-equals'].plan(c);
+    env.A = make(pl.A); if (pl.P) env.P = make(pl.P); env.B = make(pl.B);
+    const { A, B } = env;
+    let out;
+    if (pl.cmp === 'equals') out = String(A.cls === B.cls && A.val === B.val);
+    else if (A.prim || B.prim) out = String(A.val === B.val); // unboxing: numbers compared
+    else if (A.cls !== B.cls) out = NO_COMPILE;
+    else if (A.id === B.id) out = 'true';
+    else out = A.maybe && B.maybe && A.val === B.val ? JAVA_UNSPEC : 'false';
+    return fmtAns(out);
+  },
+};
+
+// int / int, casts, and negative operands (Math.floorDiv / floorMod); a double prints with ".0".
+const JAVA_DIV = { medium: ['int', 'castFirst', 'castLate', 'lit', 'mod'], hard: ['int', 'mod', 'floorDiv', 'floorMod', 'castFirst'] };
+F['java-intdiv'] = {
+  lang: 'java', diffs: ['medium', 'hard'],
+  make(rng, diff) {
+    const [a, b] = names(rng, [['total', 'sweets', 'minutes', 'points', 'coins'], ['people', 'groups', 'boxes', 'teams']]);
+    const den = rng.pick([2, 4, 5, 8]);
+    let num = rng.int(9, 59); if (num % den === 0) num++;
+    if (diff === 'hard') num = -num;
+    return { a, b, num, den, op: rng.pick(JAVA_DIV[diff]), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { a, b, num, den, op } = c;
+    const e = { int: `${a} / ${b}`, castFirst: `(double) ${a} / ${b}`, castLate: `(double) (${a} / ${b})`, lit: `${a} / ${den}.0`, mod: `${a} % ${b}`, floorDiv: `Math.floorDiv(${a}, ${b})`, floorMod: `Math.floorMod(${a}, ${b})` }[op];
+    const q = num / den, T = Math.trunc(q), Fl = Math.floor(q), M = num % den, P = ((num % den) + den) % den;
+    const d = x => `${x}.0`;
+    const kind = { int: 'T', castFirst: 'D', castLate: 'T', lit: 'D', mod: 'M', floorDiv: 'F', floorMod: 'P' }[op];
+    const answer = { D: String(q), T: d(T), F: d(Fl), M: d(M), P: d(P) }[kind];
+    const choices = arrange(answer, [String(q), d(T), d(Fl), d(M), d(P), String(T), String(Math.ceil(q)) + '.0'], c.ord);
+    const work = {
+      D: `${num} / ${den} worked out exactly is ${q}`,
+      T: `${num} / ${den} = ${q}, and \`int\` division cuts off the decimals (towards zero): ${T}`,
+      F: `\`Math.floorDiv\` rounds **down** (towards minus infinity): ${q} → ${Fl}`,
+      M: `${num} = ${T} × ${den} + (${M}): \`%\` takes the sign of the left side`,
+      P: `\`Math.floorMod\` gives a result with the sign of the divisor: ${num} = ${Fl} × ${den} + ${P}`,
+    }[kind];
+    return {
+      code: inMain.java([`int ${a} = ${num};`, `int ${b} = ${den};`, `double result = ${e};`, 'System.out.println(result);']),
+      ask: askPrint('java'), type: 'choice', answer: tk(answer), choices: choices.map(tk),
+      explanation: `It prints **${answer}**: ${work}. The result is stored in a \`double\`, and \`println\` always prints a \`double\` with a decimal point (${kind === 'D' ? 'here the value has decimals anyway' : `so ${answer}, not ${answer.replace(/\.0$/, '')}`}).\n\n` +
+        '`int / int` is whole-number division even when the result goes into a `double`: the division happens first. Cast one side **before** dividing (`(double) a / b`) or use a `double` literal (`a / 4.0`); `(double) (a / b)` casts too late.',
+      hints: [`Both variables are \`int\`. Is \`${e}\` whole-number division, exact division, or a remainder?`, 'The value ends up in a `double`. How does Java print a `double` that holds a whole number?'],
+    };
+  },
+  sim(c) {
+    const d = divCount(c.num, c.den);
+    const kind = { int: 'T', castFirst: 'D', castLate: 'T', lit: 'D', mod: 'M', floorDiv: 'F', floorMod: 'P' }[c.op];
+    const v = { D: longDiv(c.num, c.den), T: String(d.trunc), F: String(d.floor), M: String(d.modTrunc), P: String(d.modFloor) }[kind];
+    return tk(v.includes('.') ? v : `${v}.0`); // Double.toString keeps ".0" on a whole value
+  },
+};
+
+// char arithmetic: char + int is an int; a String on the left joins text; += narrows back to char.
+const JAVA_CHAR = { medium: ['plus', 'cast', 'strFirst', 'strLast'], hard: ['plus', 'cast', 'strFirst', 'two', 'inc', 'plusEq', 'assignPlus'] };
+F['java-char'] = {
+  lang: 'java', diffs: ['medium', 'hard'],
+  make(rng, diff) {
+    const ch = String.fromCharCode(rng.int(97, 116)), ch2 = String.fromCharCode(rng.int(97, 116));
+    return { variant: rng.pick(JAVA_CHAR[diff]), v: rng.pick(['c', 'letter', 'initial', 'ch']), ch, ch2, k: rng.int(1, 5), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  // the printed expression as tokens, or a statement form
+  form(c) {
+    const { variant: w, v, ch2, k } = c;
+    return {
+      plus: { expr: [v, '+', k] }, cast: { expr: ['(char)', '(', v, '+', k, ')'] }, strFirst: { expr: ['""', '+', v, '+', k] },
+      strLast: { expr: [v, '+', k, '+', '""'] }, two: { expr: [v, '+', `'${ch2}'`] },
+      inc: { stmt: `${v}++;`, expr: [v] }, plusEq: { stmt: `${v} += ${k};`, expr: [v] }, assignPlus: { stmt: `${v} = ${v} + ${k};`, expr: [v] },
+    }[w];
+  },
+  view(c) {
+    const { variant: w, v, ch, ch2, k } = c, f = this.form(c);
+    const code = ch.charCodeAt(0), shifted = String.fromCharCode(code + k);
+    const answer = { plus: String(code + k), cast: shifted, strFirst: `${ch}${k}`, strLast: String(code + k), two: String(code + ch2.charCodeAt(0)), inc: String.fromCharCode(code + 1), plusEq: shifted, assignPlus: NO_COMPILE }[w];
+    const wrongs = [String(code + k), shifted, `${ch}${k}`, NO_COMPILE, String(code), `${ch}${ch2}`, String.fromCharCode(code + 1)];
+    const choices = arrange(answer, wrongs, c.ord);
+    const body = [`char ${v} = '${ch}';`, ...(f.stmt ? [f.stmt] : []), `System.out.println(${f.expr.join(' ').replace(/\( /g, '(').replace(/ \)/g, ')').replace('(char)(', '(char) (')});`];
+    const why = {
+      plus: `A \`char\` is a number (its character code: '${ch}' is ${code}). \`char + int\` is an \`int\`, so it prints ${code} + ${k} = ${code + k}, not a letter.`,
+      cast: `\`${v} + ${k}\` is the \`int\` ${code + k}; the \`(char)\` cast turns that code back into a character: '${shifted}'.`,
+      strFirst: `\`+\` works left to right. \`"" + ${v}\` is a \`String\` ("${ch}"), and String + anything joins text, so it gives "${ch}${k}".`,
+      strLast: `\`+\` works left to right: \`${v} + ${k}\` is worked out first as numbers (${code} + ${k} = ${code + k}), and only then joined with "".`,
+      two: `Two \`char\`s added are added as numbers: ${code} + ${ch2.charCodeAt(0)} = ${code + ch2.charCodeAt(0)}. Use a \`String\` to join them.`,
+      inc: `\`${v}++\` moves the \`char\` itself to the next code, so it is still a \`char\` and prints '${String.fromCharCode(code + 1)}'.`,
+      plusEq: `A compound assignment like \`${v} += ${k}\` includes a hidden cast back to \`char\`, so it compiles and ${tk(v)} becomes '${shifted}'.`,
+      assignPlus: `\`${v} + ${k}\` is an \`int\`, and Java won't store an \`int\` expression in a \`char\` without a cast ("possible lossy conversion from int to char"). \`${v} += ${k}\` or \`(char) (${v} + ${k})\` would compile.`,
+    }[w];
+    return {
+      code: inMain.java(body), ask: askPrint('java'), type: 'choice', answer: fmtAns(answer), choices: choices.map(fmtAns),
+      explanation: `${fmtAns(answer)}. ${why}`,
+      hints: [`A \`char\` holds a character code ('a' is 97). What type is the result of each \`+\`?`, '`+` goes left to right: number + number adds; as soon as a `String` is involved it joins text. `println` prints an `int` as digits and a `char` as a letter.'],
+    };
+  },
+  sim(c) {
+    // typed evaluation: values are { t: 'char'|'int'|'String', v }
+    const f = F['java-char'].form(c);
+    let x = { t: 'char', v: c.ch.charCodeAt(0) };
+    if (f.stmt) {
+      if (c.variant === 'inc') x = { t: 'char', v: x.v + 1 };
+      else if (c.variant === 'plusEq') x = { t: 'char', v: (x.v + c.k) & 0xffff }; // implicit narrowing cast
+      else return NO_COMPILE; // int expression into a char variable needs a cast
+    }
+    const atom = tok => (tok === c.v ? x : tok === '""' ? { t: 'String', v: '' } : /^'.'$/.test(tok) ? { t: 'char', v: tok.charCodeAt(1) } : { t: 'int', v: tok });
+    const show = y => (y.t === 'char' ? String.fromCharCode(y.v) : String(y.v));
+    const add = (p, q) => (p.t === 'String' || q.t === 'String' ? { t: 'String', v: show(p) + show(q) } : { t: 'int', v: p.v + q.v });
+    let toks = f.expr.slice(), cast = false;
+    if (toks[0] === '(char)') { cast = true; toks = toks.slice(2, -1); }
+    let acc = atom(toks[0]);
+    for (let i = 1; i < toks.length; i += 2) acc = add(acc, atom(toks[i + 1]));
+    if (cast) acc = { t: 'char', v: acc.v & 0xffff };
+    return fmtAns(show(acc));
+  },
+};
+
+F['java-avg-line'] = {
+  lang: 'java', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [f, a, b] = names(rng, [['average', 'mean', 'perPerson', 'share'], ['total', 'sum', 'points'], ['count', 'n', 'people']]);
+    const den = rng.pick([2, 4, 5, 8]);
+    let num = rng.int(9, 59); if (num % den === 0) num++;
+    return { f, a, b, num, den, ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { f, a, b, num, den } = c;
+    const bug = `return ${a} / ${b}`, answer = `return (double)${a} / ${b}`;
+    return {
+      code: [`static double ${f}(int ${a}, int ${b}) {`, `    ${bug};`, '}', '', ...inMain.java([`System.out.println(${f}(${num}, ${den}));`])],
+      lead: `\`${f}\` should return the exact average, so this should print **${num / den}**, but it prints **${Math.trunc(num / den)}.0**. ${NOTE.java}`,
+      ask: rewriteAsk(diff, 2), type: 'text', answer, trail: ';', bug, lineNo: 2,
+      alts: [`return (double) ${a} / ${b}`, `return ${a} / (double) ${b}`, `return ${a} / (double)${b}`, `return (double)${a} / (double)${b}`, `return 1.0 * ${a} / ${b}`, `return ${a} * 1.0 / ${b}`],
+      distractors: [bug, `return (int)${a} / ${b}`, `return (double)${b} / ${a}`, `return ${a} % ${b}`, `return (double)(${a} / ${b})`],
+      explanation: `Line 2 should be \`${answer};\`. Both parameters are \`int\`, so \`${a} / ${b}\` is whole-number division (${num} / ${den} → ${Math.trunc(num / den)}); the \`double\` return type only turns that already-cut result into ${Math.trunc(num / den)}.0. Casting one side to \`double\` **before** dividing makes it a \`double\` division: ${num / den}. (\`(double) (${a} / ${b})\` would cast too late.)`,
+      hints: [`What type is \`${a} / ${b}\` when both sides are \`int\`? The return type doesn't change how the division is done.`, 'Make one side of the division a `double` before the division happens.', 'A cast such as `(double)` applies to the value right after it.'],
+    };
+  },
+  sim(c) {
+    const tests = [[c.num, c.den], [7, 2], [9, 4], [21, 8]];
+    return {
+      ok(line) {
+        const m = stripMark(line).match(/^return\s+(.+)$/);
+        if (!m) return false;
+        const src = m[1].replace(/\(double\)\s*/g, '(double)').replace(/\(int\)\s*/g, '(int)');
+        return tests.every(([x, y]) => { try { const v = evalTyped(src, { [c.a]: x, [c.b]: y }, 'cs'); return v.t === 'd' && v.v === x / y; } catch { return false; } });
+      },
+    };
+  },
+};
+
+F['java-equals-line'] = {
+  lang: 'java', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [f, [x, y], s, t] = names(rng, [['sameCode', 'matches', 'isSame', 'sameName'], [['a', 'b'], ['x', 'y'], ['first', 'second']], ['saved', 'stored', 'expected'], ['typed', 'entered', 'given']]);
+    const w = rng.pick(['ab12', 'kim', 'tiger', 'k9x', 'blue']);
+    return { f, x, y, s, t, w, how: rng.pick(['new', 'concat']), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { f, x, y, s, t, w, how } = c;
+    const bug = `return ${x} == ${y}`, answer = `return ${x}.equals(${y})`;
+    const second = how === 'new' ? `String ${t} = new String("${w}");` : `String ${t} = ${s}.substring(0, 1) + "${w.slice(1)}";`;
+    return {
+      code: [`static boolean ${f}(String ${x}, String ${y}) {`, `    ${bug};`, '}', '', ...inMain.java([`String ${s} = "${w}";`, second, `System.out.println(${f}(${s}, ${t}));`])],
+      lead: `\`${f}\` should be \`true\` when the two strings have the same text, so this should print **true**. It prints **false**. ${NOTE.java}`,
+      ask: rewriteAsk(diff, 2, 'it compares the text'), type: 'text', answer, trail: ';', bug, lineNo: 2,
+      alts: [`return ${y}.equals(${x})`, `return Objects.equals(${x}, ${y})`, `return ${x}.compareTo(${y}) == 0`],
+      distractors: [bug, `return ${x} = ${y}`, `return ${x}.equals(${x})`, `return ${x} != ${y}`, `return ${x}.length() == ${y}.length()`],
+      explanation: `Line 2 should be \`${answer};\`. On objects, \`==\` asks whether both names refer to the **same object**. ${how === 'new' ? '`new String(…)` always makes a new object' : 'Joining strings at run time makes a new object'}, so \`${s} == ${t}\` is \`false\` even though the text matches. \`equals\` compares the characters.`,
+      hints: ['What does `==` compare when both sides are `String` objects?', `Are \`${s}\` and \`${t}\` the same object? ${how === 'new' ? '`new` always creates one.' : 'Run-time concatenation creates one.'}`, '`String` has a method that compares the text.'],
+    };
+  },
+  sim(c) {
+    // strings as { id, text }: tests cover equal text in different objects, the same object, and different text
+    const tests = [[{ id: 1, text: c.w }, { id: 2, text: c.w }, true], [{ id: 1, text: c.w }, { id: 1, text: c.w }, true], [{ id: 1, text: c.w }, { id: 3, text: c.w + 'z' }, false], [{ id: 4, text: 'ab' }, { id: 5, text: 'ba' }, false]];
+    const P = `(${c.x}|${c.y})`;
+    const forms = [
+      [new RegExp(`^${P}\\s*==\\s*${P}$`), (p, q) => p.id === q.id], [new RegExp(`^${P}\\s*!=\\s*${P}$`), (p, q) => p.id !== q.id],
+      [new RegExp(`^${P}\\.equals\\(\\s*${P}\\s*\\)$`), (p, q) => p.text === q.text], [new RegExp(`^Objects\\.equals\\(\\s*${P}\\s*,\\s*${P}\\s*\\)$`), (p, q) => p.text === q.text],
+      [new RegExp(`^${P}\\.compareTo\\(\\s*${P}\\s*\\)\\s*==\\s*0$`), (p, q) => p.text === q.text],
+    ];
+    return {
+      ok(line) {
+        const m = stripMark(line).match(/^return\s+(.+)$/);
+        if (!m) return false;
+        for (const [re, fn] of forms) {
+          const r = m[1].trim().match(re);
+          if (!r) continue;
+          if (r[1] === r[2]) return false; // compares a parameter with itself
+          return tests.every(([p, q, want]) => { const args = { [c.x]: p, [c.y]: q }; return fn(args[r[1]], args[r[2]]) === want; });
+        }
+        return false;
+      },
+    };
+  },
+};
+
+// ---- Go ----
+const goList = xs => `[${xs.join(' ')}]`;
+// Slices share a backing array. append reuses it while the capacity allows and makes a new one
+// otherwise (only known capacities are used: a literal, make with a capacity, or a slice of those).
+const GO_SLICE = { medium: ['literal', 'make', 'sub'], hard: ['subAppend', 'fullSlice', 'make', 'literal'], expert: ['x13', 'x133', 'x02', 'x2', 'x13two'] };
+F['go-slice'] = {
+  lang: 'go', diffs: ['medium', 'hard', 'expert'],
+  make(rng, diff) {
+    const [a, b] = names(rng, [['a', 'base', 'orig', 'nums'], ['b', 'view', 'more', 'part']]);
+    return { variant: rng.pick(GO_SLICE[diff]), a, b, vals: Array.from({ length: 4 }, () => rng.int(1, 9)), w: rng.int(10, 30), z: rng.int(31, 60), ord: rng.shuffle([0, 1, 2, 3]), ord2: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c, diff) {
+    const { variant: w, a, b, vals, w: W, z: Z } = c;
+    const v3 = vals.slice(0, 3);
+    if (diff === 'expert') {
+      // b := a[lo:hi(:max)], append 1 or 2 values, then b[0] = W; print a and b
+      const spec = { x13: [1, 3, null, 1], x133: [1, 3, 3, 1], x02: [0, 2, null, 1], x2: [2, 4, null, 1], x13two: [1, 3, null, 2] }[w];
+      const [lo, hi, max, k] = spec;
+      const cap = (max ?? 4) - lo, len = hi - lo;
+      const shared = len + k <= cap;
+      const adds = k === 1 ? [Z] : [Z, Z + 1];
+      const A = vals.slice(), Bv = A.slice(lo, hi).concat(adds);
+      if (shared) { adds.forEach((x, j) => { A[hi + j] = x; }); A[lo] = W; }
+      Bv[0] = W;
+      const sliceTxt = `${a}[${lo || ''}:${hi === 4 ? '' : hi}${max ? `:${max}` : ''}]`;
+      const code = inMain.go([`${a} := []int{${vals.join(', ')}}`, `${b} := ${sliceTxt}`, `${b} = append(${b}, ${adds.join(', ')})`, `${b}[0] = ${W}`, `fmt.Println(${a})`, `fmt.Println(${b})`]);
+      const unshared = vals.slice(); const sharedA = vals.slice(); adds.forEach((x, j) => { if (hi + j < 4) sharedA[hi + j] = x; }); sharedA[lo] = W;
+      const aCh = arrange(goList(A), [goList(unshared), goList(sharedA), goList(vals.map((x, j) => (j === lo ? W : x))), goList([...vals.slice(0, hi), ...adds].slice(0, 4)), goList([...vals, ...adds]), goList(vals.map((x, j) => (j === 0 ? W : x)))], c.ord);
+      const bCh = arrange(goList(Bv), [goList(vals.slice(lo, hi).concat(adds)), goList(vals.slice(lo, hi)), goList([W, ...vals.slice(lo + 1, hi)]), goList([W, ...adds]), goList([...vals.slice(lo, hi), W])], c.ord2);
+      if (!aCh || !bCh) return null;
+      return {
+        code, ask: `What do the two lines print? ${NOTE.go}`, type: 'multi',
+        parts: [
+          { id: 'a', label: 'First line', ask: `What does \`fmt.Println(${a})\` print?`, answerType: 'choice', answer: tk(goList(A)), choices: aCh.map(tk), hint: `\`${sliceTxt}\` shares ${tk(a)}'s array. Its capacity runs to ${max ? `index ${max} (the third number)` : 'the end of the array'}. Does the append fit in that capacity?` },
+          { id: 'b', label: 'Second line', ask: `What does \`fmt.Println(${b})\` print?`, answerType: 'choice', answer: tk(goList(Bv)), choices: bCh.map(tk), hint: `${tk(b)} holds the ${len} sliced values plus what was appended; then its first item is set to ${W}.` },
+        ],
+        explanation: `It prints **${goList(A)}** then **${goList(Bv)}**. \`${sliceTxt}\` has length ${len} and capacity ${cap} (${max ? 'the third index caps it' : `from index ${lo} to the end of the array`}). ` +
+          (shared ? `Appending ${k} value${k > 1 ? 's' : ''} fits in that capacity, so \`append\` writes **into ${tk(a)}'s array** (overwriting what was there), and \`${b}[0] = ${W}\` changes ${tk(a)}[${lo}] too.`
+            : `Appending ${k} value${k > 1 ? 's' : ''} does not fit, so \`append\` copies everything to a **new** array; after that ${tk(b)} and ${tk(a)} are separate and \`${b}[0] = ${W}\` leaves ${tk(a)} alone.`),
+      };
+    }
+    let code, answer, why, wrongs, ask;
+    if (w === 'literal' || w === 'make') {
+      const decl = w === 'literal' ? [`${a} := []int{${v3.join(', ')}}`] : [`${a} := make([]int, 3, 5)`, `${a}[0] = ${v3[0]}`];
+      code = inMain.go([...decl, `${b} := append(${a}, ${Z})`, `${b}[0] = ${W}`, `fmt.Println(${a}[0], ${b}[0])`]);
+      const shared = w === 'make';
+      answer = `${shared ? W : v3[0]} ${W}`;
+      wrongs = [`${v3[0]} ${W}`, `${W} ${W}`, `${v3[0]} ${v3[0]}`, `${W} ${v3[0]}`];
+      why = shared ? `\`make([]int, 3, 5)\` has length 3 but capacity 5, so \`append\` has room: it writes the new value into the **same** array and returns a slice of it. ${tk(a)} and ${tk(b)} share their first item, so \`${b}[0] = ${W}\` changes both.`
+        : `A slice literal has capacity equal to its length (3), so \`append\` has no room: it copies the items to a **new** array. ${tk(b)} is separate from ${tk(a)}, so \`${b}[0] = ${W}\` leaves ${tk(a)}[0] as ${v3[0]}.`;
+      ask = askPrint('go');
+    } else if (w === 'sub') {
+      code = inMain.go([`${a} := []int{${vals.join(', ')}}`, `${b} := ${a}[1:3]`, `${b}[0] = ${W}`, `fmt.Println(${a})`]);
+      const A = vals.slice(); A[1] = W;
+      answer = goList(A);
+      wrongs = [goList(vals), goList(A), goList([W, ...vals.slice(1)]), goList([vals[0], vals[1], W, vals[3]])];
+      why = `\`${a}[1:3]\` doesn't copy: ${tk(b)} is a window onto ${tk(a)}'s array starting at index 1. So \`${b}[0]\` **is** \`${a}[1]\`.`;
+      ask = askPrint('go');
+    } else {
+      // subAppend: b := a[:2] has capacity 4, so append overwrites a[2]; fullSlice: a[:2:2] caps it at 2
+      const full = w === 'fullSlice';
+      code = inMain.go([`${a} := []int{${vals.join(', ')}}`, `${b} := ${a}[:2${full ? ':2' : ''}]`, `${b} = append(${b}, ${Z})`, `fmt.Println(${a})`]);
+      const A = vals.slice(); if (!full) A[2] = Z;
+      answer = goList(A);
+      wrongs = [goList(vals), goList([...vals.slice(0, 2), Z, vals[3]]), goList([...vals, Z]), goList([...vals.slice(0, 2), Z])];
+      why = full ? `\`${a}[:2:2]\` is a full slice expression: the third number caps the capacity at 2, so \`append\` has no room and copies to a new array. ${tk(a)} is unchanged.`
+        : `\`${a}[:2]\` has length 2 but capacity 4 (up to the end of ${tk(a)}'s array). \`append\` has room, so it writes ${Z} into that array at index 2, **overwriting** \`${a}[2]\`.`;
+      ask = askPrint('go');
+    }
+    const choices = arrange(answer, wrongs, c.ord);
+    if (!choices) return null;
+    return {
+      code, ask, type: 'choice', answer: tk(answer), choices: choices.map(tk), explanation: `It prints **${answer}**. ${why}`,
+      hints: ['A slice is a view onto an array: a start, a length and a capacity. Slicing and assigning a slice never copy the items.', '`append` writes into the same array when the capacity has room, and copies to a new array when it doesn\'t. What is the capacity here?'],
+    };
+  },
+  sim(c, diff) {
+    // backing-array model: a slice is { arr, off, len, cap }
+    const mk = xs => ({ arr: xs.slice(), off: 0, len: xs.length, cap: xs.length });
+    const slice = (s, lo, hi, max) => ({ arr: s.arr, off: s.off + lo, len: hi - lo, cap: (max ?? s.cap) - lo });
+    const append = (s, xs) => {
+      if (s.len + xs.length <= s.cap) { xs.forEach((x, j) => { s.arr[s.off + s.len + j] = x; }); return { ...s, len: s.len + xs.length }; }
+      const arr = [...s.arr.slice(s.off, s.off + s.len), ...xs];
+      return { arr, off: 0, len: arr.length, cap: arr.length }; // (a new array; its exact capacity is never printed)
+    };
+    const set = (s, i, v) => { s.arr[s.off + i] = v; };
+    const get = (s, i) => s.arr[s.off + i];
+    const show = s => goList(s.arr.slice(s.off, s.off + s.len));
+    const { vals, w: W, z: Z } = c;
+    if (diff === 'expert') {
+      const [lo, hi, max, k] = { x13: [1, 3, null, 1], x133: [1, 3, 3, 1], x02: [0, 2, null, 1], x2: [2, 4, null, 1], x13two: [1, 3, null, 2] }[c.variant];
+      const A = mk(vals);
+      let B = slice(A, lo, hi, max ?? undefined);
+      B = append(B, k === 1 ? [Z] : [Z, Z + 1]);
+      set(B, 0, W);
+      return { a: tk(show(A)), b: tk(show(B)) };
+    }
+    if (c.variant === 'literal' || c.variant === 'make') {
+      const A = c.variant === 'literal' ? mk(vals.slice(0, 3)) : { arr: [vals[0], 0, 0, 0, 0], off: 0, len: 3, cap: 5 };
+      const B = append(A, [Z]); set(B, 0, W);
+      return tk(`${get(A, 0)} ${get(B, 0)}`);
+    }
+    const A = mk(vals);
+    if (c.variant === 'sub') { const B = slice(A, 1, 3); set(B, 0, W); return tk(show(A)); }
+    append(slice(A, 0, 2, c.variant === 'fullSlice' ? 2 : undefined), [Z]);
+    return tk(show(A));
+  },
+};
+
+// Zero values: a missing map key reads as 0, a declared struct starts with zero fields.
+F['go-zero'] = {
+  lang: 'go', diffs: ['medium'],
+  make(rng) {
+    const words = rng.shuffle(['red', 'blue', 'green', 'gold', 'pink']).slice(0, 3);
+    const list = Array.from({ length: rng.int(4, 6) }, () => rng.pick(words));
+    const missing = rng.pick(['grey', 'teal', 'plum']);
+    return { variant: rng.pick(['map', 'map', 'struct', 'counter']), words, list, ask: rng.next() < 0.5 ? missing : rng.pick(list),
+      m: rng.pick(['counts', 'seen', 'tally']), T: rng.pick(['Point', 'Pos', 'Cell']), p: rng.pick(['p', 'pos', 'cell']), k: rng.int(2, 9), j: rng.int(2, 9) };
+  },
+  view(c) {
+    const { variant: w, list, ask, m, T, p, k, j } = c;
+    if (w === 'struct') {
+      return {
+        code: [`type ${T} struct {`, '    X, Y int', '}', '', ...inMain.go([`var ${p} ${T}`, `${p}.X += ${k}`, `fmt.Println(${p}.Y*10 + ${p}.X)`])],
+        ask: askPrint('go'), type: 'number', answer: k,
+        explanation: `It prints **${k}**. \`var ${p} ${T}\` gives a struct whose fields hold their **zero values**: X and Y are both 0. \`${p}.X += ${k}\` makes X ${k}; Y stays 0, so 0 × 10 + ${k} = ${k}.`,
+        hints: ['What does a variable declared with `var` and no value hold in Go?', 'Every field of a new struct starts at its zero value: 0 for numbers.'],
+      };
+    }
+    if (w === 'counter') {
+      return {
+        code: inMain.go([`var total int`, `for i := 1; i <= ${j}; i++ {`, `    total += i * ${k}`, '}', 'fmt.Println(total)']),
+        ask: askPrint('go'), type: 'number', answer: k * (j * (j + 1)) / 2,
+        explanation: `It prints **${k * (j * (j + 1)) / 2}**. \`var total int\` starts at the zero value 0, then adds ${k} × (1 + 2 + … + ${j}).`,
+        hints: ['`var total int` with no value starts at 0.', `Add up ${k} × i for i from 1 to ${j}.`],
+      };
+    }
+    const n = list.filter(x => x === ask).length;
+    return {
+      code: inMain.go([`words := []string{${list.map(x => `"${x}"`).join(', ')}}`, `${m} := map[string]int{}`, 'for _, w := range words {', `    ${m}[w]++`, '}', `fmt.Println(${m}["${ask}"])`]),
+      ask: askPrint('go'), type: 'number', answer: n,
+      explanation: `It prints **${n}**. ${n ? `"${ask}" appears ${n} time${n > 1 ? 's' : ''} in the list. Each \`${m}[w]++\` reads the current count (0 the first time: a missing key reads as the zero value) and adds 1.` : `"${ask}" never appears, so it is not in the map. Reading a missing key doesn't fail in Go: it gives the zero value of the map's value type, 0.`}`,
+      hints: [`Count how many times "${ask}" appears in the list. If it never appears, what does reading a key that is not in a Go map give you?`, 'A missing key reads as the zero value of the map\'s value type, which is also why `m[w]++` works the first time.'],
+    };
+  },
+  sim(c) {
+    if (c.variant === 'struct') { const p = { X: 0, Y: 0 }; p.X += c.k; return p.Y * 10 + p.X; }
+    if (c.variant === 'counter') { let t = 0; for (let i = 1; i <= c.j; i++) t += i * c.k; return t; }
+    const m = new Map();
+    for (const w of c.list) m.set(w, (m.get(w) ?? 0) + 1);
+    return m.has(c.ask) ? m.get(c.ask) : 0;
+  },
+};
+
+// := in an inner block declares a NEW variable that shadows the outer one.
+const GO_SHADOW = { medium: ['ifDecl', 'ifAssign', 'ifDecl', 'ifFalse'], hard: ['loopDecl', 'loopAssign', 'ifDecl', 'ifAssign'], expert: ['multiBlock', 'multiSame'] };
+F['go-shadow'] = {
+  lang: 'go', diffs: ['medium', 'hard', 'expert'],
+  make(rng, diff) {
+    const [x, lim] = names(rng, [['count', 'total', 'level', 'score'], ['limit', 'bound', 'cutoff']]);
+    return { variant: rng.pick(GO_SHADOW[diff]), x, lim, A: rng.int(1, 9), K: rng.int(10, 20), L: rng.int(3, 9), xs: randList(rng, 3, 4, 1, 9), E: rng.int(2, 6) };
+  },
+  // statements for the scope model (and the renderer)
+  prog(c) {
+    const { variant: w, x, lim, A, K, L, xs, E } = c;
+    const V = n => ({ v: n }), N = n => ({ n }), ADD = (p, q) => ({ add: [p, q] });
+    const ifBody = decl => [{ k: decl ? 'decl' : 'assign', names: [x], vals: [ADD(V(x), N(K))] }, { k: 'print', e: V(x) }];
+    return {
+      ifDecl: [{ k: 'decl', names: [x], vals: [N(A)] }, { k: 'decl', names: [lim], vals: [N(L)] }, { k: 'if', cond: [lim, '>', 2], body: ifBody(true) }, { k: 'print', e: V(x) }],
+      ifFalse: [{ k: 'decl', names: [x], vals: [N(A)] }, { k: 'decl', names: [lim], vals: [N(L)] }, { k: 'if', cond: [lim, '>', 10], body: ifBody(false) }, { k: 'print', e: V(x) }],
+      ifAssign: [{ k: 'decl', names: [x], vals: [N(A)] }, { k: 'decl', names: [lim], vals: [N(L)] }, { k: 'if', cond: [lim, '>', 2], body: ifBody(false) }, { k: 'print', e: V(x) }],
+      loopDecl: [{ k: 'decl', names: [x], vals: [N(0)] }, { k: 'range', list: xs, v: 'v', body: [{ k: 'decl', names: [x], vals: [ADD(V(x), V('v'))] }, { k: 'print', e: V(x) }] }, { k: 'print', e: V(x) }],
+      loopAssign: [{ k: 'decl', names: [x], vals: [N(0)] }, { k: 'range', list: xs, v: 'v', body: [{ k: 'assign', names: [x], vals: [ADD(V(x), V('v'))] }, { k: 'print', e: V(x) }] }, { k: 'print', e: V(x) }],
+      multiBlock: [{ k: 'decl', names: [x], vals: [N(A)] }, { k: 'if', cond: [x, '>', 0], body: [{ k: 'decl', names: [x, 'extra'], vals: [N(K), N(E)] }, { k: 'print', e: ADD(V(x), V('extra')) }] }, { k: 'print', e: V(x) }],
+      multiSame: [{ k: 'decl', names: [x], vals: [N(A)] }, { k: 'decl', names: [x, 'extra'], vals: [N(K), N(E)] }, { k: 'print', e: ADD(V(x), V('extra')) }, { k: 'print', e: V(x) }],
+    }[w];
+  },
+  lines(stmts) {
+    const ex = e => (e.v !== undefined ? e.v : e.n !== undefined ? String(e.n) : `${ex(e.add[0])} + ${ex(e.add[1])}`);
+    const out = [];
+    const emit = (s, pad) => {
+      if (s.k === 'decl' || s.k === 'assign') out.push(`${pad}${s.names.join(', ')} ${s.k === 'decl' ? ':=' : '='} ${s.vals.map(ex).join(', ')}`);
+      else if (s.k === 'print') out.push(`${pad}fmt.Println(${ex(s.e)})`);
+      else if (s.k === 'if') { out.push(`${pad}if ${s.cond.join(' ')} {`); s.body.forEach(b => emit(b, pad + '    ')); out.push(`${pad}}`); }
+      else if (s.k === 'range') { out.push(`${pad}for _, ${s.v} := range []int{${s.list.join(', ')}} {`); s.body.forEach(b => emit(b, pad + '    ')); out.push(`${pad}}`); }
+    };
+    stmts.forEach(s => emit(s, ''));
+    return inMain.go(out);
+  },
+  view(c, diff) {
+    const { variant: w, x, A, K, L, xs, E } = c;
+    const code = this.lines(this.prog(c));
+    if (diff === 'expert') {
+      const same = w === 'multiSame';
+      const inner = K + E, outer = same ? K : A;
+      return {
+        code, ask: `What do the two lines print? ${NOTE.go}`, type: 'multi',
+        parts: [
+          { id: 'first', label: 'First line', ask: `What does the first \`fmt.Println\` print?`, answerType: 'number', answer: inner, tolerance: 0, hint: `Inside that block, ${tk(x)} and \`extra\` hold the values just given to them.` },
+          { id: 'second', label: 'Second line', ask: `What does the last \`fmt.Println(${x})\` print?`, answerType: 'number', answer: outer, tolerance: 0, hint: `Does \`${x}, extra := …\` change the existing ${tk(x)} or declare a new one? It depends on whether ${tk(x)} was declared in the **same** block.` },
+        ],
+        explanation: `It prints **${inner}** then **${outer}**. \`:=\` with several names needs at least one new name; any name **already declared in the same block** is simply assigned. ` +
+          (same ? `Here \`${x}, extra :=\` is in the same block as \`${x} := ${A}\`, so it assigns ${K} to that ${tk(x)} and only \`extra\` is new.`
+            : `Here it is inside the \`if\` block, where ${tk(x)} has not been declared yet, so \`:=\` declares a **new** ${tk(x)} (and \`extra\`) that shadows the outer one. The outer ${tk(x)} stays ${A}.`),
+      };
+    }
+    const loop = w.startsWith('loop'), decl = w === 'ifDecl' || w === 'loopDecl', ran = w !== 'ifFalse';
+    const answer = loop ? (decl ? 0 : sum(xs)) : (ran && !decl ? A + K : A);
+    const why = loop
+      ? (decl ? `Inside the loop, \`${x} := ${x} + v\` declares a **new** ${tk(x)} on every pass. Its right-hand side reads the outer ${tk(x)} (still 0), and the new variable disappears at the end of the pass. The outer ${tk(x)} is never changed, so the last line prints 0.`
+        : `\`${x} = ${x} + v\` assigns to the outer ${tk(x)}, so it collects ${xs.join(' + ')} = ${sum(xs)}.`)
+      : !ran ? `The condition is false (${L} is not more than 10), so the block never runs and ${tk(x)} keeps ${A}.`
+        : decl ? `\`${x} := ${x} + ${K}\` inside the \`if\` declares a **new** ${tk(x)} that shadows the outer one until the \`}\`. (Its right-hand side still reads the outer ${tk(x)}, so the inner line prints ${A + K}.) After the block the outer ${tk(x)} is back in view, unchanged: ${A}.`
+          : `\`${x} = ${x} + ${K}\` (with \`=\`) assigns to the outer ${tk(x)}, so it becomes ${A + K}.`;
+    return {
+      code, ask: `What does the **last** line print? ${NOTE.go}`, type: 'number', answer,
+      explanation: `It prints **${answer}**. ${why}`,
+      hints: ['Compare `:=` and `=`: `:=` declares a new variable in the current block; `=` assigns to the one that already exists.', 'A variable declared inside `{ … }` disappears at the closing brace. Which variable does the last line read?'],
+    };
+  },
+  sim(c, diff) {
+    // scope model: := assigns names already declared in THIS block and declares the rest; = finds the nearest
+    const out = [];
+    const find = (sc, n) => { for (let s = sc; s; s = s.up) if (s.vars.has(n)) return s; throw new Error('undefined ' + n); };
+    const ev = (sc, e) => (e.n !== undefined ? e.n : e.v !== undefined ? find(sc, e.v).vars.get(e.v) : ev(sc, e.add[0]) + ev(sc, e.add[1]));
+    const run = (sc, body) => body.forEach(s => {
+      if (s.k === 'decl' || s.k === 'assign') {
+        const vals = s.vals.map(e => ev(sc, e)); // right-hand side first
+        s.names.forEach((n, j) => { const home = s.k === 'decl' ? sc : find(sc, n); home.vars.set(n, vals[j]); });
+      } else if (s.k === 'print') out.push(ev(sc, s.e));
+      else if (s.k === 'if') { const [n, , lim] = s.cond; if (find(sc, n).vars.get(n) > lim) run({ vars: new Map(), up: sc }, s.body); }
+      else if (s.k === 'range') for (const v of s.list) run({ vars: new Map([[s.v, v]]), up: sc }, s.body);
+    });
+    run({ vars: new Map(), up: null }, F['go-shadow'].prog(c));
+    if (diff === 'expert') return { first: out[0], second: out[out.length - 1] };
+    return out[out.length - 1];
+  },
+};
+
+// for _, p := range copies each element; Go 1.22 gives each loop pass its own variable.
+const GO_RANGE = { hard: ['copy', 'copy', 'index', 'pointer', 'ptrSlice'], expert: ['closureHead', 'closureOuter', 'copy', 'ptrSlice', 'closureHead'] };
+F['go-range-copy'] = {
+  lang: 'go', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [T, list] = rng.pick([['Player', 'players'], ['Item', 'items'], ['Team', 'teams']]);
+    return { variant: rng.pick(GO_RANGE[diff]), T, list, s0: rng.int(1, 9), s1: rng.int(1, 9), bonus: rng.int(2, 9), N: rng.int(3, 4), K: rng.int(2, 5), ord: rng.shuffle([0, 1, 2, 3]) };
+  },
+  view(c) {
+    const { variant: w, T, list, s0, s1, bonus, N, K } = c;
+    if (w.startsWith('closure')) {
+      const head = w === 'closureHead' ? [`for i := 0; i < ${N}; i++ {`] : ['i := 0', `for i < ${N} {`];
+      const step = w === 'closureHead' ? [] : ['    i++'];
+      const code = inMain.go(['var funcs []func() int', ...head, `    funcs = append(funcs, func() int { return i * ${K} })`, ...step, '}', 'total := 0', 'for _, f := range funcs {', '    total += f()', '}', 'fmt.Println(total)']);
+      const per = K * (N * (N - 1)) / 2, shared = N * N * K;
+      const answer = w === 'closureHead' ? per : shared;
+      return {
+        code, ask: askPrint('go'), type: 'number', answer,
+        explanation: `It prints **${answer}**. ` + (w === 'closureHead'
+          ? `Since Go 1.22, a variable declared in a \`for\` header is a **new variable on every pass**, so each function keeps its own \`i\` (0, 1, …, ${N - 1}): ${K} × (${Array.from({ length: N }, (_, j) => j).join(' + ')}) = ${per}. (Before Go 1.22 all of them shared one \`i\` and this printed ${shared}.)`
+          : `Here \`i\` is declared **before** the loop, so there is only one \`i\`, shared by every function. They run after the loop, when \`i\` is ${N}: ${N} × ${N} × ${K} = ${shared}.`),
+        hints: ['The functions run after the loop has finished. Which `i` does each one read: its own, or one shared variable?', 'Since Go 1.22, `for i := …; …; …` gives every pass its own `i`; a variable declared before the loop is shared.'],
+      };
+    }
+    const decl = [`type ${T} struct {`, '    Name  string', '    Score int', '}', ''];
+    const lit = `{"ann", ${s0}}, {"bob", ${s1}}`;
+    const loops = {
+      copy: [`for _, p := range ${list} {`, `    p.Score += ${bonus}`, '    fmt.Println(p.Name, p.Score)', '}'],
+      index: [`for i := range ${list} {`, `    ${list}[i].Score += ${bonus}`, `    fmt.Println(${list}[i].Name, ${list}[i].Score)`, '}'],
+      pointer: [`for i := range ${list} {`, `    p := &${list}[i]`, `    p.Score += ${bonus}`, '    fmt.Println(p.Name, p.Score)', '}'],
+      ptrSlice: [`for _, p := range ${list} {`, `    p.Score += ${bonus}`, '    fmt.Println(p.Name, p.Score)', '}'],
+    }[w];
+    const code = [...decl, ...inMain.go([`${list} := []${w === 'ptrSlice' ? '*' : ''}${T}{${lit}}`, ...loops, `fmt.Println(${list}[0].Score)`])];
+    const changes = w !== 'copy';
+    const answer = changes ? s0 + bonus : s0;
+    return {
+      code, ask: `What does the **last** line print? ${NOTE.go}`, type: 'number', answer,
+      explanation: `It prints **${answer}**. ` + {
+        copy: `\`for _, p := range ${list}\` gives \`p\` a **copy** of each struct. \`p.Score += ${bonus}\` changes the copy (the line inside the loop prints the raised score), but the slice keeps the original, so \`${list}[0].Score\` is still ${s0}.`,
+        index: `\`${list}[i].Score += ${bonus}\` writes straight into the slice's element, so it changes: ${s0} + ${bonus} = ${answer}.`,
+        pointer: `\`p := &${list}[i]\` is a pointer to the element itself, so \`p.Score += ${bonus}\` changes the slice: ${s0} + ${bonus} = ${answer}.`,
+        ptrSlice: `The slice holds **pointers** (\`[]*${T}\`). Ranging copies each pointer, but a copied pointer still points at the same struct, so the change shows: ${s0} + ${bonus} = ${answer}.`,
+      }[w],
+      hints: ['In `for _, p := range xs`, is `p` the element itself or a copy of it?', 'Writing through the slice (`xs[i].Score`) or through a pointer changes the element; changing a copy doesn\'t.'],
+    };
+  },
+  sim(c) {
+    if (c.variant.startsWith('closure')) {
+      const fns = [];
+      if (c.variant === 'closureHead') { for (let b = { v: 0 }; b.v < c.N; b = { v: b.v + 1 }) { const cur = b; fns.push(() => cur.v * c.K); } } // a fresh i per pass (Go 1.22)
+      else { const b = { v: 0 }; while (b.v < c.N) { fns.push(() => b.v * c.K); b.v++; } }
+      return fns.reduce((t, f) => t + f(), 0);
+    }
+    // structs are values (copied on assignment); a pointer slice holds references
+    const structs = [{ Score: c.s0 }, { Score: c.s1 }];
+    const slice = c.variant === 'ptrSlice' ? structs : structs.map(s => ({ ...s }));
+    for (let i = 0; i < slice.length; i++) {
+      const p = c.variant === 'copy' ? { ...slice[i] } : slice[i]; // copy: range value; index/pointer/ptrSlice: the element itself
+      p.Score += c.bonus;
+    }
+    return slice[0].Score;
+  },
+};
+
+F['go-append-line'] = {
+  lang: 'go', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [xs] = names(rng, [['scores', 'ids', 'sizes', 'queue']]);
+    return { xs, vals: randList(rng, 2, 4, 1, 9), v: rng.int(10, 30), show: rng.pick(['len', 'last']), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { xs, vals, v, show } = c;
+    const bug = `append(${xs}, ${v})`, answer = `${xs} = append(${xs}, ${v})`;
+    const want = show === 'len' ? vals.length + 1 : v;
+    const printed = show === 'len' ? `len(${xs})` : `${xs}[len(${xs})-1]`;
+    return {
+      code: inMain.go([`${xs} := []int{${vals.join(', ')}}`, bug, `fmt.Println(${printed})`]),
+      lead: diff === 'expert' ? `This program does not compile. With the fix it should print **${want}**. ${NOTE.go}`
+        : `Line 3 fails to compile: \`${bug} (value of type []int) is not used\`. With the fix it should print **${want}**. ${NOTE.go}`,
+      ask: rewriteAsk(diff, 3, 'the program compiles'), type: 'text', answer, trail: '', bug, lineNo: 3,
+      alts: [],
+      distractors: [bug, `${xs} := append(${xs}, ${v})`, `append(&${xs}, ${v})`, `${xs}.append(${v})`, `${xs} = append(${v}, ${xs})`],
+      explanation: `Line 3 should be \`${answer}\`. \`append\` doesn't change the slice you pass in: it **returns** a new slice header (and may even copy the items to a new array), so its result must be stored, and Go rejects a call whose result is thrown away. \`:=\` would not work here: \`${xs}\` already exists in this block, so there would be no new variable on the left.`,
+      hints: ['Read the error: the value `append` returns is not used.', '`append` returns the longer slice; it can\'t change the variable you passed in.', `Store the result back in ${tk(xs)}, with the assignment operator that doesn't declare a new variable.`],
+    };
+  },
+  sim(c) {
+    const re = /^(\w+)\s*(:=|=)\s*append\(\s*(\w+)\s*,\s*(-?\d+)\s*\)$/;
+    return {
+      ok(line) {
+        const m = stripMark(line).match(re);
+        if (!m) return false;
+        if (m[2] === ':=') return false; // no new variable on the left side of :=
+        if (m[1] !== c.xs || m[3] !== c.xs || Number(m[4]) !== c.v) return false;
+        const after = [...c.vals, Number(m[4])];
+        return (c.show === 'len' ? after.length : after[after.length - 1]) === (c.show === 'len' ? c.vals.length + 1 : c.v);
+      },
+    };
+  },
+};
+
+F['go-copy-line'] = {
+  lang: 'go', diffs: ['hard', 'expert'],
+  make(rng, diff) {
+    const [a, b] = names(rng, [['original', 'scores', 'stock', 'levels'], ['backup', 'saved', 'before', 'snapshot']]);
+    return { a, b, vals: randList(rng, 3, 4, 1, 9), op: rng.pick(['set', 'set', 'sort']), w: rng.int(50, 99), ...drawBlocks(rng, diff) };
+  },
+  view(c, diff) {
+    const { a, b, vals, op, w } = c;
+    const got = op === 'set' ? w : Math.min(...vals);
+    if (got === vals[0]) return null;
+    const bug = `${b} := ${a}`, answer = `${b} := slices.Clone(${a})`;
+    const opLine = op === 'set' ? `${a}[0] = ${w}` : `slices.Sort(${a})`;
+    return {
+      code: inMain.go([`${a} := []int{${vals.join(', ')}}`, bug, opLine, `fmt.Println(${b}[0])`]),
+      lead: `${tk(b)} should keep the values as they were before line 4, so this should print **${vals[0]}**. It prints **${got}**. ${NOTE.go}`,
+      ask: rewriteAsk(diff, 3, `${tk(b)} is a separate copy`), type: 'text', answer, trail: '', bug, lineNo: 3,
+      alts: [`${b} := append([]int{}, ${a}...)`, `${b} := append([]int(nil), ${a}...)`, `${b} := append([]int{}, ${a}[:]...)`],
+      distractors: [bug, `${b} := ${a}[:]`, `${b} := &${a}`, `${b} = slices.Clone(${a})`, `${b} := slices.Clone(${b})`],
+      explanation: `Line 3 should be \`${answer}\`. Assigning a slice copies only the slice header (pointer, length, capacity), so \`${bug}\` makes both names view the **same** array, and \`${opLine}\` changes what ${tk(b)} sees. \`slices.Clone\` (Go 1.21+) copies the items into a new array. (\`${a}[:]\` is still the same array.)`,
+      hints: [`After \`${bug}\`, how many arrays hold the numbers?`, 'Assigning or re-slicing a slice never copies its items.', 'The `slices` package has a function that returns a copy.'],
+    };
+  },
+  sim(c) {
+    const A = c.a, B = c.b;
+    const forms = [
+      [new RegExp(`^${B}\\s*:=\\s*slices\\.Clone\\(\\s*${A}\\s*\\)$`), 'copy'], [new RegExp(`^${B}\\s*:=\\s*append\\(\\s*\\[\\]int(?:\\{\\}|\\(nil\\))\\s*,\\s*${A}(?:\\[:\\])?\\.\\.\\.\\s*\\)$`), 'copy'],
+      [new RegExp(`^${B}\\s*:=\\s*${A}(?:\\[\\s*0?\\s*:\\s*\\])?$`), 'alias'],
+    ];
+    return {
+      ok(line) {
+        const f = forms.find(([re]) => re.test(stripMark(line)));
+        if (!f) return false;
+        // backing arrays: an alias shares the array, a copy gets its own
+        const arr = c.vals.slice();
+        const back = f[1] === 'alias' ? arr : arr.slice();
+        if (c.op === 'set') arr[0] = c.w; else arr.sort((x, y) => x - y);
+        return back[0] === c.vals[0];
+      },
+    };
+  },
+};
+
+// =============================================================================================
 // generate / verify
 // =============================================================================================
 const LEVELS = ['medium', 'hard', 'expert'];
+const NEW_LANGS = ['javascript', 'typescript', 'java', 'go'];
 for (const id of Object.keys(F)) F[id].id = id;
 export const familiesFor = (lang, diff) => Object.keys(F).filter(id => F[id].lang === lang && F[id].diffs.includes(diff));
 
@@ -2151,7 +3618,10 @@ function assemble(fam, c, diff, L) {
   const base = { prompt, lang: L, explanation: v.explanation, meta };
   if (v.type === 'multi') return { q: { ...base, answerType: 'multi', parts: v.parts }, v };
   if (v.type === 'text') {
-    const blocks = blocksFor(v.answer, { distractors: [...v.distractors, ...decoyTokens(v.answer)], count: c.extra, seed: c.seed });
+    // (JavaScript, TypeScript, Java and Go read their lines with codelang's extended lexer)
+    const ext = NEW_LANGS.includes(L);
+    const decoys = ext ? decoyTokens(v.answer, L, { ext }) : decoyTokens(v.answer);
+    const blocks = blocksFor(v.answer, { distractors: [...v.distractors, ...decoys], count: c.extra, seed: c.seed, ...(ext ? { ext } : {}) });
     if (!blocks) return null;
     const note = v.trail ? ` The \`${v.trail.trim()}\` at the end is optional.` : '';
     return { q: { ...base, prompt: prompt + `${note} Spaces around operators are optional.`, answerType: 'text', answer: v.answer, accepts: acceptsFor(v), blocks, hints: v.hints }, v };

@@ -2,7 +2,7 @@
 
 Read short functions the way a reviewer does: work out what they do, spot the line that's wrong, and say how to fix it.
 
-**Pick your language.** Snippets can be shown in Python, C#, C++, GDScript or Rust. Choose one on this page or in Settings. Each question is the same in every language; only the spelling changes (except *Language features*, below).
+**Pick your language.** Snippets can be shown in Python, C#, C++, GDScript, Rust, JavaScript, TypeScript, Java or Go. Choose one on this page or in Settings. Each question is the same in every language; only the spelling changes (except *Language features*, below).
 
 **Line numbers.** Every snippet has a line number on the left, before the `|`. When a question asks for a line, use that number. Brace-only lines count too, so the same bug can sit on a different line in C# than in Python.
 
@@ -30,6 +30,10 @@ These questions are about what makes **your** language different, so they exist 
 - **C++:** pass by value, by reference (`int&`) and by pointer (`int*`), integer division, references that can't be re-seated, and spotting undefined behaviour (you are never asked what it prints).
 - **GDScript:** `int` vs `float` division, Arrays and Dictionaries shared by reference, `duplicate()`, `for` loops, and typed variables (`: int`, `:=`).
 - **Rust:** moves and `clone()`, borrowing (`&` vs `&mut`), `mut`, shadowing, and `u8` overflow in debug builds.
+- **JavaScript:** `==` vs `===`, `var` hoisting and the `let` temporal dead zone, `this` in a method called on its own, `sort()` comparing numbers as text, and closures in loops.
+- **TypeScript:** types that disappear at run time (`as` converts nothing), `any` hiding a string, optional properties (`?`, `??`, `||`, `!`), and lines that strict mode rejects.
+- **Java:** `int` overflow (it wraps, even for constants), `==` vs `equals` on `String`, `Integer` and `Long` (only -128 to 127 is cached for certain), integer division printed as a `double`, and `char` arithmetic.
+- **Go:** slices sharing an array after slicing or `append`, zero values, `:=` shadowing in an inner block, `range` copies, Go 1.22 loop variables, and `append` results that must be stored.
 
 Some ask what is printed, some which line the compiler rejects and why, and some ask you to type a corrected line (or build it from blocks). Medium, Hard and Expert only.
 

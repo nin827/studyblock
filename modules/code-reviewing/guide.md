@@ -5,12 +5,12 @@
 - Read the spec and the example first, so you know what the function **should** return.
 - Trace by hand: write each variable down every time it changes, line by line. Don't guess from the function's name.
 - Line numbers are the ones on the left of the `|`. Brace-only lines count, so the same line can have a different number in C# than in Python.
-- Loops stop before their end: `range(a, b)` in Python and GDScript, `i < b` in C# and C++, and `a..b` in Rust all stop before `b`.
-- Whole-number division drops the remainder: `//` in Python, `/` in the other languages. `%` gives the remainder.
+- Loops stop before their end: `range(a, b)` in Python and GDScript, `i < b` in C#, C++, Java, JavaScript, TypeScript and Go, and `a..b` in Rust all stop before `b`.
+- Whole-number division drops the remainder: `//` in Python, `Math.floor(a / b)` in JavaScript and TypeScript, `/` in the other languages. `%` gives the remainder.
 
 ## Predict the output
 
-1. Find where the program starts: the top-level lines in Python and C#, `main` in C++ and Rust, and `_ready` in GDScript.
+1. Find where the program starts: the top-level lines in Python, C#, JavaScript and TypeScript, `main` in C++, Rust, Java and Go, and `_ready` in GDScript.
 2. Make a small table with one column per variable.
 3. Go through the program line by line. Each time a value changes, add a row to the table.
 4. For a loop, write down the loop variable on every pass. Stop as soon as the condition is false.
@@ -74,7 +74,7 @@ Example: a loop that starts `i` at 1, adds 2 each pass and stops before 7 runs w
 
 Example: the spec is "1 + 2 + … + n" and the loop line is `for i in range(1, n):`. It stops before `n`, so the fix is `for i in range(1, n + 1)`.
 
-**Watch out:** keep the rest of the line exactly as it was: the same names and the same order. In C# and C++ a loop that should include `n` can end with `i < n + 1` or `i <= n`; in Rust, `1..n + 1` or `1..=n`.
+**Watch out:** keep the rest of the line exactly as it was: the same names and the same order. In C#, C++, Java, JavaScript, TypeScript and Go a loop that should include `n` can end with `i < n + 1` or `i <= n`; in Rust, `1..n + 1` or `1..=n`. In JavaScript and TypeScript, `==` is accepted for `===` here because both sides are numbers.
 
 **Blocks:** the blocks include pieces of the buggy line, so don't just rebuild what is already there.
 
@@ -120,3 +120,33 @@ Example: the spec is "1 + 2 + … + n" and the loop line is `for i in range(1, n
 - Many `&` borrows, or one `&mut`, at a time. A borrow lasts until its **last use**, not until the end of the block.
 - Changing a variable needs `let mut`. `let x = x + 1;` makes a new, shadowing variable instead.
 - In a debug build, `u8` overflow panics ("attempt to add with overflow"); `wrapping_`, `saturating_` and `checked_` methods say what to do instead.
+
+**JavaScript**
+
+- `===` compares type and value with no conversion. `==` converts first: strings and booleans become numbers (`""`, `"0"` and `false` are all `== 0`), `null` and `undefined` equal only each other, and `NaN` equals nothing.
+- `var` is hoisted and holds `undefined` until its line runs, and it ignores blocks. `let` and `const` belong to their block and throw a `ReferenceError` if read before their line (the temporal dead zone). Function declarations are hoisted with their body.
+- `this` comes from how a function is called: `obj.method()` sets it; a method copied out and called on its own, or passed as a callback, gets `undefined` (class code is always strict). Arrow functions keep the surrounding `this`; `.bind(obj)` fixes it.
+- `sort()` with no compare function sorts numbers as text (`1, 10, 100, 9`). Use `(a, b) => a - b` (or `b - a` for largest first).
+- A `let` in a `for` header is a new variable on every pass; a `var` (or a `let` declared before the loop) is one shared variable, so closures made in the loop all see its final value.
+
+**TypeScript**
+
+- Types are erased when TypeScript compiles to JavaScript. `x as number` converts nothing: use `Number(x)`, `parseInt(x, 10)` or `+x` to convert at run time.
+- `any` (for example from `JSON.parse`) is never checked, so a `number[]` can still hold strings, and `+` then joins text.
+- `bonus?: number` may be `undefined`. Strict mode rejects arithmetic on it; `x ?? d` falls back only for `null`/`undefined`, `x || d` for any falsy value (0 included), and `x!` only silences the compiler.
+- Strict mode also rejects a `string` in a `number` variable, `as` between unrelated types (`"5" as number`), assigning a `const` again, and an object literal missing a required property.
+
+**Java**
+
+- `int` arithmetic wraps around silently, even for constants (`Integer.MAX_VALUE + 1` compiles). `Math.addExact` and `Math.multiplyExact` throw `ArithmeticException`. `long bigger = x + 1;` still adds in `int` first, so cast: `(long) x + 1`.
+- On objects (`String`, `Integer`, `Long`), `==` asks "same object?" and `equals` compares contents. String literals and constant expressions are shared; `new String(…)` and run-time concatenation make new objects. Boxed `Integer`s are only guaranteed to be shared from -128 to 127; outside that, `==` is not guaranteed either way. `Integer == Long` doesn't compile.
+- `int / int` drops the remainder even when stored in a `double`, and `println` prints a `double` with `.0`. `%` keeps the sign of the left side; `Math.floorDiv` and `Math.floorMod` round down.
+- A `char` is a number: `'a' + 1` is the `int` 98, `(char) ('a' + 1)` is `'b'`, and `"" + c + 1` joins text. `c += 1` compiles (it hides a cast); `c = c + 1` doesn't.
+
+**Go**
+
+- A slice is a window (start, length, capacity) onto an array. Slicing and assigning a slice share the array. `append` writes into the same array while the capacity has room (`make([]int, 3, 5)`, `a[:2]`) and copies to a new one when it doesn't (a literal, or `a[:2:2]`). Use `slices.Clone` for a real copy.
+- `append` returns the new slice: always store it (`xs = append(xs, v)`).
+- Every variable starts at its zero value (0, `""`, `false`, `nil`); a missing map key reads as the zero value.
+- `:=` inside a block declares a **new** variable that shadows the outer one until the `}`; `=` assigns to the existing one. With several names, `:=` reuses a name only if it was declared in the same block.
+- `for _, p := range xs` gives `p` a copy of each element; write through `xs[i]` or a pointer to change the slice. Since Go 1.22 each pass of a `for` loop has its own loop variable.

@@ -12,11 +12,20 @@
 //
 // Exception: the "Language features" subtopic (langfeatures.js) has hand-written templates per
 // language, so its questions exist only in the current language.
+//
+// JavaScript, TypeScript, Java and Go (added after the first five): every cross-language decision
+// (the rewrite plan) uses the five original languages, so their questions stay the same per seed; a
+// newer language decides on those five plus itself. A newer language also redraws a plan whose
+// rendering would differ on more than the bug line (a JavaScript `const` that the bug stops being
+// reassigned, a Go `for range` that loses its variable) or that Go would reject (a variable declared
+// and never read). So a newer language gives the same question as the others except where its own
+// rendering forces a redraw. Blocks for the newer languages use codelang's extended lexer.
 
 import { S, E, program, render, run, lineAt, fence, ident, rangeText, renderExpr,
   blocksFor, serialiseBlocks, spacingVariants, textKey, decoyTokens } from '../../js/lib/codelang.js';
 // "Language features" (questions that exist only in one language) live in their own file.
 import { generateLangFeature, verifyLangFeature } from './langfeatures.js';
+import { isLang } from '../../js/lib/languages.js';
 
 const V = E.var, B = E.bin, IX = E.index, LEN = E.len;
 const MAX_STEPS = 3000;
@@ -63,6 +72,75 @@ const OPWORD = { '>': 'greater than', '<': 'less than', '>=': 'greater than or e
 const cmpJS = (op, a, b) => (op === '>' ? a > b : op === '<' ? a < b : op === '>=' ? a >= b : a <= b);
 const randList = (rng, lo, hi, a, b) => Array.from({ length: rng.int(lo, hi) }, () => rng.int(a, b));
 const code = (n, L, kind) => '`' + ident(n, L, kind) + '`';
+
+// ---- newer languages (JavaScript, TypeScript, Java, Go) ----
+const LEGACY_LANGS = ['python', 'csharp', 'cpp', 'gdscript', 'rust'];
+const isNewLang = L => isLang(L) && !LEGACY_LANGS.includes(L);
+const langsFor = L => (isNewLang(L) ? [...LEGACY_LANGS, L] : LEGACY_LANGS);
+const isJsLang = L => L === 'javascript' || L === 'typescript';
+const ASSIGN_OPS = '(?:=(?!=)|\\+=|-=|\\*=|/=|%=)';
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const codeOnly = lines => lines.map(l => l.replace(/^\s*\d+ \| ?/, ''));
+// Go: is a local declared (`x := …`, `for _, x := range`, `for i := …`) and then never read? An
+// assignment (`x = …`, `x += …`, `x++`) is not a read. Scans to the end of the enclosing function.
+function goUnused(lines) {
+  const src = codeOnly(lines);
+  for (let k = 0; k < src.length; k++) {
+    const decl = [...src[k].matchAll(/(?:^\s*|for |, )([A-Za-z_]\w*) :=/g)].map(m => m[1]).filter(n => n !== '_');
+    for (const n of decl) {
+      const word = new RegExp(`\\b${reEsc(n)}\\b`);
+      const target = new RegExp(`^\\s*${reEsc(n)} ${ASSIGN_OPS} `);
+      const bump = new RegExp(`^\\s*${reEsc(n)}(?:\\+\\+|--)$`);
+      let used = false;
+      for (let j = k; j < src.length && !used; j++) {
+        if (j > k && /^}/.test(src[j])) break;
+        let line = src[j];
+        if (j === k) line = line.slice(line.indexOf(`${n} :=`) + n.length + 3);
+        else line = line.replace(target, '').replace(bump, '');
+        used = word.test(line);
+      }
+      if (!used) return true;
+    }
+  }
+  return false;
+}
+// JavaScript/TypeScript: is a `const` name assigned again later (a TypeError at run time)?
+function jsConstReassigned(lines) {
+  const src = codeOnly(lines);
+  for (let k = 0; k < src.length; k++) {
+    const m = src[k].match(/^\s*const ([A-Za-z_]\w*)(?::[^=]+)? = /);
+    if (!m) continue;
+    const n = reEsc(m[1]);
+    const re = new RegExp(`^\\s*(?:${n} ${ASSIGN_OPS} |${n}(?:\\+\\+|--))`);
+    for (let j = k + 1; j < src.length; j++) {
+      if (/^}/.test(src[j])) break;
+      if (re.test(src[j])) return true;
+    }
+  }
+  return false;
+}
+// Code a newer language can show as it is: `variants` ([program, [statement ids]]) render the same as
+// `good` except on those statements' lines (unless sameLines is false), nothing is declared and left
+// unused in Go, and no `const` is reassigned in JavaScript/TypeScript.
+function langRenderOk(L, good, variants = [], { sameLines = true } = {}) {
+  const Rg = render(good, L);
+  const broken = R => (L === 'go' && goUnused(R.lines)) || (isJsLang(L) && jsConstReassigned(R.lines));
+  if (broken(Rg)) return false;
+  for (const [prog, ids] of variants) {
+    const R = render(prog, L);
+    if (broken(R)) return false;
+    if (!sameLines) continue;
+    if (R.lines.length !== Rg.lines.length) return false;
+    const allowed = new Set(ids.map(id => Rg.lineOf.get(id)));
+    if (R.lines.some((l, j) => l !== Rg.lines[j] && !allowed.has(j + 1))) return false;
+  }
+  return true;
+}
+// The lines of the first code fence in a stored question's prompt.
+const promptCode = q => {
+  const m = String(q.prompt || '').match(/```[a-z]*\n([\s\S]*?)\n```/);
+  return m ? m[1].split('\n') : [];
+};
 
 // ---- templates ----
 // Each: make(rng, diff) → cfg; params(c); body(c, v) with fixed statement ids; slots(c) → { slotId:
@@ -625,7 +703,7 @@ const BUG_POOL = {
 // Does this run count as "wrong" (fails the spec) without crashing?
 const fails = (r, want) => r.timedOut || (r.ok && r.value !== want);
 
-function planBug(rng, diff, { needFix, pool, dedupe = false }) {
+function planBug(rng, diff, { needFix, pool, dedupe = false, lang }) {
   for (let attempt = 0; attempt < 60; attempt++) {
     const tplId = rng.pick(pool || BUG_POOL[diff]);
     const tpl = T[tplId];
@@ -685,6 +763,12 @@ function planBug(rng, diff, { needFix, pool, dedupe = false }) {
     if (others.length < 3) continue;
     const lineIds = rng.shuffle([bug.slot, ...rng.shuffle(others).slice(0, 3)]);
     const typeKinds = rng.shuffle([kind, ...rng.shuffle(CAT_KINDS.filter(k => typeOk(kind, k))).slice(0, 3)]);
+    // (newer languages only) the bug and every fix option change just the bug line, and read as distinct lines
+    if (isNewLang(lang)) {
+      const fixProgs = (fixKeys || []).filter(k => k !== 'ok').map(k => [fnProg(tpl, c, { [bug.slot]: k }), [bug.slot]]);
+      if (!langRenderOk(lang, good, [[bad, [bug.slot]], ...fixProgs], { sameLines: kind !== 'early' })) continue;
+      if (fixKeys && new Set(fixKeys.map(k => lineAt(render(fnProg(tpl, c, k === 'ok' ? {} : { [bug.slot]: k }), lang), bug.slot))).size !== fixKeys.length) continue;
+    }
     return { tpl: tplId, c, slot: bug.slot, key: bug.key, kind, ex, want: tpl.ref(c, ex), actual, tests, fixKeys, lineIds, typeKinds };
   }
   throw new Error('could not plan a bug question');
@@ -1022,7 +1106,7 @@ function runLines(prog) {
   } catch { return null; }
 }
 
-function planPredict(rng, diff) {
+function planPredict(rng, diff, lang) {
   for (let attempt = 0; attempt < 40; attempt++) {
     let m;
     const useP = rng.next() < (diff === 'easy' ? 0.35 : 0.4);
@@ -1043,6 +1127,7 @@ function planPredict(rng, diff) {
     const want = predictRef(m), out = runLines(predictProgram(m));
     if (!out || out.length !== want.length || out.some((s, j) => s !== String(want[j]))) continue;
     if (m.form === 'loop' && (want.length < 2 || want.length > 7)) continue;
+    if (isNewLang(lang) && !langRenderOk(lang, predictProgram(m))) continue;
     return m;
   }
   throw new Error('could not plan a predict question');
@@ -1190,7 +1275,7 @@ P.kadane = {
 };
 
 const X_PREDICT_TPLS = ['pair-count', 'increases', 'min-max', 'find-index', 'count-if'];
-function planPredictX(rng) {
+function planPredictX(rng, lang) {
   for (let attempt = 0; attempt < 40; attempt++) {
     let m;
     if (rng.next() < 0.6) {
@@ -1205,6 +1290,7 @@ function planPredictX(rng) {
     const want = predictRef(m), out = runLines(predictProgram(m));
     if (!out || out.length !== want.length || out.some((s, j) => s !== String(want[j]))) continue;
     if (m.form === 'bubble' && want[0] === 0) continue;
+    if (isNewLang(lang) && !langRenderOk(lang, predictProgram(m))) continue;
     return m;
   }
   throw new Error('could not plan an expert predict question');
@@ -1269,7 +1355,7 @@ const passesAll = (tpl, c, prog, tests) => tests.every(a => { const r = exec(pro
 const kindPair = ks => ks.slice().sort((x, y) => CAT_KINDS.indexOf(x) - CAT_KINDS.indexOf(y));
 
 // Two bugs on different lines. sub 'bug-types' also needs two different, clearly separate kinds.
-function planTwoBugs(rng, sub) {
+function planTwoBugs(rng, sub, lang) {
   for (let attempt = 0; attempt < 80; attempt++) {
     const tplId = rng.pick(X_BUG_POOL), tpl = T[tplId], c = tpl.make(rng, 'hard');
     const bugs = realBugs(tpl.slots(c));
@@ -1306,6 +1392,7 @@ function planTwoBugs(rng, sub) {
       typePairs = rng.shuffle([kindPair([b1.kind, b2.kind]), kindPair([b1.kind, xs[0]]), kindPair([b2.kind, xs[1]]), kindPair([xs[0], xs[1]])]);
     }
     const two = [b1, b2].sort((u, v) => order.indexOf(u.slot) - order.indexOf(v.slot));
+    if (isNewLang(lang) && !langRenderOk(lang, good, [[bad, [b1.slot, b2.slot]]])) continue;
     return { tpl: tplId, c, bugs: two, ex, want: tpl.ref(c, ex), actual, tests, linePairs, typePairs };
   }
   throw new Error('could not plan a two-bug question');
@@ -1313,7 +1400,7 @@ function planTwoBugs(rng, sub) {
 
 // One bug, three shown examples; the fix options include at least one trap that repairs the
 // first example but breaks another one.
-function planFixTrap(rng) {
+function planFixTrap(rng, lang) {
   for (let attempt = 0; attempt < 120; attempt++) {
     const tplId = rng.pick(X_BUG_POOL), tpl = T[tplId], c = tpl.make(rng, 'hard'), slots = tpl.slots(c);
     const bugs = realBugs(slots);
@@ -1357,6 +1444,10 @@ function planFixTrap(rng) {
     if (others.length < 3) continue;
     const lineIds = rng.shuffle([bug.slot, ...rng.shuffle(others).slice(0, 3)]);
     const ex = shown[0];
+    if (isNewLang(lang)) {
+      if (!langRenderOk(lang, good, [[bad, [bug.slot]], ...wrong.map(k => [fnProg(tpl, c, { [bug.slot]: k }), [bug.slot]])])) continue;
+      if (new Set(fixKeys.map(k => lineAt(render(fnProg(tpl, c, k === 'ok' ? {} : { [bug.slot]: k }), lang), bug.slot))).size !== 4) continue;
+    }
     return { tpl: tplId, c, slot: bug.slot, key: bug.key, kind: bug.kind, ex, want: tpl.ref(c, ex), actual: exec(bad, c.f, ex).value, shown, tests, fixKeys, lineIds, traps: t2 };
   }
   throw new Error('could not plan a fix-trap question');
@@ -1439,9 +1530,9 @@ function presentFixTrap(p, L) {
 }
 
 function generateExpert(subtopic, rng, L) {
-  if (subtopic === 'predict-output') return presentPredictX(planPredictX(rng), L);
-  if (subtopic === 'fix-the-bug') return presentFixTrap(planFixTrap(rng), L);
-  return presentTwoBugs(planTwoBugs(rng, subtopic), subtopic, L);
+  if (subtopic === 'predict-output') return presentPredictX(planPredictX(rng, L), L);
+  if (subtopic === 'fix-the-bug') return presentFixTrap(planFixTrap(rng, L), L);
+  return presentTwoBugs(planTwoBugs(rng, subtopic, L), subtopic, L);
 }
 
 // Verify an expert bug question from its plan: rebuild, re-render, re-run against the plain-JS refs.
@@ -1571,9 +1662,14 @@ function rewriteView(p, L) {
     const endText = renderExpr(goodStmt.end, L, { program: good, fn: c.f });
     const less = renderExpr(goodStmt.end.a, L, { program: good, fn: c.f });
     if (L === 'rust' && answer.endsWith(`..${endText}`)) cand.push(answer.slice(0, -endText.length - 2) + `..=${less}`);
-    if (['csharp', 'cpp'].includes(L) && answer.includes(` < ${endText};`)) cand.push(answer.replace(` < ${endText};`, ` <= ${less};`));
+    if (['csharp', 'cpp', 'java', 'javascript', 'typescript', 'go'].includes(L) && answer.includes(` < ${endText};`)) cand.push(answer.replace(` < ${endText};`, ` <= ${less};`));
   }
   if (L === 'cpp' && answer.includes('(int)')) cand.push(answer.replace(/\(int\)/g, ''));
+  // JavaScript/TypeScript: between two numbers `==` and `!=` behave exactly like `===` and `!==`.
+  if (isJsLang(L)) {
+    const loose = t => t.replace(/===/g, '==').replace(/!==/g, '!=');
+    for (const t of [answer, ...sems]) if (loose(t) !== t) cand.push(loose(t), spacingVariants(loose(t))[1] ?? loose(t));
+  }
   cand.push(...spacingVariants(answer).slice(2));
   const keys = new Set([textKey(answer)]), accepts = [];
   for (const t of cand) {
@@ -1589,7 +1685,10 @@ function rewriteView(p, L) {
   const others = Object.keys(tpl.slots(c)[p.slot] || {}).filter(k => k !== p.key && !(p.fixKeys || []).includes(k))
     .map(k => { try { return stripTrail(lineAt(render(fnProg(tpl, c, { [p.slot]: k }), L), p.slot)); } catch { return ''; } }).filter(Boolean);
   const names = [...paramNames(tpl, c), ...trackNames(p.tpl, c)].map(n => ident(n, L));
-  const blocks = blocksFor(answer, { distractors: [...wrongLines, ...others, ...decoyTokens(answer), ...names], count: p.extra, seed: p.seed });
+  // (newer languages read their lines with codelang's extended lexer: `len(xs);`, `Math.floor(…);`, …)
+  const ext = isNewLang(L);
+  const decoys = ext ? decoyTokens(answer, L, { ext }) : decoyTokens(answer);
+  const blocks = blocksFor(answer, { distractors: [...wrongLines, ...others, ...decoys, ...names], count: p.extra, seed: p.seed, ...(ext ? { ext } : {}) });
   return { tpl, c, good, bad, R, Rg, answer, trail, accepts, badLine, wrongLines, blocks, bugLine: R.lineOf.get(p.slot) };
 }
 
@@ -1605,16 +1704,19 @@ function rewriteOk(v, p) {
 const TRAIL_NOTE = {
   python: 'The `:` at the end is optional.', gdscript: 'The `:` at the end is optional.',
   csharp: 'The `;` at the end is optional.', cpp: 'The `;` or `{` at the end is optional.', rust: 'The `;` or `{` at the end is optional.',
+  javascript: 'The `;` or `{` at the end is optional.', typescript: 'The `;` or `{` at the end is optional.', java: 'The `;` or `{` at the end is optional.',
+  go: 'The `{` at the end is optional.',
 };
 
-function planRewrite(rng, diff) {
+function planRewrite(rng, diff, lang) {
   for (let attempt = 0; attempt < 30; attempt++) {
-    const p = diff === 'expert' ? planBug(rng, 'hard', { needFix: true, pool: X_BUG_POOL }) : planBug(rng, diff, { needFix: true });
+    const p = diff === 'expert' ? planBug(rng, 'hard', { needFix: true, pool: X_BUG_POOL, lang }) : planBug(rng, diff, { needFix: true, lang });
     const [lo, hi] = RW_EXTRA[diff];
     p.extra = rng.int(lo, hi);
     p.seed = rng.int(1, 2147483646);
     if (p.kind === 'early') continue;
-    if (['python', 'csharp', 'cpp', 'gdscript', 'rust'].every(L => { try { return rewriteOk(rewriteView(p, L), p); } catch { return false; } })) return p;
+    // (decided on the five original languages, plus the current one when it is newer)
+    if (langsFor(lang).every(L => { try { return rewriteOk(rewriteView(p, L), p); } catch { return false; } })) return p;
   }
   throw new Error('could not plan a rewrite question');
 }
@@ -1677,12 +1779,12 @@ export function generate({ subtopic, difficulty, rng, lang = 'python' }) {
   if (!SUBS.includes(subtopic)) throw new Error(`Unknown subtopic: ${subtopic}`);
   if (subtopic === 'rewrite-line') {
     if (!['easy', 'medium', 'hard', 'expert'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
-    return presentRewrite(planRewrite(rng, difficulty), difficulty, lang);
+    return presentRewrite(planRewrite(rng, difficulty, lang), difficulty, lang);
   }
   if (difficulty === 'expert') return generateExpert(subtopic, rng, lang);
   if (!['easy', 'medium', 'hard'].includes(difficulty)) throw new Error(`Unknown difficulty: ${difficulty}`);
-  if (subtopic === 'predict-output') return presentPredict(planPredict(rng, difficulty), lang);
-  const p = planBug(rng, difficulty, { needFix: subtopic === 'fix-the-bug', dedupe: subtopic === 'fix-the-bug' });
+  if (subtopic === 'predict-output') return presentPredict(planPredict(rng, difficulty, lang), lang);
+  const p = planBug(rng, difficulty, { needFix: subtopic === 'fix-the-bug', dedupe: subtopic === 'fix-the-bug', lang });
   p.askActual = subtopic === 'bug-types' && difficulty !== 'hard' && rng.next() < 0.4;
   return presentBug(p, subtopic, difficulty, lang);
 }
@@ -1763,6 +1865,10 @@ export function verify(question, answer) {
   try {
     const m = question && question.meta;
     if (!m || typeof question.lang !== 'string') return false;
+    // Newer languages: the shown code must be valid as written (Go: nothing declared and left
+    // unused; JavaScript/TypeScript: no `const` assigned again).
+    if (m.mode !== 'lang' && question.lang === 'go' && goUnused(promptCode(question))) return false;
+    if (m.mode !== 'lang' && isJsLang(question.lang) && jsConstReassigned(promptCode(question))) return false;
     if (m.mode === 'predict') return verifyPredict(question, m, answer);
     if (m.mode === 'bug') return verifyBug(question, m, answer);
     if (m.mode === 'bug2' || m.mode === 'fix2') return verifyBugX(question, m, answer);
