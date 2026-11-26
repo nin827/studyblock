@@ -26,3 +26,10 @@ Options that combine several facts show as aligned blocks with column labels, e.
 - CSV gets a `cols` column; segments are separated by ` ; `.
 - *Alternative:* "build the combination". The learner picks one value per column, like a combination lock, instead of choosing among 4 whole options. That's harder, and it fits Type | Blocks with a multiplier.
 - Existing compound options in other subjects are being surveyed for conversion.
+
+## Decisions (user, 2026-11-26)
+- **Build | Choose** for block-list questions, defaulting to Build.
+  - **Build:** assemble one block per column from a bank with decoys. Order never matters. Full credit.
+  - **Choose:** pick one listed option, scored ×1 / 1 / 0.85 / 0.7 (`chooseMultiplier`).
+- **Option count:** 3 at Easy, 5 at Medium, Hard and Expert. This applies only to block-list questions; other multiple choice is unchanged.
+- **Build decoys** grow with difficulty: 1–2 / 3–5 / 6–9 / 9–14. Filter blocks appears above 10. Each block shows its column, so `↑` under Assets and `↑` under Liabilities are different blocks.
