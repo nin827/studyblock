@@ -3,7 +3,7 @@
 // Levels: easy, medium, hard, expert ("normal" / "expert-plus" are accepted as old aliases).
 
 import {
-  loadRoles, findRole, roleLevels, roleShares, roleSubjectLevel, roleQuestionCount, buildRoleQuiz,
+  loadRoles, loadRoleIndustries, findRole, roleLevels, roleShares, roleSubjectLevel, roleQuestionCount, buildRoleQuiz,
   loadDomains, loadModule, loadGuide, isValidId, roleKey, normalizeRoleLevel, roleScenarioCount, sanitizeRoleCount,
   ROLE_TOP, ROLE_MIN_COUNT, ROLE_MAX_COUNT, ROLE_MODULE,
 } from '../lib/engine.js';
@@ -171,13 +171,24 @@ export async function render(root, params, ctx) {
   if (!roles || !ctx.alive()) return;
   const fdata = await Promise.all(roles.map(r => roleFlagData(r.id)));
   if (!ctx.alive()) return;
-  const cards = roles.map((r, i) => {
+  const tocItem = r => `<li data-role="${esc(r.id)}"><button type="button" class="roles-toc-link" data-role="${esc(r.id)}">${icon(r.icon)}<span class="roles-toc-name">${esc(r.title)}</span>${r.subroles.length ? `<span class="roles-toc-n" aria-label="${r.subroles.length} subroles">${r.subroles.length}</span>` : ''}</button></li>`;
+  const optHtml = r => `<option value="${esc(r.id)}">${esc(r.title)}</option>`;
+  // Sections drive the cards, the TOC and the jump menu. Today: one untitled section with every role (a titled section gets a heading and a TOC group).
+  const byId = new Map(roles.map(r => [r.id, r]));
+  const industries = await loadRoleIndustries();
+  if (!ctx.alive()) return;
+  const sections = industries.length
+    ? industries.map(g => ({ ...g, roles: g.roles.map(id => byId.get(id)).filter(Boolean) })).filter(g => g.roles.length)
+    : [{ id: "all", title: "", icon: "", roles }];
+  const lvl = sections[0]?.title ? 3 : 2;
+  const cardHtml = r => {
+    const i = roles.indexOf(r);
     const s = getStats({ module: ROLE_MODULE, subtopic: r.id });
-    return `<article class="card role-card">
+    return `<article class="card role-card" id="role-${esc(r.id)}" data-role="${esc(r.id)}" data-search="${esc([r.title, ...r.subroles.map(x => x.title)].join(' ').toLowerCase())}">
       <a class="role-card-main" href="${roleHref(r.id)}">
         <span class="icon-tile">${icon(r.icon)}</span>
         <span class="role-card-text">
-          <span class="role-card-title">${esc(r.title)}</span>
+          <span class="role-card-title" role="heading" aria-level="${lvl}" tabindex="-1">${esc(r.title)}</span>
           <span class="role-card-sub">${esc(r.description)}</span>
           ${tagsHtml(fdata[i].role)}
           <span class="role-card-meta">${s.attempts ? `${s.attempts} quiz${s.attempts === 1 ? '' : 'zes'} · best <span class="score ${scoreClass(s.best)}">${fmtPct(s.best)}</span>` : 'Not started'}</span>
@@ -187,7 +198,7 @@ export async function render(root, params, ctx) {
       ${r.subroles.length ? `<div class="role-subs"><span class="muted small">Subroles</span>
         <div class="chip-scroll">${r.subroles.map(s => `<a class="chip chip-main" href="${roleHref(r.id, s.id)}">${icon(s.icon || 'user-round')}<span>${esc(s.title)}</span></a>`).join('')}</div></div>` : ''}
     </article>`;
-  }).join('');
+  };
   root.innerHTML = `
     ${crumbsHtml([{ href: '#/', label: 'Home' }, { label: 'Roles' }])}
     <section class="page-head">
@@ -197,7 +208,96 @@ export async function render(root, params, ctx) {
       </div>
       <p>Each role mixes the subjects that job uses, one level harder than you pick: Easy draws Medium questions, Medium draws Hard, Hard draws Expert, and the last fifth of each run are role scenarios that combine several subjects in one problem. Expert is only role scenarios (Expert+).</p>
     </section>
-    ${roles.length ? `<div class="role-list">${cards}</div>` : '<div class="card"><p class="muted">No roles yet.</p></div>'}`;
+    ${roles.length ? `<div class="roles-layout">
+      <nav class="roles-toc" id="roles-toc" aria-label="Roles on this page"><p class="roles-toc-title">Roles</p>
+        ${sections.map(sec => `${sec.title ? `<p class="roles-toc-title roles-toc-sec">${esc(sec.title)}</p>` : ""}<ul>${sec.roles.map(tocItem).join("")}</ul>`).join("")}
+      </nav>
+      <div class="roles-main">
+        <div class="roles-tools">
+          <label class="roles-jump" for="roles-jump-sel"><span class="sr-only">Jump to role</span>${icon('list')}
+            <select id="roles-jump-sel"><option value="">Jump to role…</option>${sections.map(sec => sec.title ? `<optgroup label="${esc(sec.title)}">${sec.roles.map(optHtml).join("")}</optgroup>` : sec.roles.map(optHtml).join("")).join("")}</select></label>
+          <label class="mix-search roles-search">${icon('search')}<span class="sr-only">Find a role</span>
+            <input type="search" id="roles-search" placeholder="Find a role or subrole, e.g. Chef" autocomplete="off" enterkeyhint="search"></label>
+        </div>
+        <p class="mix-noresults is-empty" id="roles-none" role="status" hidden>No roles match</p>
+        ${sections.map(sec => `<section class="role-section" data-section="${esc(sec.id)}"${sec.title ? ` aria-label="${esc(sec.title)}"` : ""}>${sec.title ? `<h2 class="section-title role-section-title">${icon(sec.icon)}<span>${esc(sec.title)}</span><span class="muted small">${sec.roles.length} roles</span></h2>` : ""}<div class="role-list">${sec.roles.map(cardHtml).join("")}</div></section>`).join("")}
+      </div>
+    </div>` : '<div class="card"><p class="muted">No roles yet.</p></div>'}`;
+  icons();
+  if (roles.length) setupRolesNav(root, ctx);
+}
+
+// TOC + "Jump to role" + filter + scroll-spy for #/roles. No #anchor hrefs (the hash is the router's).
+function setupRolesNav(root, ctx) {
+  const list = root.querySelector('.roles-main');
+  const toc = root.querySelector('#roles-toc');
+  const sel = root.querySelector('#roles-jump-sel');
+  const input = root.querySelector('#roles-search');
+  const none = root.querySelector('#roles-none');
+  const cards = [...list.querySelectorAll('.role-card')];
+  const reduce = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const tocLi = id => toc.querySelector(`li[data-role="${CSS.escape(id)}"]`);
+  const optOf = id => [...sel.options].find(o => o.value === id);
+
+  const goTo = id => {
+    const card = root.querySelector(`#role-${CSS.escape(id)}`);
+    if (!card || card.hidden) return;
+    card.scrollIntoView({ behavior: reduce() ? 'auto' : 'smooth', block: 'start' });
+    card.querySelector('.role-card-title')?.focus({ preventScroll: true });
+  };
+  toc.addEventListener('click', e => {
+    const b = e.target.closest('.roles-toc-link');
+    if (b) { e.preventDefault(); goTo(b.dataset.role); }
+  });
+  sel.addEventListener('change', () => { if (sel.value) goTo(sel.value); });
+
+  const setActive = id => {
+    toc.querySelectorAll('.roles-toc-link').forEach(b => {
+      if (b.dataset.role === id) {
+        b.setAttribute('aria-current', 'true');
+        // Keep the active entry visible inside a TOC that scrolls on its own.
+        const li = b.closest('li');
+        if (toc.scrollHeight > toc.clientHeight && li) {
+          const t = toc.getBoundingClientRect(); const r = li.getBoundingClientRect();
+          if (r.top < t.top || r.bottom > t.bottom) toc.scrollTop += (r.top - t.top) - t.height / 2;
+        }
+      } else b.removeAttribute('aria-current');
+    });
+    if (id && document.activeElement !== sel) sel.value = optOf(id) && !optOf(id).hidden ? id : '';
+  };
+
+  // Scroll-spy: the first visible card inside the top band of the viewport.
+  const seen = new Set();
+  let io = null;
+  if (typeof IntersectionObserver === 'function') {
+    io = new IntersectionObserver(entries => {
+      for (const en of entries) { if (en.isIntersecting) seen.add(en.target.dataset.role); else seen.delete(en.target.dataset.role); }
+      const first = cards.find(c => !c.hidden && seen.has(c.dataset.role));
+      if (first) setActive(first.dataset.role);
+    }, { rootMargin: '-120px 0px -55% 0px', threshold: 0 });
+    cards.forEach(c => io.observe(c));
+  }
+  ctx.onCleanup?.(() => io?.disconnect());
+
+  const filter = () => {
+    const terms = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    let shown = 0;
+    for (const c of cards) {
+      const hit = terms.every(t => c.dataset.search.includes(t));
+      c.hidden = !hit;
+      const li = tocLi(c.dataset.role); if (li) li.hidden = !hit;
+      const o = optOf(c.dataset.role); if (o) { o.hidden = !hit; o.disabled = !hit; }
+      if (hit) shown++;
+    }
+    none.hidden = shown > 0;
+    root.querySelectorAll('.role-section').forEach(s => { s.hidden = !s.querySelector('.role-card:not([hidden])'); });
+    toc.hidden = shown === 0 ? true : false;
+    if (shown && !cards.some(c => !c.hidden && c.dataset.role === sel.value)) sel.value = '';
+  };
+  input.addEventListener('input', filter);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && input.value) { e.preventDefault(); e.stopPropagation(); input.value = ''; filter(); }
+  });
 }
 
 // ---- #/roles/<role>[/<subrole>] ----

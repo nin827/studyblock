@@ -1,1 +1,10 @@
-{ "roles": ["business-analyst", "software-engineer", "mathematician", "data-analyst", "physicist", "accountant", "chemist", "electrical-engineer", "biologist", "game-developer", "network-engineer", "music-theorist", "operations-manager", "teacher", "nutritionist", "economist", "historian", "geographer", "linguist", "civil-engineer", "architect", "project-manager", "electrician", "pilot", "data-scientist", "surveyor", "investigator", "chef", "retail-manager"] }
+{ "roles": ["business-analyst", "software-engineer", "mathematician", "data-analyst", "physicist", "accountant", "chemist", "electrical-engineer", "biologist", "game-developer", "network-engineer", "music-theorist", "operations-manager", "teacher", "nutritionist", "economist", "historian", "geographer", "linguist", "civil-engineer", "architect", "project-manager", "electrician", "pilot", "data-scientist", "surveyor", "investigator", "chef", "retail-manager"],
+  "industries": [
+    {"id": "technology", "title": "Technology", "icon": "cpu", "roles": ["software-engineer", "data-analyst", "data-scientist", "network-engineer", "game-developer"]},
+    {"id": "business", "title": "Business", "icon": "briefcase", "roles": ["accountant", "business-analyst", "economist", "project-manager"]},
+    {"id": "science", "title": "Science", "icon": "flask-conical", "roles": ["mathematician", "physicist", "chemist", "biologist"]},
+    {"id": "engineering", "title": "Engineering", "icon": "hard-hat", "roles": ["civil-engineer", "electrical-engineer", "electrician", "architect", "surveyor"]},
+    {"id": "operations-service", "title": "Operations & Service", "icon": "store", "roles": ["operations-manager", "retail-manager", "chef", "nutritionist", "pilot", "investigator"]},
+    {"id": "humanities", "title": "Humanities", "icon": "book-open", "roles": ["teacher", "historian", "geographer", "linguist", "music-theorist"]}
+  ]
+}

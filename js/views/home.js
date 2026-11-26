@@ -1,4 +1,4 @@
-import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
+import { loadDomains, loadModulesOf, loadOfficialPresets, normalizeMixConfig, mixShares, loadArchived, titleLookup, loadRoles, loadRoleIndustries, parseRoleKey, normalizeRoleLevel } from '../lib/engine.js';
 import { getStatsForModules, getCookie, loadMixDraft, getPresets, getAttempts, isGuided, MIX_MODULE, ROLE_MODULE } from '../lib/storage.js';
 import * as pwa from '../lib/pwa.js';
 import { gameOn, gameContext, summary, seenForNotice, progressCardHtml } from './game.js';
@@ -68,6 +68,8 @@ export async function render(root, params, ctx) {
   // Roles: the Home card and titles of role attempts in "Recent".
   let roles = [];
   try { roles = await loadRoles(); } catch (e) { console.warn(e); }
+  let industries = [];
+  try { industries = await loadRoleIndustries(); } catch (e) { console.warn(e); }
   // Game elements (XP, level, streak, next badge); the badge context is cached per page load.
   const game = gameOn() ? await gameContext() : null;
   if (!ctx.alive()) return;
@@ -126,7 +128,7 @@ export async function render(root, params, ctx) {
       <span class="icon-tile">${icon(d.icon)}</span>
       <span class="domain-card-text">
         <span class="domain-card-title">${esc(d.title)}</span>
-        <span class="domain-card-sub">${esc(d.loaded.map(m => m.title ?? m.id).join(', '))}</span>
+        <span class="domain-card-sub marquee" data-marquee><span class="marquee-track"><span class="marquee-copy">${esc(shuffled(d.loaded.map(m => m.title ?? m.id)).join(', '))}<span class="marquee-sep" aria-hidden="true">•</span></span><span class="marquee-copy marquee-dup" aria-hidden="true"></span></span></span>
       </span>
       <span class="domain-card-stats">
         <span class="meter" role="img" aria-label="${esc(`${d.title}: ${s.overall === null ? 'not started' : `${pct}% correct overall`}`)}"><span style="width:${pct}%"></span></span>
@@ -236,7 +238,7 @@ export async function render(root, params, ctx) {
       <span class="icon-tile">${icon('briefcase-business')}</span>
       <span class="tool-card-text">
         <span class="tool-card-title">Roles</span>
-        <span class="tool-card-sub">Career mixes: ${esc(roles.map(r => r.title).join(', '))}</span>
+        <span class="tool-card-sub">${industries.length ? `${roles.length} careers in ${industries.length} industries: ${esc(industries.map(g => g.title).join(', '))}` : `Career mixes: ${esc(roles.map(r => r.title).join(', '))}`}</span>
       </span>
       <span class="tool-card-go" aria-hidden="true">${icon('chevron-right')}</span>
     </a>` : ''}
@@ -257,4 +259,45 @@ export async function render(root, params, ctx) {
     </section>` : ''}
   </div>`;
   setupInstallCard(root.querySelector('#home-install'), ctx);
+  setupMarquees(root, ctx);
+}
+
+// Display-only random order (a fresh shuffle on every render).
+function shuffled(list) {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// One-line subject lists: scroll as a seamless loop only when the text overflows its box.
+// The second copy is an aria-hidden duplicate, so screen readers read the list once.
+const MARQUEE_PX_PER_S = 35;
+function setupMarquees(root, ctx) {
+  const boxes = [...root.querySelectorAll('[data-marquee]')];
+  if (!boxes.length) return;
+  const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const update = box => {
+    const track = box.firstElementChild;
+    const copy = track.firstElementChild;
+    const dup = track.lastElementChild;
+    box.classList.remove('is-scrolling');
+    dup.textContent = '';
+    if (!box.clientWidth || reduce?.matches) return; // hidden (phones) or reduced motion: static, ellipsis
+    if (track.scrollWidth <= box.clientWidth + 1) return; // fits: sits still
+    dup.innerHTML = copy.innerHTML; // identical copy (text + separator), hidden from assistive tech
+    box.classList.add('is-scrolling');
+    const shift = copy.getBoundingClientRect().width;
+    box.style.setProperty('--marquee-shift', `${shift}px`);
+    box.style.setProperty('--marquee-dur', `${Math.max(8, shift / MARQUEE_PX_PER_S).toFixed(1)}s`);
+  };
+  const run = () => boxes.forEach(update);
+  let ro = null;
+  if (typeof ResizeObserver === 'function') {
+    ro = new ResizeObserver(() => run());
+    boxes.forEach(b => ro.observe(b));
+  }
+  reduce?.addEventListener?.('change', run);
+  if (document.fonts?.ready) document.fonts.ready.then(() => { if (ctx.alive()) run(); });
+  requestAnimationFrame(run);
+  if (typeof ctx.onCleanup === 'function') ctx.onCleanup(() => { ro?.disconnect(); reduce?.removeEventListener?.('change', run); });
 }

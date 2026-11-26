@@ -1228,7 +1228,7 @@ export async function runQuiz(root, ctx, opts) {
         </div>
         <div class="seg-choose" id="seg-choose" hidden>
           <div class="choices ${segClass(q)}">${segHeadHtml(q)}${(q.choices || []).map((c, i) =>
-            `<button type="button" class="btn choice seg-choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>
+            `<button type="button" class="btn choice seg-choice" data-i="${i}" aria-pressed="false"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>
         </div>
       </form>`;
   }
@@ -1459,7 +1459,7 @@ export async function runQuiz(root, ctx, opts) {
     hint.classList.toggle('desktop-only', segMode === 'build');
     hint.innerHTML = segMode === 'build'
       ? '<span class="action-hint-key">Press <kbd>Enter</kbd> on a block to place it</span>'
-      : `<span class="action-hint-tap">Tap an answer</span><span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to answer</span>`;
+      : `<span class="action-hint-tap">Pick an answer, then Check</span><span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to select, <kbd>Enter</kbd> to check</span>`;
   }
 
   function setSegMode(q, mode, { remember = true } = {}) {
@@ -1475,7 +1475,7 @@ export async function runQuiz(root, ctx, opts) {
     const note = root.querySelector('#answer-mode-note');
     if (note) note.hidden = build;
     const check = root.querySelector('#check');
-    if (check) { check.hidden = !build; if (phase === 'answer') check.disabled = !segReady(); }
+    if (check) { check.hidden = false; if (phase === 'answer') check.disabled = build ? !segReady() : !pickedChoice(); }
     segActionHint(q);
     applyCalc(q); // the calculator's Use note names the current mode
   }
@@ -1486,7 +1486,8 @@ export async function runQuiz(root, ctx, opts) {
     if (!form) return;
     form.addEventListener('submit', e => {
       e.preventDefault();
-      if (segMode === 'build' && segReady()) submit(segValue());
+      if (segMode === 'build') { if (segReady()) submit(segValue()); }
+      else submitChoice(q);
     });
     form.querySelectorAll('.answer-mode-btn').forEach(b => b.addEventListener('click', () => {
       if (phase !== 'answer') return;
@@ -1507,7 +1508,7 @@ export async function runQuiz(root, ctx, opts) {
       if (e.key === 'Escape' && filter.value) { e.preventDefault(); e.stopPropagation(); filter.value = ''; applySegFilter(); }
     });
     root.querySelectorAll('#seg-choose .choice').forEach(b =>
-      b.addEventListener('click', () => { if (segMode === 'choose') submit(q.choices[+b.dataset.i], +b.dataset.i); }));
+      b.addEventListener('click', () => { if (segMode === 'choose') selectChoice(b); }));
     renderSeg();
     setSegMode(q, savedSegMode(q), { remember: false });
     if (segMode === 'build') root.querySelector('#segb-bank .tile')?.focus();
@@ -1587,11 +1588,11 @@ export async function runQuiz(root, ctx, opts) {
     if (isSegQ(q)) return segDualHtml(q);
     if (q.answerType === 'choice' && isSeg(q)) {
       return `<div class="choices ${segClass(q)}">${segHeadHtml(q)}${(q.choices || []).map((c, i) =>
-        `<button type="button" class="btn choice seg-choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>`;
+        `<button type="button" class="btn choice seg-choice" data-i="${i}" aria-pressed="false"><span class="choice-key" aria-hidden="true">${i + 1}</span>${segCellsHtml(q, i)}<span class="choice-mark"></span></button>`).join('')}</div>`;
     }
     if (q.answerType === 'choice') {
       return `<div class="choices">${(q.choices || []).map((c, i) =>
-        `<button type="button" class="btn choice" data-i="${i}"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
+        `<button type="button" class="btn choice" data-i="${i}" aria-pressed="false"><span class="choice-key" aria-hidden="true">${i + 1}</span><span class="choice-text">${renderInline(c)}</span><span class="choice-mark"></span></button>`).join('')}</div>`;
     }
     const num = q.answerType === 'number';
     if (q.answerType === 'date') {
@@ -1633,8 +1634,8 @@ export async function runQuiz(root, ctx, opts) {
     }
     if (q.answerType === 'choice') {
       const n = Math.min((q.choices || []).length, 9);
-      return `<p class="action-hint"><span class="action-hint-tap">Tap an answer</span>
-        <span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to answer</span></p>${calcButton(q)}`;
+      return `<p class="action-hint"><span class="action-hint-tap">Pick an answer, then Check</span>
+        <span class="action-hint-key">Press <kbd>1</kbd>${n > 1 ? `–<kbd>${n}</kbd>` : ''} to select, <kbd>Enter</kbd> to check</span></p>${calcButton(q)}<button type="button" class="btn btn-primary" id="check" disabled>${icon('check')} Check</button>`;
     }
     return `<p class="action-hint desktop-only"><span class="action-hint-key">Press <kbd>Enter</kbd> to check</span></p>
       ${calcButton(q)}${runButton(q)}<button type="submit" form="answer-form" class="btn btn-primary" id="check">${icon('check')} Check</button>`;
@@ -1829,8 +1830,27 @@ export async function runQuiz(root, ctx, opts) {
       }
       root.querySelector('#answer').focus();
     }
-    root.querySelectorAll('.choice').forEach(b =>
-      b.addEventListener('click', () => submit(q.choices[+b.dataset.i], +b.dataset.i)));
+    if (q.answerType === 'choice') {
+      root.querySelectorAll('.choice').forEach(b => b.addEventListener('click', () => selectChoice(b)));
+      root.querySelector('#check')?.addEventListener('click', () => submitChoice(q));
+    }
+  }
+
+  // ---- single-answer choices: select first, then Check ----
+  const singleChoices = () => [...root.querySelectorAll('.choices .choice:not(.part-choice)')];
+  const pickedChoice = () => singleChoices().find(b => b.getAttribute('aria-pressed') === 'true' && !b.disabled) || null;
+  function syncChoiceCheck() {
+    const check = root.querySelector('#check');
+    if (check && phase === 'answer') check.disabled = !pickedChoice();
+  }
+  function selectChoice(b) {
+    if (phase !== 'answer' || !b || b.disabled) return;
+    singleChoices().forEach(x => x.setAttribute('aria-pressed', x === b ? 'true' : 'false'));
+    syncChoiceCheck();
+  }
+  function submitChoice(q) {
+    const b = pickedChoice();
+    if (b) submit(q.choices[+b.dataset.i], +b.dataset.i);
   }
 
   // ---- guided checking: unlimited tries; right parts lock, wrong ones stay editable ----
@@ -1924,7 +1944,9 @@ export async function runQuiz(root, ctx, opts) {
       b.classList.add('is-wrong');
       const m = b.querySelector('.choice-mark');
       if (m) m.innerHTML = markHtml(false);
+      b.setAttribute('aria-pressed', 'false'); // the selection clears; pick again, then Check
       b.disabled = true;
+      syncChoiceCheck();
     } else if (blocks) {
       root.querySelector('#tiles-answer')?.classList.add('is-wrong'); // cleared on the next change
     } else {
@@ -2383,12 +2405,17 @@ export async function runQuiz(root, ctx, opts) {
       } else if (phase === 'answer' && isDual(questions[idx]) && e.target?.closest?.('.answer-mode, #run-btn')) {
         // The Type | Blocks switch and Run keep their native Enter.
       } else if (phase === 'answer' && isSegQ(questions[idx])) {
-        // Build | Choose: buttons (blocks, options, the switch, Reset, Check) keep their native Enter;
-        // elsewhere Enter checks a complete build.
-        if (e.target?.closest?.('button')) return;
+        // Build | Choose: buttons (blocks, the switch, Reset, Check) keep their native Enter;
+        // elsewhere Enter checks a complete build, or the selected option in Choose.
+        const eb = e.target?.closest?.('button');
+        if (segMode === 'choose' && eb && eb.classList.contains('choice') && eb.getAttribute('aria-pressed') === 'true' && !eb.disabled) {
+          e.preventDefault(); submitChoice(questions[idx]); return; // Enter on the selected option checks it
+        }
+        if (eb) return; // on another option Enter selects it (native click)
         e.preventDefault();
         if (e.target?.id === 'segb-filter') return;
         if (segMode === 'build' && segReady()) submit(segValue());
+        else if (segMode === 'choose') submitChoice(questions[idx]);
       } else if (phase === 'answer' && inBlocks(questions[idx])) {
         // Blocks, Reset, Check and other buttons keep their native Enter; elsewhere Enter checks
         // only once Check is enabled.
@@ -2396,6 +2423,15 @@ export async function runQuiz(root, ctx, opts) {
         e.preventDefault();
         if (e.target?.id === 'tiles-filter') return; // Enter in "Filter blocks" never checks
         if (tilesReady()) submit(tilesValue());
+      } else if (phase === 'answer' && questions[idx]?.answerType === 'choice') {
+        // Single choice: Enter on the selected option, or anywhere else with one selected, checks it.
+        // On an unselected option Enter selects it (native click); other buttons keep their Enter.
+        const eb = e.target?.closest?.('button');
+        if (eb && eb.classList.contains('choice') && eb.getAttribute('aria-pressed') === 'true' && !eb.disabled) {
+          e.preventDefault(); submitChoice(questions[idx]);
+        } else if (!eb) {
+          e.preventDefault(); submitChoice(questions[idx]);
+        }
       } else if (phase === 'answer' && questions[idx]?.answerType !== 'choice') {
         e.preventDefault();
         submit(root.querySelector('#answer')?.value);
@@ -2406,9 +2442,14 @@ export async function runQuiz(root, ctx, opts) {
     } else if (phase === 'answer' && questions[idx]?.answerType === 'choice' && !inBuild(questions[idx]) && /^[1-9]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const i = +e.key - 1;
       const q = questions[idx];
-      // Guided: a choice already ruled out (disabled) can't be picked again from the keyboard.
-      if (guided && root.querySelector(`.choices .choice[data-i="${i}"]`)?.disabled) { e.preventDefault(); return; }
-      if (i < (q.choices || []).length) { e.preventDefault(); submit(q.choices[i], i); }
+      if (e.repeat) { e.preventDefault(); return; }
+      // A number key only selects (and focuses) that option; Check or Enter submits.
+      // Guided: a choice already ruled out (disabled) can't be picked again.
+      const btn = singleChoices().find(x => +x.dataset.i === i);
+      if (btn && i < (q.choices || []).length) {
+        e.preventDefault();
+        if (!btn.disabled) { selectChoice(btn); btn.focus({ preventScroll: true }); }
+      }
     } else if (guided && phase === 'answer' && String(e.key).toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
       // H: next hint, unless the user is typing.
       const t = e.target;

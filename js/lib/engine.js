@@ -1724,6 +1724,25 @@ async function roleIds() {
   return out;
 }
 
+// Display-only industry sections for the Roles page (ticket 028): [{ id, title, icon, roles: [ids] }].
+// Unknown or repeated role ids are dropped; any listed role left out goes into a trailing "Other".
+export async function loadRoleIndustries() {
+  let idx;
+  try { idx = await loadJSON('roles/index.json'); } catch { return []; }
+  const ids = await roleIds();
+  const seen = new Set();
+  const out = [];
+  for (const g of Array.isArray(idx?.industries) ? idx.industries : []) {
+    if (!g || !isValidId(g.id) || typeof g.title !== 'string' || !g.title.trim()) { warnRole(`ind|${JSON.stringify(g?.id)}`, 'ignoring an invalid industry in roles/index.json'); continue; }
+    const roles = (Array.isArray(g.roles) ? g.roles : []).filter(r => ids.includes(r) && !seen.has(r));
+    roles.forEach(r => seen.add(r));
+    if (roles.length) out.push({ id: g.id, title: g.title.trim().slice(0, 40), icon: typeof g.icon === 'string' && isValidId(g.icon) ? g.icon : 'briefcase-business', roles });
+  }
+  const rest = ids.filter(r => !seen.has(r));
+  if (out.length && rest.length) out.push({ id: 'other', title: 'Other', icon: 'shapes', roles: rest });
+  return out;
+}
+
 async function rawRole(id) {
   const r = await loadJSON(`roles/${id}.json`);
   if (!r || typeof r !== 'object' || Array.isArray(r)) throw new Error(`Bad roles/${id}.json`);
