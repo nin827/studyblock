@@ -23,9 +23,9 @@ These decisions were left for you. Each one lists its default first.
 Most new roles open their About card with a Warning callout that the figures and rules are made up. That is louder than older roles such as Chef or Retail Manager, which have no warning.
 *Options:* keep (current), soften to a Note callout, or drop it where nothing safety-related is involved.
 
-## 4. GDScript in role runs
+## 4. GDScript in role runs (resolved)
 With only GDScript chosen, Software Engineer and Game Developer now use Python, as ticket 027 specified.
-*Options:* keep (current), or let Game Developer allow GDScript as its one exception.
+*Resolved (user: "add other language used in game dev too"):* Game Developer now accepts GDScript and Lua through a `roleLangs` field; other roles are unchanged.
 
 ## 5. Next roles
 Every planned role is now built (51 roles: batches 4 and 5 were added after this ticket was filed).

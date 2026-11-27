@@ -425,8 +425,8 @@ export async function renderRole(root, { roleId, subroleId }, ctx) {
         </div>
         <p class="muted small mode-note guided-only">${icon('lightbulb')}Guided: hints, unlimited tries, not scored (saved in History).</p>
       </div>
-      ${codeIds.length ? codeLangsHtml({ ids: codeIds, ctx: 'role', id: 'role-code-langs', label: 'Code languages',
-        hint: 'Role runs use the industry-standard languages that are on, one per code question. Shared with Settings and the code subjects.' }) : ''}
+      ${codeIds.length ? codeLangsHtml({ ids: codeIds, extra: me.roleLangs || [], ctx: 'role', id: 'role-code-langs', label: 'Code languages',
+        hint: `Role runs use the industry-standard languages that are on${(me.roleLangs || []).length ? ' (and the ones this role adds)' : ''}, one per code question. Shared with Settings and the code subjects.` }) : ''}
       <div class="role-counts">
         ${countControl('std', 'Questions', levels.includes(ROLE_TOP) ? 'Easy to Hard' : '')}
         ${levels.includes(ROLE_TOP) ? countControl('expert', 'Questions', 'Expert') : ''}

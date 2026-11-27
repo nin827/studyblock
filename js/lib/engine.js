@@ -413,11 +413,12 @@ export function effectiveLang(mod, pref = getCodeLang()) {
  * The languages a run may use for `mod` (ticket 027): the chosen set (sb_codeLangs) ∩ the module's
  * `languages`, in the module's own order; role runs keep only industry-standard languages. Empty →
  * [the module's first listed language] (roles: Python, else the module's first industry language).
+ * Role runs also accept the role's `roleLangs` (`extra`), e.g. GDScript for Game Developer.
  * null for modules that aren't language-aware.
  */
-export function runLangs(mod, { role = false, chosen = getCodeLangs() } = {}) {
+export function runLangs(mod, { role = false, chosen = getCodeLangs(), extra = [] } = {}) {
   if (!isLangModule(mod)) return null;
-  const set = mod.languages.filter(l => chosen.includes(l) && (!role || isIndustryLang(l)));
+  const set = mod.languages.filter(l => chosen.includes(l) && (!role || isIndustryLang(l) || extra.includes(l)));
   if (set.length) return set;
   if (!role) return [mod.languages[0]];
   if (mod.languages.includes(DEFAULT_LANG)) return [DEFAULT_LANG];
@@ -1814,6 +1815,18 @@ function parseRoleMix(raw, mods, where) {
   return out;
 }
 
+// roleLangs of a raw role/subrole object: array of <= 10 strings, ids kept if known (unknown dropped
+// silently), deduped. undefined = not set; invalid shape warns once per role and counts as not set.
+function parseRoleLangs(obj, roleId, label) {
+  const v = obj.roleLangs;
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.length > 10 || v.some(x => typeof x !== 'string')) {
+    warnRole(`rlangs|${roleId}`, `role ${label}: ignoring invalid roleLangs (needs an array of at most 10 language id strings)`);
+    return undefined;
+  }
+  return [...new Set(v.filter(isLang))];
+}
+
 const strField = (v, max, d = '') => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : d);
 
 /*
@@ -1855,6 +1868,7 @@ export async function loadRoles() {
     }
     if (exclusiveModule && !exclusiveModule.subtopics.length) exclusiveModule = null;
     const mix = parseRoleMix(r.mix, mods, `role ${r.id}`);
+    const roleLangs = parseRoleLangs(r, r.id, r.id) ?? [];
     const subroles = [];
     for (const s of Array.isArray(r.subroles) ? r.subroles : []) {
       if (!s || typeof s !== 'object' || !isValidId(s.id)) { warnRole(`sub|${r.id}|${JSON.stringify(s?.id)}`, `role ${r.id}: ignoring a subrole with an invalid id`); continue; }
@@ -1872,6 +1886,7 @@ export async function loadRoles() {
         description: strField(s.description, 400),
         mix: own && own.length ? own : mix,
         exclusiveSubtopics: exSubs,
+        roleLangs: parseRoleLangs(s, r.id, `${r.id} / ${s.id}`) ?? roleLangs,
       });
     }
     roles.push({
@@ -1882,6 +1897,7 @@ export async function loadRoles() {
       exclusive: exclusiveModule ? exclusiveModule.id : null,
       exclusiveModule,
       mix,
+      roleLangs,
       subroles,
     });
   }
@@ -1927,10 +1943,10 @@ export function roleScenarioCount(role, subrole, level, n) {
 
 // Draws up to `n` role-only scenario questions at `tier` (seeded via `rng`/`nextSeed`), each with
 // `weight` = its number of parts. Prompts already in `seen` are avoided where possible.
-async function roleScenarios(role, subs, tier, n, rng, nextSeed, seen) {
+async function roleScenarios(role, subs, tier, n, rng, nextSeed, seen, extra = []) {
   const mod = role.exclusiveModule;
   const gen = await loadGenerator(mod.id);
-  const langs = runLangs(mod, { role: true });
+  const langs = runLangs(mod, { role: true, extra });
   const out = [];
   let failures = 0, dupTries = 0;
   while (out.length < n && failures < n * 2) {
@@ -1961,6 +1977,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
   const found = await findRole(roleId, subroleId);
   if (!found) throw new Error('Unknown role.');
   const { role, subrole } = found;
+  const roleExtra = (subrole ?? role).roleLangs || [];
   const rng = createRng(seed);
   const nextSeed = () => Math.floor(rng.next() * 0x100000000) >>> 0;
   const n = sanitizeRoleCount(count, roleQuestionCount(level));
@@ -1970,7 +1987,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
   if (level === ROLE_TOP) {
     const subs = roleScenarioSubtopics(role, subrole, EXPERT_PLUS);
     if (!subs.length) throw new Error('Expert questions (role scenarios) for this role are not available yet.');
-    questions.push(...await roleScenarios(role, subs, EXPERT_PLUS, n, rng, nextSeed, seen));
+    questions.push(...await roleScenarios(role, subs, EXPERT_PLUS, n, rng, nextSeed, seen, roleExtra));
     if (!questions.length) throw new Error('This quiz could not generate any valid questions.');
     return questions;
   }
@@ -1998,7 +2015,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
       const withLevel = subs.filter(s => !Array.isArray(s.difficulties) || s.difficulties.includes(target));
       const src = { mod, subs: withLevel.length ? withLevel : subs };
       if (mod.type === 'csv') src.rows = await loadCsvRows(mod.id);
-      else { src.gen = await loadGenerator(mod.id); src.langs = runLangs(mod, { role: true }); }
+      else { src.gen = await loadGenerator(mod.id); src.langs = runLangs(mod, { role: true, extra: roleExtra }); }
       sources.set(e.module, src);
     } catch (err) {
       console.warn(`StudyBlock: skipping module ${e.module} in role ${role.id}`, err);
@@ -2043,7 +2060,7 @@ export async function buildRoleQuiz(roleId, subroleId, rawLevel, seed = randomSe
   }
   if (nMixed) {
     try {
-      questions.push(...await roleScenarios(role, scenarioSubs, tier, nMixed, rng, nextSeed, new Set()));
+      questions.push(...await roleScenarios(role, scenarioSubs, tier, nMixed, rng, nextSeed, new Set(), roleExtra));
     } catch (err) {
       console.warn(`StudyBlock: role ${role.id}: no scenario questions this run`, err);
     }
